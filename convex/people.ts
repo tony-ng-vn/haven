@@ -1,6 +1,9 @@
-import { mutation, QueryCtx, MutationCtx } from "./_generated/server";
+import { mutation, query, QueryCtx, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
+
+// Bound every list read so the query stays scalable as the table grows.
+const RESULT_LIMIT = 20;
 
 // Guidelines forbid `any` for ctx; use the proper context union.
 async function requireUser(ctx: QueryCtx | MutationCtx) {
@@ -25,5 +28,26 @@ export const addPerson = mutation({
       name,
       updatedAt: Date.now(),
     });
+  },
+});
+
+export const searchPeople = query({
+  args: { query: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    const term = args.query.trim();
+    if (term === "") {
+      return await ctx.db
+        .query("people")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .order("desc")
+        .take(RESULT_LIMIT);
+    }
+    return await ctx.db
+      .query("people")
+      .withSearchIndex("search_name", (q) =>
+        q.search("name", term).eq("userId", userId),
+      )
+      .take(20);
   },
 });

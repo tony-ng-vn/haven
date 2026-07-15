@@ -39,3 +39,29 @@ test("addPerson rejects an unauthenticated caller", async () => {
     t.mutation(api.people.addPerson, { name: "Maya" }),
   ).rejects.toThrow("Not signed in");
 });
+
+test("searchPeople matches the caller's people by name and excludes others", async () => {
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+
+  await me.as.mutation(api.people.addPerson, { name: "Maya Chen" });
+  await me.as.mutation(api.people.addPerson, { name: "Felix Ng" });
+  await other.as.mutation(api.people.addPerson, { name: "Maya Rao" });
+
+  const results = await me.as.query(api.people.searchPeople, { query: "Maya" });
+  expect(results.map((p) => p.name)).toEqual(["Maya Chen"]);
+});
+
+test("searchPeople with an empty query returns only the caller's recent people", async () => {
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+  await me.as.mutation(api.people.addPerson, { name: "Maya Chen" });
+  await me.as.mutation(api.people.addPerson, { name: "Felix Ng" });
+  // Another user's person must never appear in my empty-query results.
+  await other.as.mutation(api.people.addPerson, { name: "Rao" });
+
+  const results = await me.as.query(api.people.searchPeople, { query: "  " });
+  expect(results.map((p) => p.name).sort()).toEqual(["Felix Ng", "Maya Chen"]);
+});
