@@ -5,3 +5,6 @@ dist/
 .friendy/
 .euno/
 convex/_generated/
+
+# tool artifact
+.entire/
