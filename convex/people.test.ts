@@ -112,3 +112,22 @@ test("updatePerson rejects updating another user's person", async () => {
     me.as.mutation(api.people.updatePerson, { id: otherId, context: "x" }),
   ).rejects.toThrow("Person not found");
 });
+
+test("updatePerson with omitted fields clears them (undefined unsets)", async () => {
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const id = await me.as.mutation(api.people.addPerson, { name: "Maya" });
+  await me.as.mutation(api.people.updatePerson, {
+    id,
+    link: "https://example.com",
+    context: "recruiting agents",
+  });
+
+  // Saving with both fields omitted models the detail screen clearing the
+  // inputs; the mutation must unset link and context, not leave them stale.
+  await me.as.mutation(api.people.updatePerson, { id });
+
+  const after = await t.run((ctx) => ctx.db.get("people", id));
+  expect(after?.link).toBeUndefined();
+  expect(after?.context).toBeUndefined();
+});
