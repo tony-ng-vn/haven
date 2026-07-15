@@ -51,3 +51,15 @@ export const searchPeople = query({
       .take(20);
   },
 });
+
+export const getPerson = query({
+  args: { id: v.id("people") },
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    const person = await ctx.db.get("people", args.id);
+    if (person === null || person.userId !== userId) {
+      return null;
+    }
+    return person;
+  },
+});

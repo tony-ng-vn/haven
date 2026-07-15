@@ -65,3 +65,19 @@ test("searchPeople with an empty query returns only the caller's recent people",
   const results = await me.as.query(api.people.searchPeople, { query: "  " });
   expect(results.map((p) => p.name).sort()).toEqual(["Felix Ng", "Maya Chen"]);
 });
+
+test("getPerson returns the caller's person and null for another user's", async () => {
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+
+  const myId = await me.as.mutation(api.people.addPerson, { name: "Maya" });
+  const otherId = await other.as.mutation(api.people.addPerson, {
+    name: "Rao",
+  });
+
+  expect((await me.as.query(api.people.getPerson, { id: myId }))?.name).toBe(
+    "Maya",
+  );
+  expect(await me.as.query(api.people.getPerson, { id: otherId })).toBeNull();
+});
