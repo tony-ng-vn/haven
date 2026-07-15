@@ -48,7 +48,7 @@ export const searchPeople = query({
       .withSearchIndex("search_name", (q) =>
         q.search("name", term).eq("userId", userId),
       )
-      .take(20);
+      .take(RESULT_LIMIT);
   },
 });
 
