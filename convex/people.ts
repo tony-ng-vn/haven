@@ -63,3 +63,28 @@ export const getPerson = query({
     return person;
   },
 });
+
+export const updatePerson = mutation({
+  args: {
+    id: v.id("people"),
+    link: v.optional(v.string()),
+    context: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    const person = await ctx.db.get("people", args.id);
+    if (person === null || person.userId !== userId) {
+      throw new Error("Person not found");
+    }
+    // The detail screen always sends both fields; an omitted (undefined) value
+    // means the user cleared that input, so patch unsets the field on purpose.
+    // Callers that want to leave a field untouched must resend its current value.
+    await ctx.db.patch("people", args.id, {
+      link: args.link,
+      context: args.context,
+      updatedAt: Date.now(),
+    });
+    return null;
+  },
+});

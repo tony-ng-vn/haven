@@ -81,3 +81,34 @@ test("getPerson returns the caller's person and null for another user's", async 
   );
   expect(await me.as.query(api.people.getPerson, { id: otherId })).toBeNull();
 });
+
+test("updatePerson saves link and context and bumps updatedAt", async () => {
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const id = await me.as.mutation(api.people.addPerson, { name: "Maya" });
+  const before = await t.run((ctx) => ctx.db.get(id));
+
+  await me.as.mutation(api.people.updatePerson, {
+    id,
+    link: "https://example.com",
+    context: "recruiting agents at Photon",
+  });
+
+  const after = await t.run((ctx) => ctx.db.get(id));
+  expect(after?.link).toBe("https://example.com");
+  expect(after?.context).toBe("recruiting agents at Photon");
+  expect(after!.updatedAt).toBeGreaterThanOrEqual(before!.updatedAt);
+});
+
+test("updatePerson rejects updating another user's person", async () => {
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+  const otherId = await other.as.mutation(api.people.addPerson, {
+    name: "Rao",
+  });
+
+  await expect(
+    me.as.mutation(api.people.updatePerson, { id: otherId, context: "x" }),
+  ).rejects.toThrow("Person not found");
+});
