@@ -12,12 +12,14 @@ And there is no effective way to use that information for searching -- to refind
 ## Product statement
 
 Relationships are not binary (friend vs not friend).
-They have a health score that decays if ignored.
 Social media and contacts only help with the first step (the initial connect), not with maintaining the relationship over time.
 Euno is the maintenance layer: a personal memory layer over the people of your life.
 
-The MVP does not build the health score.
-It builds the foundation the score will run on: the person plus the human context that makes them a relationship rather than a row.
+The one and only goal is to help people maintain connection with everyone they connect with.
+Euno does not judge how well someone knows someone -- there is no health score, no ranking, no scoring of closeness.
+
+The way Euno delivers this is as a search layer to find back the people you met in life.
+You bring a fragment of memory; Euno gives you back the person, so you can reach out and keep the connection alive.
 
 ## MVP scope
 
@@ -39,7 +41,6 @@ The one loop we are building:
 
 ### Explicitly out of scope for the MVP
 
-- Health score / decay signal (this is the north star, not the MVP).
 - Apple Contacts or any bulk import.
 - Delete person.
 - Fuzzy or semantic search (name prefix search only).
@@ -88,8 +89,7 @@ Indexes:
 `link` and `context` live directly on the person for the MVP (no separate notes table).
 Saving again updates them in place.
 
-Design note: `createdAt` / `updatedAt` are deliberately kept even though the MVP does not use them for a health score.
-They are the minimal seed the future decay/health signal will need, so adding the score later does not require a data migration.
+Design note: `createdAt` / `updatedAt` support recency ordering (for example, showing recently added or recently touched people when the search box is empty). They are not a health or closeness score, and Euno does not rank relationships.
 
 ## Backend functions (Convex)
 
@@ -123,6 +123,22 @@ Three screens, matching the loop.
    Shows the name, an optional link input, and a context text area.
    Save calls `updatePerson`, then routes back to the Search / Add screen.
 
+## Design direction
+
+The UI is inspired by Apple's design language (Human Interface Guidelines). The point is not to copy Apple, but to make Euno feel calm, focused, and content-first -- fitting for a tool whose whole job is to quietly hand you back a person.
+
+Principles to follow:
+
+- Clarity: content leads, chrome recedes. One primary action per screen. The search box and the person are the heroes; everything else is quiet.
+- Deference: generous whitespace, restrained color, a single subtle accent. No heavy borders or loud UI. Let the layout breathe.
+- Depth: soft, layered surfaces -- gentle shadows, translucency/blur for overlays, large corner radii on cards and inputs.
+- Typography: the system font stack (SF Pro on Apple devices via `-apple-system`), a clear type scale, comfortable line-height, real hierarchy from size and weight rather than boxes and rules.
+- Motion: short, natural, spring-like transitions (screen changes, list item taps). Nothing bouncy or attention-seeking. Respect `prefers-reduced-motion`.
+- Light and dark: support both, following the system preference.
+- Touch/click targets are large and forgiving; controls have soft pressed states.
+
+This direction guides the frontend build. Concrete component and layout design happens during implementation (the frontend-design skill), grounded in these principles.
+
 ## Error handling
 
 - Unauthenticated access to any screen but login -> redirect to login.
@@ -137,7 +153,6 @@ Three screens, matching the loop.
 
 ## Future (not now, but the model allows it)
 
-- Health score / decay computed from `updatedAt` and future interaction events.
 - Apple Contacts import to seed the back catalog.
 - Append-only note history instead of a single context field.
 - Semantic / fuzzy search over context, not just name.
