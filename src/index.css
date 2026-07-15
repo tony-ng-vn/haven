@@ -1,4 +1,106 @@
+:root {
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --accent: #0071e3;
+  --border: rgba(0, 0, 0, 0.08);
+  --radius: 16px;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --text: #f5f5f7;
+    --muted: #98989d;
+    --accent: #0a84ff;
+    --border: rgba(255, 255, 255, 0.1);
+  }
+}
+
+* { box-sizing: border-box; }
+
 body {
   margin: 0;
+  background: var(--bg);
+  color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app { max-width: 640px; margin: 0 auto; padding: 24px; }
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 32px;
+}
+.brand { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+
+.search-box, .person-detail input, .person-detail textarea {
+  width: 100%;
+  padding: 14px 16px;
+  font-size: 17px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.search-box:focus, .person-detail input:focus, .person-detail textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.results { list-style: none; margin: 16px 0 0; padding: 0; }
+.result-row {
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  font-size: 17px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.result-row:active { transform: scale(0.99); }
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+.add-button, .save {
+  margin-top: 16px;
+  padding: 12px 20px;
+  font-size: 17px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 980px;
+  transition: opacity 0.12s ease;
+}
+.add-button:active, .save:active { opacity: 0.85; }
+
+.person-detail { display: flex; flex-direction: column; gap: 20px; }
+.person-detail h1 { font-size: 28px; letter-spacing: -0.02em; margin: 0; }
+.person-detail label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.person-detail textarea { min-height: 140px; resize: vertical; line-height: 1.5; }
+.actions { display: flex; gap: 12px; justify-content: flex-end; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
 }
