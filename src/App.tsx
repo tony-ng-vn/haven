@@ -1,6 +1,7 @@
 import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useState } from "react";
+import { SearchAdd } from "./SearchAdd";
 
 function SignIn() {
   const { signIn } = useAuthActions();
@@ -37,7 +38,7 @@ export default function App() {
       </Unauthenticated>
       <Authenticated>
         <button onClick={() => void signOut()}>Sign out</button>
-        <p>Signed in.</p>
+        <SearchAdd onOpen={(id) => console.log("open", id)} />
       </Authenticated>
     </>
   );
