@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-15T00:00:00Z",
+  "title": "Design System: Euno",
+  "extensions": {
+    "colorMeta": {
+      "signal-blue": {
+        "role": "primary",
+        "displayName": "Signal Blue",
+        "canonical": "oklch(0.58 0.19 250)",
+        "tonalRamp": [
+          "oklch(0.20 0.10 250)",
+          "oklch(0.30 0.14 250)",
+          "oklch(0.40 0.17 250)",
+          "oklch(0.50 0.19 250)",
+          "oklch(0.58 0.19 250)",
+          "oklch(0.70 0.15 250)",
+          "oklch(0.82 0.09 250)",
+          "oklch(0.93 0.04 250)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(0.20 0.004 270)",
+        "tonalRamp": [
+          "oklch(0.18 0.004 270)",
+          "oklch(0.28 0.004 270)",
+          "oklch(0.38 0.004 270)",
+          "oklch(0.48 0.004 270)",
+          "oklch(0.58 0.004 270)",
+          "oklch(0.70 0.004 270)",
+          "oklch(0.84 0.004 270)",
+          "oklch(0.96 0.004 270)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted",
+        "canonical": "oklch(0.53 0.004 270)",
+        "tonalRamp": [
+          "oklch(0.20 0.004 270)",
+          "oklch(0.30 0.004 270)",
+          "oklch(0.40 0.004 270)",
+          "oklch(0.53 0.004 270)",
+          "oklch(0.63 0.004 270)",
+          "oklch(0.73 0.004 270)",
+          "oklch(0.84 0.004 270)",
+          "oklch(0.95 0.004 270)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface",
+        "canonical": "oklch(1 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.24 0 0)",
+          "oklch(0.34 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.62 0 0)",
+          "oklch(0.78 0 0)",
+          "oklch(0.90 0 0)",
+          "oklch(1 0 0)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Canvas",
+        "canonical": "oklch(0.96 0.001 270)",
+        "tonalRamp": [
+          "oklch(0.00 0 0)",
+          "oklch(0.20 0 0)",
+          "oklch(0.40 0 0)",
+          "oklch(0.60 0 0)",
+          "oklch(0.78 0 0)",
+          "oklch(0.88 0 0)",
+          "oklch(0.96 0.001 270)",
+          "oklch(1 0 0)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The person's name and the Euno wordmark on sign-in. Largest type in the product." },
+      "title": { "displayName": "Title", "purpose": "The Euno wordmark in the app header. Quiet brand presence." },
+      "body": { "displayName": "Body", "purpose": "Everything read or typed: inputs, rows, button labels, context." },
+      "label": { "displayName": "Label", "purpose": "Field labels and helper copy, always in Muted gray." }
+    },
+    "shadows": [
+      { "name": "floating-panel", "value": "0 12px 40px rgba(0,0,0,0.12)", "purpose": "A surface truly lifted off the page: the sign-in card, future modals or sheets. Large, soft, diffuse." },
+      { "name": "focus-glow", "value": "0 0 0 4px color-mix(in srgb, var(--accent) 15%, transparent)", "purpose": "Soft Signal Blue ring on a focused input. Feedback, not decoration." }
+    ],
+    "motion": [
+      { "name": "press-quick", "value": "120ms ease", "purpose": "Pressed states: button opacity dip, result-row scale. A quiet acknowledgement." },
+      { "name": "focus-shift", "value": "150ms ease", "purpose": "Input border and glow appearing on focus." }
+    ],
+    "breakpoints": [
+      { "name": "column", "value": "640px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one action worth taking on a screen: Save, Add, Sign in.",
+      "html": "<button class=\"ds-btn-primary\">Save</button>",
+      "css": ".ds-btn-primary { font: 500 17px -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; color: #fff; background: var(--accent, #0071e3); border: none; border-radius: 980px; padding: 12px 20px; cursor: pointer; transition: opacity 120ms ease; } .ds-btn-primary:hover { opacity: 0.95; } .ds-btn-primary:active { opacity: 0.85; } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #0071e3) 30%, transparent); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Recommended quiet treatment for Back and Sign out, so they never compete with the primary pill.",
+      "html": "<button class=\"ds-btn-secondary\">Back</button>",
+      "css": ".ds-btn-secondary { font: 400 17px -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; color: var(--text, #1d1d1f); background: transparent; border: none; border-radius: 980px; padding: 12px 16px; cursor: pointer; transition: background 120ms ease; } .ds-btn-secondary:hover { background: color-mix(in srgb, var(--text, #1d1d1f) 6%, transparent); } .ds-btn-secondary:active { background: color-mix(in srgb, var(--text, #1d1d1f) 10%, transparent); } .ds-btn-secondary:focus-visible { outline: none; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #0071e3) 25%, transparent); }"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "The live search box and the link/context fields. Large, forgiving, calm until focused.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search a name, or type a new one\" />",
+      "css": ".ds-input { width: 100%; font: 400 17px -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; color: var(--text, #1d1d1f); background: var(--surface, #fff); border: 1px solid var(--border, rgba(0,0,0,0.08)); border-radius: 16px; padding: 14px 16px; outline: none; box-sizing: border-box; transition: border-color 150ms ease, box-shadow 150ms ease; } .ds-input::placeholder { color: var(--muted, #6e6e73); } .ds-input:focus { border-color: var(--accent, #0071e3); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #0071e3) 15%, transparent); }"
+    },
+    {
+      "name": "Result Row",
+      "kind": "custom",
+      "refersTo": "result-row",
+      "description": "A full-width tappable person in the search results list.",
+      "html": "<button class=\"ds-result-row\">Ada Lovelace</button>",
+      "css": ".ds-result-row { display: block; width: 100%; text-align: left; font: 400 17px -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; color: var(--text, #1d1d1f); background: var(--surface, #fff); border: 1px solid var(--border, rgba(0,0,0,0.08)); border-radius: 16px; padding: 14px 16px; cursor: pointer; transition: transform 120ms ease, background 120ms ease; } .ds-result-row:hover { background: color-mix(in srgb, var(--text, #1d1d1f) 3%, var(--surface, #fff)); } .ds-result-row:active { transform: scale(0.99); } .ds-result-row:focus-visible { outline: none; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #0071e3) 25%, transparent); }"
+    },
+    {
+      "name": "Sign-in Card",
+      "kind": "card",
+      "refersTo": "card-auth",
+      "description": "The one truly floating surface in the product: the sign-in panel, centered on the canvas.",
+      "html": "<div class=\"ds-card-auth\"><span class=\"ds-card-brand\">Euno</span><p class=\"ds-card-tagline\">Find your way back to the people you meet.</p></div>",
+      "css": ".ds-card-auth { display: flex; flex-direction: column; gap: 14px; width: 320px; max-width: 100%; background: var(--surface, #fff); border: 1px solid var(--border, rgba(0,0,0,0.08)); border-radius: 24px; padding: 32px 28px; box-shadow: 0 12px 40px rgba(0,0,0,0.12); box-sizing: border-box; } .ds-card-brand { font: 600 28px -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; letter-spacing: -0.02em; color: var(--text, #1d1d1f); } .ds-card-tagline { margin: 0; font: 400 15px -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; line-height: 1.4; color: var(--muted, #6e6e73); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Room",
+    "overview": "Euno is a calm, private space where a person is gently handed back to you. The whole visual system exists to get out of the way: the search box and the person are the heroes, and every other pixel steps back so they can lead. Depth is soft, color is rare, and motion only ever confirms that something happened. The palette is drawn from Apple's platform conventions on purpose -- familiarity is the feature. The Quiet Room explicitly rejects two neighbors: it is not a social network, and it is not a CRM. These are relationships, not leads, and Euno never grades how well you know someone.",
+    "keyCharacteristics": [
+      "Content-first: one primary action per screen, chrome recedes.",
+      "Familiar by design: the system font stack and platform-native blue.",
+      "Flat surfaces, soft lift: hairline borders at rest, gentle shadow only when something floats.",
+      "Rare accent: a single blue, spent only on the primary action, focus, and selection.",
+      "Calm motion: 120-150ms confirmations, never choreography.",
+      "Light and dark as equals, following the system preference."
+    ],
+    "rules": [
+      { "name": "The One Blue Rule", "body": "Signal Blue is the only saturated color in the product. If a screen shows blue in two unrelated places, one of them is wrong. Its rarity is what makes the primary action unmistakable.", "section": "colors" },
+      { "name": "The Muted-Is-Not-Body Rule", "body": "Muted gray (#6e6e73) is for labels and helper text only. Body text is always Ink. Muted gray running as body copy is the fastest way to make a calm interface read as washed-out and hard to read.", "section": "colors" },
+      { "name": "The Size-And-Weight Rule", "body": "Hierarchy comes from size and weight, never from boxes, rules, or color. If a heading needs a border or a background tint to read as important, the size and weight are wrong.", "section": "typography" },
+      { "name": "The Flat-At-Rest Rule", "body": "A surface at rest carries a hairline border and no shadow. Shadow is a response to state (a panel that floats, a control that has focus), never a default coat of paint.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do spend Signal Blue only on the primary action, focus, and selection. One blue per screen.",
+      "Do keep one primary action per screen; let the search box and the person lead.",
+      "Do use Ink for anything meant to be read, and reserve Muted (#6e6e73) for labels and helper text only.",
+      "Do keep surfaces flat with a hairline border at rest; add shadow only when something floats or takes focus.",
+      "Do hold body text and placeholders at 4.5:1 contrast or better (WCAG 2.2 AA), and give every control a visible focus state.",
+      "Do keep motion to 120-150ms confirmations, and honor prefers-reduced-motion with an instant, non-animated fallback."
+    ],
+    "donts": [
+      "Don't build anything that reads as a social network -- no feeds, likes, follower counts, activity streams, or engagement mechanics.",
+      "Don't build anything that reads as a CRM or sales tool -- no pipelines, deal stages, lead scoring, or dashboards of metrics.",
+      "Don't show a health score, closeness ranking, streak, or 'reconnect before you lose them' nudge. Euno holds memory; it never grades a relationship.",
+      "Don't run Muted gray as body text on a tinted surface; it reads as washed-out and fails contrast. Body is Ink.",
+      "Don't introduce a second accent hue, a gradient, or gradient text. The system is one blue on neutrals.",
+      "Don't add ambient drop shadows to ordinary cards and rows, or use a tight dark 2014-style shadow anywhere."
+    ]
+  }
+}
