@@ -107,7 +107,11 @@ type Selected = { id: Id<"people">; initial: PersonSnapshot | null };
 // the user has not asked for reduced motion; otherwise apply it directly.
 function withScreenTransition(update: () => void, done?: () => void) {
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (typeof document.startViewTransition !== "function" || reduceMotion) {
+  if (
+    typeof document.startViewTransition !== "function" ||
+    reduceMotion ||
+    document.visibilityState === "hidden" // nothing to animate off-screen
+  ) {
     update();
     done?.();
     return;
@@ -115,9 +119,11 @@ function withScreenTransition(update: () => void, done?: () => void) {
   const transition = document.startViewTransition(() => {
     flushSync(update);
   });
-  if (done) {
-    void transition.finished.finally(done);
-  }
+  // A skipped or aborted transition (hidden tab, rapid re-entry) rejects
+  // `finished`; that is normal, so swallow it and always run the cleanup.
+  void transition.finished
+    .catch(() => {})
+    .then(() => done?.());
 }
 
 function Home() {
