@@ -4,6 +4,9 @@ description: A quiet, content-first memory layer that hands you back the people 
 colors:
   signal-blue: "#0071e3"
   signal-blue-dark: "#0a84ff"
+  signal-blue-text: "#0069d5"
+  quiet-red: "#d70015"
+  quiet-red-dark: "#ff453a"
   ink: "#1d1d1f"
   ink-dark: "#f5f5f7"
   muted: "#6e6e73"
@@ -57,6 +60,12 @@ components:
     rounded: "{rounded.pill}"
     padding: "12px 20px"
     typography: "{typography.body}"
+  button-ghost:
+    backgroundColor: "transparent"
+    textColor: "{colors.signal-blue-text}"
+    rounded: "{rounded.pill}"
+    padding: "8px 12px"
+    typography: "{typography.body}"
   input-field:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.ink}"
@@ -105,7 +114,8 @@ sales floor.
 - Familiar by design: the system font stack and platform-native blue.
 - Flat surfaces, soft lift: hairline borders at rest, gentle shadow only when something floats.
 - Rare accent: a single blue, spent only on the primary action, focus, and selection.
-- Calm motion: 120-150ms confirmations, never choreography.
+- Calm motion: 140-280ms confirmations on a strong ease-out; the only element that ever
+  travels between screens is the tapped name.
 - Light and dark as equals, following the system preference.
 
 ## 2. Colors
@@ -117,6 +127,14 @@ a quiet ramp of neutral ink on soft surfaces.
 - **Signal Blue** (#0071e3 light / #0a84ff dark): The only accent in the system, named for its
   job -- it signals the one action worth taking. Used on primary buttons, the focus glow ring,
   and the current selection. Never used for decoration, dividers, or backgrounds.
+- **Signal Blue, text grade** (#0069d5 light / #0a84ff dark): The tinted-text variant for ghost
+  buttons and inline links. The light value sits one step deeper than the fill so 17px text
+  holds 4.8:1 on the canvas. Filled buttons keep #0071e3 in both modes, so white labels hold
+  4.7:1 everywhere.
+
+### State
+- **Quiet Red** (#d70015 light / #ff453a dark): Error text only -- a failed sign-in, a failed
+  save. Both values hold 4.9:1 or better on their surfaces. Never a fill, never decorative.
 
 ### Neutral
 - **Ink** (#1d1d1f light / #f5f5f7 dark): Primary text. The person's name, the words the user
@@ -130,9 +148,9 @@ a quiet ramp of neutral ink on soft surfaces.
   drawing attention. An 8% (light) / 10% (dark) wash, never a hard line.
 
 ### Named Rules
-**The One Blue Rule.** Signal Blue is the only saturated color in the product. If a screen shows
-blue in two unrelated places, one of them is wrong. Its rarity is what makes the primary action
-unmistakable.
+**The One Blue Rule.** Signal Blue is the only saturated color in the product outside the error
+state's Quiet Red. If a screen shows blue in two unrelated places, one of them is wrong. Its
+rarity is what makes the primary action unmistakable.
 
 **The Muted-Is-Not-Body Rule.** Muted gray (#6e6e73) is for labels and helper text only. Body
 text is always Ink. Muted gray running as body copy is the fastest way to make a calm interface
@@ -189,25 +207,30 @@ If it looks like a 2014 app, the shadow is too dark and the blur is too tight.
 - **Shape:** Full pill (980px radius). The one shape that reads as "tap me."
 - **Primary:** Signal Blue background, white text, 500 weight, 17px, 12-20px padding. One per
   screen -- Save, Add, Sign in. This is where the product's only accent is spent.
-- **Pressed:** Soft opacity dip to 0.85 on :active (120ms). No hover lift, no color shift; the
-  press is a quiet acknowledgement, not a bounce.
-- **Secondary / Ghost (recommended):** For Back and Sign out. Transparent background, Ink text,
-  no fill. Currently these render as unstyled browser buttons; the system's intended secondary
-  treatment is a quiet text button that never competes with the primary pill.
+- **Pressed:** A quiet 0.97 scale on :active (140ms, strong ease-out). Hover only deepens the
+  fill slightly, and only on real pointers; the press is an acknowledgement, not a bounce.
+- **Secondary / Ghost:** For Back, Sign out, and the sign-in mode toggle. Transparent
+  background, Signal Blue text grade, pill-shaped hit target with a soft accent tint on hover
+  and the same 0.97 press. Reads as an action the way platform text buttons do, without ever
+  competing with the one filled pill.
 
 ### Inputs / Fields
 - **Style:** Surface background, 1px hairline border, 16px radius, 14-16px padding, 17px text.
   Large and forgiving to tap.
 - **Focus:** Border shifts to Signal Blue and a soft 4px blue glow ring appears (150ms). The only
   moment an input carries color.
-- **Error / Disabled:** Not yet built. When added, error uses a border shift plus a short Muted
-  helper line beneath the field; disabled drops fill contrast, never opacity alone.
+- **Error / Disabled:** Errors render as a 13px Quiet Red line near the control (sign-in, save),
+  announced politely to assistive tech. Disabled controls drop to 55% opacity and refuse the
+  press scale.
+- **Search anatomy:** A muted magnifier sits inside the field, a circular clear button appears
+  once there is text, and the input carries 44px side padding so type never collides with
+  either.
 
 ### Result Rows
 - **Style:** A full-width tappable button styled as a Surface row -- hairline border, 16px radius,
   17px Ink text, left-aligned. The list of people the search returns.
-- **Pressed:** A barely-there scale to 0.99 on :active (120ms), so the tap registers physically
-  without motion drawing the eye.
+- **Pressed:** A barely-there scale to 0.985 on :active (140ms), so the tap registers physically
+  without motion drawing the eye. Hover is a 4% ink tint, gated to real pointers.
 
 ### Cards / Containers
 - **Corner Style:** 24px radius on the sign-in card (larger and softer than the 16px inputs it
@@ -218,9 +241,24 @@ If it looks like a 2014 app, the shadow is too dark and the blur is too tight.
 - **Border:** 1px hairline.
 - **Internal Padding:** Generous -- 32px 28px on the sign-in card. Let the content breathe.
 
+### Header
+- **Material:** Sticky and translucent -- 78% canvas over a 20px blur with 180% saturation, so
+  content scrolls under it like platform chrome. A hairline appears on its bottom edge only
+  once content has actually scrolled beneath it. Reduced transparency gets a solid header.
+- **Slots:** The wordmark on the search screen, the chevron Back ghost on the person screen,
+  Sign out as a ghost on the right.
+
+### The Name Morph (signature)
+The tapped name is the only element that travels between screens: the search row's text glides
+into the detail title (280ms, strong ease-in-out) while the rest of the screen quietly
+crossfades (180ms out, 220ms in). It is the product thesis rendered as motion -- you bring a
+fragment, Euno hands you back the person. Browsers without the View Transitions API get a
+260ms rise-and-fade instead; reduced motion gets an instant swap.
+
 ### Layout
-- **Frame:** A single centered column, max-width 640px, 24px page padding. Euno is a phone-shaped
-  reading width even on desktop; the person is meant to be read, not spread across a dashboard.
+- **Frame:** A single centered column, max-width 640px, 24px page padding with safe-area
+  insets. Euno is a phone-shaped reading width even on desktop; the person is meant to be
+  read, not spread across a dashboard.
 - **Responsive:** The column simply narrows on small screens. There are no sidebars, panels, or
   breakpoint-driven grids to collapse -- structure this simple does not need them.
 
@@ -235,7 +273,8 @@ If it looks like a 2014 app, the shadow is too dark and the blur is too tight.
   or takes focus.
 - **Do** hold body text and placeholders at 4.5:1 contrast or better (WCAG 2.2 AA), and give every
   control a visible focus state.
-- **Do** keep motion to 120-150ms confirmations, and honor prefers-reduced-motion with an instant,
+- **Do** keep motion between 140ms (presses) and 280ms (the name morph) on the strong ease-out
+  curve (cubic-bezier(0.23, 1, 0.32, 1)), and honor prefers-reduced-motion with an instant,
   non-animated fallback.
 
 ### Don't:
