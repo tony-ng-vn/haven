@@ -11,3 +11,4 @@ convex/_generated/
 .vercel
 .impeccable/live/sessions/
 .worktrees/
+tsconfig.tsbuildinfo
