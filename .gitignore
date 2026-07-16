@@ -8,3 +8,6 @@ convex/_generated/
 
 # tool artifact
 .entire/
+.vercel
+.impeccable/live/sessions/
+.worktrees/
