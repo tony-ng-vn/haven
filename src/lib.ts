@@ -1,7 +1,16 @@
-// Small pure helpers shared by the screens. Kept free of React and Convex
-// imports so they stay trivially unit-testable.
+// Small pure helpers shared by the screens. Kept free of React and runtime
+// Convex imports so they stay trivially unit-testable.
+
+import type { Doc } from "../convex/_generated/dataModel";
 
 export type AuthFlow = "signIn" | "signUp";
+
+// What the detail screen needs to render instantly from data the search
+// results already hold, before its own query answers.
+export type PersonSnapshot = Pick<
+  Doc<"people">,
+  "_id" | "name" | "link" | "context" | "_creationTime"
+>;
 
 // Convex Auth surfaces provider failures as opaque server error strings, so
 // matching substrings is the only stable-enough signal we have. Wrong email
