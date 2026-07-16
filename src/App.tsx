@@ -9,24 +9,46 @@ function SignIn() {
   const { signIn } = useAuthActions();
   const [step, setStep] = useState<"signUp" | "signIn">("signIn");
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        const formData = new FormData(event.currentTarget);
-        void signIn("password", formData);
-      }}
-    >
-      <input name="email" placeholder="Email" type="text" />
-      <input name="password" placeholder="Password" type="password" />
-      <input name="flow" type="hidden" value={step} />
-      <button type="submit">{step === "signIn" ? "Sign in" : "Sign up"}</button>
-      <button
-        type="button"
-        onClick={() => setStep(step === "signIn" ? "signUp" : "signIn")}
+    <div className="auth">
+      <form
+        className="auth-card"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const formData = new FormData(event.currentTarget);
+          void signIn("password", formData);
+        }}
       >
-        {step === "signIn" ? "Sign up instead" : "Sign in instead"}
-      </button>
-    </form>
+        <span className="auth-brand">Euno</span>
+        <p className="auth-tagline">Find your way back to the people you meet.</p>
+        <input
+          className="auth-input"
+          name="email"
+          placeholder="Email"
+          type="text"
+          autoComplete="email"
+        />
+        <input
+          className="auth-input"
+          name="password"
+          placeholder="Password"
+          type="password"
+          autoComplete="current-password"
+        />
+        <input name="flow" type="hidden" value={step} />
+        <button className="auth-submit" type="submit">
+          {step === "signIn" ? "Sign in" : "Create account"}
+        </button>
+        <button
+          className="auth-toggle"
+          type="button"
+          onClick={() => setStep(step === "signIn" ? "signUp" : "signIn")}
+        >
+          {step === "signIn"
+            ? "New here? Create an account"
+            : "Already have an account? Sign in"}
+        </button>
+      </form>
+    </div>
   );
 }
 
@@ -52,7 +74,9 @@ export default function App() {
   return (
     <>
       <AuthLoading>
-        <p>Loading...</p>
+        <div className="auth">
+          <p className="auth-loading">Loading...</p>
+        </div>
       </AuthLoading>
       <Unauthenticated>
         <SignIn />
