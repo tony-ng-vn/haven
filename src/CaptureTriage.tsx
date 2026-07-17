@@ -343,10 +343,10 @@ export function CaptureTriage() {
                             ` ${activeTop.extracted.handle}`}
                         </p>
                         {mode === "card" || isLeaving ? (
-                          <div className="sky-bar">
+                          <>
                             {(activeTop.extracted.headline ??
                               activeTop.extracted.bio) !== undefined && (
-                              <p className="sky-bar-bio">
+                              <p className="sky-bio">
                                 {activeTop.extracted.headline ??
                                   activeTop.extracted.bio}
                               </p>
@@ -355,12 +355,12 @@ export function CaptureTriage() {
                               activeTop.extracted.platform,
                               activeTop.extracted.handle,
                             ) !== null ? (
-                              <p className="sky-bar-link">
+                              <span className="sky-link-pill">
                                 {deriveProfileUrl(
                                   activeTop.extracted.platform,
                                   activeTop.extracted.handle,
                                 )}
-                              </p>
+                              </span>
                             ) : (
                               <input
                                 className="field triage-link-input"
@@ -374,7 +374,7 @@ export function CaptureTriage() {
                                 onPointerDown={(e) => e.stopPropagation()}
                               />
                             )}
-                          </div>
+                          </>
                         ) : (
                           <>
                             <textarea

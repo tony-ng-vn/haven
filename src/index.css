@@ -809,58 +809,63 @@ textarea.field {
   height: 100%;
 }
 
-/* The sky darkens toward the name so the text zone stays readable
-   without a hard panel behind it. */
+/* Monument composition: the sky dims into a soft centered stage so the
+   person reads as the title of their own sky. */
 .sky-vignette {
   position: absolute;
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(120% 90% at 50% 0%, transparent 40%, rgba(3, 6, 18, 0.5) 100%),
-    linear-gradient(180deg, transparent 46%, rgba(3, 6, 18, 0.72) 88%);
+    radial-gradient(90% 60% at 50% 78%, rgba(3, 6, 18, 0.72), transparent 70%),
+    linear-gradient(180deg, transparent 60%, rgba(3, 6, 18, 0.45) 96%);
 }
 
 .sky-content {
   position: relative;
   display: flex;
   flex-direction: column;
+  align-items: center;
   height: 100%;
   justify-content: flex-end;
-  gap: 4px;
+  text-align: center;
+  gap: 0;
+  padding: 8px;
 }
 
 .triage-card-sky .triage-name {
   color: #fff;
-  font-size: 28px;
-  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55);
+  font-size: 34px;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  text-shadow: 0 2px 22px rgba(0, 0, 0, 0.6);
+  text-wrap: balance;
 }
 
 .triage-card-sky .triage-meta {
+  margin-top: 6px;
   color: rgba(255, 255, 255, 0.66);
 }
 
-.sky-bar {
-  margin-top: 12px;
-  border-radius: var(--radius);
-  padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  -webkit-backdrop-filter: blur(10px) saturate(160%);
-  backdrop-filter: blur(10px) saturate(160%);
-}
-
-.sky-bar-bio {
-  margin: 0;
+.sky-bio {
+  margin: 12px 0 0;
   font-size: 14px;
-  line-height: 1.45;
+  line-height: 1.5;
+  max-width: 30ch;
   color: rgba(255, 255, 255, 0.92);
+  text-wrap: pretty;
 }
 
-.sky-bar-link {
-  margin: 6px 0 0;
+.sky-link-pill {
+  margin-top: 14px;
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 980px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.66);
+  font-weight: 600;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
   overflow-wrap: anywhere;
 }
 
@@ -876,12 +881,21 @@ textarea.field {
 }
 
 .triage-card-sky .triage-link-input {
-  margin-top: 8px;
+  margin-top: 12px;
+  max-width: 280px;
+  text-align: center;
 }
 
 .triage-card-sky .triage-context {
-  margin-top: 12px;
-  min-height: 150px;
+  margin-top: 14px;
+  min-height: 140px;
+  text-align: left;
+}
+
+.triage-card-sky .actions {
+  justify-content: center;
+  width: 100%;
+  margin-top: 2px;
 }
 
 .sky-ghost {
