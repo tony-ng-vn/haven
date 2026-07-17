@@ -65,3 +65,47 @@ export function formatMonthYear(ms: number, locale?: string): string {
     year: "numeric",
   }).format(new Date(ms));
 }
+
+// Platforms whose profile URL is just the visible handle. LinkedIn and
+// Facebook use slugs that never appear in a profile screenshot, so they
+// cannot be derived -- the user pastes those links instead.
+const HANDLE_URLS: Record<string, (handle: string) => string> = {
+  x: (h) => `https://x.com/${h}`,
+  instagram: (h) => `https://instagram.com/${h}`,
+  github: (h) => `https://github.com/${h}`,
+  tiktok: (h) => `https://www.tiktok.com/@${h}`,
+  threads: (h) => `https://www.threads.net/@${h}`,
+  bluesky: (h) => `https://bsky.app/profile/${h}`,
+};
+
+export function deriveProfileUrl(
+  platform: string,
+  handle: string | undefined,
+): string | null {
+  const build = HANDLE_URLS[platform];
+  if (build === undefined || handle === undefined) {
+    return null;
+  }
+  const cleaned = handle.trim().replace(/^@/, "");
+  if (cleaned === "") {
+    return null;
+  }
+  return build(cleaned);
+}
+
+// The text a person's embedding is computed from. Deterministic on purpose:
+// the stored copy doubles as an idempotency key for re-embedding.
+export function buildEmbedText(fields: {
+  name: string;
+  platform?: string;
+  handle?: string;
+  headline?: string;
+  context?: string;
+}): string {
+  const platformLine = [fields.platform, fields.handle]
+    .filter((part) => part !== undefined && part.trim() !== "")
+    .join(" ");
+  return [fields.name, platformLine, fields.headline, fields.context]
+    .filter((part): part is string => part !== undefined && part.trim() !== "")
+    .join("\n");
+}
