@@ -507,29 +507,6 @@ textarea.field {
   }
 }
 
-.auth-card[data-shake="true"] {
-  animation: card-shake 460ms var(--ease-in-out);
-}
-
-@keyframes card-shake {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  15% {
-    transform: translateX(-7px);
-  }
-  35% {
-    transform: translateX(6px);
-  }
-  55% {
-    transform: translateX(-4px);
-  }
-  75% {
-    transform: translateX(2px);
-  }
-}
-
 .auth-brand {
   font-size: 28px;
   font-weight: 600;
@@ -544,24 +521,10 @@ textarea.field {
   text-wrap: pretty;
 }
 
-.auth-error {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--danger);
-}
-
 .auth-submit {
   margin-top: 4px;
   width: 100%;
   padding: 14px 20px;
-}
-
-.auth-toggle {
-  align-self: center;
-  padding: 6px 10px;
-  margin: 0;
-  font-size: 14px;
 }
 
 /* ---------------------------------------------------------------- splash */
@@ -1110,7 +1073,6 @@ textarea.field {
 @media (prefers-reduced-motion: reduce) {
   /* Gentler, not dead: opacity and color feedback stay, movement goes. */
   .auth-card,
-  .auth-card[data-shake="true"],
   .splash-brand,
   .skeleton-line,
   .screen {

@@ -3,39 +3,12 @@
 
 import type { Doc } from "../convex/_generated/dataModel";
 
-export type AuthFlow = "signIn" | "signUp";
-
 // What the detail screen needs to render instantly from data the search
 // results already hold, before its own query answers.
 export type PersonSnapshot = Pick<
   Doc<"people">,
   "_id" | "name" | "link" | "context" | "_creationTime"
 >;
-
-// Convex Auth surfaces provider failures as opaque server error strings, so
-// matching substrings is the only stable-enough signal we have. Wrong email
-// and wrong password map to one message on purpose: no account enumeration.
-export function mapAuthError(error: unknown, flow: AuthFlow): string {
-  const raw = error instanceof Error ? error.message : String(error ?? "");
-  const message = raw.toLowerCase();
-
-  if (message.includes("failed to fetch") || message.includes("network")) {
-    return "Could not reach the server. Check your connection and try again.";
-  }
-  if (flow === "signUp" && message.includes("already exists")) {
-    return "An account with that email already exists. Try signing in instead.";
-  }
-  if (message.includes("invalid password")) {
-    return "Passwords need at least 8 characters.";
-  }
-  if (
-    message.includes("invalidaccountid") ||
-    message.includes("invalidsecret")
-  ) {
-    return "That email and password do not match.";
-  }
-  return "Something went wrong. Please try again.";
-}
 
 // People paste links loosely ("linkedin.com/in/..."). Return an openable
 // http(s) URL, or null when the text is not a link at all.
