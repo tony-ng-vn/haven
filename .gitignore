@@ -8,3 +8,7 @@ dist/
 
 # tool artifact
 .entire/
+.vercel
+.impeccable/live/sessions/
+.worktrees/
+tsconfig.tsbuildinfo

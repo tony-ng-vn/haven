@@ -1,11 +1,36 @@
+/* Euno -- The Quiet Room.
+   Flat at rest, soft on lift, one blue, motion only as confirmation.
+   Every value here is deliberate; see DESIGN.md for the rules. */
+
+/* ---------------------------------------------------------------- tokens */
+
 :root {
   --bg: #f5f5f7;
   --surface: #ffffff;
   --text: #1d1d1f;
   --muted: #6e6e73;
+  /* accent: fills and focus. accent-text: tinted text, holds 4.5:1 on bg. */
   --accent: #0071e3;
+  --accent-fill: #0071e3;
+  --accent-text: #0069d5;
+  --danger: #d70015;
   --border: rgba(0, 0, 0, 0.08);
+  --field-bg: var(--surface);
+  --shadow-float: 0 12px 40px rgba(0, 0, 0, 0.12);
+  --header-bg: rgba(245, 245, 247, 0.78);
+
   --radius: 16px;
+  --radius-lg: 24px;
+
+  /* Motion. Strong ease-out for anything entering or responding;
+     ease-in-out only for on-screen movement (the name morph). */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --t-fast: 140ms;
+  --t-med: 220ms;
+  --t-screen: 260ms;
+  --t-slow: 420ms;
+
   color-scheme: light dark;
 }
 
@@ -15,92 +40,1127 @@
     --surface: #1c1c1e;
     --text: #f5f5f7;
     --muted: #98989d;
+    /* Tinted text can afford the brighter blue; filled buttons keep the
+       deeper one so white labels hold 4.7:1. */
     --accent: #0a84ff;
+    --accent-fill: #0071e3;
+    --accent-text: #0a84ff;
+    --danger: #ff453a;
     --border: rgba(255, 255, 255, 0.1);
+    --shadow-float: 0 12px 40px rgba(0, 0, 0, 0.55);
+    --header-bg: rgba(0, 0, 0, 0.72);
   }
 }
 
-* { box-sizing: border-box; }
+/* ------------------------------------------------------------------ base */
+
+* {
+  box-sizing: border-box;
+}
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 17px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.app { max-width: 640px; margin: 0 auto; padding: 24px; }
+::selection {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
 
-header {
+input,
+textarea {
+  caret-color: var(--accent);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+/* Visible keyboard focus everywhere. The transparent outline stays visible
+   in forced-colors mode, where box-shadow disappears. */
+:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* ----------------------------------------------------------------- shell */
+
+/* Invisible 1px marker at the very top of the page; when it leaves the
+   viewport, content is under the header and the hairline switches on. */
+.scroll-sentinel {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--header-bg);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--t-med) var(--ease-out);
+  view-transition-name: app-header;
+}
+
+/* The hairline exists only once content has scrolled under the material. */
+.app-header[data-scrolled="true"] {
+  border-bottom-color: var(--border);
+}
+
+.header-inner {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 14px max(24px, env(safe-area-inset-right)) 14px
+    max(24px, env(safe-area-inset-left));
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 32px;
+  min-height: 52px;
 }
-.brand { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
 
-.search-box, .person-detail input, .person-detail textarea {
+.brand {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.app-main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 20px max(24px, env(safe-area-inset-right))
+    max(48px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+}
+
+/* --------------------------------------------------------------- buttons */
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-inline-size: 96px;
+  padding: 12px 20px;
+  font-size: 17px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--accent-fill);
+  border: none;
+  border-radius: 980px;
+  transition: transform var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out), opacity var(--t-fast) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent-fill) 90%, #000);
+  }
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  margin: -8px -12px; /* visual size stays text-like; hit target stays big */
+  font-size: 17px;
+  color: var(--accent-text);
+  background: transparent;
+  border: none;
+  border-radius: 980px;
+  transition: transform var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn-ghost:hover {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+}
+
+.btn-ghost:active {
+  transform: scale(0.97);
+}
+
+.btn-ghost svg {
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------- fields */
+
+.field {
   width: 100%;
   padding: 14px 16px;
-  font-size: 17px;
+  font: inherit;
+  color: var(--text);
+  background: var(--field-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text);
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color var(--t-fast) var(--ease-out),
+    box-shadow var(--t-fast) var(--ease-out);
 }
-.search-box:focus, .person-detail input:focus, .person-detail textarea:focus {
+
+.field::placeholder {
+  color: var(--muted);
+}
+
+.field:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
-.results { list-style: none; margin: 16px 0 0; padding: 0; }
+/* Keep autofill from painting the field yellow. */
+.field:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px var(--field-bg) inset;
+  -webkit-text-fill-color: var(--text);
+}
+
+textarea.field {
+  min-height: 140px;
+  resize: vertical;
+  line-height: 1.5;
+  field-sizing: content; /* grows with the memory being written */
+  max-height: 60vh;
+}
+
+/* ---------------------------------------------------------------- search */
+
+.search-wrap {
+  position: relative;
+}
+
+.search-icon {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  translate: 0 -50%;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.search-input {
+  padding-left: 44px;
+  padding-right: 44px;
+}
+
+.search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  translate: 0 -50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  transition: background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .search-clear:hover {
+    color: var(--text);
+    background: color-mix(in srgb, var(--muted) 14%, transparent);
+  }
+}
+
+.search-clear:active {
+  transform: scale(0.92);
+}
+
+/* --------------------------------------------------------------- results */
+
+.list-label {
+  margin: 24px 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.results {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
 .result-row {
   width: 100%;
   text-align: left;
   padding: 14px 16px;
   margin-bottom: 8px;
   font-size: 17px;
-  background: var(--surface);
   color: var(--text);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  cursor: pointer;
-  transition: transform 0.12s ease, background 0.12s ease;
+  transition: transform var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
 }
-.result-row:active { transform: scale(0.99); }
 
-button {
-  font: inherit;
-  cursor: pointer;
+@media (hover: hover) and (pointer: fine) {
+  .result-row:hover {
+    background: color-mix(in srgb, var(--text) 4%, var(--surface));
+  }
 }
-.add-button, .save {
+
+.result-row:active {
+  transform: scale(0.985);
+}
+
+.add-button {
   margin-top: 16px;
-  padding: 12px 20px;
-  font-size: 17px;
-  font-weight: 500;
-  color: #fff;
-  background: var(--accent);
-  border: none;
-  border-radius: 980px;
-  transition: opacity 0.12s ease;
+  opacity: 1;
+  transition: opacity 150ms var(--ease-out);
 }
-.add-button:active, .save:active { opacity: 0.85; }
 
-.person-detail { display: flex; flex-direction: column; gap: 20px; }
-.person-detail h1 { font-size: 28px; letter-spacing: -0.02em; margin: 0; }
-.person-detail label {
+/* Fade in on appearance; it toggles with typing, so opacity only, no motion. */
+@starting-style {
+  .add-button {
+    opacity: 0;
+  }
+}
+
+/* ----------------------------------------------------------- empty state */
+
+.empty-state {
+  margin: 56px auto 0;
+  max-width: 40ch;
+  text-align: center;
+}
+
+.empty-title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.empty-body {
+  margin: 0;
+  font-size: 15px;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+/* --------------------------------------------------------- person detail */
+
+.person-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.person-name {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  text-wrap: balance;
+  view-transition-name: person-name;
+}
+
+.person-meta {
+  margin: -14px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.detail-field {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  color: var(--muted);
   font-size: 13px;
+  color: var(--muted);
 }
-.person-detail textarea { min-height: 140px; resize: vertical; line-height: 1.5; }
-.actions { display: flex; gap: 12px; justify-content: flex-end; }
+
+.field-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.open-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--accent-text);
+  text-decoration: none;
+  border-radius: 6px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .open-link:hover {
+    text-decoration: underline;
+  }
+}
+
+.actions {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.form-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+/* -------------------------------------------------------------- skeleton */
+
+.skeleton-line {
+  height: 16px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  animation: skeleton-pulse 1.2s var(--ease-in-out) infinite alternate;
+}
+
+.skeleton-title {
+  height: 28px;
+  width: 40%;
+  border-radius: 10px;
+}
+
+.skeleton-block {
+  height: 140px;
+  border-radius: var(--radius);
+}
+
+@keyframes skeleton-pulse {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.45;
+  }
+}
+
+/* ------------------------------------------------------------------ auth */
+
+.auth {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 360px;
+  padding: 32px 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+  --field-bg: var(--bg);
+  animation: card-in var(--t-slow) var(--ease-out);
+}
+
+@media (prefers-color-scheme: dark) {
+  .auth-card {
+    /* One step above the card surface, like grouped iOS form fields. */
+    --field-bg: #2c2c2e;
+  }
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.99);
+  }
+}
+
+.auth-card[data-shake="true"] {
+  animation: card-shake 460ms var(--ease-in-out);
+}
+
+@keyframes card-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  15% {
+    transform: translateX(-7px);
+  }
+  35% {
+    transform: translateX(6px);
+  }
+  55% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+.auth-brand {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.auth-tagline {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+.auth-error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--danger);
+}
+
+.auth-submit {
+  margin-top: 4px;
+  width: 100%;
+  padding: 14px 20px;
+}
+
+.auth-toggle {
+  align-self: center;
+  padding: 6px 10px;
+  margin: 0;
+  font-size: 14px;
+}
+
+/* ---------------------------------------------------------------- splash */
+
+.splash {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.splash-brand {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  animation: splash-pulse 1.4s var(--ease-in-out) infinite alternate;
+}
+
+@keyframes splash-pulse {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.45;
+  }
+}
+
+/* --------------------------------------------------------------- spinner */
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 600ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------------------------------------------------------------- triage */
+
+.capture-entry {
+  margin-top: 16px;
+  gap: 8px;
+}
+
+/* Second line on a search result: the matched memory, quiet under the name. */
+.row-snippet {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.triage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.triage-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.triage-count {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.triage-stack {
+  position: relative;
+  height: 460px;
+}
+
+/* A card in hand is genuinely lifted, so it earns the floating shadow. */
+.triage-card {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.triage-card-under {
+  transform: scale(0.95) translateY(14px);
+  opacity: 0.7;
+  box-shadow: none;
+}
+
+.triage-card-exit {
+  transform: translateX(-120%) rotate(-10deg);
+  opacity: 0;
+  transition:
+    transform 320ms var(--ease-out),
+    opacity 320ms var(--ease-out);
+}
+
+.triage-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+}
+
+.triage-thumb {
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+  object-position: top;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.triage-name {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.triage-meta {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.triage-link-input {
+  margin-top: auto;
+  padding: 10px 12px;
+  font-size: 15px;
+}
+
+.triage-context {
+  flex: 1;
+  min-height: 160px;
+}
+
+.triage-reading {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* Drag affordances appear opposite the thumb, Tinder-style: the action you
+   are committing to fades in as you pull. Class names follow the DRAG
+   direction; positions sit on the revealed side. */
+.swipe-label {
+  position: absolute;
+  top: 14px;
+  z-index: 1;
+  padding: 6px 12px;
+  border-radius: 980px;
+  font-size: 15px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.swipe-label-left {
+  right: 12px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 10%, var(--surface));
+}
+
+.swipe-label-right {
+  left: 12px;
+  color: #fff;
+  background: var(--accent-fill);
+}
+
+.triage-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  margin-top: 4px;
+}
+
+.triage-skip {
+  color: var(--muted);
+}
+
+.triage-saved {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.triage-upload {
+  margin-top: 16px;
+}
+
+/* ------------------------------------------------------- deep field sky */
+
+/* A ready capture is a person, and a person is a unique patch of night:
+   their stars, their nebulae, minted from their name. The one deliberately
+   dark surface in the product, in both themes -- a window, not a panel. */
+.triage-card-sky {
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    var(--shadow-float);
+  color: #fff;
+  padding: 0;
+}
+
+/* Night lives on its own layer so the reveal can fade the card from the
+   Quiet Room surface into space. */
+.sky-space {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 80% at 30% 10%, #101a3a 0%, transparent 60%),
+    radial-gradient(100% 70% at 80% 60%, #131030 0%, transparent 65%),
+    #060a1a;
+}
+
+.triage-sky-body {
+  padding: 16px;
+  gap: 0;
+}
+
+.sky-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Monument composition: the sky dims into a soft centered stage so the
+   person reads as the title of their own sky. */
+.sky-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(90% 60% at 50% 78%, rgba(3, 6, 18, 0.72), transparent 70%),
+    linear-gradient(180deg, transparent 60%, rgba(3, 6, 18, 0.45) 96%);
+}
+
+.sky-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
+  text-align: center;
+  gap: 0;
+  padding: 8px;
+}
+
+.triage-card-sky .triage-name {
+  color: #fff;
+  font-size: 34px;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  text-shadow: 0 2px 22px rgba(0, 0, 0, 0.6);
+  text-wrap: balance;
+}
+
+.triage-card-sky .triage-meta {
+  margin-top: 6px;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.sky-bio {
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 30ch;
+  color: rgba(255, 255, 255, 0.92);
+  text-wrap: pretty;
+}
+
+.sky-link-pill {
+  margin-top: 14px;
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 980px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  overflow-wrap: anywhere;
+}
+
+.triage-card-sky .field {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  caret-color: #fff;
+}
+
+.triage-card-sky .field::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.triage-card-sky .triage-link-input {
+  margin-top: 12px;
+  max-width: 280px;
+  text-align: center;
+}
+
+.triage-card-sky .triage-context {
+  margin-top: 14px;
+  min-height: 140px;
+  text-align: left;
+}
+
+.triage-card-sky .actions {
+  justify-content: center;
+  width: 100%;
+  margin-top: 2px;
+}
+
+.sky-ghost {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.triage-card-sky .swipe-label-left {
+  color: #fff;
+  background: rgba(20, 22, 34, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.triage-card-sky .swipe-label-right {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* Star motion: CSS (not SMIL) so reduced-motion can silence it. Every
+   star carries its own duration and phase; the sky shimmers, never blinks. */
+.sky-tw {
+  animation: sky-twinkle var(--d, 4s) ease-in-out var(--dl, 0s) infinite alternate;
+}
+
+@keyframes sky-twinkle {
+  from {
+    opacity: var(--hi, 1);
+  }
+  to {
+    opacity: var(--lo, 0.35);
+  }
+}
+
+.sky-flare {
+  animation: sky-flare-pulse var(--d, 5s) ease-in-out var(--dl, 0s) infinite alternate;
+}
+
+@keyframes sky-flare-pulse {
+  from {
+    opacity: 0.8;
+  }
+  to {
+    opacity: 0.35;
+  }
+}
+
+.sky-shoot {
+  opacity: 0;
+  animation: sky-shoot 13s linear var(--sdl, 4s) infinite;
+}
+
+/* The Ignition reveal: played once, only when the user watches a card
+   finish reading. The card fades to night, stars switch on in their own
+   seeded order, the constellation lines catch between them, and the name
+   arrives last. Wrapped in no-preference so reduced motion gets an
+   instant sky instead of an invisible one. */
+@media (prefers-reduced-motion: no-preference) {
+  .sky-reveal .sky-space,
+  .sky-reveal .sky-vignette {
+    animation: sky-fade-in 700ms var(--ease-out) both;
+  }
+
+  .sky-reveal .sky-minor {
+    opacity: 0;
+    animation:
+      sky-ignite 320ms var(--ease-out) calc(var(--rvd, 0.5) * 900ms) forwards,
+      sky-twinkle var(--d, 4s) ease-in-out calc(var(--rvd, 0.5) * 900ms + 1.5s)
+        infinite alternate;
+  }
+
+  .sky-reveal .sky-majorg {
+    opacity: 0;
+    transform-origin: center;
+    transform-box: fill-box;
+    animation:
+      sky-major-pop 420ms var(--ease-out) calc(600ms + var(--mi, 0) * 110ms)
+        forwards,
+      sky-twinkle var(--d, 4s) ease-in-out calc(1.8s + var(--mi, 0) * 110ms)
+        infinite alternate;
+  }
+
+  .sky-reveal .sky-cline {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: sky-draw 460ms var(--ease-out) calc(1400ms + var(--ei, 0) * 90ms)
+      forwards;
+  }
+
+  .sky-reveal .sky-flareg {
+    opacity: 0;
+    animation:
+      sky-flare-arrive 500ms var(--ease-out) 2300ms forwards,
+      sky-flare-pulse var(--d, 5s) ease-in-out 2.9s infinite alternate;
+  }
+
+  .sky-reveal .sky-content {
+    opacity: 0;
+    transform: translateY(10px);
+    animation: sky-content-in 600ms var(--ease-out) 2100ms forwards;
+  }
+}
+
+@keyframes sky-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sky-ignite {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: var(--hi, 0.6);
+  }
+}
+
+@keyframes sky-major-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  70% {
+    transform: scale(1.12);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes sky-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes sky-flare-arrive {
+  to {
+    opacity: 0.8;
+  }
+}
+
+@keyframes sky-content-in {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sky-shoot {
+  0%,
+  91% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  92.5% {
+    opacity: 0.9;
+  }
+  97% {
+    opacity: 0;
+    transform: translate(150px, 84px);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ------------------------------------------------------ view transitions */
+
+/* Screens crossfade quietly; the tapped name is the only thing that
+   travels. That morph is the product thesis: Euno hands you back the
+   person. */
+::view-transition-old(root) {
+  animation-duration: 180ms;
+}
+
+::view-transition-new(root) {
+  animation-duration: 220ms;
+}
+
+::view-transition-group(person-name) {
+  animation-duration: 280ms;
+  animation-timing-function: var(--ease-in-out);
+}
+
+::view-transition-group(app-header) {
+  animation-duration: 200ms;
+}
+
+/* Entrance fallback for browsers without the View Transitions API. */
+@supports not (view-transition-name: none) {
+  .screen {
+    animation: screen-in var(--t-screen) var(--ease-out);
+  }
+
+  @keyframes screen-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+}
+
+/* ----------------------------------------------------------- preferences */
 
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; }
+  /* Gentler, not dead: opacity and color feedback stay, movement goes. */
+  .auth-card,
+  .auth-card[data-shake="true"],
+  .splash-brand,
+  .skeleton-line,
+  .screen {
+    animation: none;
+  }
+
+  .btn-primary:active:not(:disabled),
+  .btn-ghost:active,
+  .result-row:active,
+  .search-clear:active {
+    transform: none;
+  }
+
+  /* Triage falls back to buttons; no fling, no travel. */
+  .triage-card,
+  .triage-card-exit {
+    transition: none !important;
+  }
+
+  /* The sky holds still: stars at rest opacity, no shooting star. */
+  .sky-tw,
+  .sky-flare,
+  .sky-shoot {
+    animation: none !important;
+  }
+
+  ::view-transition-group(*),
+  ::view-transition-image-pair(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .app-header {
+    background: var(--bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --border: rgba(0, 0, 0, 0.35);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --border: rgba(255, 255, 255, 0.45);
+    }
+  }
 }
