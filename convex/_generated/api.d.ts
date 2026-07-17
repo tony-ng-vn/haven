@@ -9,7 +9,9 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as captures from "../captures.js";
 import type * as http from "../http.js";
+import type * as openaiClient from "../openaiClient.js";
 import type * as people from "../people.js";
 
 import type {
@@ -20,7 +22,9 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  captures: typeof captures;
   http: typeof http;
+  openaiClient: typeof openaiClient;
   people: typeof people;
 }>;
 
