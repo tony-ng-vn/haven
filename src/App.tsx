@@ -5,6 +5,7 @@ import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
 import type { Id } from "../convex/_generated/dataModel";
 import { SearchAdd } from "./SearchAdd";
 import { PersonDetail } from "./PersonDetail";
+import { CaptureTriage } from "./CaptureTriage";
 import { mapAuthError, type AuthFlow, type PersonSnapshot } from "./lib";
 
 function ChevronLeft() {
@@ -101,7 +102,10 @@ function SignIn() {
   );
 }
 
-type Selected = { id: Id<"people">; initial: PersonSnapshot | null };
+type Screen =
+  | { kind: "search" }
+  | { kind: "capture" }
+  | { kind: "detail"; id: Id<"people">; initial: PersonSnapshot | null };
 
 // Wrap a state change in a view transition when the platform offers one and
 // the user has not asked for reduced motion; otherwise apply it directly.
@@ -128,7 +132,7 @@ function withScreenTransition(update: () => void, done?: () => void) {
 
 function Home() {
   const { signOut } = useAuthActions();
-  const [selected, setSelected] = useState<Selected | null>(null);
+  const [screen, setScreen] = useState<Screen>({ kind: "search" });
   const [query, setQuery] = useState("");
   // The person whose row carries the shared name morph. Set before opening
   // (so the outgoing screen has the source) and kept through closing (so the
@@ -150,17 +154,23 @@ function Home() {
   function open(person: PersonSnapshot) {
     // Name the tapped row before the old screen is captured.
     flushSync(() => setMorphId(person._id));
-    withScreenTransition(() => setSelected({ id: person._id, initial: person }));
+    withScreenTransition(() =>
+      setScreen({ kind: "detail", id: person._id, initial: person }),
+    );
   }
 
   function close(saved: boolean) {
     withScreenTransition(
       () => {
-        setSelected(null);
+        setScreen({ kind: "search" });
         if (saved) setQuery("");
       },
       () => setMorphId(null),
     );
+  }
+
+  function openCapture() {
+    withScreenTransition(() => setScreen({ kind: "capture" }));
   }
 
   return (
@@ -168,7 +178,7 @@ function Home() {
       <div ref={sentinelRef} className="scroll-sentinel" aria-hidden="true" />
       <header className="app-header" data-scrolled={scrolled ? "true" : "false"}>
         <div className="header-inner">
-          {selected === null ? (
+          {screen.kind === "search" ? (
             <>
               <span className="brand">Euno</span>
               <button className="btn-ghost" type="button" onClick={() => void signOut()}>
@@ -184,20 +194,27 @@ function Home() {
         </div>
       </header>
       <main className="app-main">
-        {selected === null ? (
+        {screen.kind === "search" && (
           <div className="screen" key="search">
             <SearchAdd
               query={query}
               onQueryChange={setQuery}
               onOpen={open}
+              onOpenCapture={openCapture}
               morphId={morphId}
             />
           </div>
-        ) : (
-          <div className="screen" key={selected.id}>
+        )}
+        {screen.kind === "capture" && (
+          <div className="screen" key="capture">
+            <CaptureTriage />
+          </div>
+        )}
+        {screen.kind === "detail" && (
+          <div className="screen" key={screen.id}>
             <PersonDetail
-              id={selected.id}
-              initial={selected.initial}
+              id={screen.id}
+              initial={screen.initial}
               onSaved={() => close(true)}
             />
           </div>

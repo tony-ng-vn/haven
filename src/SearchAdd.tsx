@@ -1,8 +1,34 @@
-import { useQuery, useMutation } from "convex/react";
-import { useRef, useState, type FormEvent } from "react";
+import { useQuery, useMutation, useAction } from "convex/react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import type { FunctionReturnType } from "convex/server";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import type { PersonSnapshot } from "./lib";
+
+type SemanticResults = FunctionReturnType<typeof api.people.semanticSearch>;
+
+function ImagesIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect
+        x="3.5"
+        y="5.5"
+        width="17"
+        height="13"
+        rx="2.5"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      <circle cx="9" cy="10.2" r="1.6" fill="currentColor" />
+      <path
+        d="m6 17 4.2-4.2a1.5 1.5 0 0 1 2.1 0L18 18.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 function SearchIcon() {
   return (
@@ -42,19 +68,46 @@ export function SearchAdd({
   query,
   onQueryChange,
   onOpen,
+  onOpenCapture,
   morphId,
 }: {
   query: string;
   onQueryChange: (query: string) => void;
   onOpen: (person: PersonSnapshot) => void;
+  onOpenCapture: () => void;
   morphId: Id<"people"> | null;
 }) {
   const results = useQuery(api.people.searchPeople, { query });
   const addPerson = useMutation(api.people.addPerson);
+  const semanticSearch = useAction(api.people.semanticSearch);
   const [adding, setAdding] = useState(false);
+  const [semantic, setSemantic] = useState<SemanticResults>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const trimmed = query.trim();
+
+  // Meaning-based matches arrive quietly beside the instant name search:
+  // debounced, stale-guarded, and silent on failure.
+  useEffect(() => {
+    if (trimmed.length < 3) {
+      setSemantic([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      semanticSearch({ query: trimmed })
+        .then((found) => {
+          if (!cancelled) setSemantic(found);
+        })
+        .catch(() => {
+          if (!cancelled) setSemantic([]);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [trimmed, semanticSearch]);
   const loaded = results !== undefined;
   const list = results ?? [];
   const hasExact = list.some(
@@ -113,6 +166,17 @@ export function SearchAdd({
         )}
       </div>
 
+      {trimmed === "" && (
+        <button
+          type="button"
+          className="btn-ghost capture-entry"
+          onClick={onOpenCapture}
+        >
+          <ImagesIcon />
+          Add from screenshots
+        </button>
+      )}
+
       {showRecentLabel && <p className="list-label">Recent</p>}
 
       <ul className="results">
@@ -137,6 +201,54 @@ export function SearchAdd({
           </li>
         ))}
       </ul>
+
+      {trimmed !== "" &&
+        (() => {
+          const extra = semantic.filter(
+            (match) => !list.some((p) => p._id === match._id),
+          );
+          if (extra.length === 0) return null;
+          return (
+            <>
+              <p className="list-label">From your memory</p>
+              <ul className="results">
+                {extra.map((match) => (
+                  <li key={match._id}>
+                    <button
+                      type="button"
+                      className="result-row"
+                      onClick={() =>
+                        onOpen({
+                          _id: match._id,
+                          name: match.name,
+                          link: match.link,
+                          context: match.context,
+                          _creationTime: match._creationTime,
+                        })
+                      }
+                    >
+                      <span
+                        className="row-name"
+                        style={
+                          match._id === morphId
+                            ? { viewTransitionName: "person-name" }
+                            : undefined
+                        }
+                      >
+                        {match.name}
+                      </span>
+                      {(match.context ?? match.headline) !== undefined && (
+                        <span className="row-snippet">
+                          {match.context ?? match.headline}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          );
+        })()}
 
       {showFirstRun && (
         <div className="empty-state" role="status">
