@@ -6,9 +6,15 @@ import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 
-async function asNewUser(t: ReturnType<typeof convexTest>) {
-  const userId = await t.run(async (ctx) => ctx.db.insert("users", {}));
-  return { userId, as: t.withIdentity({ subject: userId }) };
+// Mint a fake Clerk identity and return an authenticated test context bound
+// to it. requireUser() keys ownership on tokenIdentifier ("issuer|subject"),
+// which is what convex-test's withIdentity() synthesizes here.
+let nextSubject = 0;
+function asNewUser(t: ReturnType<typeof convexTest>) {
+  const subject = `user_${nextSubject++}`;
+  const issuer = "https://test.clerk.accounts.dev";
+  const userId = `${issuer}|${subject}`;
+  return { userId, as: t.withIdentity({ subject, issuer }) };
 }
 
 async function seedScreenshot(t: ReturnType<typeof convexTest>) {
