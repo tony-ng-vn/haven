@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type PointerEvent } from "react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "../convex/_generated/api";
 import { deriveProfileUrl, normalizeUrl } from "./lib";
+import { PersonSky } from "./PersonSky";
 
 type Capture = FunctionReturnType<typeof api.captures.listCaptures>[number];
 
@@ -264,17 +265,15 @@ export function CaptureTriage() {
 
           <div className="triage-stack">
             {under !== undefined && leaving === null && (
-              <div className="triage-card triage-card-under" aria-hidden="true">
-                {under.imageUrl !== null && under.status !== "pending" && (
-                  <img className="triage-thumb" src={under.imageUrl} alt="" />
-                )}
-              </div>
+              <div className="triage-card triage-card-under" aria-hidden="true" />
             )}
 
             {activeTop !== undefined && (
               <div
                 ref={cardRef}
-                className={`triage-card${isLeaving ? " triage-card-exit" : ""}`}
+                className={`triage-card${
+                  activeTop.status === "ready" ? " triage-card-sky" : ""
+                }${isLeaving ? " triage-card-exit" : ""}`}
                 style={cardStyle}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
@@ -306,101 +305,108 @@ export function CaptureTriage() {
                 )}
 
                 {activeTop.status === "ready" &&
-                  activeTop.extracted !== undefined &&
-                  (mode === "card" || isLeaving ? (
-                    <div className="triage-body">
-                      <span
-                        className="swipe-label swipe-label-left"
-                        style={{
-                          opacity: Math.min(1, Math.max(0, -drag.x) / 120),
-                        }}
-                      >
-                        Save
-                      </span>
-                      <span
-                        className="swipe-label swipe-label-right"
-                        style={{
-                          opacity: Math.min(1, Math.max(0, drag.x) / 120),
-                        }}
-                      >
-                        Add context
-                      </span>
-                      {activeTop.imageUrl !== null && (
-                        <img
-                          className="triage-thumb"
-                          src={activeTop.imageUrl}
-                          alt={`Screenshot of ${activeTop.extracted.name}`}
-                          draggable={false}
-                        />
-                      )}
-                      <h2 className="triage-name">
-                        {activeTop.extracted.name}
-                      </h2>
-                      <p className="triage-meta">
-                        {PLATFORM_LABELS[activeTop.extracted.platform] ??
-                          activeTop.extracted.platform}
-                        {activeTop.extracted.handle !== undefined &&
-                          ` ${activeTop.extracted.handle}`}
-                      </p>
-                      {activeTop.extracted.headline !== undefined && (
-                        <p className="triage-headline">
-                          {activeTop.extracted.headline}
-                        </p>
-                      )}
-                      {deriveProfileUrl(
-                        activeTop.extracted.platform,
-                        activeTop.extracted.handle,
-                      ) !== null ? (
-                        <p className="triage-link-note">
-                          {deriveProfileUrl(
-                            activeTop.extracted.platform,
-                            activeTop.extracted.handle,
-                          )}
-                        </p>
-                      ) : (
-                        <input
-                          className="field triage-link-input"
-                          type="text"
-                          inputMode="url"
-                          autoCapitalize="none"
-                          spellCheck={false}
-                          placeholder="Their profile link (optional)"
-                          value={linkDraft}
-                          onChange={(e) => setLinkDraft(e.target.value)}
-                          onPointerDown={(e) => e.stopPropagation()}
-                        />
-                      )}
-                    </div>
-                  ) : (
-                    <div className="triage-body">
-                      <h2 className="triage-name">
-                        {activeTop.extracted.name}
-                      </h2>
-                      <textarea
-                        className="field triage-context"
-                        placeholder="How you met, what they are working on, anything you want to remember"
-                        value={contextDraft}
-                        autoFocus
-                        onChange={(e) => setContextDraft(e.target.value)}
+                  activeTop.extracted !== undefined && (
+                    <div className="triage-body triage-sky-body">
+                      <PersonSky
+                        name={activeTop.extracted.name}
+                        handle={activeTop.extracted.handle}
                       />
-                      <div className="actions">
-                        <button
-                          type="button"
-                          className="btn-ghost"
-                          onClick={() => setMode("card")}
-                        >
-                          Back
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-primary"
-                          onClick={() => top !== undefined && saveWithContext(top)}
-                        >
-                          Save
-                        </button>
+                      <div className="sky-vignette" aria-hidden="true" />
+                      {(mode === "card" || isLeaving) && (
+                        <>
+                          <span
+                            className="swipe-label swipe-label-left"
+                            style={{
+                              opacity: Math.min(1, Math.max(0, -drag.x) / 120),
+                            }}
+                          >
+                            Save
+                          </span>
+                          <span
+                            className="swipe-label swipe-label-right"
+                            style={{
+                              opacity: Math.min(1, Math.max(0, drag.x) / 120),
+                            }}
+                          >
+                            Add context
+                          </span>
+                        </>
+                      )}
+                      <div className="sky-content">
+                        <h2 className="triage-name">
+                          {activeTop.extracted.name}
+                        </h2>
+                        <p className="triage-meta">
+                          {PLATFORM_LABELS[activeTop.extracted.platform] ??
+                            activeTop.extracted.platform}
+                          {activeTop.extracted.handle !== undefined &&
+                            ` ${activeTop.extracted.handle}`}
+                        </p>
+                        {mode === "card" || isLeaving ? (
+                          <div className="sky-bar">
+                            {(activeTop.extracted.headline ??
+                              activeTop.extracted.bio) !== undefined && (
+                              <p className="sky-bar-bio">
+                                {activeTop.extracted.headline ??
+                                  activeTop.extracted.bio}
+                              </p>
+                            )}
+                            {deriveProfileUrl(
+                              activeTop.extracted.platform,
+                              activeTop.extracted.handle,
+                            ) !== null ? (
+                              <p className="sky-bar-link">
+                                {deriveProfileUrl(
+                                  activeTop.extracted.platform,
+                                  activeTop.extracted.handle,
+                                )}
+                              </p>
+                            ) : (
+                              <input
+                                className="field triage-link-input"
+                                type="text"
+                                inputMode="url"
+                                autoCapitalize="none"
+                                spellCheck={false}
+                                placeholder="Their profile link (optional)"
+                                value={linkDraft}
+                                onChange={(e) => setLinkDraft(e.target.value)}
+                                onPointerDown={(e) => e.stopPropagation()}
+                              />
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            <textarea
+                              className="field triage-context"
+                              placeholder="How you met, what they are working on, anything you want to remember"
+                              value={contextDraft}
+                              autoFocus
+                              onChange={(e) => setContextDraft(e.target.value)}
+                            />
+                            <div className="actions">
+                              <button
+                                type="button"
+                                className="btn-ghost sky-ghost"
+                                onClick={() => setMode("card")}
+                              >
+                                Back
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-primary"
+                                onClick={() =>
+                                  top !== undefined && saveWithContext(top)
+                                }
+                              >
+                                Save
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
-                  ))}
+                  )}
               </div>
             )}
           </div>
