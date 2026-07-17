@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { SignInButton, useClerk } from "@clerk/react";
+import { SignIn as ClerkSignIn, useClerk } from "@clerk/react";
 import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
 import type { Id } from "../convex/_generated/dataModel";
 import { SearchAdd } from "./SearchAdd";
 import { PersonDetail } from "./PersonDetail";
 import { CaptureTriage } from "./CaptureTriage";
+import { PersonSky } from "./PersonSky";
 import type { PersonSnapshot } from "./lib";
 
 function ChevronLeft() {
@@ -22,19 +23,28 @@ function ChevronLeft() {
   );
 }
 
-// Clerk's own modal handles sign-in, sign-up, and error states, so this
-// keeps only the Quiet Room shell (brand, tagline, card) around its trigger.
+// The signed-out view opens on Euno's own sky -- a glass button over the deep
+// field -- and only reveals Clerk's card once the person chooses to enter, so
+// we never drop them straight into a third-party form.
 function SignIn() {
+  const [entering, setEntering] = useState(false);
   return (
-    <div className="auth">
-      <div className="auth-card">
-        <span className="auth-brand">Euno</span>
-        <p className="auth-tagline">Find your way back to the people you meet.</p>
-        <SignInButton mode="modal">
-          <button className="btn-primary auth-submit" type="button">
-            Sign in
-          </button>
-        </SignInButton>
+    <div className="auth auth-sky">
+      <div className="sky-space" aria-hidden="true" />
+      <PersonSky name="Euno" />
+      <div className="sky-vignette" aria-hidden="true" />
+      <div className="auth-sky-content">
+        {entering ? (
+          <ClerkSignIn />
+        ) : (
+          <>
+            <span className="auth-brand">Euno</span>
+            <p className="auth-tagline">Find your way back to the people you meet.</p>
+            <button className="sky-cta" type="button" onClick={() => setEntering(true)}>
+              Sign in
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
