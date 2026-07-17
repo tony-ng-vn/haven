@@ -1,11 +1,11 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { authTables } from "@convex-dev/auth/server";
 
 export default defineSchema({
-  ...authTables,
   people: defineTable({
-    userId: v.id("users"),
+    // Clerk's identity.tokenIdentifier ("issuer|subject"); the stable
+    // ownership key now that there is no local users table.
+    userId: v.string(),
     name: v.string(),
     link: v.optional(v.string()),
     context: v.optional(v.string()),
@@ -34,7 +34,7 @@ export default defineSchema({
   // A screenshot waiting to be triaged into a person. Deleted on accept
   // (the file moves to the person) or discard (the file is deleted too).
   captures: defineTable({
-    userId: v.id("users"),
+    userId: v.string(),
     screenshotId: v.id("_storage"),
     status: v.union(
       v.literal("pending"),

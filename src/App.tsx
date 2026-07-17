@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { useAuthActions } from "@convex-dev/auth/react";
+import { SignIn as ClerkSignIn, useClerk } from "@clerk/react";
 import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
 import type { Id } from "../convex/_generated/dataModel";
 import { SearchAdd } from "./SearchAdd";
 import { PersonDetail } from "./PersonDetail";
 import { CaptureTriage } from "./CaptureTriage";
-import { mapAuthError, type AuthFlow, type PersonSnapshot } from "./lib";
+import { PersonSky } from "./PersonSky";
+import type { PersonSnapshot } from "./lib";
 
 function ChevronLeft() {
   return (
@@ -22,82 +23,29 @@ function ChevronLeft() {
   );
 }
 
+// The signed-out view opens on Euno's own sky -- a glass button over the deep
+// field -- and only reveals Clerk's card once the person chooses to enter, so
+// we never drop them straight into a third-party form.
 function SignIn() {
-  const { signIn } = useAuthActions();
-  const [flow, setFlow] = useState<AuthFlow>("signIn");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [shaking, setShaking] = useState(false);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (submitting) return;
-    const formData = new FormData(event.currentTarget);
-    setError(null);
-    setSubmitting(true);
-    try {
-      await signIn("password", formData);
-    } catch (err) {
-      setError(mapAuthError(err, flow));
-      setShaking(true);
-      setSubmitting(false);
-    }
-    // On success the Authenticated gate swaps screens; no state to reset.
-  }
-
+  const [entering, setEntering] = useState(false);
   return (
-    <div className="auth">
-      <form
-        className="auth-card"
-        data-shake={shaking ? "true" : undefined}
-        onAnimationEnd={() => setShaking(false)}
-        onSubmit={handleSubmit}
-      >
-        <span className="auth-brand">Euno</span>
-        <p className="auth-tagline">Find your way back to the people you meet.</p>
-        <input
-          className="field"
-          name="email"
-          placeholder="Email"
-          type="email"
-          inputMode="email"
-          autoComplete="email"
-          autoCapitalize="none"
-          spellCheck={false}
-          required
-        />
-        <input
-          className="field"
-          name="password"
-          placeholder="Password"
-          type="password"
-          autoComplete={flow === "signIn" ? "current-password" : "new-password"}
-          minLength={flow === "signUp" ? 8 : undefined}
-          required
-        />
-        <input name="flow" type="hidden" value={flow} />
-        {error !== null && (
-          <p className="auth-error" role="alert">
-            {error}
-          </p>
+    <div className="auth auth-sky">
+      <div className="sky-space" aria-hidden="true" />
+      <PersonSky name="Euno" />
+      <div className="sky-vignette" aria-hidden="true" />
+      <div className="auth-sky-content">
+        {entering ? (
+          <ClerkSignIn />
+        ) : (
+          <>
+            <span className="auth-brand">Euno</span>
+            <p className="auth-tagline">Find your way back to the people you meet.</p>
+            <button className="sky-cta" type="button" onClick={() => setEntering(true)}>
+              Sign in
+            </button>
+          </>
         )}
-        <button className="btn-primary auth-submit" type="submit" disabled={submitting}>
-          {submitting && <span className="spinner" aria-hidden="true" />}
-          {flow === "signIn" ? "Sign in" : "Create account"}
-        </button>
-        <button
-          className="btn-ghost auth-toggle"
-          type="button"
-          onClick={() => {
-            setFlow(flow === "signIn" ? "signUp" : "signIn");
-            setError(null);
-          }}
-        >
-          {flow === "signIn"
-            ? "New here? Create an account"
-            : "Already have an account? Sign in"}
-        </button>
-      </form>
+      </div>
     </div>
   );
 }
@@ -131,7 +79,7 @@ function withScreenTransition(update: () => void, done?: () => void) {
 }
 
 function Home() {
-  const { signOut } = useAuthActions();
+  const { signOut } = useClerk();
   const [screen, setScreen] = useState<Screen>({ kind: "search" });
   const [query, setQuery] = useState("");
   // The person whose row carries the shared name morph. Set before opening

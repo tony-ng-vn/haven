@@ -478,56 +478,68 @@ textarea.field {
   padding: 24px;
 }
 
-.auth-card {
+/* The sign-in landing reuses the deep-field sky (see .sky-space / PersonSky)
+   so the glass button has real depth to sit on, matching the sky card. */
+.auth-sky {
+  position: relative;
+  overflow: hidden;
+  background: #060a1a;
+}
+
+.auth-sky .sky-svg {
+  position: absolute;
+  inset: 0;
+}
+
+.auth-sky-content {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  width: 100%;
-  max-width: 360px;
-  padding: 32px 28px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-float);
-  --field-bg: var(--bg);
-  animation: card-in var(--t-slow) var(--ease-out);
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  padding: 24px;
 }
 
-@media (prefers-color-scheme: dark) {
-  .auth-card {
-    /* One step above the card surface, like grouped iOS form fields. */
-    --field-bg: #2c2c2e;
+.auth-sky .auth-brand {
+  color: #fff;
+  text-shadow: 0 2px 22px rgba(0, 0, 0, 0.55);
+}
+
+.auth-sky .auth-tagline {
+  color: rgba(255, 255, 255, 0.82);
+  max-width: 28ch;
+}
+
+/* Glass, matching .sky-link-pill: translucent fill, hairline border, inset
+   top highlight -- with a blur so it truly reads as glass over the stars. */
+.sky-cta {
+  margin-top: 12px;
+  padding: 14px 34px;
+  border-radius: 980px;
+  font-size: 17px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  transition:
+    transform var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sky-cta:hover {
+    background: rgba(255, 255, 255, 0.18);
   }
 }
 
-@keyframes card-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.99);
-  }
-}
-
-.auth-card[data-shake="true"] {
-  animation: card-shake 460ms var(--ease-in-out);
-}
-
-@keyframes card-shake {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  15% {
-    transform: translateX(-7px);
-  }
-  35% {
-    transform: translateX(6px);
-  }
-  55% {
-    transform: translateX(-4px);
-  }
-  75% {
-    transform: translateX(2px);
-  }
+.sky-cta:active {
+  transform: scale(0.97);
 }
 
 .auth-brand {
@@ -537,31 +549,11 @@ textarea.field {
 }
 
 .auth-tagline {
-  margin: 0 0 6px;
+  margin: 0;
   color: var(--muted);
   font-size: 15px;
   line-height: 1.4;
   text-wrap: pretty;
-}
-
-.auth-error {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--danger);
-}
-
-.auth-submit {
-  margin-top: 4px;
-  width: 100%;
-  padding: 14px 20px;
-}
-
-.auth-toggle {
-  align-self: center;
-  padding: 6px 10px;
-  margin: 0;
-  font-size: 14px;
 }
 
 /* ---------------------------------------------------------------- splash */
@@ -1109,8 +1101,6 @@ textarea.field {
 
 @media (prefers-reduced-motion: reduce) {
   /* Gentler, not dead: opacity and color feedback stay, movement goes. */
-  .auth-card,
-  .auth-card[data-shake="true"],
   .splash-brand,
   .skeleton-line,
   .screen {

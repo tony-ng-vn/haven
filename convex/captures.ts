@@ -8,17 +8,18 @@ import {
   MutationCtx,
 } from "./_generated/server";
 import { v } from "convex/values";
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { internal } from "./_generated/api";
 import { Doc } from "./_generated/dataModel";
 import { extractProfile } from "./openaiClient";
 
+// Clerk has no local users table, so tokenIdentifier ("issuer|subject") is
+// the stable ownership key -- guidelines say prefer it over `subject` alone.
 async function requireUser(ctx: QueryCtx | MutationCtx) {
-  const userId = await getAuthUserId(ctx);
-  if (userId === null) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (identity === null) {
     throw new Error("Not signed in");
   }
-  return userId;
+  return identity.tokenIdentifier;
 }
 
 const extractedValidator = v.object({

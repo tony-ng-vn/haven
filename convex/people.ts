@@ -10,7 +10,6 @@ import {
   MutationCtx,
 } from "./_generated/server";
 import { v } from "convex/values";
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { buildEmbedText } from "../src/lib";
@@ -23,13 +22,15 @@ const RESULT_LIMIT = 20;
 // Tuned against real data during verification.
 const MIN_SEMANTIC_SCORE = 0.3;
 
-// Guidelines forbid `any` for ctx; use the proper context union.
-async function requireUser(ctx: QueryCtx | MutationCtx) {
-  const userId = await getAuthUserId(ctx);
-  if (userId === null) {
+// Guidelines forbid `any` for ctx; use the proper context union. Clerk has no
+// local users table, so tokenIdentifier ("issuer|subject") is the stable
+// ownership key -- guidelines say prefer it over the bare `subject` claim.
+async function requireUser(ctx: QueryCtx | MutationCtx | ActionCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (identity === null) {
     throw new Error("Not signed in");
   }
-  return userId;
+  return identity.tokenIdentifier;
 }
 
 export const addPerson = mutation({
@@ -225,10 +226,7 @@ export const semanticSearch = action({
   args: { query: v.string() },
   returns: v.array(searchResultValidator),
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error("Not signed in");
-    }
+    const userId = await requireUser(ctx);
     const term = args.query.trim();
     if (term === "") {
       return [];
