@@ -608,6 +608,467 @@ textarea.field {
   }
 }
 
+/* ---------------------------------------------------------------- triage */
+
+.capture-entry {
+  margin-top: 16px;
+  gap: 8px;
+}
+
+/* Second line on a search result: the matched memory, quiet under the name. */
+.row-snippet {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.triage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.triage-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.triage-count {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.triage-stack {
+  position: relative;
+  height: 460px;
+}
+
+/* A card in hand is genuinely lifted, so it earns the floating shadow. */
+.triage-card {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.triage-card-under {
+  transform: scale(0.95) translateY(14px);
+  opacity: 0.7;
+  box-shadow: none;
+}
+
+.triage-card-exit {
+  transform: translateX(-120%) rotate(-10deg);
+  opacity: 0;
+  transition:
+    transform 320ms var(--ease-out),
+    opacity 320ms var(--ease-out);
+}
+
+.triage-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+}
+
+.triage-thumb {
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+  object-position: top;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.triage-name {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.triage-meta {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.triage-link-input {
+  margin-top: auto;
+  padding: 10px 12px;
+  font-size: 15px;
+}
+
+.triage-context {
+  flex: 1;
+  min-height: 160px;
+}
+
+.triage-reading {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* Drag affordances appear opposite the thumb, Tinder-style: the action you
+   are committing to fades in as you pull. Class names follow the DRAG
+   direction; positions sit on the revealed side. */
+.swipe-label {
+  position: absolute;
+  top: 14px;
+  z-index: 1;
+  padding: 6px 12px;
+  border-radius: 980px;
+  font-size: 15px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.swipe-label-left {
+  right: 12px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 10%, var(--surface));
+}
+
+.swipe-label-right {
+  left: 12px;
+  color: #fff;
+  background: var(--accent-fill);
+}
+
+.triage-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  margin-top: 4px;
+}
+
+.triage-skip {
+  color: var(--muted);
+}
+
+.triage-saved {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.triage-upload {
+  margin-top: 16px;
+}
+
+/* ------------------------------------------------------- deep field sky */
+
+/* A ready capture is a person, and a person is a unique patch of night:
+   their stars, their nebulae, minted from their name. The one deliberately
+   dark surface in the product, in both themes -- a window, not a panel. */
+.triage-card-sky {
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    var(--shadow-float);
+  color: #fff;
+  padding: 0;
+}
+
+/* Night lives on its own layer so the reveal can fade the card from the
+   Quiet Room surface into space. */
+.sky-space {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 80% at 30% 10%, #101a3a 0%, transparent 60%),
+    radial-gradient(100% 70% at 80% 60%, #131030 0%, transparent 65%),
+    #060a1a;
+}
+
+.triage-sky-body {
+  padding: 16px;
+  gap: 0;
+}
+
+.sky-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Monument composition: the sky dims into a soft centered stage so the
+   person reads as the title of their own sky. */
+.sky-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(90% 60% at 50% 78%, rgba(3, 6, 18, 0.72), transparent 70%),
+    linear-gradient(180deg, transparent 60%, rgba(3, 6, 18, 0.45) 96%);
+}
+
+.sky-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
+  text-align: center;
+  gap: 0;
+  padding: 8px;
+}
+
+.triage-card-sky .triage-name {
+  color: #fff;
+  font-size: 34px;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  text-shadow: 0 2px 22px rgba(0, 0, 0, 0.6);
+  text-wrap: balance;
+}
+
+.triage-card-sky .triage-meta {
+  margin-top: 6px;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.sky-bio {
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 30ch;
+  color: rgba(255, 255, 255, 0.92);
+  text-wrap: pretty;
+}
+
+.sky-link-pill {
+  margin-top: 14px;
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 980px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  overflow-wrap: anywhere;
+}
+
+.triage-card-sky .field {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  caret-color: #fff;
+}
+
+.triage-card-sky .field::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.triage-card-sky .triage-link-input {
+  margin-top: 12px;
+  max-width: 280px;
+  text-align: center;
+}
+
+.triage-card-sky .triage-context {
+  margin-top: 14px;
+  min-height: 140px;
+  text-align: left;
+}
+
+.triage-card-sky .actions {
+  justify-content: center;
+  width: 100%;
+  margin-top: 2px;
+}
+
+.sky-ghost {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.triage-card-sky .swipe-label-left {
+  color: #fff;
+  background: rgba(20, 22, 34, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.triage-card-sky .swipe-label-right {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* Star motion: CSS (not SMIL) so reduced-motion can silence it. Every
+   star carries its own duration and phase; the sky shimmers, never blinks. */
+.sky-tw {
+  animation: sky-twinkle var(--d, 4s) ease-in-out var(--dl, 0s) infinite alternate;
+}
+
+@keyframes sky-twinkle {
+  from {
+    opacity: var(--hi, 1);
+  }
+  to {
+    opacity: var(--lo, 0.35);
+  }
+}
+
+.sky-flare {
+  animation: sky-flare-pulse var(--d, 5s) ease-in-out var(--dl, 0s) infinite alternate;
+}
+
+@keyframes sky-flare-pulse {
+  from {
+    opacity: 0.8;
+  }
+  to {
+    opacity: 0.35;
+  }
+}
+
+.sky-shoot {
+  opacity: 0;
+  animation: sky-shoot 13s linear var(--sdl, 4s) infinite;
+}
+
+/* The Ignition reveal: played once, only when the user watches a card
+   finish reading. The card fades to night, stars switch on in their own
+   seeded order, the constellation lines catch between them, and the name
+   arrives last. Wrapped in no-preference so reduced motion gets an
+   instant sky instead of an invisible one. */
+@media (prefers-reduced-motion: no-preference) {
+  .sky-reveal .sky-space,
+  .sky-reveal .sky-vignette {
+    animation: sky-fade-in 700ms var(--ease-out) both;
+  }
+
+  .sky-reveal .sky-minor {
+    opacity: 0;
+    animation:
+      sky-ignite 320ms var(--ease-out) calc(var(--rvd, 0.5) * 900ms) forwards,
+      sky-twinkle var(--d, 4s) ease-in-out calc(var(--rvd, 0.5) * 900ms + 1.5s)
+        infinite alternate;
+  }
+
+  .sky-reveal .sky-majorg {
+    opacity: 0;
+    transform-origin: center;
+    transform-box: fill-box;
+    animation:
+      sky-major-pop 420ms var(--ease-out) calc(600ms + var(--mi, 0) * 110ms)
+        forwards,
+      sky-twinkle var(--d, 4s) ease-in-out calc(1.8s + var(--mi, 0) * 110ms)
+        infinite alternate;
+  }
+
+  .sky-reveal .sky-cline {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: sky-draw 460ms var(--ease-out) calc(1400ms + var(--ei, 0) * 90ms)
+      forwards;
+  }
+
+  .sky-reveal .sky-flareg {
+    opacity: 0;
+    animation:
+      sky-flare-arrive 500ms var(--ease-out) 2300ms forwards,
+      sky-flare-pulse var(--d, 5s) ease-in-out 2.9s infinite alternate;
+  }
+
+  .sky-reveal .sky-content {
+    opacity: 0;
+    transform: translateY(10px);
+    animation: sky-content-in 600ms var(--ease-out) 2100ms forwards;
+  }
+}
+
+@keyframes sky-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sky-ignite {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: var(--hi, 0.6);
+  }
+}
+
+@keyframes sky-major-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  70% {
+    transform: scale(1.12);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes sky-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes sky-flare-arrive {
+  to {
+    opacity: 0.8;
+  }
+}
+
+@keyframes sky-content-in {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sky-shoot {
+  0%,
+  91% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  92.5% {
+    opacity: 0.9;
+  }
+  97% {
+    opacity: 0;
+    transform: translate(150px, 84px);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 /* ------------------------------------------------------ view transitions */
 
 /* Screens crossfade quietly; the tapped name is the only thing that
@@ -661,6 +1122,19 @@ textarea.field {
   .result-row:active,
   .search-clear:active {
     transform: none;
+  }
+
+  /* Triage falls back to buttons; no fling, no travel. */
+  .triage-card,
+  .triage-card-exit {
+    transition: none !important;
+  }
+
+  /* The sky holds still: stars at rest opacity, no shooting star. */
+  .sky-tw,
+  .sky-flare,
+  .sky-shoot {
+    animation: none !important;
   }
 
   ::view-transition-group(*),
