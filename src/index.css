@@ -785,16 +785,23 @@ textarea.field {
    their stars, their nebulae, minted from their name. The one deliberately
    dark surface in the product, in both themes -- a window, not a panel. */
 .triage-card-sky {
-  background:
-    radial-gradient(120% 80% at 30% 10%, #101a3a 0%, transparent 60%),
-    radial-gradient(100% 70% at 80% 60%, #131030 0%, transparent 65%),
-    #060a1a;
   border-color: rgba(255, 255, 255, 0.22);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.28),
     var(--shadow-float);
   color: #fff;
   padding: 0;
+}
+
+/* Night lives on its own layer so the reveal can fade the card from the
+   Quiet Room surface into space. */
+.sky-space {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 80% at 30% 10%, #101a3a 0%, transparent 60%),
+    radial-gradient(100% 70% at 80% 60%, #131030 0%, transparent 65%),
+    #060a1a;
 }
 
 .triage-sky-body {
@@ -943,6 +950,105 @@ textarea.field {
 .sky-shoot {
   opacity: 0;
   animation: sky-shoot 13s linear var(--sdl, 4s) infinite;
+}
+
+/* The Ignition reveal: played once, only when the user watches a card
+   finish reading. The card fades to night, stars switch on in their own
+   seeded order, the constellation lines catch between them, and the name
+   arrives last. Wrapped in no-preference so reduced motion gets an
+   instant sky instead of an invisible one. */
+@media (prefers-reduced-motion: no-preference) {
+  .sky-reveal .sky-space,
+  .sky-reveal .sky-vignette {
+    animation: sky-fade-in 700ms var(--ease-out) both;
+  }
+
+  .sky-reveal .sky-minor {
+    opacity: 0;
+    animation:
+      sky-ignite 320ms var(--ease-out) calc(var(--rvd, 0.5) * 900ms) forwards,
+      sky-twinkle var(--d, 4s) ease-in-out calc(var(--rvd, 0.5) * 900ms + 1.5s)
+        infinite alternate;
+  }
+
+  .sky-reveal .sky-majorg {
+    opacity: 0;
+    transform-origin: center;
+    transform-box: fill-box;
+    animation:
+      sky-major-pop 420ms var(--ease-out) calc(600ms + var(--mi, 0) * 110ms)
+        forwards,
+      sky-twinkle var(--d, 4s) ease-in-out calc(1.8s + var(--mi, 0) * 110ms)
+        infinite alternate;
+  }
+
+  .sky-reveal .sky-cline {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: sky-draw 460ms var(--ease-out) calc(1400ms + var(--ei, 0) * 90ms)
+      forwards;
+  }
+
+  .sky-reveal .sky-flareg {
+    opacity: 0;
+    animation:
+      sky-flare-arrive 500ms var(--ease-out) 2300ms forwards,
+      sky-flare-pulse var(--d, 5s) ease-in-out 2.9s infinite alternate;
+  }
+
+  .sky-reveal .sky-content {
+    opacity: 0;
+    transform: translateY(10px);
+    animation: sky-content-in 600ms var(--ease-out) 2100ms forwards;
+  }
+}
+
+@keyframes sky-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sky-ignite {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: var(--hi, 0.6);
+  }
+}
+
+@keyframes sky-major-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  70% {
+    transform: scale(1.12);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes sky-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes sky-flare-arrive {
+  to {
+    opacity: 0.8;
+  }
+}
+
+@keyframes sky-content-in {
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes sky-shoot {

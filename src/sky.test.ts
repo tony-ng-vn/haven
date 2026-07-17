@@ -73,6 +73,8 @@ describe("buildSky", () => {
       expect(star.r).toBeGreaterThanOrEqual(0.4);
       expect(star.r).toBeLessThanOrEqual(1.8);
       expect(star.dur).toBeGreaterThan(0);
+      expect(star.rvd).toBeGreaterThanOrEqual(0);
+      expect(star.rvd).toBeLessThan(1);
     }
     // Power law: small stars must far outnumber large ones.
     const small = sky.minors.filter((s) => s.r < 0.8).length;

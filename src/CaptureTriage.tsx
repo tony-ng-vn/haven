@@ -46,6 +46,11 @@ export function CaptureTriage() {
   const [linkDraft, setLinkDraft] = useState("");
   const [drag, setDrag] = useState({ x: 0, y: 0, dragging: false });
   const [leaving, setLeaving] = useState<Capture | null>(null);
+  // The ignition reveal plays only when we witness this card finish
+  // reading (pending -> ready on the visible top card). Cards that were
+  // already ready surface without ceremony, so batch triage stays fast.
+  const [revealId, setRevealId] = useState<Capture["_id"] | null>(null);
+  const prevTopRef = useRef<{ id: Capture["_id"]; status: string } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -68,6 +73,23 @@ export function CaptureTriage() {
     setLinkDraft("");
     setDrag({ x: 0, y: 0, dragging: false });
   }, [topId]);
+
+  useEffect(() => {
+    const prev = prevTopRef.current;
+    if (top === undefined) {
+      prevTopRef.current = null;
+      return;
+    }
+    if (
+      prev !== null &&
+      prev.id === top._id &&
+      prev.status === "pending" &&
+      top.status === "ready"
+    ) {
+      setRevealId(top._id);
+    }
+    prevTopRef.current = { id: top._id, status: top.status };
+  }, [top]);
 
   async function handleFiles(files: FileList | null) {
     if (files === null || files.length === 0) return;
@@ -273,7 +295,9 @@ export function CaptureTriage() {
                 ref={cardRef}
                 className={`triage-card${
                   activeTop.status === "ready" ? " triage-card-sky" : ""
-                }${isLeaving ? " triage-card-exit" : ""}`}
+                }${activeTop._id === revealId ? " sky-reveal" : ""}${
+                  isLeaving ? " triage-card-exit" : ""
+                }`}
                 style={cardStyle}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
@@ -307,6 +331,7 @@ export function CaptureTriage() {
                 {activeTop.status === "ready" &&
                   activeTop.extracted !== undefined && (
                     <div className="triage-body triage-sky-body">
+                      <div className="sky-space" aria-hidden="true" />
                       <PersonSky
                         name={activeTop.extracted.name}
                         handle={activeTop.extracted.handle}

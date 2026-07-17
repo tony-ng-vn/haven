@@ -10,6 +10,7 @@ export type SkyStar = {
   lo: number; // twinkle-low opacity
   dur: number; // twinkle duration seconds
   delay: number;
+  rvd: number; // 0..1 reveal stagger seed: when this star ignites
 };
 
 export type SkyMajor = SkyStar & { hue: number };
@@ -126,6 +127,7 @@ export function buildSky(name: string, handle?: string): SkyData {
       lo: Math.max(0.08, hi - 0.3),
       dur: 2.6 + rand() * 4.5,
       delay: rand() * 6,
+      rvd: rand(),
     });
   }
 
@@ -141,6 +143,7 @@ export function buildSky(name: string, handle?: string): SkyData {
       lo: 0.5,
       dur: 3 + rand() * 3,
       delay: rand() * 4,
+      rvd: rand(),
     });
   }
 
@@ -155,6 +158,7 @@ export function buildSky(name: string, handle?: string): SkyData {
     lo: 0.62,
     dur: 3 + rand() * 3.4,
     delay: rand() * 5,
+    rvd: rand(),
   }));
 
   // The two brightest stars in the figure earn diffraction flares.

@@ -8,12 +8,13 @@ export function PersonSky({ name, handle }: { name: string; handle?: string }) {
   const uid = useId();
   const haloId = `halo-${uid}`;
 
-  const twinkle = (dur: number, delay: number, hi: number, lo: number) =>
+  const twinkle = (dur: number, delay: number, hi: number, lo: number, rvd?: number) =>
     ({
       "--d": `${dur.toFixed(1)}s`,
       "--dl": `${delay.toFixed(1)}s`,
       "--hi": hi.toFixed(2),
       "--lo": lo.toFixed(2),
+      ...(rvd !== undefined ? { "--rvd": rvd.toFixed(3) } : {}),
     }) as CSSProperties;
 
   return (
@@ -40,6 +41,7 @@ export function PersonSky({ name, handle }: { name: string; handle?: string }) {
       {sky.nebulae.map((n, i) => (
         <ellipse
           key={`n${i}`}
+          className="sky-neb"
           cx={n.cx}
           cy={n.cy}
           rx={n.rx}
@@ -51,8 +53,8 @@ export function PersonSky({ name, handle }: { name: string; handle?: string }) {
       {sky.minors.map((s, i) => (
         <circle
           key={`m${i}`}
-          className="sky-tw"
-          style={twinkle(s.dur, s.delay, s.hi, s.lo)}
+          className="sky-tw sky-minor"
+          style={twinkle(s.dur, s.delay, s.hi, s.lo, s.rvd)}
           cx={s.x.toFixed(1)}
           cy={s.y.toFixed(1)}
           r={s.r.toFixed(2)}
@@ -63,8 +65,8 @@ export function PersonSky({ name, handle }: { name: string; handle?: string }) {
       {sky.giants.map((g, i) => (
         <circle
           key={`g${i}`}
-          className="sky-tw"
-          style={twinkle(g.dur, g.delay, g.hi, g.lo)}
+          className="sky-tw sky-minor"
+          style={twinkle(g.dur, g.delay, g.hi, g.lo, g.rvd)}
           cx={g.x.toFixed(1)}
           cy={g.y.toFixed(1)}
           r={g.r.toFixed(2)}
@@ -75,6 +77,9 @@ export function PersonSky({ name, handle }: { name: string; handle?: string }) {
       {sky.edges.map(([a, b], i) => (
         <line
           key={`e${i}`}
+          className="sky-cline"
+          style={{ "--ei": i } as CSSProperties}
+          pathLength={1}
           x1={sky.majors[a].x.toFixed(1)}
           y1={sky.majors[a].y.toFixed(1)}
           x2={sky.majors[b].x.toFixed(1)}
@@ -85,7 +90,11 @@ export function PersonSky({ name, handle }: { name: string; handle?: string }) {
       ))}
 
       {sky.majors.map((s, i) => (
-        <g key={`M${i}`} className="sky-tw" style={twinkle(s.dur, s.delay, s.hi, s.lo)}>
+        <g
+          key={`M${i}`}
+          className="sky-tw sky-majorg"
+          style={{ ...twinkle(s.dur, s.delay, s.hi, s.lo), "--mi": i } as CSSProperties}
+        >
           <circle
             cx={s.x.toFixed(1)}
             cy={s.y.toFixed(1)}
@@ -105,7 +114,7 @@ export function PersonSky({ name, handle }: { name: string; handle?: string }) {
       {sky.flares.map((f, i) => (
         <g
           key={`f${i}`}
-          className="sky-flare"
+          className="sky-flare sky-flareg"
           style={{ "--d": `${f.dur.toFixed(1)}s`, "--dl": `${f.delay.toFixed(1)}s` } as CSSProperties}
         >
           <path
