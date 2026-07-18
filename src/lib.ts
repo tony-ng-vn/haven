@@ -82,3 +82,11 @@ export function buildEmbedText(fields: {
     .filter((part): part is string => part !== undefined && part.trim() !== "")
     .join("\n");
 }
+
+// Clerk drives OAuth and verification steps through hash sub-routes it appends
+// to our page, e.g. "#/sso-callback" after Google returns. The bare landing
+// has no hash route, so a non-empty one means we must mount Clerk immediately
+// to finish the handshake rather than show the sign-in button again.
+export function isClerkFlowHash(hash: string): boolean {
+  return /^#\/.+/.test(hash);
+}

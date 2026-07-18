@@ -3,6 +3,7 @@ import {
   buildEmbedText,
   deriveProfileUrl,
   formatMonthYear,
+  isClerkFlowHash,
   normalizeUrl,
 } from "./lib";
 
@@ -104,5 +105,19 @@ describe("buildEmbedText", () => {
     expect(buildEmbedText({ name: "A", platform: "github" })).toBe(
       "A\ngithub",
     );
+  });
+});
+
+describe("isClerkFlowHash", () => {
+  test("true for Clerk OAuth/verification callback routes", () => {
+    expect(isClerkFlowHash("#/sso-callback")).toBe(true);
+    expect(isClerkFlowHash("#/verify")).toBe(true);
+    expect(isClerkFlowHash("#/factor-one")).toBe(true);
+  });
+
+  test("false for the bare landing (no hash route)", () => {
+    expect(isClerkFlowHash("")).toBe(false);
+    expect(isClerkFlowHash("#")).toBe(false);
+    expect(isClerkFlowHash("#/")).toBe(false);
   });
 });
