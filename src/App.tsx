@@ -7,7 +7,7 @@ import { SearchAdd } from "./SearchAdd";
 import { PersonDetail } from "./PersonDetail";
 import { CaptureTriage } from "./CaptureTriage";
 import { PersonSky } from "./PersonSky";
-import type { PersonSnapshot } from "./lib";
+import { isClerkFlowHash, type PersonSnapshot } from "./lib";
 
 function ChevronLeft() {
   return (
@@ -27,7 +27,12 @@ function ChevronLeft() {
 // field -- and only reveals Clerk's card once the person chooses to enter, so
 // we never drop them straight into a third-party form.
 function SignIn() {
-  const [entering, setEntering] = useState(false);
+  // Returning from an OAuth redirect (e.g. "#/sso-callback") must mount Clerk
+  // right away to finish sign-in; otherwise Clerk never sees the callback and
+  // we'd show the landing button again.
+  const [entering, setEntering] = useState(() =>
+    isClerkFlowHash(window.location.hash),
+  );
   return (
     <div className="auth auth-sky">
       <div className="sky-space" aria-hidden="true" />
