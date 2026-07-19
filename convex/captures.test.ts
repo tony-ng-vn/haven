@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -17,10 +17,38 @@ function asNewUser(t: ReturnType<typeof convexTest>) {
   return { userId, as: t.withIdentity({ subject, issuer }) };
 }
 
-async function seedScreenshot(t: ReturnType<typeof convexTest>) {
-  return await t.run(async (ctx) =>
-    ctx.storage.store(new Blob(["fake-image"], { type: "image/png" })),
+// convex-test's storage mock never records contentType from the Blob it was
+// given (its storeBlob syscall only stores size and sha256), so real
+// upload-validation code always sees contentType === undefined here. Patch
+// the system table directly, bypassing the DataModel table-name type (a
+// system table isn't one of ours), so tests can exercise that validation.
+async function setStoredContentType(
+  t: ReturnType<typeof convexTest>,
+  id: unknown,
+  contentType: string,
+) {
+  await t.run((ctx) => (ctx.db as any).patch("_storage", id, { contentType }));
+}
+
+async function seedScreenshot(
+  t: ReturnType<typeof convexTest>,
+  contentType = "image/png",
+) {
+  const id = await t.run(async (ctx) =>
+    ctx.storage.store(new Blob(["fake-image"], { type: contentType })),
   );
+  await setStoredContentType(t, id, contentType);
+  return id;
+}
+
+async function seedOversizedScreenshot(t: ReturnType<typeof convexTest>) {
+  const id = await t.run(async (ctx) =>
+    ctx.storage.store(
+      new Blob([new Uint8Array(10 * 1024 * 1024 + 1)], { type: "image/png" }),
+    ),
+  );
+  await setStoredContentType(t, id, "image/png");
+  return id;
 }
 
 const EXTRACTION = {
@@ -39,8 +67,11 @@ function unitVector(hotIndex: number): number[] {
   return vector;
 }
 
-// Stub the two OpenAI endpoints. Storage URLs (and anything else) fall
-// through to the real fetch so convex-test internals keep working.
+// Stub the two OpenAI endpoints, routed by pathname. Anything to a
+// different host (convex-test internals, storage URLs) falls through to
+// the real fetch; anything to the OpenAI host that isn't one of our two
+// known paths throws instead of silently reaching the real API -- a typo'd
+// path here should fail loudly in tests, not go out over the network.
 function stubOpenAI(options: {
   extraction?: unknown;
   embedding?: number[];
@@ -50,8 +81,17 @@ function stubOpenAI(options: {
   vi.stubGlobal(
     "fetch",
     async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes("api.openai.com/v1/chat/completions")) {
+      const raw = String(input);
+      let url: URL;
+      try {
+        url = new URL(raw);
+      } catch {
+        return realFetch(input, init);
+      }
+      if (url.hostname !== "api.openai.com") {
+        return realFetch(input, init);
+      }
+      if (url.pathname.includes("/chat/completions")) {
         if (options.failExtraction) {
           return new Response("upstream error", { status: 500 });
         }
@@ -61,12 +101,12 @@ function stubOpenAI(options: {
           ],
         });
       }
-      if (url.includes("api.openai.com/v1/embeddings")) {
+      if (url.pathname.includes("/embeddings")) {
         return Response.json({
           data: [{ embedding: options.embedding ?? unitVector(0) }],
         });
       }
-      return realFetch(input, init);
+      throw new Error(`Unstubbed OpenAI request: ${url.pathname}`);
     },
   );
 }
@@ -260,6 +300,24 @@ test("semanticSearch finds my people by meaning and never another user's", async
   expect(results[0].score).toBeGreaterThan(0.9);
 });
 
+test("semanticSearch is rate-limited per caller (wiring check)", async () => {
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  stubOpenAI({ embedding: unitVector(0) });
+
+  await as.action(api.people.semanticSearch, { query: "anyone" });
+
+  const window = await t.run((ctx) =>
+    ctx.db
+      .query("rateLimits")
+      .withIndex("by_user_action", (q) =>
+        q.eq("userId", userId).eq("action", "semanticSearch"),
+      )
+      .unique(),
+  );
+  expect(window?.count).toBe(1);
+});
+
 test("updatePerson refreshes the embedding from the new context", async () => {
   stubOpenAI({ embedding: unitVector(2) });
   const t = convexTest(schema, modules);
@@ -275,4 +333,304 @@ test("updatePerson refreshes the embedding from the new context", async () => {
   const person = await t.run((ctx) => ctx.db.get("people", personId));
   expect(person?.embedding).toHaveLength(1536);
   expect(person?.embeddedText).toBe("Maya\nRuns the observatory");
+});
+
+// ------------------------------------------------------- upload validation
+
+// Note: we don't assert the blob is gone here. Convex mutations are one
+// atomic transaction -- the storage.delete() call in createCapture runs in
+// the same transaction as the throw that follows it, so convex-test's
+// simulated storage (backed by the same transactional _storage table) rolls
+// the delete back along with everything else. The security-relevant
+// property this test guards is that a bad upload never becomes a capture
+// row or a scheduled extraction call, which does hold regardless.
+test("createCapture rejects a non-image upload", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const screenshotId = await seedScreenshot(t, "application/pdf");
+
+  await expect(
+    as.mutation(api.captures.createCapture, { screenshotId }),
+  ).rejects.toThrow("Please upload an image under 10 MB");
+
+  expect(await as.query(api.captures.listCaptures, {})).toHaveLength(0);
+});
+
+test("createCapture rejects an oversized upload", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const screenshotId = await seedOversizedScreenshot(t);
+
+  await expect(
+    as.mutation(api.captures.createCapture, { screenshotId }),
+  ).rejects.toThrow("Please upload an image under 10 MB");
+
+  expect(await as.query(api.captures.listCaptures, {})).toHaveLength(0);
+});
+
+test("createCapture accepts a small, valid image", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const screenshotId = await seedScreenshot(t, "image/png");
+
+  await expect(
+    as.mutation(api.captures.createCapture, { screenshotId }),
+  ).resolves.toBeTypeOf("string");
+});
+
+// ---------------------------------------------------------------- retry
+
+test("retryExtract reruns extraction on a failed capture", async () => {
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  expect(
+    (await t.run((ctx) => ctx.db.get("captures", captureId)))?.status,
+  ).toBe("failed");
+
+  stubOpenAI({ extraction: EXTRACTION });
+  await as.mutation(api.captures.retryExtract, { captureId });
+  expect(
+    (await t.run((ctx) => ctx.db.get("captures", captureId)))?.status,
+  ).toBe("pending");
+
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  const capture = await t.run((ctx) => ctx.db.get("captures", captureId));
+  expect(capture?.status).toBe("ready");
+  expect(capture?.error).toBeUndefined();
+  expect(capture?.errorDetail).toBeUndefined();
+});
+
+test("retryExtract on a ready capture throws", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  await expect(
+    as.mutation(api.captures.retryExtract, { captureId }),
+  ).rejects.toThrow("Capture is not ready to retry");
+});
+
+test("retryExtract rejects another user's capture", async () => {
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+  const captureId = await me.as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  await expect(
+    other.as.mutation(api.captures.retryExtract, { captureId }),
+  ).rejects.toThrow("Capture not found");
+});
+
+// ------------------------------------------------------- error sanitization
+
+test("an upstream failure never leaks raw error text to the user", async () => {
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const capture = await t.run((ctx) => ctx.db.get("captures", captureId));
+  expect(capture?.error).toBe("Could not read this screenshot -- you can retry");
+  expect(capture?.error?.toLowerCase()).not.toContain("api");
+  expect(capture?.error?.toLowerCase()).not.toContain("env");
+  // The raw detail is kept server-side...
+  expect(capture?.errorDetail).toContain("upstream error");
+  // ...but never reaches a client response.
+  const listed = await as.query(api.captures.listCaptures, {});
+  expect(listed[0]).not.toHaveProperty("errorDetail");
+});
+
+test("the not-a-profile message passes through as-is (it is already safe)", async () => {
+  stubOpenAI({ extraction: { ...EXTRACTION, is_profile: false } });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const capture = await t.run((ctx) => ctx.db.get("captures", captureId));
+  expect(capture?.error).toBe("Could not read a profile in this screenshot");
+  expect(capture?.errorDetail).toBeUndefined();
+});
+
+// -------------------------------------------------------- rate limiting
+
+test("createCapture throttles a burst past the per-minute limit", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+
+  for (let i = 0; i < 10; i++) {
+    await as.mutation(api.captures.createCapture, {
+      screenshotId: await seedScreenshot(t),
+    });
+  }
+  await expect(
+    as.mutation(api.captures.createCapture, {
+      screenshotId: await seedScreenshot(t),
+    }),
+  ).rejects.toThrow("Too many requests -- please wait a moment");
+
+  vi.setSystemTime(Date.now() + 60_000);
+  await expect(
+    as.mutation(api.captures.createCapture, {
+      screenshotId: await seedScreenshot(t),
+    }),
+  ).resolves.toBeTypeOf("string");
+});
+
+test("createCapture also tracks a separate daily window", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+
+  await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+
+  const dayWindow = await t.run((ctx) =>
+    ctx.db
+      .query("rateLimits")
+      .withIndex("by_user_action", (q) =>
+        q.eq("userId", userId).eq("action", "createCapture:day"),
+      )
+      .unique(),
+  );
+  expect(dayWindow?.count).toBe(1);
+});
+
+test("rate limits are per user: exhausting mine does not affect another user", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+
+  for (let i = 0; i < 10; i++) {
+    await me.as.mutation(api.captures.createCapture, {
+      screenshotId: await seedScreenshot(t),
+    });
+  }
+  await expect(
+    me.as.mutation(api.captures.createCapture, {
+      screenshotId: await seedScreenshot(t),
+    }),
+  ).rejects.toThrow("Too many requests -- please wait a moment");
+
+  await expect(
+    other.as.mutation(api.captures.createCapture, {
+      screenshotId: await seedScreenshot(t),
+    }),
+  ).resolves.toBeTypeOf("string");
+});
+
+// ------------------------------------------------------------ unauth
+
+test("captures functions reject an unauthenticated caller", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const screenshotId = await seedScreenshot(t);
+  // A real, existing captureId -- so arg validation passes and requireUser's
+  // rejection (not a v.id() format error) is what we're actually testing.
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+
+  await expect(t.mutation(api.captures.generateUploadUrl, {})).rejects.toThrow(
+    "Not signed in",
+  );
+  await expect(
+    t.mutation(api.captures.createCapture, { screenshotId }),
+  ).rejects.toThrow("Not signed in");
+  await expect(t.query(api.captures.listCaptures, {})).rejects.toThrow(
+    "Not signed in",
+  );
+  await expect(
+    t.mutation(api.captures.acceptCapture, { captureId }),
+  ).rejects.toThrow("Not signed in");
+  await expect(
+    t.mutation(api.captures.discardCapture, { captureId }),
+  ).rejects.toThrow("Not signed in");
+  await expect(
+    t.mutation(api.captures.retryExtract, { captureId }),
+  ).rejects.toThrow("Not signed in");
+});
+
+// -------------------------------------------------------- race / contract
+
+test("discarding a capture before extraction finishes leaves nothing behind", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const screenshotId = await seedScreenshot(t);
+
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId,
+  });
+  // Discard races the scheduled extract action -- it runs before
+  // finishAllScheduledFunctions lets that action execute.
+  await as.mutation(api.captures.discardCapture, { captureId });
+
+  await expect(t.finishAllScheduledFunctions(vi.runAllTimers)).resolves.not.toThrow();
+
+  expect(await t.run((ctx) => ctx.db.get("captures", captureId))).toBeNull();
+  const people = await t.run((ctx) => ctx.db.query("people").collect());
+  expect(people).toHaveLength(0);
+
+  // A stray finishExtract for the now-deleted capture must no-op, not throw.
+  // extractedValidator has no is_profile field -- strip it from EXTRACTION.
+  const { is_profile: _isProfile, ...extracted } = EXTRACTION;
+  await expect(
+    t.mutation(internal.captures.finishExtract, { captureId, extracted }),
+  ).resolves.toBeNull();
+});
+
+test("acceptCapture is not reentrant: a second accept finds nothing to accept", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  await as.mutation(api.captures.acceptCapture, { captureId });
+  await expect(
+    as.mutation(api.captures.acceptCapture, { captureId }),
+  ).rejects.toThrow("Capture not found");
+
+  const people = await t.run((ctx) => ctx.db.query("people").collect());
+  expect(people).toHaveLength(1);
+});
+
+test("acceptCapture on a still-pending capture is rejected", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  // Deliberately not finishing the scheduled extraction -- still "pending".
+
+  await expect(
+    as.mutation(api.captures.acceptCapture, { captureId }),
+  ).rejects.toThrow("Capture is not ready");
 });

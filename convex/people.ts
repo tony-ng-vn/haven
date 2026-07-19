@@ -6,14 +6,14 @@ import {
   mutation,
   query,
   ActionCtx,
-  QueryCtx,
-  MutationCtx,
 } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { buildEmbedText } from "../src/lib";
 import { embedText } from "./openaiClient";
+import { requireUser } from "./authz";
+import { checkRateLimit } from "./rateLimit";
 
 // Bound every list read so the query stays scalable as the table grows.
 const RESULT_LIMIT = 20;
@@ -22,15 +22,36 @@ const RESULT_LIMIT = 20;
 // Tuned against real data during verification.
 const MIN_SEMANTIC_SCORE = 0.3;
 
-// Guidelines forbid `any` for ctx; use the proper context union. Clerk has no
-// local users table, so tokenIdentifier ("issuer|subject") is the stable
-// ownership key -- guidelines say prefer it over the bare `subject` claim.
-async function requireUser(ctx: QueryCtx | MutationCtx | ActionCtx) {
-  const identity = await ctx.auth.getUserIdentity();
-  if (identity === null) {
-    throw new Error("Not signed in");
-  }
-  return identity.tokenIdentifier;
+const MINUTE_MS = 60_000;
+
+// What the client is ever allowed to see for a person. Never embedding,
+// embeddedText, or userId -- those stay server-side.
+const personValidator = v.object({
+  _id: v.id("people"),
+  _creationTime: v.number(),
+  name: v.string(),
+  link: v.optional(v.string()),
+  context: v.optional(v.string()),
+  platform: v.optional(v.string()),
+  handle: v.optional(v.string()),
+  headline: v.optional(v.string()),
+  screenshotId: v.optional(v.id("_storage")),
+  updatedAt: v.number(),
+});
+
+function projectPerson(person: Doc<"people">) {
+  return {
+    _id: person._id,
+    _creationTime: person._creationTime,
+    name: person.name,
+    link: person.link,
+    context: person.context,
+    platform: person.platform,
+    handle: person.handle,
+    headline: person.headline,
+    screenshotId: person.screenshotId,
+    updatedAt: person.updatedAt,
+  };
 }
 
 export const addPerson = mutation({
@@ -38,6 +59,7 @@ export const addPerson = mutation({
   returns: v.id("people"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
+    await checkRateLimit(ctx, userId, "addPerson", 30, MINUTE_MS);
     const name = args.name.trim();
     if (name === "") {
       throw new Error("Name is required");
@@ -54,34 +76,37 @@ export const addPerson = mutation({
 
 export const searchPeople = query({
   args: { query: v.string() },
+  returns: v.array(personValidator),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     const term = args.query.trim();
-    if (term === "") {
-      return await ctx.db
-        .query("people")
-        .withIndex("by_user", (q) => q.eq("userId", userId))
-        .order("desc")
-        .take(RESULT_LIMIT);
-    }
-    return await ctx.db
-      .query("people")
-      .withSearchIndex("search_name", (q) =>
-        q.search("name", term).eq("userId", userId),
-      )
-      .take(RESULT_LIMIT);
+    const people =
+      term === ""
+        ? await ctx.db
+            .query("people")
+            .withIndex("by_user", (q) => q.eq("userId", userId))
+            .order("desc")
+            .take(RESULT_LIMIT)
+        : await ctx.db
+            .query("people")
+            .withSearchIndex("search_name", (q) =>
+              q.search("name", term).eq("userId", userId),
+            )
+            .take(RESULT_LIMIT);
+    return people.map(projectPerson);
   },
 });
 
 export const getPerson = query({
   args: { id: v.id("people") },
+  returns: v.union(v.null(), personValidator),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     const person = await ctx.db.get("people", args.id);
     if (person === null || person.userId !== userId) {
       return null;
     }
-    return person;
+    return projectPerson(person);
   },
 });
 
@@ -94,6 +119,7 @@ export const updatePerson = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
+    await checkRateLimit(ctx, userId, "updatePerson", 60, MINUTE_MS);
     const person = await ctx.db.get("people", args.id);
     if (person === null || person.userId !== userId) {
       throw new Error("Person not found");
@@ -109,6 +135,23 @@ export const updatePerson = mutation({
     await ctx.scheduler.runAfter(0, internal.people.embed, {
       personId: args.id,
     });
+    return null;
+  },
+});
+
+export const deletePerson = mutation({
+  args: { personId: v.id("people") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    const person = await ctx.db.get("people", args.personId);
+    if (person === null || person.userId !== userId) {
+      throw new Error("Person not found");
+    }
+    if (person.screenshotId !== undefined) {
+      await ctx.storage.delete(person.screenshotId);
+    }
+    await ctx.db.delete("people", args.personId);
     return null;
   },
 });
@@ -222,11 +265,35 @@ export const fetchSearchResults = internalQuery({
   },
 });
 
+// Actions have no ctx.db (guidelines), so an action-side rate-limit check
+// has to reach the DB through a mutation. userId here is the caller's own
+// identity, derived server-side by the action just above -- not a
+// client-supplied authorization key.
+export const enforceRateLimit = internalMutation({
+  args: {
+    userId: v.string(),
+    action: v.string(),
+    max: v.number(),
+    windowMs: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await checkRateLimit(ctx, args.userId, args.action, args.max, args.windowMs);
+    return null;
+  },
+});
+
 export const semanticSearch = action({
   args: { query: v.string() },
   returns: v.array(searchResultValidator),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
+    await ctx.runMutation(internal.people.enforceRateLimit, {
+      userId,
+      action: "semanticSearch",
+      max: 30,
+      windowMs: MINUTE_MS,
+    });
     const term = args.query.trim();
     if (term === "") {
       return [];

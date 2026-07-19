@@ -50,6 +50,19 @@ export default defineSchema({
         bio: v.optional(v.string()),
       }),
     ),
+    // Short, generic, user-safe message. Never the raw upstream text.
     error: v.optional(v.string()),
+    // Raw upstream/error text for our own debugging. Never returned to a
+    // client -- listCaptures and getCapture must not project this field.
+    errorDetail: v.optional(v.string()),
   }).index("by_user", ["userId"]),
+  // Fixed-window per-user rate limiting. One row per (userId, action) pair;
+  // an action name like "createCapture:minute" models one window, so a
+  // function with two windows (e.g. per-minute and per-day) gets two rows.
+  rateLimits: defineTable({
+    userId: v.string(),
+    action: v.string(),
+    windowStart: v.number(),
+    count: v.number(),
+  }).index("by_user_action", ["userId", "action"]),
 });
