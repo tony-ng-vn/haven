@@ -63,7 +63,9 @@ export function deriveProfileUrl(
   if (cleaned === "") {
     return null;
   }
-  return build(cleaned);
+  // A mangled handle ("ada l", "a/b") must not break the URL or add a path
+  // segment -- encode it before it reaches the template.
+  return build(encodeURIComponent(cleaned));
 }
 
 // The text a person's embedding is computed from. Deterministic on purpose:

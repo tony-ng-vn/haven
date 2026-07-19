@@ -81,6 +81,15 @@ describe("deriveProfileUrl", () => {
     expect(deriveProfileUrl("x", "   ")).toBe(null);
     expect(deriveProfileUrl("x", "@")).toBe(null);
   });
+
+  test("encodes a mangled handle so it cannot escape the intended path", () => {
+    // A space would otherwise break the URL; a slash would otherwise add a
+    // path segment. Both must land as encoded bytes, not raw characters.
+    expect(deriveProfileUrl("x", "ada l")).toBe("https://x.com/ada%20l");
+    expect(deriveProfileUrl("github", "a/b")).toBe("https://github.com/a%2Fb");
+    // Non-ASCII handles must survive as encoded UTF-8 bytes too.
+    expect(deriveProfileUrl("x", "caf\u00e9")).toBe("https://x.com/caf%C3%A9");
+  });
 });
 
 describe("buildEmbedText", () => {
