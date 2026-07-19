@@ -180,3 +180,129 @@ export function buildSky(name: string, handle?: string): SkyData {
 
   return { width: W, height: H, pad: PAD, hues, nebulae, minors, giants, majors, edges, flares, shoot };
 }
+
+// -------------------------------------------------------------- atlas home
+
+export type ClusterStar = { x: number; y: number; r: number; hue: number };
+
+export type ClusterData = {
+  width: number;
+  height: number;
+  stars: ClusterStar[];
+  edges: Array<[number, number]>;
+};
+
+// A person's constellation shrunk to a map cluster. It reuses buildSky's
+// majors + edges so the figure on the atlas is recognizably the SAME shape as
+// on their card and detail sky -- identity, not decoration. Minors are dropped;
+// the shared dust field carries the faint-star texture instead.
+export function buildCluster(
+  name: string,
+  handle?: string,
+  opts?: { width?: number; height?: number; pad?: number },
+): ClusterData {
+  const width = opts?.width ?? 120;
+  const height = opts?.height ?? 92;
+  const pad = opts?.pad ?? 8;
+  const sky = buildSky(name, handle);
+
+  const xs = sky.majors.map((m) => m.x);
+  const ys = sky.majors.map((m) => m.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  // Guard the degenerate single-column/row case so we never divide by zero.
+  const spanX = maxX - minX || 1;
+  const spanY = maxY - minY || 1;
+  const innerW = Math.max(0, width - pad * 2);
+  const innerH = Math.max(0, height - pad * 2);
+
+  const stars: ClusterStar[] = sky.majors.map((m) => ({
+    x: pad + ((m.x - minX) / spanX) * innerW,
+    y: pad + ((m.y - minY) / spanY) * innerH,
+    // Map the card radius (~1.5..3.4) into a small, readable map radius.
+    r: 1.1 + (m.r - 1.5) * 0.5,
+    hue: m.hue,
+  }));
+
+  return { width, height, stars, edges: sky.edges };
+}
+
+export type DustStar = {
+  x: number; // unit coords in [0,1], scaled to the viewport by the caller
+  y: number;
+  r: number;
+  hi: number;
+  lo: number;
+  dur: number;
+  delay: number;
+};
+
+// One shared field of faint background stars behind every cluster -- seeded
+// from a fixed string, NOT per person, so the whole sky twinkles as one. Unit
+// coordinates keep it resolution-independent across resizes.
+export function buildDust(count = 80, seed = "euno-atlas-dust"): DustStar[] {
+  const rand = seededRandom(hashString(seed));
+  const dust: DustStar[] = [];
+  for (let i = 0; i < count; i++) {
+    dust.push({
+      x: rand(),
+      y: rand(),
+      r: 0.4 + rand() * 0.7,
+      // Deliberately dim: dust must never compete with a person's stars.
+      hi: 0.18 + rand() * 0.16,
+      lo: 0.06 + rand() * 0.06,
+      dur: 3 + rand() * 4,
+      delay: rand() * 4,
+    });
+  }
+  return dust;
+}
+
+// Golden-angle spiral placement, ordered by the recent-first query: index 0
+// (newest) sits nearest the center, each later person spirals outward. The y
+// radius is squashed so the field reads as a wide sky rather than a disc.
+// maxR is capped so the outermost cluster's full box + label never leaves the
+// viewport -- the layout, not the caller, owns staying in bounds.
+export function atlasLayout(
+  count: number,
+  width: number,
+  height: number,
+  opts?: {
+    boxW?: number;
+    boxH?: number;
+    labelH?: number;
+    centerYOffset?: number;
+  },
+): Array<{ x: number; y: number }> {
+  const boxW = opts?.boxW ?? 120;
+  const boxH = opts?.boxH ?? 92;
+  const labelH = opts?.labelH ?? 46;
+  const centerYOffset = opts?.centerYOffset ?? 14;
+
+  const cx = width / 2;
+  const cy = height / 2 + centerYOffset;
+  const squash = 0.82;
+
+  // Room the outermost cluster needs on each side (label only hangs below).
+  const marginX = boxW / 2 + 8;
+  const marginTop = boxH / 2 + 8;
+  const marginBottom = boxH / 2 + labelH + 8;
+
+  const maxRx = Math.min(cx - marginX, width - cx - marginX);
+  const maxRy = Math.min(cy - marginTop, height - cy - marginBottom) / squash;
+  const maxR = Math.max(0, Math.min(maxRx, maxRy, Math.min(width, height) * 0.42));
+
+  const n = Math.max(count, 1);
+  const points: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i < count; i++) {
+    const angle = i * 2.399963; // golden angle in radians
+    const rad = maxR * Math.sqrt((i + 0.7) / n);
+    points.push({
+      x: cx + Math.cos(angle) * rad,
+      y: cy + Math.sin(angle) * rad * squash,
+    });
+  }
+  return points;
+}
