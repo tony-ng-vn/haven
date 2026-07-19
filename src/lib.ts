@@ -157,3 +157,44 @@ export function bootMode(input: {
   if (input.hasSessionHint) return "splash";
   return "landing";
 }
+
+// The triage card's drag gesture: scroll-style momentum projection for
+// "where would the card coast to if released now?".
+export function project(velocity: number, decelerationRate = 0.998): number {
+  return ((velocity / 1000) * decelerationRate) / (1 - decelerationRate);
+}
+
+// Progressive resistance past a boundary; real things slow before they stop.
+export function rubberband(
+  overshoot: number,
+  dimension = 320,
+  constant = 0.55,
+): number {
+  return (
+    (overshoot * dimension * constant) /
+    (dimension + constant * Math.abs(overshoot))
+  );
+}
+
+export type SwipeVelocitySample = { t: number; x: number };
+export type SwipeDecision = "save" | "context" | "settle";
+
+// Whether a released triage card commits left (save), right (add context),
+// or springs back to center. Velocity is read from the last ~100ms of
+// pointer samples, projected forward, and added to the current drag
+// position -- so a fast flick can commit the card even from short of the
+// positional threshold, the way a scroll view keeps going after a flick.
+export function decideSwipe(
+  dragX: number,
+  samples: SwipeVelocitySample[],
+): SwipeDecision {
+  if (samples.length === 0) return "settle";
+  const last = samples[samples.length - 1];
+  const first = samples.find((s) => last.t - s.t <= 100) ?? samples[0];
+  const velocity =
+    last.t > first.t ? ((last.x - first.x) / (last.t - first.t)) * 1000 : 0;
+  const projected = dragX + project(velocity);
+  if (projected < -240) return "save";
+  if (projected > 240) return "context";
+  return "settle";
+}

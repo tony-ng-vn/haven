@@ -6,6 +6,7 @@ import {
   canSaveManualName,
   composeHeadline,
   composeName,
+  decideSwipe,
   deriveProfileUrl,
   formatMonthYear,
   isClerkFlowHash,
@@ -213,6 +214,35 @@ describe("bootMode", () => {
     expect(bootMode({ hash: "", hasSessionHint: false })).toBe("landing");
     expect(bootMode({ hash: "#", hasSessionHint: false })).toBe("landing");
     expect(bootMode({ hash: "#/", hasSessionHint: false })).toBe("landing");
+  });
+});
+
+describe("decideSwipe", () => {
+  test("a hard left drag past the threshold commits to save", () => {
+    expect(decideSwipe(-300, [{ t: 0, x: -300 }])).toBe("save");
+  });
+
+  test("a hard right drag past the threshold commits to context", () => {
+    expect(decideSwipe(300, [{ t: 0, x: 300 }])).toBe("context");
+  });
+
+  test("a leftward flick under the positional threshold still commits via momentum", () => {
+    // Only -50px of drag (threshold is -240), but a fast enough flick left
+    // projects well past it -- the card should still save, not settle.
+    const samples = [
+      { t: 0, x: 0 },
+      { t: 50, x: -50 },
+    ];
+    expect(decideSwipe(-50, samples)).toBe("save");
+  });
+
+  test("a small, slow drag settles back", () => {
+    expect(decideSwipe(50, [{ t: 0, x: 50 }])).toBe("settle");
+  });
+
+  test("settles exactly at the threshold boundary (strictly greater/less to commit)", () => {
+    expect(decideSwipe(-240, [{ t: 0, x: -240 }])).toBe("settle");
+    expect(decideSwipe(240, [{ t: 0, x: 240 }])).toBe("settle");
   });
 });
 
