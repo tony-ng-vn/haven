@@ -143,6 +143,10 @@ export function CaptureTriage() {
   async function handleFiles(files: FileList | null) {
     if (files === null || files.length === 0) return;
     const chosen = Array.from(files);
+    // A fresh batch retires the previous batch's failure banner, and the
+    // accumulate below keeps overlapping batches from clobbering each
+    // other's counts.
+    setUploadFailures(0);
     setUploading((n) => n + chosen.length);
     const outcomes = await Promise.all(
       chosen.map(async (file) => {
@@ -151,7 +155,8 @@ export function CaptureTriage() {
         return ok;
       }),
     );
-    setUploadFailures(outcomes.filter((ok) => !ok).length);
+    const failed = outcomes.filter((ok) => !ok).length;
+    if (failed > 0) setUploadFailures((n) => n + failed);
   }
 
   function resolvedLink(capture: Capture): string | undefined {
@@ -204,9 +209,12 @@ export function CaptureTriage() {
       .then(() => setSavedCount((n) => n + 1))
       .catch(() => {
         // The mutation didn't land: bring the card back instead of
-        // leaving it stuck off-screen.
+        // leaving it stuck off-screen. A fling-save parks displacement in
+        // drag (not just leaving), and the [topId] reset never fires when
+        // the failed mutation rolls back, so clear it here explicitly.
         clearLeavingTimeout();
         setLeaving(null);
+        setDrag({ x: 0, y: 0, dragging: false });
         flashActionError("Could not save -- try again");
       })
       .finally(() => setBusy(false));
