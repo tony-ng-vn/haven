@@ -2,6 +2,7 @@ import { useQuery, useMutation } from "convex/react";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "../convex/_generated/api";
+import type { Id } from "../convex/_generated/dataModel";
 import { deriveProfileUrl, normalizeUrl } from "./lib";
 import { PersonSky } from "./PersonSky";
 
@@ -32,6 +33,33 @@ function rubberband(overshoot: number, dimension = 320, constant = 0.55): number
   );
 }
 
+// Uploads one screenshot in isolation and reports whether it landed, so a
+// bad file in a batch never voids the ones around it.
+export async function uploadScreenshot(
+  file: File,
+  deps: {
+    generateUploadUrl: () => Promise<string>;
+    createCapture: (args: { screenshotId: Id<"_storage"> }) => Promise<unknown>;
+  },
+): Promise<boolean> {
+  try {
+    const uploadUrl = await deps.generateUploadUrl();
+    const response = await fetch(uploadUrl, {
+      method: "POST",
+      headers: { "Content-Type": file.type },
+      body: file,
+    });
+    if (!response.ok) return false;
+    const { storageId } = (await response.json()) as {
+      storageId: Id<"_storage">;
+    };
+    await deps.createCapture({ screenshotId: storageId });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function CaptureTriage() {
   const captures = useQuery(api.captures.listCaptures, {});
   const generateUploadUrl = useMutation(api.captures.generateUploadUrl);
@@ -40,12 +68,18 @@ export function CaptureTriage() {
   const discardCapture = useMutation(api.captures.discardCapture);
 
   const [uploading, setUploading] = useState(0);
+  const [uploadFailures, setUploadFailures] = useState(0);
   const [savedCount, setSavedCount] = useState(0);
   const [mode, setMode] = useState<"card" | "context">("card");
   const [contextDraft, setContextDraft] = useState("");
   const [linkDraft, setLinkDraft] = useState("");
   const [drag, setDrag] = useState({ x: 0, y: 0, dragging: false });
   const [leaving, setLeaving] = useState<Capture | null>(null);
+  // Guards save()/skip() while the top card's mutation is in flight, so a
+  // second tap (or a slow network) can't fire it twice.
+  const [busy, setBusy] = useState(false);
+  // A brief inline message when a save/skip mutation actually fails.
+  const [actionError, setActionError] = useState<string | null>(null);
   // The ignition reveal plays only when we witness this card finish
   // reading (pending -> ready on the visible top card). Cards that were
   // already ready surface without ceremony, so batch triage stays fast.
@@ -56,9 +90,24 @@ export function CaptureTriage() {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const pointer = useRef({ startX: 0, startY: 0, baseX: 0 });
   const history = useRef<Array<{ t: number; x: number }>>([]);
+  // Tracks the pending "clear leaving" timeout so a second fast save can
+  // cancel it instead of letting it cut the new card's exit short.
+  const leavingTimeoutRef = useRef<number | null>(null);
+  const actionErrorTimeoutRef = useRef<number | null>(null);
   const [reduceMotion] = useState(() =>
     window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
+
+  useEffect(() => {
+    return () => {
+      if (leavingTimeoutRef.current !== null) {
+        window.clearTimeout(leavingTimeoutRef.current);
+      }
+      if (actionErrorTimeoutRef.current !== null) {
+        window.clearTimeout(actionErrorTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Oldest first: triage in the order the screenshots were taken.
   const queue = [...(captures ?? [])].reverse();
@@ -94,25 +143,20 @@ export function CaptureTriage() {
   async function handleFiles(files: FileList | null) {
     if (files === null || files.length === 0) return;
     const chosen = Array.from(files);
+    // A fresh batch retires the previous batch's failure banner, and the
+    // accumulate below keeps overlapping batches from clobbering each
+    // other's counts.
+    setUploadFailures(0);
     setUploading((n) => n + chosen.length);
-    await Promise.all(
+    const outcomes = await Promise.all(
       chosen.map(async (file) => {
-        try {
-          const uploadUrl = await generateUploadUrl();
-          const response = await fetch(uploadUrl, {
-            method: "POST",
-            headers: { "Content-Type": file.type },
-            body: file,
-          });
-          const { storageId } = (await response.json()) as {
-            storageId: Parameters<typeof createCapture>[0]["screenshotId"];
-          };
-          await createCapture({ screenshotId: storageId });
-        } finally {
-          setUploading((n) => n - 1);
-        }
+        const ok = await uploadScreenshot(file, { generateUploadUrl, createCapture });
+        setUploading((n) => n - 1);
+        return ok;
       }),
     );
+    const failed = outcomes.filter((ok) => !ok).length;
+    if (failed > 0) setUploadFailures((n) => n + failed);
   }
 
   function resolvedLink(capture: Capture): string | undefined {
@@ -123,26 +167,61 @@ export function CaptureTriage() {
     return normalizeUrl(linkDraft) ?? undefined;
   }
 
+  function clearLeavingTimeout() {
+    if (leavingTimeoutRef.current !== null) {
+      window.clearTimeout(leavingTimeoutRef.current);
+      leavingTimeoutRef.current = null;
+    }
+  }
+
+  // Shows a message under the actions briefly, then clears itself so a
+  // stale failure doesn't linger once the user moves on.
+  function flashActionError(message: string) {
+    setActionError(message);
+    if (actionErrorTimeoutRef.current !== null) {
+      window.clearTimeout(actionErrorTimeoutRef.current);
+    }
+    actionErrorTimeoutRef.current = window.setTimeout(() => {
+      setActionError(null);
+      actionErrorTimeoutRef.current = null;
+    }, 2600);
+  }
+
   function save(capture: Capture, context?: string) {
+    if (busy) return;
+    setBusy(true);
+    setActionError(null);
+
     if (reduceMotion) {
-      void acceptCapture({
-        captureId: capture._id,
-        link: resolvedLink(capture),
-        context,
-      });
-      setSavedCount((n) => n + 1);
+      acceptCapture({ captureId: capture._id, link: resolvedLink(capture), context })
+        .then(() => setSavedCount((n) => n + 1))
+        .catch(() => flashActionError("Could not save -- try again"))
+        .finally(() => setBusy(false));
       return;
     }
+
     // The card flies off while the mutation lands; the next card is
-    // already underneath.
+    // already underneath. Cancel any still-pending exit from a previous
+    // fast save so it can't clear *this* card's leaving state early.
+    clearLeavingTimeout();
     setLeaving(capture);
-    void acceptCapture({
-      captureId: capture._id,
-      link: resolvedLink(capture),
-      context,
-    });
-    setSavedCount((n) => n + 1);
-    window.setTimeout(() => setLeaving(null), 340);
+    acceptCapture({ captureId: capture._id, link: resolvedLink(capture), context })
+      .then(() => setSavedCount((n) => n + 1))
+      .catch(() => {
+        // The mutation didn't land: bring the card back instead of
+        // leaving it stuck off-screen. A fling-save parks displacement in
+        // drag (not just leaving), and the [topId] reset never fires when
+        // the failed mutation rolls back, so clear it here explicitly.
+        clearLeavingTimeout();
+        setLeaving(null);
+        setDrag({ x: 0, y: 0, dragging: false });
+        flashActionError("Could not save -- try again");
+      })
+      .finally(() => setBusy(false));
+    leavingTimeoutRef.current = window.setTimeout(() => {
+      setLeaving(null);
+      leavingTimeoutRef.current = null;
+    }, 340);
   }
 
   function saveWithContext(capture: Capture) {
@@ -151,13 +230,22 @@ export function CaptureTriage() {
   }
 
   function skip(capture: Capture) {
-    void discardCapture({ captureId: capture._id });
+    if (busy) return;
+    setBusy(true);
+    setActionError(null);
+    discardCapture({ captureId: capture._id })
+      .catch(() => flashActionError("Could not skip -- try again"))
+      .finally(() => setBusy(false));
   }
 
   // ------------------------------------------------------------- gestures
 
   const canDrag =
-    !reduceMotion && top !== undefined && top.status === "ready" && mode === "card";
+    !reduceMotion &&
+    !busy &&
+    top !== undefined &&
+    top.status === "ready" &&
+    mode === "card";
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
     if (!canDrag || cardRef.current === null) return;
@@ -184,7 +272,7 @@ export function CaptureTriage() {
     setDrag({ x, y, dragging: true });
   }
 
-  function onPointerUp(event: PointerEvent<HTMLDivElement>) {
+  function onPointerUp(_event: PointerEvent<HTMLDivElement>) {
     if (!drag.dragging || top === undefined) return;
     const samples = history.current;
     const last = samples[samples.length - 1];
@@ -194,7 +282,6 @@ export function CaptureTriage() {
       last.t > first.t ? ((last.x - first.x) / (last.t - first.t)) * 1000 : 0;
     const projected = drag.x + project(velocity);
     history.current = [];
-    void event;
 
     if (projected < -240) {
       // Flung left: remember them now, context can wait.
@@ -215,13 +302,33 @@ export function CaptureTriage() {
   // ------------------------------------------------------------ rendering
 
   if (captures === undefined) {
-    return null;
+    return (
+      <div className="triage">
+        <div className="triage-toolbar">
+          <button type="button" className="btn-ghost" disabled>
+            Add more
+          </button>
+        </div>
+        <div className="triage-stack">
+          <div className="triage-card" aria-busy="true">
+            <div className="triage-body">
+              <div className="skeleton-line skeleton-block" />
+              <div className="skeleton-line skeleton-title" />
+              <div className="skeleton-line" style={{ width: "55%" }} />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  const isLeaving = leaving !== null && leaving._id === topId;
+  // The rendered card is whichever one is leaving; once leaving !== null it
+  // stays pinned there regardless of how fast the query updates `top`
+  // underneath, so the exit animation always plays to completion.
+  const isLeaving = leaving !== null;
   const activeTop = leaving ?? top;
   const rotation = Math.max(-8, Math.min(8, drag.x * 0.04));
-  const cardStyle = isLeaving || leaving !== null
+  const cardStyle = isLeaving
     ? undefined
     : {
         transform: `translate(${drag.x}px, ${drag.y}px) rotate(${rotation}deg)`,
@@ -245,6 +352,14 @@ export function CaptureTriage() {
           e.target.value = "";
         }}
       />
+
+      {uploadFailures > 0 && (
+        <p className="form-error" role="alert">
+          {uploadFailures === 1
+            ? "1 screenshot failed to upload -- try again"
+            : `${uploadFailures} screenshots failed to upload -- try again`}
+        </p>
+      )}
 
       {showIntro ? (
         <div className="empty-state" role="status">
@@ -420,6 +535,7 @@ export function CaptureTriage() {
                               <button
                                 type="button"
                                 className="btn-primary"
+                                disabled={busy}
                                 onClick={() =>
                                   top !== undefined && saveWithContext(top)
                                 }
@@ -441,6 +557,7 @@ export function CaptureTriage() {
               <button
                 type="button"
                 className="btn-ghost triage-skip"
+                disabled={busy}
                 onClick={() => skip(top)}
               >
                 Skip
@@ -450,6 +567,7 @@ export function CaptureTriage() {
                   <button
                     type="button"
                     className="btn-ghost"
+                    disabled={busy}
                     onClick={() => save(top)}
                   >
                     Save
@@ -457,6 +575,7 @@ export function CaptureTriage() {
                   <button
                     type="button"
                     className="btn-primary"
+                    disabled={busy}
                     onClick={() => {
                       setMode("context");
                       setContextDraft(top.extracted?.bio ?? "");
@@ -467,6 +586,12 @@ export function CaptureTriage() {
                 </>
               )}
             </div>
+          )}
+
+          {actionError !== null && (
+            <p className="form-error triage-action-error" role="alert">
+              {actionError}
+            </p>
           )}
 
           {savedCount > 0 && (

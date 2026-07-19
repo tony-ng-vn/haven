@@ -109,6 +109,20 @@ export function SearchAdd({
     };
   }, [trimmed, semanticSearch]);
   const loaded = results !== undefined;
+
+  // Only the home list (no query typed yet) gets a skeleton, and only once
+  // loading has run long enough to be worth acknowledging -- fast answers
+  // should still render with no flash at all.
+  const [showHomeSkeleton, setShowHomeSkeleton] = useState(false);
+  useEffect(() => {
+    if (loaded) {
+      setShowHomeSkeleton(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowHomeSkeleton(true), 300);
+    return () => clearTimeout(timer);
+  }, [loaded]);
+
   const list = results ?? [];
   const hasExact = list.some(
     (p) => p.name.toLowerCase() === trimmed.toLowerCase(),
@@ -178,6 +192,16 @@ export function SearchAdd({
       )}
 
       {showRecentLabel && <p className="list-label">Recent</p>}
+
+      {!loaded && trimmed === "" && showHomeSkeleton && (
+        <ul className="results" aria-hidden="true">
+          {[0, 1, 2].map((i) => (
+            <li key={i}>
+              <div className="skeleton-line result-row-skeleton" />
+            </li>
+          ))}
+        </ul>
+      )}
 
       <ul className="results">
         {list.map((p) => (

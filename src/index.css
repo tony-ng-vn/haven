@@ -196,13 +196,18 @@ button {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .btn-ghost:hover {
+  .btn-ghost:hover:not(:disabled) {
     background: color-mix(in srgb, var(--accent) 10%, transparent);
   }
 }
 
-.btn-ghost:active {
+.btn-ghost:active:not(:disabled) {
   transform: scale(0.97);
+}
+
+.btn-ghost:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .btn-ghost svg {
@@ -455,6 +460,13 @@ textarea.field {
 
 .skeleton-block {
   height: 140px;
+  border-radius: var(--radius);
+}
+
+/* Stand-in for a .result-row while the home list is still loading. */
+.result-row-skeleton {
+  height: 48px;
+  margin-bottom: 8px;
   border-radius: var(--radius);
 }
 
@@ -765,6 +777,12 @@ textarea.field {
   text-align: center;
   font-size: 13px;
   color: var(--muted);
+}
+
+/* A save/skip mutation actually failed -- rare, so it reads like triage-saved
+   (centered, quiet) rather than shouting like a form validation error. */
+.triage-action-error {
+  text-align: center;
 }
 
 .triage-upload {
@@ -1108,7 +1126,7 @@ textarea.field {
   }
 
   .btn-primary:active:not(:disabled),
-  .btn-ghost:active,
+  .btn-ghost:active:not(:disabled),
   .result-row:active,
   .search-clear:active {
     transform: none;

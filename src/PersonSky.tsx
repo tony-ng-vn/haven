@@ -1,9 +1,17 @@
-import { useId, useMemo, type CSSProperties } from "react";
+import { memo, useId, useMemo, type CSSProperties } from "react";
 import { buildSky } from "./sky";
 
 // A person's unique patch of deep space, rendered from their seeded sky
-// data. Purely presentational; all randomness lives in buildSky.
-export function PersonSky({ name, handle }: { name: string; handle?: string }) {
+// data. Purely presentational; all randomness lives in buildSky. Memoized
+// because it renders ~190 SVG nodes and would otherwise redo that work on
+// every drag frame of the parent triage card.
+export const PersonSky = memo(function PersonSky({
+  name,
+  handle,
+}: {
+  name: string;
+  handle?: string;
+}) {
   const sky = useMemo(() => buildSky(name, handle), [name, handle]);
   const uid = useId();
   const haloId = `halo-${uid}`;
@@ -141,4 +149,4 @@ export function PersonSky({ name, handle }: { name: string; handle?: string }) {
       />
     </svg>
   );
-}
+});
