@@ -1,5 +1,10 @@
 import { memo, useId, useMemo, type CSSProperties } from "react";
-import { buildSky } from "./sky";
+import { buildSky, type SkyStar } from "./sky";
+
+// The non-featured minors are dealt round-robin into this many group-shimmer
+// layers. Star positions are random with respect to index, so each layer is an
+// even spatial sample and the field breathes as one, not per node.
+const SHIMMER_LAYERS = 3;
 
 // A person's unique patch of deep space, rendered from their seeded sky
 // data. Purely presentational; all randomness lives in buildSky. Memoized
@@ -24,6 +29,27 @@ export const PersonSky = memo(function PersonSky({
       "--lo": lo.toFixed(2),
       ...(rvd !== undefined ? { "--rvd": rvd.toFixed(3) } : {}),
     }) as CSSProperties;
+
+  // A static minor sits at the twinkle midpoint -- the time-average brightness
+  // of an alive star -- so the field reads exactly as dense as before. It still
+  // carries --rvd so the one-shot Ignition reveal staggers it in like the rest.
+  const dim = (hi: number, lo: number, rvd: number) =>
+    ({
+      "--mid": ((hi + lo) / 2).toFixed(2),
+      "--rvd": rvd.toFixed(3),
+    }) as CSSProperties;
+
+  // Split minors once: the seeded featured few keep their own twinkle; the rest
+  // are dealt into the shimmer layers.
+  const featuredMinors: Array<{ s: SkyStar; i: number }> = [];
+  const shimmerLayers: Array<Array<{ s: SkyStar; i: number }>> = Array.from(
+    { length: SHIMMER_LAYERS },
+    () => [],
+  );
+  sky.minors.forEach((s, i) => {
+    if (s.featured) featuredMinors.push({ s, i });
+    else shimmerLayers[i % SHIMMER_LAYERS].push({ s, i });
+  });
 
   return (
     <svg
@@ -58,7 +84,8 @@ export const PersonSky = memo(function PersonSky({
         />
       ))}
 
-      {sky.minors.map((s, i) => (
+      {/* The alive minors: each keeps its own twinkle, exactly as before. */}
+      {featuredMinors.map(({ s, i }) => (
         <circle
           key={`m${i}`}
           className="sky-tw sky-minor"
@@ -68,6 +95,24 @@ export const PersonSky = memo(function PersonSky({
           r={s.r.toFixed(2)}
           fill="#fff"
         />
+      ))}
+
+      {/* The rest: static at their midpoint, breathing together under a few
+          slow group-shimmer layers instead of ~130 per-node timelines. */}
+      {shimmerLayers.map((layer, l) => (
+        <g key={`sh${l}`} className={`sky-shimmer sky-shimmer-${l}`}>
+          {layer.map(({ s, i }) => (
+            <circle
+              key={`d${i}`}
+              className="sky-dim"
+              style={dim(s.hi, s.lo, s.rvd)}
+              cx={s.x.toFixed(1)}
+              cy={s.y.toFixed(1)}
+              r={s.r.toFixed(2)}
+              fill="#fff"
+            />
+          ))}
+        </g>
       ))}
 
       {sky.giants.map((g, i) => (

@@ -24,6 +24,10 @@ const RESULT_LIMIT = 20;
 // tappable on a phone (decision 12).
 const MOBILE_MAX_WIDTH = 480;
 
+// The dust is dealt into this many group-shimmer layers: each layer runs one
+// slow opacity breathe for all its stars instead of ~80 per-node twinkles.
+const DUST_SHIMMER_LAYERS = 3;
+
 function SearchIcon() {
   return (
     <svg
@@ -231,31 +235,35 @@ export function SearchAdd({
     <form className="atlas" onSubmit={handleSubmit}>
       <div className="atlas-space" aria-hidden="true" />
 
-      {/* One shared, faint, twinkling dust field behind every cluster. The
-          viewBox matches the pixel size so circles stay round and unstretched. */}
+      {/* One shared, faint dust field behind every cluster: static stars split
+          across a few slow group-shimmer layers so the whole field breathes as
+          one. The viewBox matches the pixel size so circles stay round. */}
       <svg
         className="atlas-dust"
         viewBox={`0 0 ${w} ${h}`}
         preserveAspectRatio="none"
         aria-hidden="true"
       >
-        {dust.map((s, i) => (
-          <circle
-            key={i}
-            className="sky-tw"
-            style={
-              {
-                "--d": `${s.dur.toFixed(1)}s`,
-                "--dl": `${s.delay.toFixed(1)}s`,
-                "--hi": s.hi.toFixed(2),
-                "--lo": s.lo.toFixed(2),
-              } as CSSProperties
-            }
-            cx={(s.x * w).toFixed(1)}
-            cy={(s.y * h).toFixed(1)}
-            r={s.r.toFixed(2)}
-            fill="#fff"
-          />
+        {Array.from({ length: DUST_SHIMMER_LAYERS }, (_, l) => (
+          <g key={l} className={`sky-shimmer sky-shimmer-${l}`}>
+            {dust.map((s, i) =>
+              i % DUST_SHIMMER_LAYERS === l ? (
+                <circle
+                  key={i}
+                  style={
+                    {
+                      "--hi": s.hi.toFixed(2),
+                      "--mid": ((s.hi + s.lo) / 2).toFixed(2),
+                    } as CSSProperties
+                  }
+                  cx={(s.x * w).toFixed(1)}
+                  cy={(s.y * h).toFixed(1)}
+                  r={s.r.toFixed(2)}
+                  fill="#fff"
+                />
+              ) : null,
+            )}
+          </g>
         ))}
       </svg>
 

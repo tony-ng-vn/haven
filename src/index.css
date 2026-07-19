@@ -1162,6 +1162,52 @@ textarea.field {
   animation: sky-shoot 13s linear var(--sdl, 4s) infinite;
 }
 
+/* Static (non-featured) minors. Reduced motion keeps today's full-rest look;
+   the no-preference override drops them to their twinkle midpoint, which the
+   group shimmer below then breathes -- so motion users see the same average
+   brightness as the old per-node twinkle, at a fraction of the paint cost. */
+.sky-dim {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sky-dim {
+    opacity: var(--mid, 0.4);
+  }
+}
+
+/* Group shimmer: a few <g> layers each run ONE slow, subtle opacity breathe
+   for all their static stars, replacing ~130 independent twinkle timelines.
+   Phase-offset (negative delays) so the layers never pulse in unison. */
+.sky-shimmer {
+  animation: sky-shimmer var(--sh-d, 11s) ease-in-out var(--sh-dl, 0s) infinite
+    alternate;
+}
+
+.sky-shimmer-0 {
+  --sh-d: 11s;
+  --sh-dl: 0s;
+}
+
+.sky-shimmer-1 {
+  --sh-d: 13s;
+  --sh-dl: -4.5s;
+}
+
+.sky-shimmer-2 {
+  --sh-d: 9.5s;
+  --sh-dl: -8s;
+}
+
+@keyframes sky-shimmer {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.88;
+  }
+}
+
 /* The Ignition reveal: played once, only when the user watches a card
    finish reading. The card fades to night, stars switch on in their own
    seeded order, the constellation lines catch between them, and the name
@@ -1179,6 +1225,14 @@ textarea.field {
       sky-ignite 320ms var(--ease-out) calc(var(--rvd, 0.5) * 900ms) forwards,
       sky-twinkle var(--d, 4s) ease-in-out calc(var(--rvd, 0.5) * 900ms + 1.5s)
         infinite alternate;
+  }
+
+  /* Static minors still ignite on their seeded reveal delay, then hand off to
+     their resting midpoint (no twinkle) -- the shimmer group carries the life. */
+  .sky-reveal .sky-dim {
+    opacity: 0;
+    animation: sky-ignite-dim 320ms var(--ease-out)
+      calc(var(--rvd, 0.5) * 900ms) forwards;
   }
 
   .sky-reveal .sky-majorg {
@@ -1225,6 +1279,17 @@ textarea.field {
   }
   to {
     opacity: var(--hi, 0.6);
+  }
+}
+
+/* Same ignite, but a static minor settles at its midpoint, not its twinkle
+   high -- so the reveal hands off seamlessly to the resting .sky-dim opacity. */
+@keyframes sky-ignite-dim {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: var(--mid, 0.4);
   }
 }
 
@@ -1329,10 +1394,18 @@ textarea.field {
   height: 100%;
 }
 
-/* Rest opacity is the star's faint high value, so when reduced motion silences
-   the twinkle the dust stays dim instead of snapping to full white. */
+/* Reduced motion keeps the dust at its faint high value (unchanged), so it
+   stays dim instead of snapping to full white. With motion, the no-preference
+   override drops it to the twinkle midpoint -- the average brightness of the
+   old per-node twinkle -- while the group shimmer breathes the field as one. */
 .atlas-dust circle {
   opacity: var(--hi, 0.3);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .atlas-dust circle {
+    opacity: var(--mid, 0.2);
+  }
 }
 
 /* Search + the add action float top-center, under the header. */
@@ -1641,10 +1714,11 @@ textarea.field {
     transition: none !important;
   }
 
-  /* The sky holds still: stars at rest opacity, no shooting star. */
+  /* The sky holds still: stars at rest opacity, no shooting star, no shimmer. */
   .sky-tw,
   .sky-flare,
-  .sky-shoot {
+  .sky-shoot,
+  .sky-shimmer {
     animation: none !important;
   }
 

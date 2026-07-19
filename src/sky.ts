@@ -11,6 +11,9 @@ export type SkyStar = {
   dur: number; // twinkle duration seconds
   delay: number;
   rvd: number; // 0..1 reveal stagger seed: when this star ignites
+  // Minors only: a seeded few keep their own twinkle; the rest render static
+  // under a shared group shimmer, so the sky animates ~30 nodes, not ~150.
+  featured?: boolean;
 };
 
 export type SkyMajor = SkyStar & { hue: number };
@@ -34,6 +37,9 @@ const H = 560;
 const PAD = 34;
 const MIN_SEPARATION = 68;
 const MINOR_COUNT = 150;
+// How many minors keep an individual twinkle. The rest go static under group
+// shimmer -- see PersonSky. Fixed count so every sky animates the same handful.
+const FEATURED_MINORS = 22;
 
 function hashString(s: string): number {
   let h = 2166136261;
@@ -177,6 +183,19 @@ export function buildSky(name: string, handle?: string): SkyData {
   const sx = 40 + rand() * 160;
   const sy = 30 + rand() * 120;
   const shoot = { x1: sx, y1: sy, x2: sx - 34, y2: sy - 19, delay: 3 + rand() * 8 };
+
+  // Pick the featured minors LAST -- after every other draw above -- so the
+  // giants, constellation, flares and shooting star stay byte-identical to
+  // before this flag existed. Drawing here shifts no earlier value, so no
+  // figure moves; only the boolean on the chosen minors changes. Partial
+  // Fisher-Yates over the same seeded stream keeps the pick stable per person.
+  const order = minors.map((_, i) => i);
+  const featureCount = Math.min(FEATURED_MINORS, order.length);
+  for (let i = 0; i < featureCount; i++) {
+    const j = i + Math.floor(rand() * (order.length - i));
+    [order[i], order[j]] = [order[j], order[i]];
+    minors[order[i]].featured = true;
+  }
 
   return { width: W, height: H, pad: PAD, hues, nebulae, minors, giants, majors, edges, flares, shoot };
 }

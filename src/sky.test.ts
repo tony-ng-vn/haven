@@ -108,6 +108,29 @@ describe("buildSky", () => {
       expect(majorPositions).toContain(`${flare.x},${flare.y}`);
     }
   });
+
+  test("flags a bounded handful of featured minors for individual twinkle", () => {
+    for (const p of [ROS, ALAN]) {
+      const featured = buildSky(p.name, p.handle).minors.filter(
+        (s) => s.featured,
+      );
+      // ~20-24 alive minors; the rest render static under group shimmer.
+      expect(featured.length).toBeGreaterThanOrEqual(20);
+      expect(featured.length).toBeLessThanOrEqual(24);
+    }
+  });
+
+  test("the featured set is stable for a given person", () => {
+    const a = buildSky(ROS.name, ROS.handle).minors.map((s) => !!s.featured);
+    const b = buildSky(ROS.name, ROS.handle).minors.map((s) => !!s.featured);
+    expect(a).toEqual(b);
+  });
+
+  test("featured is a minors-only concept: majors and giants stay alive", () => {
+    const sky = buildSky(ROS.name, ROS.handle);
+    for (const m of sky.majors) expect(m.featured).toBeUndefined();
+    for (const g of sky.giants) expect(g.featured).toBeUndefined();
+  });
 });
 
 describe("buildCluster", () => {
