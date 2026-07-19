@@ -397,10 +397,19 @@ export const backfillEmbeddings = internalAction({
       internal.people.listMissingEmbeddings,
       {},
     );
+    let embedded = 0;
     for (const personId of ids) {
-      await embedPerson(ctx, personId);
+      // One bad row must not abort the sweep: this runs unattended from the
+      // daily cron, and an aborted loop would re-fail identically every day
+      // while everyone behind the bad row stays unembedded.
+      try {
+        await embedPerson(ctx, personId);
+        embedded++;
+      } catch (error) {
+        console.error(`backfillEmbeddings: skipping ${personId}`, error);
+      }
     }
-    return ids.length;
+    return embedded;
   },
 });
 

@@ -444,6 +444,43 @@ test("backfillNormalizedNames patches rows missing normalizedName and skips the 
   expect(current?.normalizedName).toBe("maya");
 });
 
+test("backfillEmbeddings continues past a failing row", async () => {
+  // The daily cron runs this unattended; one poisoned row must not strand
+  // everyone queued behind it.
+  const stub = stubEmbeddingsSequence((callIndex) =>
+    callIndex === 0
+      ? new Response("upstream error", { status: 500 })
+      : Response.json({ data: [{ embedding: new Array(1536).fill(0.1) }] }),
+  );
+  const t = convexTest(schema, modules);
+  const { userId } = await asNewUser(t);
+  const firstId = await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "First Failing",
+      normalizedName: "first failing",
+      updatedAt: Date.now(),
+    }),
+  );
+  const secondId = await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "Second Fine",
+      normalizedName: "second fine",
+      updatedAt: Date.now(),
+    }),
+  );
+
+  const embedded = await t.action(internal.people.backfillEmbeddings, {});
+  expect(embedded).toBe(1);
+  expect(stub.callCount()).toBe(2);
+
+  const first = await t.run((ctx) => ctx.db.get("people", firstId));
+  expect(first?.embedding).toBeUndefined();
+  const second = await t.run((ctx) => ctx.db.get("people", secondId));
+  expect(second?.embedding).toBeDefined();
+});
+
 // ------------------------------------------------------- context length cap
 
 test("addPerson rejects context over 4000 characters", async () => {

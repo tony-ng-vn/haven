@@ -11,6 +11,7 @@ import { Doc } from "./_generated/dataModel";
 import { extractProfile } from "./openaiClient";
 import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
+import { normalizeName } from "./nameSearch";
 
 const MINUTE_MS = 60_000;
 const DAY_MS = 24 * 60 * 60_000;
@@ -208,6 +209,9 @@ export const acceptCapture = mutation({
     const personId = await ctx.db.insert("people", {
       userId,
       name: capture.extracted.name,
+      // Written here because this insert bypasses addPerson; without it the
+      // person is invisible to the normalized search index.
+      normalizedName: normalizeName(capture.extracted.name),
       link: args.link,
       context: args.context,
       updatedAt: Date.now(),
@@ -257,6 +261,8 @@ export const acceptManualCapture = mutation({
     const personId = await ctx.db.insert("people", {
       userId,
       name,
+      // Same reason as acceptCapture: search visibility requires it.
+      normalizedName: normalizeName(name),
       link: args.link,
       context: args.context,
       headline: args.headline,
