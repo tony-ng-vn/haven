@@ -1,13 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { SignIn as ClerkSignIn, useClerk } from "@clerk/react";
-import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
+import { useConvexAuth } from "convex/react";
 import type { Id } from "../convex/_generated/dataModel";
 import { SearchAdd } from "./SearchAdd";
 import { PersonDetail } from "./PersonDetail";
 import { CaptureTriage } from "./CaptureTriage";
 import { PersonSky } from "./PersonSky";
-import { isClerkFlowHash, type PersonSnapshot } from "./lib";
+import {
+  bootMode,
+  isClerkFlowHash,
+  type BootMode,
+  type PersonSnapshot,
+} from "./lib";
 
 function ChevronLeft() {
   return (
@@ -23,32 +28,50 @@ function ChevronLeft() {
   );
 }
 
+// The landing's content: brand, tagline, and the one glass button. Factored out
+// so it can double as Clerk's `fallback` in a busy state -- tapping "Sign in"
+// before Clerk has loaded holds here on a quiet busy button instead of dropping
+// the person into an empty card.
+function SkyLanding({ busy, onEnter }: { busy: boolean; onEnter?: () => void }) {
+  return (
+    <>
+      <span className="auth-brand">Euno</span>
+      <p className="auth-tagline">Find your way back to the people you meet.</p>
+      <button
+        className="sky-cta"
+        type="button"
+        onClick={onEnter}
+        disabled={busy}
+        aria-busy={busy}
+        style={busy ? { opacity: 0.6, cursor: "default" } : undefined}
+      >
+        {busy ? "Signing in" : "Sign in"}
+      </button>
+    </>
+  );
+}
+
 // The signed-out view opens on Euno's own sky -- a glass button over the deep
 // field -- and only reveals Clerk's card once the person chooses to enter, so
 // we never drop them straight into a third-party form.
 function SignIn() {
   // Returning from an OAuth redirect (e.g. "#/sso-callback") must mount Clerk
-  // right away to finish sign-in; otherwise Clerk never sees the callback and
-  // we'd show the landing button again.
-  const [entering, setEntering] = useState(() =>
-    isClerkFlowHash(window.location.hash),
-  );
+  // right away to finish sign-in; a first-time visitor mounts it only on tap.
+  const [flow] = useState(() => isClerkFlowHash(window.location.hash));
+  const [tapped, setTapped] = useState(false);
   return (
     <div className="auth auth-sky">
       <div className="sky-space" aria-hidden="true" />
       <PersonSky name="Euno" />
       <div className="sky-vignette" aria-hidden="true" />
       <div className="auth-sky-content">
-        {entering ? (
-          <ClerkSignIn />
+        {flow || tapped ? (
+          // Clerk holds on `fallback` until its script loads and the card
+          // mounts, so an early tap is never a dead click into an empty form;
+          // once ready it swaps the busy landing for the real card in place.
+          <ClerkSignIn fallback={<SkyLanding busy />} />
         ) : (
-          <>
-            <span className="auth-brand">Euno</span>
-            <p className="auth-tagline">Find your way back to the people you meet.</p>
-            <button className="sky-cta" type="button" onClick={() => setEntering(true)}>
-              Sign in
-            </button>
-          </>
+          <SkyLanding busy={false} onEnter={() => setTapped(true)} />
         )}
       </div>
     </div>
@@ -181,20 +204,63 @@ function Home() {
   );
 }
 
-export default function App() {
+function Splash() {
   return (
-    <>
-      <AuthLoading>
-        <div className="splash">
-          <span className="splash-brand">Euno</span>
-        </div>
-      </AuthLoading>
-      <Unauthenticated>
-        <SignIn />
-      </Unauthenticated>
-      <Authenticated>
-        <Home />
-      </Authenticated>
-    </>
+    <div className="splash">
+      <span className="splash-brand">Euno</span>
+    </div>
   );
+}
+
+// A durable breadcrumb that this browser has signed in before. It lets a
+// returning visitor splash straight toward the app instead of flashing the
+// landing while Clerk wakes. Reads can fail (private mode); we degrade to "no
+// hint" rather than throw, so those visitors just meet the landing first.
+const SESSION_HINT_KEY = "euno:hasSession";
+
+function readSessionHint(): boolean {
+  try {
+    return window.localStorage.getItem(SESSION_HINT_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
+function writeSessionHint(present: boolean): void {
+  try {
+    if (present) window.localStorage.setItem(SESSION_HINT_KEY, "1");
+    else window.localStorage.removeItem(SESSION_HINT_KEY);
+  } catch {
+    // Storage blocked -- the returning-visitor fast path simply won't apply.
+  }
+}
+
+export default function App() {
+  const { isLoading, isAuthenticated } = useConvexAuth();
+  // The boot decision reads the hash and hint once, at first paint -- that frame
+  // is the whole point, since it renders before Clerk can weigh in. After auth
+  // resolves we follow the live Convex state, so a stale mode never matters.
+  const [mode] = useState<BootMode>(() =>
+    bootMode({
+      hash: window.location.hash,
+      hasSessionHint: readSessionHint(),
+    }),
+  );
+
+  // Keep the hint honest against the resolved auth state: set it when signed in,
+  // clear it the moment we resolve signed out -- covering both a sign-out and a
+  // stale hint whose session no longer holds (which then self-heals to the
+  // landing on the next boot). Left untouched while auth is still loading.
+  useEffect(() => {
+    if (isLoading) return;
+    writeSessionHint(isAuthenticated);
+  }, [isLoading, isAuthenticated]);
+
+  if (isAuthenticated) return <Home />;
+  // A returning visitor or an in-flight Clerk callback waits on the splash;
+  // only a first-time visitor gets the landing painted before Clerk loads. The
+  // signed-out resolved state falls through to the same <SignIn/>, so a
+  // pre-Clerk tap on the landing is preserved across the flip -- no remount.
+  if (isLoading && mode !== "landing") return <Splash />;
+  return <SignIn />;
 }
