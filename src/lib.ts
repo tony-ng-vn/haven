@@ -176,6 +176,17 @@ export function rubberband(
   );
 }
 
+// Mirrors convex/captures.ts listCaptures's `.take(50)`. Once the queue
+// hits this cap the client cannot tell whether more are queued
+// server-side, so the toolbar count must read as a floor, not a total.
+export const CAPTURE_QUEUE_CAP = 50;
+
+export function triageCountLabel(queueLength: number): string {
+  if (queueLength >= CAPTURE_QUEUE_CAP) return `${CAPTURE_QUEUE_CAP}+ to review`;
+  if (queueLength === 1) return "1 to review";
+  return `${queueLength} to review`;
+}
+
 export type SwipeVelocitySample = { t: number; x: number };
 export type SwipeDecision = "save" | "context" | "settle";
 

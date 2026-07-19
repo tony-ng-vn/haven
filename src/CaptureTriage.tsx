@@ -11,6 +11,7 @@ import {
   deriveProfileUrl,
   normalizeUrl,
   rubberband,
+  triageCountLabel,
 } from "./lib";
 import { PersonSky } from "./PersonSky";
 
@@ -471,9 +472,7 @@ export function CaptureTriage() {
             <span className="triage-count">
               {uploading > 0
                 ? `Uploading ${uploading}...`
-                : queue.length === 1
-                  ? "1 to review"
-                  : `${queue.length} to review`}
+                : triageCountLabel(queue.length)}
             </span>
           </div>
 

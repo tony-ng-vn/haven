@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   bootMode,
   buildEmbedText,
+  CAPTURE_QUEUE_CAP,
   composeAtlasField,
   canSaveManualName,
   composeHeadline,
@@ -11,6 +12,7 @@ import {
   formatMonthYear,
   isClerkFlowHash,
   normalizeUrl,
+  triageCountLabel,
 } from "./lib";
 
 describe("normalizeUrl", () => {
@@ -243,6 +245,28 @@ describe("decideSwipe", () => {
   test("settles exactly at the threshold boundary (strictly greater/less to commit)", () => {
     expect(decideSwipe(-240, [{ t: 0, x: -240 }])).toBe("settle");
     expect(decideSwipe(240, [{ t: 0, x: 240 }])).toBe("settle");
+  });
+});
+
+describe("triageCountLabel", () => {
+  test("singular for exactly one", () => {
+    expect(triageCountLabel(1)).toBe("1 to review");
+  });
+
+  test("plain count below the cap", () => {
+    expect(triageCountLabel(0)).toBe("0 to review");
+    expect(triageCountLabel(7)).toBe("7 to review");
+    expect(triageCountLabel(CAPTURE_QUEUE_CAP - 1)).toBe(
+      `${CAPTURE_QUEUE_CAP - 1} to review`,
+    );
+  });
+
+  test("reads as a floor, not a false exact total, once the queue hits the cap", () => {
+    // listCaptures caps its query at CAPTURE_QUEUE_CAP; at that count the
+    // client cannot tell whether more are queued server-side.
+    expect(triageCountLabel(CAPTURE_QUEUE_CAP)).toBe(
+      `${CAPTURE_QUEUE_CAP}+ to review`,
+    );
   });
 });
 
