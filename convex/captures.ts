@@ -370,22 +370,32 @@ const ORPHAN_AGE_MS = HOUR_MS;
 const ORPHAN_SWEEP_BATCH_SIZE = 100;
 
 export const sweepOrphanedUploads = internalMutation({
-  args: {},
+  // batchSize is for tests, which prove wall-progress with a tiny batch.
+  args: { batchSize: v.optional(v.number()) },
   returns: v.number(),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
+    const batchSize = args.batchSize ?? ORPHAN_SWEEP_BATCH_SIZE;
     const cutoff = Date.now() - ORPHAN_AGE_MS;
-    // Explicit oldest-first: the break below relies on this ordering to
-    // know every later candidate is also too young, so state it rather
-    // than lean on the (correct, but unstated at the call site) default.
+    // Resume from the persisted watermark: referenced blobs are skipped,
+    // never deleted, so without a cursor they would wall off the head of
+    // the oldest-first scan and orphans behind them would leak forever.
+    const state = await ctx.db
+      .query("sweepState")
+      .withIndex("by_key", (q) => q.eq("key", "orphanSweep"))
+      .unique();
+    const watermark = state?.watermark ?? 0;
     const candidates = await ctx.db.system
       .query("_storage")
       .order("asc")
-      .take(ORPHAN_SWEEP_BATCH_SIZE);
+      .filter((q) =>
+        q.and(
+          q.gt(q.field("_creationTime"), watermark),
+          q.lt(q.field("_creationTime"), cutoff),
+        ),
+      )
+      .take(batchSize);
     let deleted = 0;
     for (const file of candidates) {
-      if (file._creationTime >= cutoff) {
-        break;
-      }
       const referencingCapture = await ctx.db
         .query("captures")
         .withIndex("by_screenshotId", (q) => q.eq("screenshotId", file._id))
@@ -402,6 +412,21 @@ export const sweepOrphanedUploads = internalMutation({
       }
       await ctx.storage.delete(file._id);
       deleted++;
+    }
+    // A full batch means there may be more beyond it: advance the cursor.
+    // A short batch means this cycle reached the end: reset to the start
+    // so the next cycle rescans everything (catching newly aged orphans).
+    const nextWatermark =
+      candidates.length < batchSize
+        ? 0
+        : candidates[candidates.length - 1]._creationTime;
+    if (state === null) {
+      await ctx.db.insert("sweepState", {
+        key: "orphanSweep",
+        watermark: nextWatermark,
+      });
+    } else {
+      await ctx.db.patch("sweepState", state._id, { watermark: nextWatermark });
     }
     return deleted;
   },

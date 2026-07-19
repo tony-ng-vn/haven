@@ -83,4 +83,12 @@ export default defineSchema({
     windowStart: v.number(),
     count: v.number(),
   }).index("by_user_action", ["userId", "action"]),
+
+  // Cursor state for paginated background sweeps: without a persisted
+  // watermark a bounded sweep re-reads the same head of the table forever
+  // and never progresses past rows it must skip.
+  sweepState: defineTable({
+    key: v.string(),
+    watermark: v.number(),
+  }).index("by_key", ["key"]),
 });
