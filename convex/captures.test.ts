@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -595,6 +596,9 @@ test("captures functions reject an unauthenticated caller", async () => {
     t.mutation(api.captures.acceptCapture, { captureId }),
   ).rejects.toThrow("Not signed in");
   await expect(
+    t.mutation(api.captures.acceptManualCapture, { captureId, name: "Ada" }),
+  ).rejects.toThrow("Not signed in");
+  await expect(
     t.mutation(api.captures.discardCapture, { captureId }),
   ).rejects.toThrow("Not signed in");
   await expect(
@@ -661,4 +665,175 @@ test("acceptCapture on a still-pending capture is rejected", async () => {
   await expect(
     as.mutation(api.captures.acceptCapture, { captureId }),
   ).rejects.toThrow("Capture is not ready");
+});
+
+// ------------------------------------------------- manual triage (no OCR)
+
+test("acceptManualCapture names a failed capture and consumes it", async () => {
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  const screenshotId = await seedScreenshot(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId,
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  expect(
+    (await t.run((ctx) => ctx.db.get("captures", captureId)))?.status,
+  ).toBe("failed");
+
+  const personId = await as.mutation(api.captures.acceptManualCapture, {
+    captureId,
+    name: "Ada Lovelace",
+    headline: "Convex -- MIT",
+    context: "Met at the meetup.",
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const person = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(person).toMatchObject({
+    userId,
+    name: "Ada Lovelace",
+    headline: "Convex -- MIT",
+    context: "Met at the meetup.",
+    // The screenshot moves to the person as a visual memory anchor.
+    screenshotId,
+  });
+  // Embedding was computed in the background, same as acceptCapture.
+  expect(person?.embedding).toHaveLength(1536);
+  expect(await t.run((ctx) => ctx.db.get("captures", captureId))).toBeNull();
+});
+
+test("acceptManualCapture trims the surrounding whitespace of the name", async () => {
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const personId = await as.mutation(api.captures.acceptManualCapture, {
+    captureId,
+    name: "  Ada Lovelace  ",
+  });
+  const person = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(person?.name).toBe("Ada Lovelace");
+});
+
+test("acceptManualCapture names a still-pending capture and survives the late extraction", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  const screenshotId = await seedScreenshot(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId,
+  });
+  // A stuck extraction must never block a human: name it while still pending.
+
+  const personId = await as.mutation(api.captures.acceptManualCapture, {
+    captureId,
+    name: "Grace Hopper",
+  });
+
+  // The in-flight extraction lands after the human already named them --
+  // getCapture finds nothing, so finishExtract is a harmless no-op.
+  await expect(
+    t.finishAllScheduledFunctions(vi.runAllTimers),
+  ).resolves.not.toThrow();
+
+  const people = await t.run((ctx) => ctx.db.query("people").collect());
+  expect(people).toHaveLength(1);
+  expect(people[0]).toMatchObject({ userId, name: "Grace Hopper", screenshotId });
+  expect(await t.run((ctx) => ctx.db.get("captures", captureId))).toBeNull();
+});
+
+test("acceptManualCapture refuses a ready capture", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  await expect(
+    as.mutation(api.captures.acceptManualCapture, {
+      captureId,
+      name: "Ada Lovelace",
+    }),
+  ).rejects.toThrow("Capture is not ready");
+});
+
+test("acceptManualCapture requires a non-empty name", async () => {
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  await expect(
+    as.mutation(api.captures.acceptManualCapture, {
+      captureId,
+      name: "   ",
+    }),
+  ).rejects.toThrow("Name is required");
+  // The capture is untouched -- still there to try again.
+  expect(
+    (await t.run((ctx) => ctx.db.get("captures", captureId)))?.status,
+  ).toBe("failed");
+});
+
+test("another user cannot manually accept my capture", async () => {
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+  const captureId = await me.as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  await expect(
+    other.as.mutation(api.captures.acceptManualCapture, {
+      captureId,
+      name: "Ada Lovelace",
+    }),
+  ).rejects.toThrow("Capture not found");
+});
+
+test("acceptManualCapture throttles a burst past the per-minute limit", async () => {
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  const screenshotId = await seedScreenshot(t);
+
+  // Seed failed captures directly: createCapture has its own tighter limit,
+  // so it cannot mint the 31 rows this window's cap needs.
+  const captureIds: Id<"captures">[] = [];
+  await t.run(async (ctx) => {
+    for (let i = 0; i < 31; i++) {
+      captureIds.push(
+        await ctx.db.insert("captures", {
+          userId,
+          screenshotId,
+          status: "failed",
+        }),
+      );
+    }
+  });
+
+  for (let i = 0; i < 30; i++) {
+    await as.mutation(api.captures.acceptManualCapture, {
+      captureId: captureIds[i],
+      name: "Ada Lovelace",
+    });
+  }
+  await expect(
+    as.mutation(api.captures.acceptManualCapture, {
+      captureId: captureIds[30],
+      name: "Ada Lovelace",
+    }),
+  ).rejects.toThrow("Too many requests -- please wait a moment");
 });

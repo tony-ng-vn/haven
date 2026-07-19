@@ -83,6 +83,32 @@ export function buildEmbedText(fields: {
     .join("\n");
 }
 
+// Manual triage: the human is the OCR. Join a first and last name into one
+// display name -- trim both, collapse runs of inner whitespace, single space
+// between. "" when nothing real was typed, which is also the can-save gate.
+export function composeName(first: string, last: string): string {
+  return `${first} ${last}`.replace(/\s+/g, " ").trim();
+}
+
+// The subtitle under a manually named star: workplace and school. Both ->
+// "WORK -- SCHOOL", one -> that one, neither -> undefined (nothing to store).
+export function composeHeadline(
+  work: string,
+  school: string,
+): string | undefined {
+  const w = work.trim();
+  const s = school.trim();
+  if (w !== "" && s !== "") return `${w} -- ${s}`;
+  if (w !== "") return w;
+  if (s !== "") return s;
+  return undefined;
+}
+
+// A manual card can only leave the deck once it actually names someone.
+export function canSaveManualName(name: string): boolean {
+  return name.trim() !== "";
+}
+
 // Clerk drives OAuth and verification steps through hash sub-routes it appends
 // to our page, e.g. "#/sso-callback" after Google returns. The bare landing
 // has no hash route, so a non-empty one means we must mount Clerk immediately

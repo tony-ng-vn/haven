@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 import {
   buildEmbedText,
+  canSaveManualName,
+  composeHeadline,
+  composeName,
   deriveProfileUrl,
   formatMonthYear,
   isClerkFlowHash,
@@ -105,6 +108,58 @@ describe("buildEmbedText", () => {
     expect(buildEmbedText({ name: "A", platform: "github" })).toBe(
       "A\ngithub",
     );
+  });
+});
+
+describe("composeName", () => {
+  test("joins first and last with a single space", () => {
+    expect(composeName("Ada", "Lovelace")).toBe("Ada Lovelace");
+  });
+
+  test("trims each part and collapses runs of inner whitespace", () => {
+    expect(composeName("  Mary   Jane ", "Watson")).toBe("Mary Jane Watson");
+  });
+
+  test("returns just the part that was typed when the other is blank", () => {
+    expect(composeName("Ada", "")).toBe("Ada");
+    expect(composeName("", "Lovelace")).toBe("Lovelace");
+    expect(composeName("  ", "Grace")).toBe("Grace");
+  });
+
+  test("returns empty string when both parts are empty or whitespace", () => {
+    expect(composeName("", "")).toBe("");
+    expect(composeName("   ", "  ")).toBe("");
+  });
+});
+
+describe("composeHeadline", () => {
+  test("joins work and school with a double-hyphen separator", () => {
+    expect(composeHeadline("Convex", "MIT")).toBe("Convex -- MIT");
+  });
+
+  test("returns the single part when only one is given", () => {
+    expect(composeHeadline("Convex", "")).toBe("Convex");
+    expect(composeHeadline("  ", "MIT")).toBe("MIT");
+  });
+
+  test("trims each part before combining", () => {
+    expect(composeHeadline("  Convex  ", "  MIT  ")).toBe("Convex -- MIT");
+  });
+
+  test("returns undefined when neither is given", () => {
+    expect(composeHeadline("", "")).toBeUndefined();
+    expect(composeHeadline("   ", "  ")).toBeUndefined();
+  });
+});
+
+describe("canSaveManualName", () => {
+  test("false until the composed name has real characters", () => {
+    expect(canSaveManualName("")).toBe(false);
+    expect(canSaveManualName("   ")).toBe(false);
+  });
+
+  test("true once someone is actually named", () => {
+    expect(canSaveManualName("Ada Lovelace")).toBe(true);
   });
 });
 
