@@ -929,6 +929,79 @@ textarea.field {
   border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
+/* Manual "name this star" card: the screenshot could not be read, so the
+   human names the person over their own sky. Same night surface and glass
+   language as the ready card; thumbnail up top as a memory anchor, glass
+   fields pushed into the lower half over the vignette. */
+.manual-content {
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 14px 14px 12px;
+}
+
+/* Reuses .triage-thumb, reframed small and in the glass idiom: hairline
+   white border, a whisper of translucency, the same inset top highlight the
+   other glass controls carry. */
+.manual-thumb {
+  width: 100%;
+  height: 84px;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.manual-lower {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.triage-card-sky .manual-caption {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.triage-card-sky .manual-name {
+  margin: 0;
+  font-size: 28px;
+}
+
+.manual-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 300px;
+}
+
+.triage-card-sky .manual-field {
+  padding: 10px 12px;
+  font-size: 15px;
+  text-align: center;
+}
+
+.manual-fail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.manual-fail-line {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.manual-retry {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
 /* Star motion: CSS (not SMIL) so reduced-motion can silence it. Every
    star carries its own duration and phase; the sky shimmers, never blinks. */
 .sky-tw {

@@ -3,7 +3,13 @@ import { useEffect, useRef, useState, type PointerEvent } from "react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
-import { deriveProfileUrl, normalizeUrl } from "./lib";
+import {
+  canSaveManualName,
+  composeHeadline,
+  composeName,
+  deriveProfileUrl,
+  normalizeUrl,
+} from "./lib";
 import { PersonSky } from "./PersonSky";
 
 type Capture = FunctionReturnType<typeof api.captures.listCaptures>[number];
@@ -65,7 +71,9 @@ export function CaptureTriage() {
   const generateUploadUrl = useMutation(api.captures.generateUploadUrl);
   const createCapture = useMutation(api.captures.createCapture);
   const acceptCapture = useMutation(api.captures.acceptCapture);
+  const acceptManualCapture = useMutation(api.captures.acceptManualCapture);
   const discardCapture = useMutation(api.captures.discardCapture);
+  const retryExtract = useMutation(api.captures.retryExtract);
 
   const [uploading, setUploading] = useState(0);
   const [uploadFailures, setUploadFailures] = useState(0);
@@ -73,6 +81,11 @@ export function CaptureTriage() {
   const [mode, setMode] = useState<"card" | "context">("card");
   const [contextDraft, setContextDraft] = useState("");
   const [linkDraft, setLinkDraft] = useState("");
+  // Manual "name this star" fields, used when a capture could not be read.
+  const [firstDraft, setFirstDraft] = useState("");
+  const [lastDraft, setLastDraft] = useState("");
+  const [workDraft, setWorkDraft] = useState("");
+  const [schoolDraft, setSchoolDraft] = useState("");
   const [drag, setDrag] = useState({ x: 0, y: 0, dragging: false });
   const [leaving, setLeaving] = useState<Capture | null>(null);
   // Guards save()/skip() while the top card's mutation is in flight, so a
@@ -87,7 +100,12 @@ export function CaptureTriage() {
   const prevTopRef = useRef<{ id: Capture["_id"]; status: string } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const firstNameRef = useRef<HTMLInputElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+  // A manual card's name lives in the draft fields, which reset the instant
+  // the next card arrives. Freeze the saved name here so the card keeps it
+  // while it flies off, instead of blanking to "unnamed star" mid-exit.
+  const leavingNameRef = useRef("");
   const pointer = useRef({ startX: 0, startY: 0, baseX: 0 });
   const history = useRef<Array<{ t: number; x: number }>>([]);
   // Tracks the pending "clear leaving" timeout so a second fast save can
@@ -115,13 +133,32 @@ export function CaptureTriage() {
   const under = queue[1];
   const topId = top?._id;
 
+  // The human-supplied identity for a manual card, recomposed each render.
+  const composedName = composeName(firstDraft, lastDraft);
+  const composedHeadline = composeHeadline(workDraft, schoolDraft);
+  const canSaveManual = canSaveManualName(composedName);
+
   // Fresh card, fresh slate.
   useEffect(() => {
     setMode("card");
     setContextDraft("");
     setLinkDraft("");
+    setFirstDraft("");
+    setLastDraft("");
+    setWorkDraft("");
+    setSchoolDraft("");
     setDrag({ x: 0, y: 0, dragging: false });
   }, [topId]);
+
+  // Focus the first-name field whenever a manual card is the one to name, so
+  // naming needs no reach for the input. The autoFocus attribute only fires
+  // on first mount; consecutive failed cards reuse the node, and with the
+  // dead OCR key every capture fails, so that is the common case.
+  useEffect(() => {
+    if (top?.status === "failed" && mode === "card") {
+      firstNameRef.current?.focus();
+    }
+  }, [topId, top?.status, mode]);
 
   useEffect(() => {
     const prev = prevTopRef.current;
@@ -187,13 +224,43 @@ export function CaptureTriage() {
     }, 2600);
   }
 
+  // A failed capture is named by hand (acceptManualCapture); a ready one
+  // carries its extracted profile (acceptCapture). One save path, two
+  // mutations -- picked here so the leaving/busy machinery stays shared.
+  function acceptForCard(capture: Capture, context?: string): Promise<unknown> {
+    if (capture.status === "failed") {
+      return acceptManualCapture({
+        captureId: capture._id,
+        name: composedName,
+        headline: composedHeadline,
+        context,
+      });
+    }
+    return acceptCapture({
+      captureId: capture._id,
+      link: resolvedLink(capture),
+      context,
+    });
+  }
+
   function save(capture: Capture, context?: string) {
     if (busy) return;
+    // A manual card with no name yet cannot leave the deck: rubber-band it
+    // back and say so, rather than firing a mutation that would be rejected.
+    if (capture.status === "failed" && !canSaveManual) {
+      flashActionError("Name them first");
+      setDrag({ x: 0, y: 0, dragging: false });
+      return;
+    }
     setBusy(true);
     setActionError(null);
+    // Freeze the manual name for the exit; ready cards render from their own
+    // extracted data, so this is a no-op string for them.
+    leavingNameRef.current =
+      capture.status === "failed" ? composedName : "";
 
     if (reduceMotion) {
-      acceptCapture({ captureId: capture._id, link: resolvedLink(capture), context })
+      acceptForCard(capture, context)
         .then(() => setSavedCount((n) => n + 1))
         .catch(() => flashActionError("Could not save -- try again"))
         .finally(() => setBusy(false));
@@ -205,7 +272,7 @@ export function CaptureTriage() {
     // fast save so it can't clear *this* card's leaving state early.
     clearLeavingTimeout();
     setLeaving(capture);
-    acceptCapture({ captureId: capture._id, link: resolvedLink(capture), context })
+    acceptForCard(capture, context)
       .then(() => setSavedCount((n) => n + 1))
       .catch(() => {
         // The mutation didn't land: bring the card back instead of
@@ -238,13 +305,24 @@ export function CaptureTriage() {
       .finally(() => setBusy(false));
   }
 
+  // One more try at reading the screenshot automatically. The capture drops
+  // back to pending and shows the reading skeleton until it resolves again.
+  function retry(capture: Capture) {
+    if (busy) return;
+    setBusy(true);
+    setActionError(null);
+    retryExtract({ captureId: capture._id })
+      .catch(() => flashActionError("Could not retry -- try again"))
+      .finally(() => setBusy(false));
+  }
+
   // ------------------------------------------------------------- gestures
 
   const canDrag =
     !reduceMotion &&
     !busy &&
     top !== undefined &&
-    top.status === "ready" &&
+    (top.status === "ready" || top.status === "failed") &&
     mode === "card";
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -283,14 +361,27 @@ export function CaptureTriage() {
     const projected = drag.x + project(velocity);
     history.current = [];
 
+    // An unnamed manual star can go neither way -- name it first.
+    const blockedUnnamed = top.status === "failed" && !canSaveManual;
+
     if (projected < -240) {
       // Flung left: remember them now, context can wait.
+      if (blockedUnnamed) {
+        flashActionError("Name them first");
+        setDrag({ x: 0, y: 0, dragging: false });
+        return;
+      }
       setDrag({ x: drag.x, y: drag.y, dragging: false });
       save(top);
       return;
     }
     if (projected > 240) {
       // Flung right: they matter; settle back and write the context.
+      if (blockedUnnamed) {
+        flashActionError("Name them first");
+        setDrag({ x: 0, y: 0, dragging: false });
+        return;
+      }
       setDrag({ x: 0, y: 0, dragging: false });
       setMode("context");
       setContextDraft(top.extracted?.bio ?? "");
@@ -327,6 +418,9 @@ export function CaptureTriage() {
   // underneath, so the exit animation always plays to completion.
   const isLeaving = leaving !== null;
   const activeTop = leaving ?? top;
+  // The manual card's name comes from the live drafts, except while leaving,
+  // when the frozen name keeps it from blanking as the next card resets them.
+  const manualName = isLeaving ? leavingNameRef.current : composedName;
   const rotation = Math.max(-8, Math.min(8, drag.x * 0.04));
   const cardStyle = isLeaving
     ? undefined
@@ -409,7 +503,9 @@ export function CaptureTriage() {
               <div
                 ref={cardRef}
                 className={`triage-card${
-                  activeTop.status === "ready" ? " triage-card-sky" : ""
+                  activeTop.status === "ready" || activeTop.status === "failed"
+                    ? " triage-card-sky"
+                    : ""
                 }${activeTop._id === revealId ? " sky-reveal" : ""}${
                   isLeaving ? " triage-card-exit" : ""
                 }`}
@@ -429,17 +525,135 @@ export function CaptureTriage() {
                 )}
 
                 {activeTop.status === "failed" && (
-                  <div className="triage-body">
-                    {activeTop.imageUrl !== null && (
-                      <img
-                        className="triage-thumb"
-                        src={activeTop.imageUrl}
-                        alt="Uploaded screenshot"
-                      />
+                  <div className="triage-body triage-sky-body">
+                    <div className="sky-space" aria-hidden="true" />
+                    <PersonSky
+                      name={manualName === "" ? activeTop._id : manualName}
+                    />
+                    <div className="sky-vignette" aria-hidden="true" />
+                    {(mode === "card" || isLeaving) && (
+                      <>
+                        <span
+                          className="swipe-label swipe-label-left"
+                          style={{
+                            opacity: Math.min(1, Math.max(0, -drag.x) / 120),
+                          }}
+                        >
+                          Save
+                        </span>
+                        <span
+                          className="swipe-label swipe-label-right"
+                          style={{
+                            opacity: Math.min(1, Math.max(0, drag.x) / 120),
+                          }}
+                        >
+                          Add context
+                        </span>
+                      </>
                     )}
-                    <p className="form-error">
-                      {activeTop.error ?? "Could not read this screenshot"}
-                    </p>
+                    <div className="sky-content manual-content">
+                      {activeTop.imageUrl !== null && (
+                        <img
+                          className="triage-thumb manual-thumb"
+                          src={activeTop.imageUrl}
+                          alt="Your screenshot of this person"
+                        />
+                      )}
+                      <div className="manual-lower">
+                        {manualName === "" ? (
+                          <p className="triage-meta manual-caption">
+                            unnamed star
+                          </p>
+                        ) : (
+                          <h2 className="triage-name manual-name">
+                            {manualName}
+                          </h2>
+                        )}
+                        {mode === "card" || isLeaving ? (
+                          <>
+                            <div className="manual-fields">
+                              <input
+                                ref={firstNameRef}
+                                className="field manual-field"
+                                type="text"
+                                placeholder="First name"
+                                value={firstDraft}
+                                onChange={(e) => setFirstDraft(e.target.value)}
+                                onPointerDown={(e) => e.stopPropagation()}
+                              />
+                              <input
+                                className="field manual-field"
+                                type="text"
+                                placeholder="Last name"
+                                value={lastDraft}
+                                onChange={(e) => setLastDraft(e.target.value)}
+                                onPointerDown={(e) => e.stopPropagation()}
+                              />
+                              <input
+                                className="field manual-field"
+                                type="text"
+                                placeholder="Where they work (optional)"
+                                value={workDraft}
+                                onChange={(e) => setWorkDraft(e.target.value)}
+                                onPointerDown={(e) => e.stopPropagation()}
+                              />
+                              <input
+                                className="field manual-field"
+                                type="text"
+                                placeholder="School (optional)"
+                                value={schoolDraft}
+                                onChange={(e) => setSchoolDraft(e.target.value)}
+                                onPointerDown={(e) => e.stopPropagation()}
+                              />
+                            </div>
+                            <div className="manual-fail">
+                              <p className="manual-fail-line">
+                                Could not read this screenshot automatically
+                              </p>
+                              <button
+                                type="button"
+                                className="btn-ghost sky-ghost manual-retry"
+                                disabled={busy}
+                                onClick={() => retry(activeTop)}
+                                onPointerDown={(e) => e.stopPropagation()}
+                              >
+                                Retry reading
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <textarea
+                              className="field triage-context"
+                              placeholder="How you met, what they are working on, anything you want to remember"
+                              value={contextDraft}
+                              autoFocus
+                              onChange={(e) => setContextDraft(e.target.value)}
+                              onPointerDown={(e) => e.stopPropagation()}
+                            />
+                            <div className="actions">
+                              <button
+                                type="button"
+                                className="btn-ghost sky-ghost"
+                                onClick={() => setMode("card")}
+                              >
+                                Back
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-primary"
+                                disabled={busy}
+                                onClick={() =>
+                                  top !== undefined && saveWithContext(top)
+                                }
+                              >
+                                Save
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -560,7 +774,7 @@ export function CaptureTriage() {
                 disabled={busy}
                 onClick={() => skip(top)}
               >
-                Skip
+                {top.status === "failed" ? "Discard" : "Skip"}
               </button>
               {top.status === "ready" && (
                 <>
@@ -582,6 +796,29 @@ export function CaptureTriage() {
                     }}
                   >
                     Save + context
+                  </button>
+                </>
+              )}
+              {top.status === "failed" && (
+                <>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    disabled={busy || !canSaveManual}
+                    onClick={() => save(top)}
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={busy || !canSaveManual}
+                    onClick={() => {
+                      setMode("context");
+                      setContextDraft("");
+                    }}
+                  >
+                    Add context
                   </button>
                 </>
               )}
