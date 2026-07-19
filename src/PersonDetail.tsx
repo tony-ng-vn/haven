@@ -1,8 +1,9 @@
 import { useQuery, useMutation } from "convex/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { formatMonthYear, normalizeUrl, type PersonSnapshot } from "./lib";
+import { PersonSky } from "./PersonSky";
 
 function ArrowUpRight() {
   return (
@@ -29,11 +30,23 @@ export function PersonDetail({
 }) {
   const live = useQuery(api.people.getPerson, { id });
   const updatePerson = useMutation(api.people.updatePerson);
+  const deletePerson = useMutation(api.people.deletePerson);
   const [link, setLink] = useState(initial?.link ?? "");
   const [context, setContext] = useState(initial?.context ?? "");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Catch focus when the confirm row swaps in so a keyboard user is never
+  // dropped onto the body. Cancel (not Remove) so the safe choice is default
+  // for an action that cannot be undone.
+  const cancelDeleteRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (confirmingDelete) cancelDeleteRef.current?.focus();
+  }, [confirmingDelete]);
 
   // The row snapshot renders instantly; once the authoritative doc arrives,
   // sync the form unless the user has already started typing.
@@ -86,10 +99,43 @@ export function PersonDetail({
     }
   }
 
+  async function handleDelete() {
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deletePerson({ personId: id });
+      // The search screen's live query drops the row on its own; onSaved just
+      // takes us back there. No state reset needed -- this unmounts.
+      onSaved();
+    } catch {
+      setDeleteError("Could not remove. Please try again.");
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="person-detail">
-      <h1 className="person-name">{person.name}</h1>
+      <div className="person-sky-band">
+        <div className="sky-space" aria-hidden="true" />
+        {/* Seeded by name only: the search snapshot never carries a handle, so
+            name alone stays stable across the snapshot -> live handoff instead
+            of re-seeding the whole starfield when the doc arrives. */}
+        <PersonSky name={person.name} />
+        <div className="sky-vignette" aria-hidden="true" />
+        <div className="person-sky-content">
+          <h1 className="person-name">{person.name}</h1>
+        </div>
+      </div>
       <p className="person-meta">Added {formatMonthYear(person._creationTime)}</p>
+
+      {/* Reserved slot: the source screenshot thumbnail belongs here, in the
+          quiet register above the link. Deferred this round -- getPerson does
+          not project an image URL yet (it returns screenshotId only), so there
+          is nothing to render client-side. Once getPerson resolves
+          ctx.storage.getUrl(screenshotId) into an imageUrl, render a small
+          .person-thumb here; the layout already leaves room for it. */}
+
       <div className="detail-field">
         <div className="field-row">
           <label htmlFor="person-link">Link</label>
@@ -155,6 +201,55 @@ export function PersonDetail({
             "Save"
           )}
         </button>
+      </div>
+
+      <div className="person-danger">
+        {confirmingDelete ? (
+          <div className="person-remove-confirm">
+            <p className="person-remove-prompt" role="alert">
+              Remove {person.name}? This cannot be undone.
+            </p>
+            <div className="person-remove-actions">
+              <button
+                ref={cancelDeleteRef}
+                className="btn-ghost"
+                type="button"
+                disabled={deleting}
+                onClick={() => setConfirmingDelete(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-danger"
+                type="button"
+                disabled={deleting}
+                onClick={() => void handleDelete()}
+              >
+                {deleting ? (
+                  <>
+                    <span className="spinner" aria-hidden="true" />
+                    Removing
+                  </>
+                ) : (
+                  "Remove"
+                )}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="person-remove"
+            type="button"
+            onClick={() => setConfirmingDelete(true)}
+          >
+            Remove from your network
+          </button>
+        )}
+        {deleteError !== null && (
+          <p className="form-error" role="alert">
+            {deleteError}
+          </p>
+        )}
       </div>
     </div>
   );
