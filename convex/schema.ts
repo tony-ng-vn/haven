@@ -7,6 +7,11 @@ export default defineSchema({
     // ownership key now that there is no local users table.
     userId: v.string(),
     name: v.string(),
+    // Accent-insensitive lowercase key for search_normalized_name; see
+    // nameSearch.ts. Optional because rows created before this field
+    // existed (and rows captures.ts inserts directly) need a backfill --
+    // see backfillNormalizedNames in people.ts.
+    normalizedName: v.optional(v.string()),
     link: v.optional(v.string()),
     context: v.optional(v.string()),
     updatedAt: v.number(),
@@ -22,8 +27,8 @@ export default defineSchema({
     embeddedText: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
-    .searchIndex("search_name", {
-      searchField: "name",
+    .searchIndex("search_normalized_name", {
+      searchField: "normalizedName",
       filterFields: ["userId"],
     })
     .vectorIndex("by_embedding", {

@@ -223,6 +223,53 @@ export const acceptCapture = mutation({
   },
 });
 
+// Manual triage: when OCR/API cannot read a screenshot, the human names the
+// person themselves. Allowed while the capture is "failed" or still "pending"
+// -- a stuck extraction should never block a human. Deleting the capture row
+// here makes any in-flight finishExtract/failExtract a harmless no-op (both
+// null-guard the row), so there is no duplicate person and nothing throws.
+export const acceptManualCapture = mutation({
+  args: {
+    captureId: v.id("captures"),
+    name: v.string(),
+    headline: v.optional(v.string()),
+    context: v.optional(v.string()),
+    link: v.optional(v.string()),
+  },
+  returns: v.id("people"),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    // Naming schedules a paid embedding, so guard the burst like the other
+    // spend paths do -- and before the ownership check, so probing another
+    // user's captures still spends the attacker's own budget.
+    await checkRateLimit(ctx, userId, "acceptManual", 30, MINUTE_MS);
+    const capture = await ctx.db.get("captures", args.captureId);
+    if (capture === null || capture.userId !== userId) {
+      throw new Error("Capture not found");
+    }
+    if (capture.status !== "failed" && capture.status !== "pending") {
+      throw new Error("Capture is not ready");
+    }
+    const name = args.name.trim();
+    if (name === "") {
+      throw new Error("Name is required");
+    }
+    const personId = await ctx.db.insert("people", {
+      userId,
+      name,
+      link: args.link,
+      context: args.context,
+      headline: args.headline,
+      // The screenshot stays with the person as a visual memory anchor.
+      screenshotId: capture.screenshotId,
+      updatedAt: Date.now(),
+    });
+    await ctx.db.delete("captures", args.captureId);
+    await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
+    return personId;
+  },
+});
+
 export const discardCapture = mutation({
   args: { captureId: v.id("captures") },
   returns: v.null(),
