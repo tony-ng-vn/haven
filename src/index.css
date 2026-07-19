@@ -1596,10 +1596,23 @@ textarea.field {
     animation: screen-in var(--t-screen) var(--ease-out);
   }
 
+  /* The atlas is position:fixed inside the screen; a transform here would
+     become its containing block and drag the whole sky through the entrance
+     settle. Fade only. */
+  .app-main-atlas .screen {
+    animation-name: screen-in-fade;
+  }
+
   @keyframes screen-in {
     from {
       opacity: 0;
       transform: translateY(6px);
+    }
+  }
+
+  @keyframes screen-in-fade {
+    from {
+      opacity: 0;
     }
   }
 }

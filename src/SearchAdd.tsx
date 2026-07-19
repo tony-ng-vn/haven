@@ -12,6 +12,7 @@ import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { formatMonthYear, type PersonSnapshot } from "./lib";
 import { atlasLayout, buildCluster, buildDust } from "./sky";
+import { composeAtlasField } from "./lib";
 
 type SemanticResults = FunctionReturnType<typeof api.people.semanticSearch>;
 
@@ -153,16 +154,31 @@ export function SearchAdd({
 
   const dust = useMemo(() => buildDust(), []);
 
-  // One cluster figure per person, memoized so keystrokes (which never change
-  // the field) don't rebuild ~20 constellations.
+  // The rendered field: the stable recent people first (their spiral spots
+  // never move), plus any search match not already among them, materializing
+  // at the spiral's outer edge. Without this, an off-field match could never
+  // be opened -- and "Add" would offer to duplicate them.
+  // Typed to the snapshot shape all three sources share (semantic results
+  // carry a score but no screenshotId/updatedAt) -- the atlas only needs
+  // what PersonSnapshot guarantees.
+  const field = useMemo<PersonSnapshot[]>(
+    () =>
+      trimmed === ""
+        ? list
+        : composeAtlasField<PersonSnapshot>(list, nameMatches ?? [], semantic),
+    [trimmed, list, nameMatches, semantic],
+  );
+
+  // One cluster figure per person. Rebuilds only when the field composition
+  // changes (a keystroke that surfaces no new person reuses the memo).
   const clusters = useMemo(
-    () => list.map((p) => buildCluster(p.name, undefined, { width: boxW, height: boxH })),
-    [list, boxW, boxH],
+    () => field.map((p) => buildCluster(p.name, undefined, { width: boxW, height: boxH })),
+    [field, boxW, boxH],
   );
 
   const positions = useMemo(
-    () => atlasLayout(list.length, w, h, { boxW, boxH, labelH }),
-    [list.length, w, h, boxW, boxH, labelH],
+    () => atlasLayout(field.length, w, h, { boxW, boxH, labelH }),
+    [field.length, w, h, boxW, boxH, labelH],
   );
 
   const nameMatchIds = useMemo(
@@ -294,7 +310,7 @@ export function SearchAdd({
           even though each button is absolutely positioned. */}
       {fieldLoaded && !isEmpty && (
         <div className="atlas-field">
-          {list.map((person, i) => {
+          {field.map((person, i) => {
             const cluster = clusters[i];
             const pos = positions[i];
             const dim = !isLit(person._id);
