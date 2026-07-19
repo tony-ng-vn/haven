@@ -1,8 +1,9 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { api } from "./_generated/api";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { api, internal } from "./_generated/api";
 import schema from "./schema";
+import { normalizeName } from "./nameSearch";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -38,6 +39,35 @@ function stubEmbeddings(vector: number[]) {
       return realFetch(input, init);
     },
   );
+}
+
+// Like stubEmbeddings, but each call to the embeddings endpoint is handed
+// to `respond`, which decides success or failure per call -- for exercising
+// the embed action's retry-with-backoff path.
+function stubEmbeddingsSequence(
+  respond: (callIndex: number) => Response,
+): { callCount: () => number } {
+  const realFetch = globalThis.fetch;
+  let calls = 0;
+  vi.stubGlobal(
+    "fetch",
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const raw = String(input);
+      let url: URL;
+      try {
+        url = new URL(raw);
+      } catch {
+        return realFetch(input, init);
+      }
+      if (url.hostname === "api.openai.com" && url.pathname.includes("/embeddings")) {
+        const response = respond(calls);
+        calls++;
+        return response;
+      }
+      return realFetch(input, init);
+    },
+  );
+  return { callCount: () => calls };
 }
 
 beforeEach(() => {
@@ -309,4 +339,212 @@ test("updatePerson is rate-limited per caller (wiring check)", async () => {
       .unique(),
   );
   expect(window?.count).toBe(1);
+});
+
+// ------------------------------------------------------- normalizeName
+
+describe("normalizeName", () => {
+  test("lowercases, strips diacritics, and collapses whitespace", () => {
+    expect(normalizeName("Nguyen Van Dung")).toBe("nguyen van dung");
+    expect(normalizeName("  Maya   Chen  ")).toBe("maya chen");
+  });
+
+  test("folds a fully-accented Vietnamese phrase down to plain ASCII", () => {
+    expect(normalizeName("Nguy\u1ec5n V\u0103n D\u0169ng")).toBe(
+      "nguyen van dung",
+    );
+  });
+
+  test("folds the Vietnamese D-stroke, which NFD cannot decompose on its own", () => {
+    // "\u0110un \u0110un" is "Dun Dun" typed with the D-stroke letter.
+    expect(normalizeName("\u0110un \u0110un")).toBe("dun dun");
+    expect(normalizeName("d\u1ee9a \u0111\u1ecfi")).toBe("dua doi");
+  });
+});
+
+// -------------------------------------------------- accent-insensitive search
+
+test("searchPeople finds an accented name via an unaccented query", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  await as.mutation(api.people.addPerson, { name: "Nguy\u1ec5n V\u0103n D\u0169ng" });
+
+  const results = await as.query(api.people.searchPeople, { query: "dung" });
+  expect(results.map((p) => p.name)).toEqual(["Nguy\u1ec5n V\u0103n D\u0169ng"]);
+});
+
+test("searchPeople finds an unaccented name via an accented query", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  await as.mutation(api.people.addPerson, { name: "Dung" });
+
+  const results = await as.query(api.people.searchPeople, {
+    query: "D\u0169ng",
+  });
+  expect(results.map((p) => p.name)).toEqual(["Dung"]);
+});
+
+test("searchPeople finds the D-stroke name via a plain-D query", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  await as.mutation(api.people.addPerson, { name: "\u0110un \u0110un" });
+
+  const results = await as.query(api.people.searchPeople, { query: "dun" });
+  expect(results.map((p) => p.name)).toEqual(["\u0110un \u0110un"]);
+});
+
+test("searchPeople keeps user isolation on the normalized-name index", async () => {
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+  await me.as.mutation(api.people.addPerson, { name: "D\u0169ng" });
+  await other.as.mutation(api.people.addPerson, { name: "D\u0169ng Two" });
+
+  const results = await me.as.query(api.people.searchPeople, { query: "dung" });
+  expect(results.map((p) => p.name)).toEqual(["D\u0169ng"]);
+});
+
+test("searchPeople with a query that normalizes to empty falls back to recent people", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  await as.mutation(api.people.addPerson, { name: "Maya Chen" });
+
+  // A combining mark alone (U+0301, acute accent) normalizes to "".
+  const results = await as.query(api.people.searchPeople, {
+    query: "\u0301",
+  });
+  expect(results.map((p) => p.name)).toEqual(["Maya Chen"]);
+});
+
+test("backfillNormalizedNames patches rows missing normalizedName and skips the rest", async () => {
+  const t = convexTest(schema, modules);
+  const { userId } = await asNewUser(t);
+  const legacyId = await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "D\u0169ng",
+      updatedAt: Date.now(),
+    }),
+  );
+  const currentId = await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "Maya",
+      normalizedName: "maya",
+      updatedAt: Date.now(),
+    }),
+  );
+
+  const patched = await t.mutation(internal.people.backfillNormalizedNames, {});
+  expect(patched).toBe(1);
+
+  const legacy = await t.run((ctx) => ctx.db.get("people", legacyId));
+  expect(legacy?.normalizedName).toBe("dung");
+  const current = await t.run((ctx) => ctx.db.get("people", currentId));
+  expect(current?.normalizedName).toBe("maya");
+});
+
+// ------------------------------------------------------- context length cap
+
+test("addPerson rejects context over 4000 characters", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  await expect(
+    as.mutation(api.people.addPerson, {
+      name: "Maya",
+      context: "x".repeat(4001),
+    }),
+  ).rejects.toThrow("Context is too long -- keep it under 4000 characters");
+});
+
+test("addPerson accepts context at exactly 4000 characters", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const id = await as.mutation(api.people.addPerson, {
+    name: "Maya",
+    context: "x".repeat(4000),
+  });
+  const person = await t.run((ctx) => ctx.db.get("people", id));
+  expect(person?.context).toHaveLength(4000);
+});
+
+test("updatePerson rejects context over 4000 characters", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const id = await as.mutation(api.people.addPerson, { name: "Maya" });
+  await expect(
+    as.mutation(api.people.updatePerson, {
+      id,
+      context: "x".repeat(4001),
+    }),
+  ).rejects.toThrow("Context is too long -- keep it under 4000 characters");
+});
+
+// -------------------------------------------------------- embed input safety
+
+test("embed slices an over-long combined text before requesting an embedding", async () => {
+  stubEmbeddings(new Array(1536).fill(0.2));
+  const t = convexTest(schema, modules);
+  const { userId } = await asNewUser(t);
+  // Bypass addPerson's 4000-char cap to model legacy data or a huge headline
+  // written directly by the capture pipeline (out of scope here).
+  const id = await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "Maya Chen",
+      context: "x".repeat(9000),
+      updatedAt: Date.now(),
+    }),
+  );
+
+  await t.run((ctx) =>
+    ctx.scheduler.runAfter(0, internal.people.embed, { personId: id }),
+  );
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const stored = await t.run((ctx) => ctx.db.get("people", id));
+  expect(stored?.embedding).toBeDefined();
+  expect(stored?.embeddedText).toHaveLength(8000);
+});
+
+// ------------------------------------------------------------ embed retries
+
+test("embed retries after a failure and succeeds on the next attempt", async () => {
+  const stub = stubEmbeddingsSequence((callIndex) =>
+    callIndex === 0
+      ? new Response("rate limited", { status: 429 })
+      : Response.json({ data: [{ embedding: new Array(1536).fill(0.1) }] }),
+  );
+
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const id = await as.mutation(api.people.addPerson, { name: "Maya Chen" });
+
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const stored = await t.run((ctx) => ctx.db.get("people", id));
+  expect(stored?.embedding).toBeDefined();
+  expect(stub.callCount()).toBe(2);
+});
+
+test("embed gives up after 3 total attempts without throwing", async () => {
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  const stub = stubEmbeddingsSequence(
+    () => new Response("boom", { status: 500 }),
+  );
+
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const id = await as.mutation(api.people.addPerson, { name: "Maya Chen" });
+
+  await expect(
+    t.finishAllScheduledFunctions(vi.runAllTimers),
+  ).resolves.not.toThrow();
+
+  const stored = await t.run((ctx) => ctx.db.get("people", id));
+  expect(stored?.embedding).toBeUndefined();
+  expect(stub.callCount()).toBe(3);
+  expect(consoleError).toHaveBeenCalled();
+
+  consoleError.mockRestore();
 });

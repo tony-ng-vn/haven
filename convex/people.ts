@@ -14,6 +14,7 @@ import { buildEmbedText } from "../src/lib";
 import { embedText } from "./openaiClient";
 import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
+import { normalizeName } from "./nameSearch";
 
 // Bound every list read so the query stays scalable as the table grows.
 const RESULT_LIMIT = 20;
@@ -23,6 +24,24 @@ const RESULT_LIMIT = 20;
 const MIN_SEMANTIC_SCORE = 0.3;
 
 const MINUTE_MS = 60_000;
+
+// Keeps a single wildly long paste from bloating a document or dominating
+// its own embedding.
+const MAX_CONTEXT_LENGTH = 4000;
+const CONTEXT_TOO_LONG_ERROR =
+  "Context is too long -- keep it under 4000 characters";
+
+// The embeddings request has its own size ceiling; slicing here means an
+// over-long stored context can never fail the whole embed call.
+const MAX_EMBED_INPUT_LENGTH = 8000;
+
+// Batch size for the maintenance mutations below, kept well under Convex's
+// per-transaction document limits.
+const BACKFILL_BATCH_SIZE = 500;
+
+// Backoff schedule for the embed action: index 0 is the delay before retry
+// attempt 1, index 1 before attempt 2. After that we give up.
+const EMBED_RETRY_DELAYS_MS = [30_000, 5 * 60_000];
 
 // What the client is ever allowed to see for a person. Never embedding,
 // embeddedText, or userId -- those stay server-side.
@@ -55,7 +74,7 @@ function projectPerson(person: Doc<"people">) {
 }
 
 export const addPerson = mutation({
-  args: { name: v.string() },
+  args: { name: v.string(), context: v.optional(v.string()) },
   returns: v.id("people"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
@@ -64,9 +83,14 @@ export const addPerson = mutation({
     if (name === "") {
       throw new Error("Name is required");
     }
+    if (args.context !== undefined && args.context.length > MAX_CONTEXT_LENGTH) {
+      throw new Error(CONTEXT_TOO_LONG_ERROR);
+    }
     const personId = await ctx.db.insert("people", {
       userId,
       name,
+      normalizedName: normalizeName(name),
+      context: args.context,
       updatedAt: Date.now(),
     });
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
@@ -79,9 +103,11 @@ export const searchPeople = query({
   returns: v.array(personValidator),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    const term = args.query.trim();
+    // A query of only combining marks/punctuation can normalize to "" --
+    // treat that the same as an empty query rather than search for "".
+    const normalizedTerm = normalizeName(args.query);
     const people =
-      term === ""
+      normalizedTerm === ""
         ? await ctx.db
             .query("people")
             .withIndex("by_user", (q) => q.eq("userId", userId))
@@ -89,8 +115,8 @@ export const searchPeople = query({
             .take(RESULT_LIMIT)
         : await ctx.db
             .query("people")
-            .withSearchIndex("search_name", (q) =>
-              q.search("name", term).eq("userId", userId),
+            .withSearchIndex("search_normalized_name", (q) =>
+              q.search("normalizedName", normalizedTerm).eq("userId", userId),
             )
             .take(RESULT_LIMIT);
     return people.map(projectPerson);
@@ -124,9 +150,14 @@ export const updatePerson = mutation({
     if (person === null || person.userId !== userId) {
       throw new Error("Person not found");
     }
+    if (args.context !== undefined && args.context.length > MAX_CONTEXT_LENGTH) {
+      throw new Error(CONTEXT_TOO_LONG_ERROR);
+    }
     // The detail screen always sends both fields; an omitted (undefined) value
     // means the user cleared that input, so patch unsets the field on purpose.
     // Callers that want to leave a field untouched must resend its current value.
+    // updatePerson never takes a name, so normalizedName (set at insert) is
+    // never stale here and does not need recomputing.
     await ctx.db.patch("people", args.id, {
       link: args.link,
       context: args.context,
@@ -204,8 +235,8 @@ async function embedPerson(
     handle: person.handle,
     headline: person.headline,
     context: person.context,
-  });
-  // Idempotent: the stored text is the key for the stored vector.
+  }).slice(0, MAX_EMBED_INPUT_LENGTH);
+  // Idempotent: the stored (sliced) text is the key for the stored vector.
   if (person.embedding !== undefined && person.embeddedText === text) {
     return;
   }
@@ -218,10 +249,28 @@ async function embedPerson(
 }
 
 export const embed = internalAction({
-  args: { personId: v.id("people") },
+  args: { personId: v.id("people"), attempt: v.optional(v.number()) },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await embedPerson(ctx, args.personId);
+    const attempt = args.attempt ?? 0;
+    try {
+      await embedPerson(ctx, args.personId);
+    } catch (error) {
+      const delayMs = EMBED_RETRY_DELAYS_MS[attempt];
+      if (delayMs === undefined) {
+        // Out of retries: log and give up rather than throw, so a single
+        // stuck person can never surface as an unhandled action failure.
+        console.error(
+          `embed: giving up on person ${args.personId} after ${attempt + 1} attempts`,
+          error,
+        );
+        return null;
+      }
+      await ctx.scheduler.runAfter(delayMs, internal.people.embed, {
+        personId: args.personId,
+        attempt: attempt + 1,
+      });
+    }
     return null;
   },
 });
@@ -352,5 +401,26 @@ export const backfillEmbeddings = internalAction({
       await embedPerson(ctx, personId);
     }
     return ids.length;
+  },
+});
+
+// One-off maintenance: rows written before normalizedName existed (or
+// inserted directly by the capture pipeline, which bypasses addPerson)
+// are unreachable by search_normalized_name until patched. Run with:
+// npx convex run people:backfillNormalizedNames
+export const backfillNormalizedNames = internalMutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const candidates = await ctx.db.query("people").take(BACKFILL_BATCH_SIZE);
+    const missing = candidates.filter(
+      (person) => person.normalizedName === undefined,
+    );
+    for (const person of missing) {
+      await ctx.db.patch("people", person._id, {
+        normalizedName: normalizeName(person.name),
+      });
+    }
+    return missing.length;
   },
 });
