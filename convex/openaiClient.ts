@@ -72,8 +72,12 @@ function apiKey(): string {
   return key;
 }
 
+// Any OpenAI-compatible provider (e.g. interfaze.ai) works by pointing this
+// at its base URL; the request/response shape is unchanged.
+const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com";
+
 async function callOpenAI(path: string, body: unknown): Promise<unknown> {
-  const response = await fetch(`https://api.openai.com/v1/${path}`, {
+  const response = await fetch(`${baseUrl}/v1/${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
