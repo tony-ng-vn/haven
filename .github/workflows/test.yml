@@ -17,4 +17,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+        env:
+          # The convex tests stub all network calls, but the OpenAI client
+          # asserts a key exists before the stubbed fetch is ever reached.
+          OPENAI_API_KEY: ci-dummy-key-network-is-mocked
       - run: npm run build
