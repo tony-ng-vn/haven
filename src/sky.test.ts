@@ -133,6 +133,41 @@ describe("buildSky", () => {
   });
 });
 
+describe("buildSky invariants across many identities", () => {
+  // The constellation figure comes from rejection sampling (retry until the
+  // minimum-separation constraint is met), so a single fixed test person
+  // cannot catch a seed where that loop misbehaves. Sweep a wide,
+  // deterministic set of identities instead.
+  const NAMES = Array.from({ length: 100 }, (_, i) => `name-${i}`);
+
+  test("bounds, edge count, and separation hold for every generated identity", () => {
+    for (const name of NAMES) {
+      const sky = buildSky(name, `@${name}`);
+
+      for (const star of sky.majors) {
+        expect(star.x).toBeGreaterThanOrEqual(sky.pad);
+        expect(star.x).toBeLessThanOrEqual(sky.width - sky.pad);
+        expect(star.y).toBeGreaterThanOrEqual(sky.pad);
+        expect(star.y).toBeLessThanOrEqual(sky.height * 0.62);
+      }
+      for (let i = 0; i < sky.majors.length; i++) {
+        for (let j = i + 1; j < sky.majors.length; j++) {
+          const dx = sky.majors[i].x - sky.majors[j].x;
+          const dy = sky.majors[i].y - sky.majors[j].y;
+          expect(Math.hypot(dx, dy)).toBeGreaterThanOrEqual(68);
+        }
+      }
+      expect(sky.edges).toHaveLength(sky.majors.length - 1);
+      for (const [a, b] of sky.edges) {
+        expect(a).toBeGreaterThanOrEqual(0);
+        expect(b).toBeGreaterThanOrEqual(0);
+        expect(a).toBeLessThan(sky.majors.length);
+        expect(b).toBeLessThan(sky.majors.length);
+      }
+    }
+  });
+});
+
 describe("buildCluster", () => {
   test("is deterministic for the same person", () => {
     const a = buildCluster(ROS.name, ROS.handle);

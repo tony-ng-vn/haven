@@ -63,7 +63,9 @@ export function deriveProfileUrl(
   if (cleaned === "") {
     return null;
   }
-  return build(cleaned);
+  // A mangled handle ("ada l", "a/b") must not break the URL or add a path
+  // segment -- encode it before it reaches the template.
+  return build(encodeURIComponent(cleaned));
 }
 
 // The text a person's embedding is computed from. Deterministic on purpose:
@@ -154,4 +156,56 @@ export function bootMode(input: {
   if (isClerkFlowHash(input.hash)) return "clerk-flow";
   if (input.hasSessionHint) return "splash";
   return "landing";
+}
+
+// The triage card's drag gesture: scroll-style momentum projection for
+// "where would the card coast to if released now?".
+export function project(velocity: number, decelerationRate = 0.998): number {
+  return ((velocity / 1000) * decelerationRate) / (1 - decelerationRate);
+}
+
+// Progressive resistance past a boundary; real things slow before they stop.
+export function rubberband(
+  overshoot: number,
+  dimension = 320,
+  constant = 0.55,
+): number {
+  return (
+    (overshoot * dimension * constant) /
+    (dimension + constant * Math.abs(overshoot))
+  );
+}
+
+// Mirrors convex/captures.ts listCaptures's `.take(50)`. Once the queue
+// hits this cap the client cannot tell whether more are queued
+// server-side, so the toolbar count must read as a floor, not a total.
+export const CAPTURE_QUEUE_CAP = 50;
+
+export function triageCountLabel(queueLength: number): string {
+  if (queueLength >= CAPTURE_QUEUE_CAP) return `${CAPTURE_QUEUE_CAP}+ to review`;
+  if (queueLength === 1) return "1 to review";
+  return `${queueLength} to review`;
+}
+
+export type SwipeVelocitySample = { t: number; x: number };
+export type SwipeDecision = "save" | "context" | "settle";
+
+// Whether a released triage card commits left (save), right (add context),
+// or springs back to center. Velocity is read from the last ~100ms of
+// pointer samples, projected forward, and added to the current drag
+// position -- so a fast flick can commit the card even from short of the
+// positional threshold, the way a scroll view keeps going after a flick.
+export function decideSwipe(
+  dragX: number,
+  samples: SwipeVelocitySample[],
+): SwipeDecision {
+  if (samples.length === 0) return "settle";
+  const last = samples[samples.length - 1];
+  const first = samples.find((s) => last.t - s.t <= 100) ?? samples[0];
+  const velocity =
+    last.t > first.t ? ((last.x - first.x) / (last.t - first.t)) * 1000 : 0;
+  const projected = dragX + project(velocity);
+  if (projected < -240) return "save";
+  if (projected > 240) return "context";
+  return "settle";
 }

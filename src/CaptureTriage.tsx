@@ -7,8 +7,11 @@ import {
   canSaveManualName,
   composeHeadline,
   composeName,
+  decideSwipe,
   deriveProfileUrl,
   normalizeUrl,
+  rubberband,
+  triageCountLabel,
 } from "./lib";
 import { PersonSky } from "./PersonSky";
 
@@ -25,19 +28,6 @@ const PLATFORM_LABELS: Record<string, string> = {
   bluesky: "Bluesky",
   other: "Profile",
 };
-
-// Scroll-style momentum projection: where would the card coast to?
-function project(velocity: number, decelerationRate = 0.998): number {
-  return ((velocity / 1000) * decelerationRate) / (1 - decelerationRate);
-}
-
-// Progressive resistance past a boundary; real things slow before they stop.
-function rubberband(overshoot: number, dimension = 320, constant = 0.55): number {
-  return (
-    (overshoot * dimension * constant) /
-    (dimension + constant * Math.abs(overshoot))
-  );
-}
 
 // Uploads one screenshot in isolation and reports whether it landed, so a
 // bad file in a batch never voids the ones around it.
@@ -352,19 +342,13 @@ export function CaptureTriage() {
 
   function onPointerUp(_event: PointerEvent<HTMLDivElement>) {
     if (!drag.dragging || top === undefined) return;
-    const samples = history.current;
-    const last = samples[samples.length - 1];
-    const first =
-      samples.find((s) => last.t - s.t <= 100) ?? samples[0];
-    const velocity =
-      last.t > first.t ? ((last.x - first.x) / (last.t - first.t)) * 1000 : 0;
-    const projected = drag.x + project(velocity);
+    const decision = decideSwipe(drag.x, history.current);
     history.current = [];
 
     // An unnamed manual star can go neither way -- name it first.
     const blockedUnnamed = top.status === "failed" && !canSaveManual;
 
-    if (projected < -240) {
+    if (decision === "save") {
       // Flung left: remember them now, context can wait.
       if (blockedUnnamed) {
         flashActionError("Name them first");
@@ -375,7 +359,7 @@ export function CaptureTriage() {
       save(top);
       return;
     }
-    if (projected > 240) {
+    if (decision === "context") {
       // Flung right: they matter; settle back and write the context.
       if (blockedUnnamed) {
         flashActionError("Name them first");
@@ -488,9 +472,7 @@ export function CaptureTriage() {
             <span className="triage-count">
               {uploading > 0
                 ? `Uploading ${uploading}...`
-                : queue.length === 1
-                  ? "1 to review"
-                  : `${queue.length} to review`}
+                : triageCountLabel(queue.length)}
             </span>
           </div>
 

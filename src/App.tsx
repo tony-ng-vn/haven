@@ -85,7 +85,7 @@ type Screen =
 
 // Wrap a state change in a view transition when the platform offers one and
 // the user has not asked for reduced motion; otherwise apply it directly.
-function withScreenTransition(update: () => void, done?: () => void) {
+export function withScreenTransition(update: () => void, done?: () => void) {
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (
     typeof document.startViewTransition !== "function" ||

@@ -2,14 +2,17 @@ import { describe, expect, test } from "vitest";
 import {
   bootMode,
   buildEmbedText,
+  CAPTURE_QUEUE_CAP,
   composeAtlasField,
   canSaveManualName,
   composeHeadline,
   composeName,
+  decideSwipe,
   deriveProfileUrl,
   formatMonthYear,
   isClerkFlowHash,
   normalizeUrl,
+  triageCountLabel,
 } from "./lib";
 
 describe("normalizeUrl", () => {
@@ -80,6 +83,15 @@ describe("deriveProfileUrl", () => {
     expect(deriveProfileUrl("x", undefined)).toBe(null);
     expect(deriveProfileUrl("x", "   ")).toBe(null);
     expect(deriveProfileUrl("x", "@")).toBe(null);
+  });
+
+  test("encodes a mangled handle so it cannot escape the intended path", () => {
+    // A space would otherwise break the URL; a slash would otherwise add a
+    // path segment. Both must land as encoded bytes, not raw characters.
+    expect(deriveProfileUrl("x", "ada l")).toBe("https://x.com/ada%20l");
+    expect(deriveProfileUrl("github", "a/b")).toBe("https://github.com/a%2Fb");
+    // Non-ASCII handles must survive as encoded UTF-8 bytes too.
+    expect(deriveProfileUrl("x", "caf\u00e9")).toBe("https://x.com/caf%C3%A9");
   });
 });
 
@@ -204,6 +216,57 @@ describe("bootMode", () => {
     expect(bootMode({ hash: "", hasSessionHint: false })).toBe("landing");
     expect(bootMode({ hash: "#", hasSessionHint: false })).toBe("landing");
     expect(bootMode({ hash: "#/", hasSessionHint: false })).toBe("landing");
+  });
+});
+
+describe("decideSwipe", () => {
+  test("a hard left drag past the threshold commits to save", () => {
+    expect(decideSwipe(-300, [{ t: 0, x: -300 }])).toBe("save");
+  });
+
+  test("a hard right drag past the threshold commits to context", () => {
+    expect(decideSwipe(300, [{ t: 0, x: 300 }])).toBe("context");
+  });
+
+  test("a leftward flick under the positional threshold still commits via momentum", () => {
+    // Only -50px of drag (threshold is -240), but a fast enough flick left
+    // projects well past it -- the card should still save, not settle.
+    const samples = [
+      { t: 0, x: 0 },
+      { t: 50, x: -50 },
+    ];
+    expect(decideSwipe(-50, samples)).toBe("save");
+  });
+
+  test("a small, slow drag settles back", () => {
+    expect(decideSwipe(50, [{ t: 0, x: 50 }])).toBe("settle");
+  });
+
+  test("settles exactly at the threshold boundary (strictly greater/less to commit)", () => {
+    expect(decideSwipe(-240, [{ t: 0, x: -240 }])).toBe("settle");
+    expect(decideSwipe(240, [{ t: 0, x: 240 }])).toBe("settle");
+  });
+});
+
+describe("triageCountLabel", () => {
+  test("singular for exactly one", () => {
+    expect(triageCountLabel(1)).toBe("1 to review");
+  });
+
+  test("plain count below the cap", () => {
+    expect(triageCountLabel(0)).toBe("0 to review");
+    expect(triageCountLabel(7)).toBe("7 to review");
+    expect(triageCountLabel(CAPTURE_QUEUE_CAP - 1)).toBe(
+      `${CAPTURE_QUEUE_CAP - 1} to review`,
+    );
+  });
+
+  test("reads as a floor, not a false exact total, once the queue hits the cap", () => {
+    // listCaptures caps its query at CAPTURE_QUEUE_CAP; at that count the
+    // client cannot tell whether more are queued server-side.
+    expect(triageCountLabel(CAPTURE_QUEUE_CAP)).toBe(
+      `${CAPTURE_QUEUE_CAP}+ to review`,
+    );
   });
 });
 
