@@ -14,7 +14,8 @@ import { checkRateLimit } from "./rateLimit";
 import { normalizeName } from "./nameSearch";
 
 const MINUTE_MS = 60_000;
-const DAY_MS = 24 * 60 * 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const extractedValidator = v.object({
@@ -316,5 +317,92 @@ export const retryExtract = mutation({
       captureId: args.captureId,
     });
     return null;
+  },
+});
+
+// ------------------------------------------------------------ janitor crons
+
+// If the extract action is killed rather than throwing (a timeout, a
+// redeploy mid-run), its catch block never runs and the capture stays
+// "pending" forever -- an eternal skeleton card in the UI. Sweep those loose
+// ends into "failed" so the existing retry/manual-naming UI takes over.
+const STUCK_PENDING_MS = 15 * MINUTE_MS;
+const STUCK_SWEEP_BATCH_SIZE = 100;
+
+export const sweepStuckCaptures = internalMutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const cutoff = Date.now() - STUCK_PENDING_MS;
+    const stuck = await ctx.db
+      .query("captures")
+      .withIndex("by_status", (q) =>
+        q.eq("status", "pending").lt("_creationTime", cutoff),
+      )
+      .take(STUCK_SWEEP_BATCH_SIZE);
+    for (const capture of stuck) {
+      await ctx.db.patch("captures", capture._id, {
+        status: "failed",
+        error: GENERIC_ERROR_MESSAGE,
+        errorDetail: "sweepStuckCaptures: pending past the stuck threshold",
+      });
+    }
+    return stuck.length;
+  },
+});
+
+// A client can upload a blob and never call createCapture (a crash, an
+// abandoned tab), leaving an invisible file that nothing ever references.
+// Delete those once they're old enough that no in-flight upload could still
+// need them.
+//
+// Referenced-set construction: rather than reading captures/people in bulk
+// (unsound once either table outgrows a bounded read -- a screenshotId just
+// past the read window would look orphaned and get deleted), this checks
+// each storage candidate against by_screenshotId, an exact indexed lookup
+// on both tables. That keeps the sweep bounded (one _storage page per run)
+// *and* sound at any table size: a blob is only ever deleted because both
+// indexed lookups came back empty, never because a scan ran out of rows to
+// check. A false-positive delete would destroy a user's screenshot, so this
+// trades an extra pair of indexed reads per candidate for a hard guarantee
+// instead of a probabilistic one.
+const ORPHAN_AGE_MS = HOUR_MS;
+const ORPHAN_SWEEP_BATCH_SIZE = 100;
+
+export const sweepOrphanedUploads = internalMutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const cutoff = Date.now() - ORPHAN_AGE_MS;
+    // Explicit oldest-first: the break below relies on this ordering to
+    // know every later candidate is also too young, so state it rather
+    // than lean on the (correct, but unstated at the call site) default.
+    const candidates = await ctx.db.system
+      .query("_storage")
+      .order("asc")
+      .take(ORPHAN_SWEEP_BATCH_SIZE);
+    let deleted = 0;
+    for (const file of candidates) {
+      if (file._creationTime >= cutoff) {
+        break;
+      }
+      const referencingCapture = await ctx.db
+        .query("captures")
+        .withIndex("by_screenshotId", (q) => q.eq("screenshotId", file._id))
+        .first();
+      if (referencingCapture !== null) {
+        continue;
+      }
+      const referencingPerson = await ctx.db
+        .query("people")
+        .withIndex("by_screenshotId", (q) => q.eq("screenshotId", file._id))
+        .first();
+      if (referencingPerson !== null) {
+        continue;
+      }
+      await ctx.storage.delete(file._id);
+      deleted++;
+    }
+    return deleted;
   },
 });

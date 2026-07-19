@@ -12,4 +12,22 @@ crons.interval(
   {},
 );
 
+// Self-heals a capture stuck "pending" because the extract action was
+// killed rather than throwing (timeout, redeploy) -- see sweepStuckCaptures.
+crons.interval(
+  "sweep stuck captures",
+  { minutes: 30 },
+  internal.captures.sweepStuckCaptures,
+  {},
+);
+
+// Deletes screenshot blobs an abandoned upload left with no capture or
+// person ever pointing to them -- see sweepOrphanedUploads.
+crons.interval(
+  "sweep orphaned uploads",
+  { hours: 24 },
+  internal.captures.sweepOrphanedUploads,
+  {},
+);
+
 export default crons;
