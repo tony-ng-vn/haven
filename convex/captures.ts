@@ -4,23 +4,17 @@ import {
   internalQuery,
   mutation,
   query,
-  QueryCtx,
-  MutationCtx,
 } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Doc } from "./_generated/dataModel";
 import { extractProfile } from "./openaiClient";
+import { requireUser } from "./authz";
+import { checkRateLimit } from "./rateLimit";
 
-// Clerk has no local users table, so tokenIdentifier ("issuer|subject") is
-// the stable ownership key -- guidelines say prefer it over `subject` alone.
-async function requireUser(ctx: QueryCtx | MutationCtx) {
-  const identity = await ctx.auth.getUserIdentity();
-  if (identity === null) {
-    throw new Error("Not signed in");
-  }
-  return identity.tokenIdentifier;
-}
+const MINUTE_MS = 60_000;
+const DAY_MS = 24 * 60 * 60_000;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const extractedValidator = v.object({
   platform: v.string(),
@@ -44,6 +38,27 @@ export const createCapture = mutation({
   returns: v.id("captures"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
+    // Denial-of-wallet guard: extraction calls a paid model, so cap both
+    // the burst rate and the daily spend per user.
+    await checkRateLimit(ctx, userId, "createCapture:minute", 10, MINUTE_MS);
+    await checkRateLimit(ctx, userId, "createCapture:day", 100, DAY_MS);
+
+    // Never trust the client's claim about what it uploaded -- read the
+    // real metadata Convex recorded for the blob before touching anything
+    // else, and delete the blob outright when it fails validation.
+    const meta = await ctx.db.system.get("_storage", args.screenshotId);
+    const isValidImage =
+      meta !== null &&
+      meta.contentType !== undefined &&
+      meta.contentType.startsWith("image/") &&
+      meta.size <= MAX_UPLOAD_BYTES;
+    if (!isValidImage) {
+      if (meta !== null) {
+        await ctx.storage.delete(args.screenshotId);
+      }
+      throw new Error("Please upload an image under 10 MB");
+    }
+
     const captureId = await ctx.db.insert("captures", {
       userId,
       screenshotId: args.screenshotId,
@@ -77,6 +92,16 @@ export const finishExtract = internalMutation({
   },
 });
 
+// Messages already written to be shown to a user as-is: specific, no
+// upstream/API leakage. Anything else is raw error text (OpenAI response
+// bodies, env-var hints) that must never reach the client -- it goes into
+// errorDetail instead, behind a short generic message.
+const SAFE_ERROR_MESSAGES = new Set([
+  "Could not read a profile in this screenshot",
+  "The screenshot file is missing",
+]);
+const GENERIC_ERROR_MESSAGE = "Could not read this screenshot -- you can retry";
+
 export const failExtract = internalMutation({
   args: { captureId: v.id("captures"), error: v.string() },
   returns: v.null(),
@@ -85,9 +110,11 @@ export const failExtract = internalMutation({
     if (capture === null) {
       return null;
     }
+    const isSafe = SAFE_ERROR_MESSAGES.has(args.error);
     await ctx.db.patch("captures", args.captureId, {
       status: "failed",
-      error: args.error,
+      error: isSafe ? args.error : GENERIC_ERROR_MESSAGE,
+      errorDetail: isSafe ? undefined : args.error,
     });
     return null;
   },
@@ -207,6 +234,34 @@ export const discardCapture = mutation({
     }
     await ctx.storage.delete(capture.screenshotId);
     await ctx.db.delete("captures", args.captureId);
+    return null;
+  },
+});
+
+export const retryExtract = mutation({
+  args: { captureId: v.id("captures") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    // A retry re-runs the paid extraction, so it needs the same
+    // denial-of-wallet guard as creating a capture in the first place.
+    await checkRateLimit(ctx, userId, "retryExtract:minute", 10, MINUTE_MS);
+    await checkRateLimit(ctx, userId, "retryExtract:day", 100, DAY_MS);
+    const capture = await ctx.db.get("captures", args.captureId);
+    if (capture === null || capture.userId !== userId) {
+      throw new Error("Capture not found");
+    }
+    if (capture.status !== "failed") {
+      throw new Error("Capture is not ready to retry");
+    }
+    await ctx.db.patch("captures", args.captureId, {
+      status: "pending",
+      error: undefined,
+      errorDetail: undefined,
+    });
+    await ctx.scheduler.runAfter(0, internal.captures.extract, {
+      captureId: args.captureId,
+    });
     return null;
   },
 });
