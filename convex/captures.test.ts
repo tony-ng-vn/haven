@@ -721,6 +721,42 @@ test("acceptManualCapture trims the surrounding whitespace of the name", async (
   expect(person?.name).toBe("Ada Lovelace");
 });
 
+test("accepted captures are findable by accent-insensitive search", async () => {
+  // Both accept paths bypass addPerson, so they must write normalizedName
+  // themselves or the person is invisible to the normalized search index.
+  // The fixture is the Vietnamese D-stroke name (escaped to keep this
+  // file ASCII) from the real network this app serves.
+  const dStrokeName = "\u0110un \u0110un";
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  await as.mutation(api.captures.acceptManualCapture, {
+    captureId,
+    name: dStrokeName,
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  const manual = await as.query(api.people.searchPeople, { query: "dun" });
+  expect(manual.map((p) => p.name)).toContain(dStrokeName);
+
+  // The AI path writes it too ("Ha Anh" with accents, escaped).
+  const accentedName = "H\u00e0 Anh";
+  stubOpenAI({
+    extraction: { ...EXTRACTION, name: accentedName },
+  });
+  const aiCaptureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  await as.mutation(api.captures.acceptCapture, { captureId: aiCaptureId });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  const ai = await as.query(api.people.searchPeople, { query: "ha anh" });
+  expect(ai.map((p) => p.name)).toContain(accentedName);
+});
+
 test("acceptManualCapture names a still-pending capture and survives the late extraction", async () => {
   stubOpenAI({ extraction: EXTRACTION });
   const t = convexTest(schema, modules);
