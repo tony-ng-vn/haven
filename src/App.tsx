@@ -7,6 +7,7 @@ import { SearchAdd } from "./SearchAdd";
 import { PersonDetail } from "./PersonDetail";
 import { CaptureTriage } from "./CaptureTriage";
 import { PersonSky } from "./PersonSky";
+import { FeedbackWidget } from "./FeedbackWidget";
 import {
   bootMode,
   isClerkFlowHash,
@@ -200,6 +201,7 @@ function Home() {
           </div>
         )}
       </main>
+      <FeedbackWidget />
     </>
   );
 }
