@@ -393,8 +393,45 @@ textarea.field {
   view-transition-name: person-name;
 }
 
+/* The detail screen opens on the person's own deep field: identity in the sky
+   register, the work below in the Quiet Room. Reuses the triage sky card's
+   layers (.sky-space / PersonSky / .sky-vignette). aria-hidden decoration --
+   the name stays a real heading overlaid on top. */
+.person-sky-band {
+  position: relative;
+  overflow: hidden;
+  height: 200px;
+  border-radius: var(--radius-lg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    var(--shadow-float);
+}
+
+.person-sky-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 20px;
+  text-align: center;
+}
+
+/* Lifts the quiet .person-name into the sky register (matching
+   .triage-card-sky .triage-name) while the base rule keeps its
+   view-transition-name so the shared-element morph still runs. */
+.person-sky-band .person-name {
+  color: #fff;
+  font-size: 34px;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  text-shadow: 0 2px 22px rgba(0, 0, 0, 0.6);
+}
+
 .person-meta {
-  margin: -14px 0 0;
+  margin: 0;
   font-size: 13px;
   color: var(--muted);
 }
@@ -441,6 +478,96 @@ textarea.field {
   margin: 0;
   font-size: 13px;
   color: var(--danger);
+}
+
+/* Saying goodbye stays quiet: low-emphasis danger text, never a red slab.
+   Set apart from Save by a hairline so it does not read as a peer action. */
+.person-danger {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 8px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.person-remove {
+  padding: 4px 0;
+  font-size: 14px;
+  color: var(--danger);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .person-remove:hover {
+    text-decoration: underline;
+  }
+}
+
+.person-remove-confirm {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.person-remove-prompt {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+}
+
+/* gap 32 matches .triage-actions: it absorbs the two text buttons' negative
+   margins and leaves a clean 8px between their hover pills. */
+.person-remove-actions {
+  display: flex;
+  gap: 32px;
+  align-items: center;
+}
+
+/* The committed destructive action. Mirrors .btn-ghost's shape and hit
+   target, but reads danger: red and a touch bolder than Cancel, never a
+   filled red slab (Apple action-sheet register: destructive is red text). */
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: -8px -12px; /* text-like size, big hit target -- same as btn-ghost */
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--danger);
+  background: transparent;
+  border: none;
+  border-radius: 980px;
+  cursor: pointer;
+  transition:
+    transform var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
+  }
+}
+
+.btn-danger:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn-danger:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.btn-danger .spinner {
+  width: 14px;
+  height: 14px;
 }
 
 /* -------------------------------------------------------------- skeleton */
@@ -1127,6 +1254,7 @@ textarea.field {
 
   .btn-primary:active:not(:disabled),
   .btn-ghost:active:not(:disabled),
+  .btn-danger:active:not(:disabled),
   .result-row:active,
   .search-clear:active {
     transform: none;
