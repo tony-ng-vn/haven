@@ -873,3 +873,206 @@ test("acceptManualCapture throttles a burst past the per-minute limit", async ()
     }),
   ).rejects.toThrow("Too many requests -- please wait a moment");
 });
+
+// ------------------------------------------------------------ janitor crons
+
+test("sweepStuckCaptures fails a pending capture stuck past the threshold", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  // Never let the scheduled extract action resolve it -- simulating an
+  // extraction that got killed (timeout, redeploy) rather than throwing.
+
+  vi.setSystemTime(Date.now() + 16 * 60_000);
+  const swept = await t.mutation(internal.captures.sweepStuckCaptures, {});
+
+  expect(swept).toBe(1);
+  const capture = await t.run((ctx) => ctx.db.get("captures", captureId));
+  expect(capture?.status).toBe("failed");
+  expect(capture?.error).toBe(
+    "Could not read this screenshot -- you can retry",
+  );
+});
+
+test("sweepStuckCaptures leaves a fresh pending capture alone", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+
+  const swept = await t.mutation(internal.captures.sweepStuckCaptures, {});
+
+  expect(swept).toBe(0);
+  const capture = await t.run((ctx) => ctx.db.get("captures", captureId));
+  expect(capture?.status).toBe("pending");
+});
+
+test("sweepStuckCaptures never touches a ready or failed capture, however old", async () => {
+  const t = convexTest(schema, modules);
+  const { userId } = await asNewUser(t);
+  const screenshotId = await seedScreenshot(t);
+  const readyId = await t.run((ctx) =>
+    ctx.db.insert("captures", {
+      userId,
+      screenshotId,
+      status: "ready",
+      extracted: { platform: "x", name: "Ada Lovelace" },
+    }),
+  );
+  const failedId = await t.run((ctx) =>
+    ctx.db.insert("captures", {
+      userId,
+      screenshotId,
+      status: "failed",
+      error: "Could not read a profile in this screenshot",
+    }),
+  );
+
+  vi.setSystemTime(Date.now() + 60 * 60_000);
+  const swept = await t.mutation(internal.captures.sweepStuckCaptures, {});
+
+  expect(swept).toBe(0);
+  expect(
+    (await t.run((ctx) => ctx.db.get("captures", readyId)))?.status,
+  ).toBe("ready");
+  expect(
+    (await t.run((ctx) => ctx.db.get("captures", failedId)))?.status,
+  ).toBe("failed");
+});
+
+test("sweepOrphanedUploads deletes an old blob no capture or person references", async () => {
+  const t = convexTest(schema, modules);
+  const screenshotId = await seedScreenshot(t);
+
+  vi.setSystemTime(Date.now() + 61 * 60_000);
+  const swept = await t.mutation(internal.captures.sweepOrphanedUploads, {});
+
+  expect(swept).toBe(1);
+  expect(await t.run((ctx) => ctx.storage.getUrl(screenshotId))).toBeNull();
+});
+
+test("sweepOrphanedUploads never deletes a blob referenced by a capture", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const screenshotId = await seedScreenshot(t);
+  await as.mutation(api.captures.createCapture, { screenshotId });
+
+  vi.setSystemTime(Date.now() + 61 * 60_000);
+  const swept = await t.mutation(internal.captures.sweepOrphanedUploads, {});
+
+  expect(swept).toBe(0);
+  expect(
+    await t.run((ctx) => ctx.storage.getUrl(screenshotId)),
+  ).not.toBeNull();
+});
+
+test("sweepOrphanedUploads never deletes a blob referenced by a person", async () => {
+  const t = convexTest(schema, modules);
+  const { userId } = await asNewUser(t);
+  const screenshotId = await seedScreenshot(t);
+  await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "Ada Lovelace",
+      updatedAt: Date.now(),
+      screenshotId,
+    }),
+  );
+
+  vi.setSystemTime(Date.now() + 61 * 60_000);
+  const swept = await t.mutation(internal.captures.sweepOrphanedUploads, {});
+
+  expect(swept).toBe(0);
+  expect(
+    await t.run((ctx) => ctx.storage.getUrl(screenshotId)),
+  ).not.toBeNull();
+});
+
+test("sweepOrphanedUploads leaves a young unreferenced blob alone", async () => {
+  const t = convexTest(schema, modules);
+  const screenshotId = await seedScreenshot(t);
+
+  const swept = await t.mutation(internal.captures.sweepOrphanedUploads, {});
+
+  expect(swept).toBe(0);
+  expect(
+    await t.run((ctx) => ctx.storage.getUrl(screenshotId)),
+  ).not.toBeNull();
+});
+
+test("sweepOrphanedUploads only deletes the orphan when an old orphan and an old referenced blob coexist", async () => {
+  // A single-blob sweep can't prove the loop distinguishes candidates --
+  // this proves it keeps scanning past a referenced blob to reach an orphan
+  // (and stops correctly once it hits one too young to qualify).
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const orphanId = await seedScreenshot(t);
+  const referencedId = await seedScreenshot(t);
+  await as.mutation(api.captures.createCapture, {
+    screenshotId: referencedId,
+  });
+
+  vi.setSystemTime(Date.now() + 61 * 60_000);
+  const stillYoungId = await seedScreenshot(t);
+  const swept = await t.mutation(internal.captures.sweepOrphanedUploads, {});
+
+  expect(swept).toBe(1);
+  expect(await t.run((ctx) => ctx.storage.getUrl(orphanId))).toBeNull();
+  expect(
+    await t.run((ctx) => ctx.storage.getUrl(referencedId)),
+  ).not.toBeNull();
+  expect(
+    await t.run((ctx) => ctx.storage.getUrl(stillYoungId)),
+  ).not.toBeNull();
+});
+
+test("sweepOrphanedUploads makes progress past a wall of referenced blobs", async () => {
+  // Regression guard for the reviewer's major: without a persisted
+  // watermark, every run re-reads the same oldest batch, so an orphan
+  // behind a wall of referenced blobs would never be reached.
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const wall1 = await seedScreenshot(t);
+  const wall2 = await seedScreenshot(t);
+  stubOpenAI({ failExtraction: true });
+  await as.mutation(api.captures.createCapture, { screenshotId: wall1 });
+  await as.mutation(api.captures.createCapture, { screenshotId: wall2 });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  const orphan = await seedScreenshot(t);
+
+  vi.setSystemTime(Date.now() + 61 * 60_000);
+  // Batch of 2: the first run can only see the two referenced wall blobs.
+  const first = await t.mutation(internal.captures.sweepOrphanedUploads, {
+    batchSize: 2,
+  });
+  expect(first).toBe(0);
+  // The second run must RESUME past the wall and reach the orphan.
+  const second = await t.mutation(internal.captures.sweepOrphanedUploads, {
+    batchSize: 2,
+  });
+  expect(second).toBe(1);
+  expect(await t.run((ctx) => ctx.storage.getUrl(orphan))).toBeNull();
+  expect(await t.run((ctx) => ctx.storage.getUrl(wall1))).not.toBeNull();
+});
+
+test("sweepOrphanedUploads resets its watermark after an exhausted pass", async () => {
+  const t = convexTest(schema, modules);
+  const first = await seedScreenshot(t);
+  vi.setSystemTime(Date.now() + 61 * 60_000);
+  // Exhausted pass (fewer candidates than the batch) deletes and resets.
+  expect(
+    await t.mutation(internal.captures.sweepOrphanedUploads, { batchSize: 2 }),
+  ).toBe(1);
+  // A NEW old orphan created after the reset must be reachable on the next
+  // cycle -- proving the watermark went back to the start.
+  const second = await seedScreenshot(t);
+  vi.setSystemTime(Date.now() + 61 * 60_000);
+  expect(
+    await t.mutation(internal.captures.sweepOrphanedUploads, { batchSize: 2 }),
+  ).toBe(1);
+  expect(await t.run((ctx) => ctx.storage.getUrl(second))).toBeNull();
+  expect(first).not.toBe(second);
+});

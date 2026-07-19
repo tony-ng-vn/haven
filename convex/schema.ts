@@ -27,6 +27,9 @@ export default defineSchema({
     embeddedText: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
+    // Same reasoning as captures.by_screenshotId: the orphaned-upload sweep
+    // needs a sound, bounded way to check "is this blob referenced?".
+    .index("by_screenshotId", ["screenshotId"])
     .searchIndex("search_normalized_name", {
       searchField: "normalizedName",
       filterFields: ["userId"],
@@ -60,7 +63,17 @@ export default defineSchema({
     // Raw upstream/error text for our own debugging. Never returned to a
     // client -- listCaptures and getCapture must not project this field.
     errorDetail: v.optional(v.string()),
-  }).index("by_user", ["userId"]),
+  })
+    .index("by_user", ["userId"])
+    // Lets the stuck-pending sweep find old "pending" rows without a table
+    // scan; Convex appends _creationTime as the trailing key, so this index
+    // also supports the age cutoff range on the same query.
+    .index("by_status", ["status"])
+    // Lets the orphaned-upload sweep check "is this blob referenced?" as an
+    // exact indexed lookup per candidate instead of a bounded table scan --
+    // see sweepOrphanedUploads in captures.ts for why that matters for
+    // soundness.
+    .index("by_screenshotId", ["screenshotId"]),
   // Fixed-window per-user rate limiting. One row per (userId, action) pair;
   // an action name like "createCapture:minute" models one window, so a
   // function with two windows (e.g. per-minute and per-day) gets two rows.
@@ -70,4 +83,12 @@ export default defineSchema({
     windowStart: v.number(),
     count: v.number(),
   }).index("by_user_action", ["userId", "action"]),
+
+  // Cursor state for paginated background sweeps: without a persisted
+  // watermark a bounded sweep re-reads the same head of the table forever
+  // and never progresses past rows it must skip.
+  sweepState: defineTable({
+    key: v.string(),
+    watermark: v.number(),
+  }).index("by_key", ["key"]),
 });

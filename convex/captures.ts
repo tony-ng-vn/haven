@@ -14,7 +14,8 @@ import { checkRateLimit } from "./rateLimit";
 import { normalizeName } from "./nameSearch";
 
 const MINUTE_MS = 60_000;
-const DAY_MS = 24 * 60 * 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const extractedValidator = v.object({
@@ -316,5 +317,117 @@ export const retryExtract = mutation({
       captureId: args.captureId,
     });
     return null;
+  },
+});
+
+// ------------------------------------------------------------ janitor crons
+
+// If the extract action is killed rather than throwing (a timeout, a
+// redeploy mid-run), its catch block never runs and the capture stays
+// "pending" forever -- an eternal skeleton card in the UI. Sweep those loose
+// ends into "failed" so the existing retry/manual-naming UI takes over.
+const STUCK_PENDING_MS = 15 * MINUTE_MS;
+const STUCK_SWEEP_BATCH_SIZE = 100;
+
+export const sweepStuckCaptures = internalMutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const cutoff = Date.now() - STUCK_PENDING_MS;
+    const stuck = await ctx.db
+      .query("captures")
+      .withIndex("by_status", (q) =>
+        q.eq("status", "pending").lt("_creationTime", cutoff),
+      )
+      .take(STUCK_SWEEP_BATCH_SIZE);
+    for (const capture of stuck) {
+      await ctx.db.patch("captures", capture._id, {
+        status: "failed",
+        error: GENERIC_ERROR_MESSAGE,
+        errorDetail: "sweepStuckCaptures: pending past the stuck threshold",
+      });
+    }
+    return stuck.length;
+  },
+});
+
+// A client can upload a blob and never call createCapture (a crash, an
+// abandoned tab), leaving an invisible file that nothing ever references.
+// Delete those once they're old enough that no in-flight upload could still
+// need them.
+//
+// Referenced-set construction: rather than reading captures/people in bulk
+// (unsound once either table outgrows a bounded read -- a screenshotId just
+// past the read window would look orphaned and get deleted), this checks
+// each storage candidate against by_screenshotId, an exact indexed lookup
+// on both tables. That keeps the sweep bounded (one _storage page per run)
+// *and* sound at any table size: a blob is only ever deleted because both
+// indexed lookups came back empty, never because a scan ran out of rows to
+// check. A false-positive delete would destroy a user's screenshot, so this
+// trades an extra pair of indexed reads per candidate for a hard guarantee
+// instead of a probabilistic one.
+const ORPHAN_AGE_MS = HOUR_MS;
+const ORPHAN_SWEEP_BATCH_SIZE = 100;
+
+export const sweepOrphanedUploads = internalMutation({
+  // batchSize is for tests, which prove wall-progress with a tiny batch.
+  args: { batchSize: v.optional(v.number()) },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    const batchSize = args.batchSize ?? ORPHAN_SWEEP_BATCH_SIZE;
+    const cutoff = Date.now() - ORPHAN_AGE_MS;
+    // Resume from the persisted watermark: referenced blobs are skipped,
+    // never deleted, so without a cursor they would wall off the head of
+    // the oldest-first scan and orphans behind them would leak forever.
+    const state = await ctx.db
+      .query("sweepState")
+      .withIndex("by_key", (q) => q.eq("key", "orphanSweep"))
+      .unique();
+    const watermark = state?.watermark ?? 0;
+    const candidates = await ctx.db.system
+      .query("_storage")
+      .order("asc")
+      .filter((q) =>
+        q.and(
+          q.gt(q.field("_creationTime"), watermark),
+          q.lt(q.field("_creationTime"), cutoff),
+        ),
+      )
+      .take(batchSize);
+    let deleted = 0;
+    for (const file of candidates) {
+      const referencingCapture = await ctx.db
+        .query("captures")
+        .withIndex("by_screenshotId", (q) => q.eq("screenshotId", file._id))
+        .first();
+      if (referencingCapture !== null) {
+        continue;
+      }
+      const referencingPerson = await ctx.db
+        .query("people")
+        .withIndex("by_screenshotId", (q) => q.eq("screenshotId", file._id))
+        .first();
+      if (referencingPerson !== null) {
+        continue;
+      }
+      await ctx.storage.delete(file._id);
+      deleted++;
+    }
+    // A full batch means there may be more beyond it: advance the cursor.
+    // A short batch means this cycle reached the end: reset to the start
+    // so the next cycle rescans everything (catching newly aged orphans).
+    const nextWatermark =
+      candidates.length < batchSize
+        ? 0
+        : candidates[candidates.length - 1]._creationTime;
+    if (state === null) {
+      await ctx.db.insert("sweepState", {
+        key: "orphanSweep",
+        watermark: nextWatermark,
+      });
+    } else {
+      await ctx.db.patch("sweepState", state._id, { watermark: nextWatermark });
+    }
+    return deleted;
   },
 });
