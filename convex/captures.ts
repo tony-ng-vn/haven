@@ -243,6 +243,10 @@ export const retryExtract = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
+    // A retry re-runs the paid extraction, so it needs the same
+    // denial-of-wallet guard as creating a capture in the first place.
+    await checkRateLimit(ctx, userId, "retryExtract:minute", 10, MINUTE_MS);
+    await checkRateLimit(ctx, userId, "retryExtract:day", 100, DAY_MS);
     const capture = await ctx.db.get("captures", args.captureId);
     if (capture === null || capture.userId !== userId) {
       throw new Error("Capture not found");

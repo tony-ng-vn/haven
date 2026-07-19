@@ -406,6 +406,34 @@ test("retryExtract reruns extraction on a failed capture", async () => {
   expect(capture?.errorDetail).toBeUndefined();
 });
 
+test("retryExtract throttles a burst past the per-minute limit", async () => {
+  // Every retry re-runs the paid extraction, so it carries its own
+  // denial-of-wallet budget separate from createCapture's.
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  for (let i = 0; i < 10; i++) {
+    await as.mutation(api.captures.retryExtract, { captureId });
+    // The stub keeps failing, so the capture returns to "failed" and
+    // stays retryable for the next loop iteration.
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+  }
+  await expect(
+    as.mutation(api.captures.retryExtract, { captureId }),
+  ).rejects.toThrow("Too many requests -- please wait a moment");
+
+  vi.setSystemTime(Date.now() + 60_000);
+  await as.mutation(api.captures.retryExtract, { captureId });
+  expect(
+    (await t.run((ctx) => ctx.db.get("captures", captureId)))?.status,
+  ).toBe("pending");
+});
+
 test("retryExtract on a ready capture throws", async () => {
   stubOpenAI({ extraction: EXTRACTION });
   const t = convexTest(schema, modules);
