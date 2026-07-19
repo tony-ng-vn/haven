@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  bootMode,
   buildEmbedText,
   composeAtlasField,
   canSaveManualName,
@@ -175,6 +176,34 @@ describe("isClerkFlowHash", () => {
     expect(isClerkFlowHash("")).toBe(false);
     expect(isClerkFlowHash("#")).toBe(false);
     expect(isClerkFlowHash("#/")).toBe(false);
+  });
+});
+
+describe("bootMode", () => {
+  test("a Clerk flow callback mounts the flow, outranking any session hint", () => {
+    // A returning user can still land on "#/sso-callback" (e.g. re-auth); the
+    // callback must be honored, not short-circuited into a splash.
+    expect(bootMode({ hash: "#/sso-callback", hasSessionHint: false })).toBe(
+      "clerk-flow",
+    );
+    expect(bootMode({ hash: "#/sso-callback", hasSessionHint: true })).toBe(
+      "clerk-flow",
+    );
+    expect(bootMode({ hash: "#/verify", hasSessionHint: true })).toBe(
+      "clerk-flow",
+    );
+  });
+
+  test("a returning visitor (session hint, no flow) splashes until Clerk resolves", () => {
+    expect(bootMode({ hash: "", hasSessionHint: true })).toBe("splash");
+    expect(bootMode({ hash: "#", hasSessionHint: true })).toBe("splash");
+    expect(bootMode({ hash: "#/", hasSessionHint: true })).toBe("splash");
+  });
+
+  test("a first-time visitor (no hint, no flow) lands immediately", () => {
+    expect(bootMode({ hash: "", hasSessionHint: false })).toBe("landing");
+    expect(bootMode({ hash: "#", hasSessionHint: false })).toBe("landing");
+    expect(bootMode({ hash: "#/", hasSessionHint: false })).toBe("landing");
   });
 });
 

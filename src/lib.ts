@@ -140,3 +140,18 @@ export function composeAtlasField<T extends { _id: string }>(
 export function isClerkFlowHash(hash: string): boolean {
   return /^#\/.+/.test(hash);
 }
+
+// What to paint on the very first frame, before Clerk has loaded. The signed-out
+// landing needs nothing from Clerk, so a first-time visitor sees it immediately;
+// only a returning visitor (session hint) waits on a splash, and a Clerk flow
+// callback outranks both so the OAuth/verification handshake is never dropped.
+export type BootMode = "landing" | "splash" | "clerk-flow";
+
+export function bootMode(input: {
+  hash: string;
+  hasSessionHint: boolean;
+}): BootMode {
+  if (isClerkFlowHash(input.hash)) return "clerk-flow";
+  if (input.hasSessionHint) return "splash";
+  return "landing";
+}
