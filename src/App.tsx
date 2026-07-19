@@ -146,7 +146,11 @@ function Home() {
           )}
         </div>
       </header>
-      <main className="app-main">
+      <main
+        className={
+          screen.kind === "search" ? "app-main app-main-atlas" : "app-main"
+        }
+      >
         {screen.kind === "search" && (
           <div className="screen" key="search">
             <SearchAdd

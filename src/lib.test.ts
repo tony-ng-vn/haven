@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   buildEmbedText,
+  composeAtlasField,
   canSaveManualName,
   composeHeadline,
   composeName,
@@ -174,5 +175,28 @@ describe("isClerkFlowHash", () => {
     expect(isClerkFlowHash("")).toBe(false);
     expect(isClerkFlowHash("#")).toBe(false);
     expect(isClerkFlowHash("#/")).toBe(false);
+  });
+});
+
+describe("composeAtlasField", () => {
+  const p = (id: string) => ({ _id: id, name: id });
+
+  test("keeps the recent field unchanged when matches are already in it", () => {
+    const recent = [p("a"), p("b"), p("c")];
+    const out = composeAtlasField(recent, [p("b")], [p("c")]);
+    expect(out.map((x) => x._id)).toEqual(["a", "b", "c"]);
+  });
+
+  test("materializes off-field name matches after the recent field", () => {
+    const recent = [p("a"), p("b")];
+    const out = composeAtlasField(recent, [p("z"), p("a")], []);
+    // Recent people keep their spiral indices; the off-field match appends.
+    expect(out.map((x) => x._id)).toEqual(["a", "b", "z"]);
+  });
+
+  test("appends semantic-only matches last and dedupes across groups", () => {
+    const recent = [p("a")];
+    const out = composeAtlasField(recent, [p("z")], [p("z"), p("m"), p("a")]);
+    expect(out.map((x) => x._id)).toEqual(["a", "z", "m"]);
   });
 });

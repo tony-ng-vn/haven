@@ -1,34 +1,28 @@
 import { useQuery, useMutation, useAction } from "convex/react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from "react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
-import type { PersonSnapshot } from "./lib";
+import { formatMonthYear, type PersonSnapshot } from "./lib";
+import { atlasLayout, buildCluster, buildDust } from "./sky";
+import { composeAtlasField } from "./lib";
 
 type SemanticResults = FunctionReturnType<typeof api.people.semanticSearch>;
 
-function ImagesIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect
-        x="3.5"
-        y="5.5"
-        width="17"
-        height="13"
-        rx="2.5"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
-      <circle cx="9" cy="10.2" r="1.6" fill="currentColor" />
-      <path
-        d="m6 17 4.2-4.2a1.5 1.5 0 0 1 2.1 0L18 18.5"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
+// Mirrors the backend RESULT_LIMIT: the home query returns at most this many
+// recent people, so the sky renders at most this many clusters.
+const RESULT_LIMIT = 20;
+
+// Below this viewport width the clusters and labels shrink so everything stays
+// tappable on a phone (decision 12).
+const MOBILE_MAX_WIDTH = 480;
 
 function SearchIcon() {
   return (
@@ -64,6 +58,26 @@ function ClearIcon() {
   );
 }
 
+// Track the live viewport so the spiral layout and dust field fill the whole
+// screen and reflow on resize (the sky is full-bleed, not inside .app-main).
+function useViewport() {
+  const [size, setSize] = useState(() => ({
+    w: typeof window === "undefined" ? 1024 : window.innerWidth,
+    h: typeof window === "undefined" ? 768 : window.innerHeight,
+  }));
+  useEffect(() => {
+    const onResize = () =>
+      setSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return size;
+}
+
+// The Atlas home: the signed-in landing is now a full-viewport shared sky where
+// each remembered person is their own small constellation with their name
+// beneath it. Kept as SearchAdd (filename + export) to minimize churn; App.tsx
+// still wires it as the "search" screen.
 export function SearchAdd({
   query,
   onQueryChange,
@@ -77,7 +91,12 @@ export function SearchAdd({
   onOpenCapture: () => void;
   morphId: Id<"people"> | null;
 }) {
-  const results = useQuery(api.people.searchPeople, { query });
+  // The recent-first field of people IS the sky (empty query). Held stable so
+  // typing dims/lights clusters without ever reordering or removing them.
+  const people = useQuery(api.people.searchPeople, { query: "" });
+  // The live name search drives which clusters stay lit. Two subscriptions to
+  // the same function; when the query is empty they dedupe to one.
+  const nameMatches = useQuery(api.people.searchPeople, { query });
   const addPerson = useMutation(api.people.addPerson);
   const semanticSearch = useAction(api.people.semanticSearch);
   const [adding, setAdding] = useState(false);
@@ -108,29 +127,89 @@ export function SearchAdd({
       clearTimeout(timer);
     };
   }, [trimmed, semanticSearch]);
-  const loaded = results !== undefined;
 
-  // Only the home list (no query typed yet) gets a skeleton, and only once
+  const fieldLoaded = people !== undefined;
+  const searchLoaded = nameMatches !== undefined;
+
+  // Only the first paint (no field yet) gets a delayed status, and only once
   // loading has run long enough to be worth acknowledging -- fast answers
   // should still render with no flash at all.
-  const [showHomeSkeleton, setShowHomeSkeleton] = useState(false);
+  const [showLoading, setShowLoading] = useState(false);
   useEffect(() => {
-    if (loaded) {
-      setShowHomeSkeleton(false);
+    if (fieldLoaded) {
+      setShowLoading(false);
       return;
     }
-    const timer = setTimeout(() => setShowHomeSkeleton(true), 300);
+    const timer = setTimeout(() => setShowLoading(true), 300);
     return () => clearTimeout(timer);
-  }, [loaded]);
+  }, [fieldLoaded]);
 
-  const list = results ?? [];
-  const hasExact = list.some(
+  const { w, h } = useViewport();
+  const mobile = w < MOBILE_MAX_WIDTH;
+  const boxW = mobile ? 96 : 120;
+  const boxH = mobile ? 72 : 92;
+  const labelH = mobile ? 40 : 46;
+
+  const list = useMemo(() => people ?? [], [people]);
+
+  const dust = useMemo(() => buildDust(), []);
+
+  // The rendered field: the stable recent people first (their spiral spots
+  // never move), plus any search match not already among them, materializing
+  // at the spiral's outer edge. Without this, an off-field match could never
+  // be opened -- and "Add" would offer to duplicate them.
+  // Typed to the snapshot shape all three sources share (semantic results
+  // carry a score but no screenshotId/updatedAt) -- the atlas only needs
+  // what PersonSnapshot guarantees.
+  const field = useMemo<PersonSnapshot[]>(
+    () =>
+      trimmed === ""
+        ? list
+        : composeAtlasField<PersonSnapshot>(list, nameMatches ?? [], semantic),
+    [trimmed, list, nameMatches, semantic],
+  );
+
+  // One cluster figure per person. Rebuilds only when the field composition
+  // changes (a keystroke that surfaces no new person reuses the memo).
+  const clusters = useMemo(
+    () => field.map((p) => buildCluster(p.name, undefined, { width: boxW, height: boxH })),
+    [field, boxW, boxH],
+  );
+
+  const positions = useMemo(
+    () => atlasLayout(field.length, w, h, { boxW, boxH, labelH }),
+    [field.length, w, h, boxW, boxH, labelH],
+  );
+
+  const nameMatchIds = useMemo(
+    () => new Set((nameMatches ?? []).map((p) => p._id)),
+    [nameMatches],
+  );
+  const semanticIds = useMemo(
+    () => new Set(semantic.map((m) => m._id)),
+    [semantic],
+  );
+
+  // A cluster is lit when nothing is typed, or its person matches the typed
+  // name, or its person matches by meaning. Until the name search answers we
+  // keep everyone lit so the sky never flashes dim then bright.
+  const isLit = (id: Id<"people">) =>
+    trimmed === "" || !searchLoaded || nameMatchIds.has(id) || semanticIds.has(id);
+  // Lit by meaning alone (not by name): earns the amber "memory" halo + tag.
+  const isMemory = (id: Id<"people">) =>
+    trimmed !== "" &&
+    searchLoaded &&
+    !nameMatchIds.has(id) &&
+    semanticIds.has(id);
+
+  const hasExact = (nameMatches ?? []).some(
     (p) => p.name.toLowerCase() === trimmed.toLowerCase(),
   );
-  // Nothing renders until the query answers, so states never flash.
-  const showAdd = loaded && trimmed !== "" && !hasExact;
-  const showRecentLabel = loaded && trimmed === "" && list.length > 0;
-  const showFirstRun = loaded && trimmed === "" && list.length === 0;
+  // No exact name match -> offer to add the typed name as a new star.
+  const showAdd = searchLoaded && trimmed !== "" && !hasExact;
+
+  const isEmpty = fieldLoaded && list.length === 0;
+  const atCap = fieldLoaded && list.length >= RESULT_LIMIT;
 
   async function handleAdd() {
     if (adding || trimmed === "") return;
@@ -149,145 +228,188 @@ export function SearchAdd({
   }
 
   return (
-    <form className="search-add" onSubmit={handleSubmit}>
-      <div className="search-wrap">
-        <SearchIcon />
-        <input
-          ref={inputRef}
-          className="field search-input"
-          placeholder="Search a name, or type a new one"
-          aria-label="Search people"
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          autoFocus
-          autoCapitalize="words"
-          autoComplete="off"
-          spellCheck={false}
-          enterKeyHint="go"
-        />
-        {query !== "" && (
+    <form className="atlas" onSubmit={handleSubmit}>
+      <div className="atlas-space" aria-hidden="true" />
+
+      {/* One shared, faint, twinkling dust field behind every cluster. The
+          viewBox matches the pixel size so circles stay round and unstretched. */}
+      <svg
+        className="atlas-dust"
+        viewBox={`0 0 ${w} ${h}`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        {dust.map((s, i) => (
+          <circle
+            key={i}
+            className="sky-tw"
+            style={
+              {
+                "--d": `${s.dur.toFixed(1)}s`,
+                "--dl": `${s.delay.toFixed(1)}s`,
+                "--hi": s.hi.toFixed(2),
+                "--lo": s.lo.toFixed(2),
+              } as CSSProperties
+            }
+            cx={(s.x * w).toFixed(1)}
+            cy={(s.y * h).toFixed(1)}
+            r={s.r.toFixed(2)}
+            fill="#fff"
+          />
+        ))}
+      </svg>
+
+      {/* Search floats top-center under the frosted header. Held back until
+          the field has loaded so the first paint is dust alone (decision 8). */}
+      {fieldLoaded && (
+      <div className="atlas-search">
+        <div className="atlas-pill">
+          <SearchIcon />
+          <input
+            ref={inputRef}
+            className="atlas-input"
+            placeholder="Search a name, or type a new one"
+            aria-label="Search people"
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            autoFocus
+            autoCapitalize="words"
+            autoComplete="off"
+            spellCheck={false}
+            enterKeyHint="go"
+          />
+          {query !== "" && (
+            <button
+              type="button"
+              className="atlas-clear"
+              aria-label="Clear search"
+              onClick={() => {
+                onQueryChange("");
+                inputRef.current?.focus();
+              }}
+            >
+              <ClearIcon />
+            </button>
+          )}
+        </div>
+
+        {showAdd && (
           <button
-            type="button"
-            className="search-clear"
-            aria-label="Clear search"
-            onClick={() => {
-              onQueryChange("");
-              inputRef.current?.focus();
-            }}
+            type="submit"
+            className="atlas-add"
+            disabled={adding}
           >
-            <ClearIcon />
+            {adding && <span className="spinner" aria-hidden="true" />}
+            {`Add "${trimmed}" to your sky`}
           </button>
         )}
       </div>
-
-      {trimmed === "" && (
-        <button
-          type="button"
-          className="btn-ghost capture-entry"
-          onClick={onOpenCapture}
-        >
-          <ImagesIcon />
-          Add from screenshots
-        </button>
       )}
 
-      {showRecentLabel && <p className="list-label">Recent</p>}
-
-      {!loaded && trimmed === "" && showHomeSkeleton && (
-        <ul className="results" aria-hidden="true">
-          {[0, 1, 2].map((i) => (
-            <li key={i}>
-              <div className="skeleton-line result-row-skeleton" />
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <ul className="results">
-        {list.map((p) => (
-          <li key={p._id}>
-            <button
-              type="button"
-              className="result-row"
-              onClick={() => onOpen(p)}
-            >
-              <span
-                className="row-name"
-                style={
-                  p._id === morphId
-                    ? { viewTransitionName: "person-name" }
-                    : undefined
-                }
+      {/* Clusters render in recency order so tab order = recency (decision 3),
+          even though each button is absolutely positioned. */}
+      {fieldLoaded && !isEmpty && (
+        <div className="atlas-field">
+          {field.map((person, i) => {
+            const cluster = clusters[i];
+            const pos = positions[i];
+            const dim = !isLit(person._id);
+            const memory = isMemory(person._id);
+            return (
+              <button
+                type="button"
+                key={person._id}
+                className={`atlas-cluster${dim ? " is-dim" : ""}${
+                  memory ? " is-memory" : ""
+                }`}
+                style={{
+                  left: `${pos.x - boxW / 2}px`,
+                  top: `${pos.y - boxH / 2}px`,
+                  width: `${boxW}px`,
+                }}
+                onClick={() => onOpen(person)}
               >
-                {p.name}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      {trimmed !== "" &&
-        (() => {
-          const extra = semantic.filter(
-            (match) => !list.some((p) => p._id === match._id),
-          );
-          if (extra.length === 0) return null;
-          return (
-            <>
-              <p className="list-label">From your memory</p>
-              <ul className="results">
-                {extra.map((match) => (
-                  <li key={match._id}>
-                    <button
-                      type="button"
-                      className="result-row"
-                      onClick={() =>
-                        onOpen({
-                          _id: match._id,
-                          name: match.name,
-                          link: match.link,
-                          context: match.context,
-                          _creationTime: match._creationTime,
-                        })
-                      }
-                    >
-                      <span
-                        className="row-name"
-                        style={
-                          match._id === morphId
-                            ? { viewTransitionName: "person-name" }
-                            : undefined
-                        }
-                      >
-                        {match.name}
-                      </span>
-                      {(match.context ?? match.headline) !== undefined && (
-                        <span className="row-snippet">
-                          {match.context ?? match.headline}
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          );
-        })()}
-
-      {showFirstRun && (
-        <div className="empty-state" role="status">
-          <h2 className="empty-title">No one here yet</h2>
-          <p className="empty-body">
-            Type a name above to remember your first person.
-          </p>
+                <svg
+                  className="atlas-cluster-sky"
+                  viewBox={`0 0 ${cluster.width} ${cluster.height}`}
+                  width={boxW}
+                  height={boxH}
+                  aria-hidden="true"
+                >
+                  {cluster.edges.map(([a, b], e) => (
+                    <line
+                      key={e}
+                      x1={cluster.stars[a].x.toFixed(1)}
+                      y1={cluster.stars[a].y.toFixed(1)}
+                      x2={cluster.stars[b].x.toFixed(1)}
+                      y2={cluster.stars[b].y.toFixed(1)}
+                      stroke="rgba(255,255,255,0.16)"
+                      strokeWidth="0.8"
+                    />
+                  ))}
+                  {cluster.stars.map((star, s) => (
+                    <circle
+                      key={s}
+                      cx={star.x.toFixed(1)}
+                      cy={star.y.toFixed(1)}
+                      r={star.r.toFixed(2)}
+                      fill={`hsla(${star.hue}, 60%, 88%, 1)`}
+                    />
+                  ))}
+                </svg>
+                <span
+                  className="atlas-cluster-name"
+                  style={
+                    person._id === morphId
+                      ? { viewTransitionName: "person-name" }
+                      : undefined
+                  }
+                >
+                  {person.name}
+                </span>
+                <span className="atlas-cluster-when">
+                  {formatMonthYear(person._creationTime)}
+                </span>
+                {memory && <span className="atlas-cluster-tag">memory</span>}
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {showAdd && (
-        <button type="submit" className="btn-primary add-button" disabled={adding}>
-          {adding && <span className="spinner" aria-hidden="true" />}
-          {`Add "${trimmed}"`}
-        </button>
+      {/* First run: the sky is empty. Its own capture button lives inside. */}
+      {isEmpty && (
+        <div className="atlas-empty" role="status">
+          <span className="sky-label">your sky is waiting</span>
+          <h2 className="atlas-empty-title">No one here yet</h2>
+          <p className="atlas-empty-body">
+            Meet someone worth remembering, then capture them.
+          </p>
+          <button type="button" className="sky-cta" onClick={onOpenCapture}>
+            Capture someone new
+          </button>
+        </div>
+      )}
+
+      {/* Loading: only the dust shows; after a beat, a quiet status label. */}
+      {!fieldLoaded && showLoading && (
+        <div className="atlas-loading" role="status">
+          <span className="sky-label">reading your sky</span>
+        </div>
+      )}
+
+      {/* The recent sky is capped; hint that the rest lives behind search. */}
+      {atCap && !isEmpty && (
+        <p className="atlas-hint sky-label">search to find everyone else</p>
+      )}
+
+      {/* Capture floats bottom-center whenever the sky already holds someone. */}
+      {fieldLoaded && !isEmpty && (
+        <div className="atlas-capture">
+          <button type="button" className="sky-cta" onClick={onOpenCapture}>
+            Capture someone new
+          </button>
+        </div>
       )}
     </form>
   );

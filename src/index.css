@@ -1279,6 +1279,295 @@ textarea.field {
   }
 }
 
+/* ----------------------------------------------------------- atlas home */
+
+/* The signed-in home: your people ARE the sky. A full-viewport deep field of
+   faint dust with one small constellation per person, glass controls floating
+   over it. Reuses the sky recipe -- deep-space gradient, the exact glass fills
+   from .sky-cta / .sky-link-pill, the .sky-tw twinkle -- so it belongs to the
+   same night as the card and detail skies. */
+
+/* Home escapes .app-main's 640px column so the sky can go full-bleed. The
+   frosted header still floats over it (intended). */
+.app-main-atlas {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Smallcaps caption used across the sky surfaces. */
+.sky-label {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+/* Fixed to the viewport (like the prototype's stage), with its own stacking
+   context at z-index 0 so every control stays under the header's z-index 10. */
+.atlas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  color: #fff;
+}
+
+.atlas-space {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 80% at 30% 10%, #101a3a 0%, transparent 60%),
+    radial-gradient(100% 70% at 80% 60%, #131030 0%, transparent 65%),
+    #060a1a;
+}
+
+.atlas-dust {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Rest opacity is the star's faint high value, so when reduced motion silences
+   the twinkle the dust stays dim instead of snapping to full white. */
+.atlas-dust circle {
+  opacity: var(--hi, 0.3);
+}
+
+/* Search + the add action float top-center, under the header. */
+.atlas-search {
+  position: absolute;
+  top: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  width: min(480px, 86vw);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.atlas-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 18px;
+  border-radius: 980px;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.atlas-pill .search-icon {
+  flex: 0 0 auto;
+}
+
+.atlas-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: #fff;
+  caret-color: #fff;
+  font-size: 16px;
+}
+
+.atlas-input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.atlas-clear {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.7);
+  background: none;
+}
+
+.atlas-clear:active {
+  transform: scale(0.92);
+}
+
+.atlas-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 20px;
+  border-radius: 980px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  transition:
+    transform var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .atlas-add:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.18);
+  }
+}
+
+.atlas-add:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.atlas-add:disabled {
+  opacity: 0.6;
+}
+
+/* The constellation field sits behind the glass controls; only the cluster
+   buttons themselves take pointer events. */
+.atlas-field {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.atlas-cluster {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 4px 8px;
+  border: none;
+  background: none;
+  pointer-events: auto;
+  transition: opacity 0.3s var(--ease-out);
+}
+
+.atlas-cluster.is-dim {
+  opacity: 0.12;
+}
+
+.atlas-cluster-sky {
+  display: block;
+  overflow: visible;
+}
+
+/* Lit by meaning, not by name: a soft amber glow marks a memory match. */
+.atlas-cluster.is-memory .atlas-cluster-sky {
+  filter: drop-shadow(0 0 5px rgba(255, 190, 120, 0.6));
+}
+
+.atlas-cluster-name {
+  width: 100%;
+  margin-top: 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow:
+    0 2px 10px rgba(3, 6, 18, 0.85),
+    0 0 3px rgba(3, 6, 18, 0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.atlas-cluster-when {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.atlas-cluster-tag {
+  margin-top: 1px;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 190, 120, 0.9);
+}
+
+/* First run: an empty sky, its own capture button centered. */
+.atlas-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+}
+
+.atlas-empty-title {
+  margin: 6px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+.atlas-empty-body {
+  margin: 0 0 6px;
+  max-width: 30ch;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.66);
+  text-wrap: pretty;
+}
+
+.atlas-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.atlas-hint {
+  position: absolute;
+  z-index: 2;
+  left: max(20px, env(safe-area-inset-left));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  margin: 0;
+}
+
+.atlas-capture {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: max(28px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+}
+
+@media (max-width: 480px) {
+  .atlas-search {
+    top: 76px;
+    width: min(440px, 90vw);
+  }
+
+  .atlas-cluster-name {
+    font-size: 11px;
+  }
+
+  .atlas-cluster-when {
+    font-size: 9px;
+  }
+}
+
 /* ------------------------------------------------------ view transitions */
 
 /* Screens crossfade quietly; the tapped name is the only thing that
@@ -1307,10 +1596,23 @@ textarea.field {
     animation: screen-in var(--t-screen) var(--ease-out);
   }
 
+  /* The atlas is position:fixed inside the screen; a transform here would
+     become its containing block and drag the whole sky through the entrance
+     settle. Fade only. */
+  .app-main-atlas .screen {
+    animation-name: screen-in-fade;
+  }
+
   @keyframes screen-in {
     from {
       opacity: 0;
       transform: translateY(6px);
+    }
+  }
+
+  @keyframes screen-in-fade {
+    from {
+      opacity: 0;
     }
   }
 }

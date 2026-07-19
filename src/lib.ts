@@ -109,6 +109,30 @@ export function canSaveManualName(name: string): boolean {
   return name.trim() !== "";
 }
 
+// The atlas home renders the recent field plus anything search surfaced that
+// is not already in it. Matches MUST materialize as clusters: an off-field
+// person who never renders is unreachable, and the "Add" affordance would
+// then invite creating their duplicate. Recent people stay first so their
+// spiral positions never shift; off-field name matches append next, then
+// semantic-only matches.
+export function composeAtlasField<T extends { _id: string }>(
+  recent: T[],
+  nameMatches: T[],
+  semantic: T[],
+): T[] {
+  const seen = new Set(recent.map((p) => p._id));
+  const field = [...recent];
+  for (const group of [nameMatches, semantic]) {
+    for (const person of group) {
+      if (!seen.has(person._id)) {
+        seen.add(person._id);
+        field.push(person);
+      }
+    }
+  }
+  return field;
+}
+
 // Clerk drives OAuth and verification steps through hash sub-routes it appends
 // to our page, e.g. "#/sso-callback" after Google returns. The bare landing
 // has no hash route, so a non-empty one means we must mount Clerk immediately

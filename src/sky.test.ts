@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { buildSky, personHues } from "./sky";
+import {
+  atlasLayout,
+  buildCluster,
+  buildDust,
+  buildSky,
+  personHues,
+} from "./sky";
 
 const ROS = { name: "Rosalind Franklin", handle: "@ros_franklin" };
 const ALAN = { name: "Alan Kay", handle: "alan-kay" };
@@ -101,5 +107,144 @@ describe("buildSky", () => {
     for (const flare of sky.flares) {
       expect(majorPositions).toContain(`${flare.x},${flare.y}`);
     }
+  });
+});
+
+describe("buildCluster", () => {
+  test("is deterministic for the same person", () => {
+    const a = buildCluster(ROS.name, ROS.handle);
+    const b = buildCluster(ROS.name, ROS.handle);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  test("mirrors buildSky's constellation topology exactly", () => {
+    // The map cluster must be recognizably the same figure as the card sky:
+    // same star count, same minimum-spanning-tree edges.
+    const sky = buildSky(ROS.name, ROS.handle);
+    const cluster = buildCluster(ROS.name, ROS.handle);
+    expect(cluster.stars).toHaveLength(sky.majors.length);
+    expect(cluster.edges).toEqual(sky.edges);
+  });
+
+  test("scales every star inside the padded cluster box", () => {
+    const width = 120;
+    const height = 92;
+    const pad = 8;
+    const cluster = buildCluster(ROS.name, ROS.handle, { width, height, pad });
+    expect(cluster.width).toBe(width);
+    expect(cluster.height).toBe(height);
+    for (const star of cluster.stars) {
+      expect(star.x).toBeGreaterThanOrEqual(pad);
+      expect(star.x).toBeLessThanOrEqual(width - pad);
+      expect(star.y).toBeGreaterThanOrEqual(pad);
+      expect(star.y).toBeLessThanOrEqual(height - pad);
+      expect(star.r).toBeGreaterThan(0);
+    }
+  });
+
+  test("honors custom box dimensions", () => {
+    const cluster = buildCluster(ALAN.name, ALAN.handle, {
+      width: 96,
+      height: 72,
+      pad: 6,
+    });
+    for (const star of cluster.stars) {
+      expect(star.x).toBeGreaterThanOrEqual(6);
+      expect(star.x).toBeLessThanOrEqual(90);
+      expect(star.y).toBeGreaterThanOrEqual(6);
+      expect(star.y).toBeLessThanOrEqual(66);
+    }
+  });
+
+  test("different people mint different clusters", () => {
+    expect(JSON.stringify(buildCluster(ROS.name, ROS.handle))).not.toBe(
+      JSON.stringify(buildCluster(ALAN.name, ALAN.handle)),
+    );
+  });
+});
+
+describe("atlasLayout", () => {
+  const W = 1200;
+  const H = 800;
+
+  test("is deterministic and returns one point per person", () => {
+    const a = atlasLayout(12, W, H);
+    const b = atlasLayout(12, W, H);
+    expect(a).toEqual(b);
+    expect(a).toHaveLength(12);
+  });
+
+  test("keeps every cluster box and label inside the viewport", () => {
+    const boxW = 120;
+    const boxH = 92;
+    const labelH = 46;
+    const points = atlasLayout(20, W, H, { boxW, boxH, labelH });
+    for (const p of points) {
+      expect(p.x - boxW / 2).toBeGreaterThanOrEqual(0);
+      expect(p.x + boxW / 2).toBeLessThanOrEqual(W);
+      expect(p.y - boxH / 2).toBeGreaterThanOrEqual(0);
+      expect(p.y + boxH / 2 + labelH).toBeLessThanOrEqual(H);
+    }
+  });
+
+  test("fits a narrow mobile viewport with a smaller box", () => {
+    const boxW = 96;
+    const boxH = 72;
+    const labelH = 40;
+    const points = atlasLayout(20, 390, 780, { boxW, boxH, labelH });
+    for (const p of points) {
+      expect(p.x - boxW / 2).toBeGreaterThanOrEqual(0);
+      expect(p.x + boxW / 2).toBeLessThanOrEqual(390);
+      expect(p.y - boxH / 2).toBeGreaterThanOrEqual(0);
+      expect(p.y + boxH / 2 + labelH).toBeLessThanOrEqual(780);
+    }
+  });
+
+  test("orders clusters center-out by recency: newest nearest the center", () => {
+    const count = 12;
+    const points = atlasLayout(count, W, H);
+    const cx = W / 2;
+    const cy = H / 2 + 14; // matches the default center offset
+    const dist = (p: { x: number; y: number }) =>
+      Math.hypot(p.x - cx, p.y - cy);
+    const distances = points.map(dist);
+    // Index 0 (newest) is strictly the closest star to the center.
+    for (let i = 1; i < count; i++) {
+      expect(distances[0]).toBeLessThan(distances[i]);
+    }
+    expect(distances[0]).toBeLessThan(distances[count - 1]);
+  });
+
+  test("never returns NaN, even for a single person or an empty sky", () => {
+    expect(atlasLayout(0, W, H)).toEqual([]);
+    const one = atlasLayout(1, W, H);
+    expect(one).toHaveLength(1);
+    expect(Number.isFinite(one[0].x)).toBe(true);
+    expect(Number.isFinite(one[0].y)).toBe(true);
+  });
+});
+
+describe("buildDust", () => {
+  test("is deterministic and shared, not per person", () => {
+    expect(buildDust()).toEqual(buildDust());
+  });
+
+  test("defaults to a full field of unit-coordinate faint stars", () => {
+    const dust = buildDust();
+    expect(dust).toHaveLength(80);
+    for (const star of dust) {
+      expect(star.x).toBeGreaterThanOrEqual(0);
+      expect(star.x).toBeLessThan(1);
+      expect(star.y).toBeGreaterThanOrEqual(0);
+      expect(star.y).toBeLessThan(1);
+      expect(star.r).toBeGreaterThan(0);
+      // Dust stays faint so it never competes with a person's constellation.
+      expect(star.hi).toBeLessThan(0.4);
+      expect(star.dur).toBeGreaterThan(0);
+    }
+  });
+
+  test("honors a custom count", () => {
+    expect(buildDust(40)).toHaveLength(40);
   });
 });
