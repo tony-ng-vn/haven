@@ -480,6 +480,54 @@ textarea.field {
   color: var(--danger);
 }
 
+.shared-note-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+  padding: 16px;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.shared-note-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.shared-note-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.shared-note-copy {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+.shared-note-field {
+  min-height: 110px;
+}
+
+.shared-note-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.shared-note-status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 /* Saying goodbye stays quiet: low-emphasis danger text, never a red slab.
    Set apart from Save by a hairline so it does not read as a peer action. */
 .person-danger {

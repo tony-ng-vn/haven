@@ -11,6 +11,7 @@
 import type * as captures from "../captures.js";
 import type * as openaiClient from "../openaiClient.js";
 import type * as people from "../people.js";
+import type * as sharedNotes from "../sharedNotes.js";
 
 import type {
   ApiFromModules,
@@ -22,6 +23,7 @@ declare const fullApi: ApiFromModules<{
   captures: typeof captures;
   openaiClient: typeof openaiClient;
   people: typeof people;
+  sharedNotes: typeof sharedNotes;
 }>;
 
 /**

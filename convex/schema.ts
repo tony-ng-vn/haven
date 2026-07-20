@@ -39,6 +39,27 @@ export default defineSchema({
       dimensions: 1536,
       filterFields: ["userId"],
     }),
+  // A future mutual-link flow should create one row only after both Euno users
+  // have explicitly connected. Each side binds the relationship to their own
+  // private person row; the shared-note API uses this as its access gate.
+  connections: defineTable({
+    userAId: v.string(),
+    userBId: v.string(),
+    personAId: v.id("people"),
+    personBId: v.id("people"),
+    status: v.literal("connected"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_userAId_and_personAId", ["userAId", "personAId"])
+    .index("by_userBId_and_personBId", ["userBId", "personBId"])
+    .index("by_userAId_and_userBId", ["userAId", "userBId"]),
+  sharedNotes: defineTable({
+    connectionId: v.id("connections"),
+    content: v.optional(v.string()),
+    updatedAt: v.number(),
+    updatedByUserId: v.string(),
+  }).index("by_connectionId", ["connectionId"]),
   // A screenshot waiting to be triaged into a person. Deleted on accept
   // (the file moves to the person) or discard (the file is deleted too).
   captures: defineTable({
