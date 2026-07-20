@@ -105,6 +105,20 @@ export default defineSchema({
     count: v.number(),
   }).index("by_user_action", ["userId", "action"]),
 
+  // Opt-in, short-lived proximity sessions for Love Alarm. Kept separate from
+  // people because heartbeats are intentionally high-churn operational data.
+  loveAlarmPresence: defineTable({
+    userId: v.string(),
+    roomCode: v.string(),
+    displayName: v.string(),
+    joinedAt: v.number(),
+    lastSeenAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_userId_and_roomCode", ["userId", "roomCode"])
+    .index("by_userId_and_expiresAt", ["userId", "expiresAt"])
+    .index("by_roomCode_and_expiresAt", ["roomCode", "expiresAt"]),
+
   // Cursor state for paginated background sweeps: without a persisted
   // watermark a bounded sweep re-reads the same head of the table forever
   // and never progresses past rows it must skip.

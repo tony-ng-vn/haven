@@ -13,6 +13,7 @@ import type { Id } from "../convex/_generated/dataModel";
 import { formatMonthYear, type PersonSnapshot } from "./lib";
 import { atlasLayout, buildCluster, buildDust } from "./sky";
 import { composeAtlasField } from "./lib";
+import { LoveAlarmPanel } from "./LoveAlarmPanel";
 
 type SemanticResults = FunctionReturnType<typeof api.people.semanticSearch>;
 
@@ -410,6 +411,8 @@ export function SearchAdd({
       {atCap && !isEmpty && (
         <p className="atlas-hint sky-label">search to find everyone else</p>
       )}
+
+      {fieldLoaded && <LoveAlarmPanel />}
 
       {/* Capture floats bottom-center whenever the sky already holds someone. */}
       {fieldLoaded && !isEmpty && (
