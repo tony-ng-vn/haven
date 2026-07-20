@@ -1555,6 +1555,171 @@ textarea.field {
   opacity: 0.6;
 }
 
+.atlas-meet-fab {
+  position: absolute;
+  z-index: 4;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(28px, env(safe-area-inset-bottom));
+  padding: 11px 20px;
+  border-radius: 980px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  transition:
+    transform var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .atlas-meet-fab:hover {
+    background: rgba(255, 255, 255, 0.18);
+  }
+}
+
+.atlas-meet-fab:active {
+  transform: scale(0.97);
+}
+
+.meet-sheet {
+  position: absolute;
+  z-index: 5;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: calc(max(28px, env(safe-area-inset-bottom)) + 58px);
+  width: min(360px, calc(100vw - 40px));
+  padding: 18px;
+  color: #fff;
+  background: rgba(12, 16, 34, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+}
+
+.meet-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.meet-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: rgba(255, 255, 255, 0.72);
+  background: none;
+  border: none;
+  border-radius: 50%;
+}
+
+.meet-title {
+  margin: 8px 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.meet-copy {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.78);
+  text-wrap: pretty;
+}
+
+.meet-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.meet-label,
+.meet-muted,
+.meet-status,
+.meet-error,
+.meet-found {
+  margin: 0;
+  font-size: 13px;
+}
+
+.meet-label,
+.meet-muted {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.meet-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 6px 10px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.meet-at {
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.meet-input {
+  flex: 1;
+  min-width: 0;
+  color: #fff;
+  caret-color: #fff;
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 16px;
+}
+
+.meet-input::placeholder {
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.meet-speech,
+.meet-open {
+  padding: 7px 10px;
+  color: rgba(255, 255, 255, 0.86);
+  background: transparent;
+  border: none;
+  border-radius: 980px;
+  font-size: 13px;
+}
+
+.meet-primary {
+  width: fit-content;
+}
+
+.meet-open {
+  width: fit-content;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+}
+
+.meet-status,
+.meet-found {
+  margin-top: 12px;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.meet-error {
+  margin-top: 12px;
+  color: #ffb4ad;
+}
+
 /* The constellation field sits behind the glass controls; only the cluster
    buttons themselves take pointer events. */
 .atlas-field {
@@ -1673,7 +1838,6 @@ textarea.field {
   bottom: max(28px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
 }
-
 
 /* ----------------------------------------------------------- love alarm */
 
@@ -1922,7 +2086,8 @@ textarea.field {
   .btn-ghost:active:not(:disabled),
   .btn-danger:active:not(:disabled),
   .result-row:active,
-  .search-clear:active {
+  .search-clear:active,
+  .atlas-meet-fab:active {
     transform: none;
   }
 

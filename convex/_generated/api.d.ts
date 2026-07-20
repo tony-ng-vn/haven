@@ -9,8 +9,10 @@
  */
 
 import type * as captures from "../captures.js";
+import type * as loveAlarm from "../loveAlarm.js";
 import type * as openaiClient from "../openaiClient.js";
 import type * as people from "../people.js";
+import type * as profiles from "../profiles.js";
 import type * as sharedNotes from "../sharedNotes.js";
 
 import type {
@@ -21,8 +23,10 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   captures: typeof captures;
+  loveAlarm: typeof loveAlarm;
   openaiClient: typeof openaiClient;
   people: typeof people;
+  profiles: typeof profiles;
   sharedNotes: typeof sharedNotes;
 }>;
 

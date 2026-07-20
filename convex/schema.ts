@@ -21,12 +21,16 @@ export default defineSchema({
     handle: v.optional(v.string()),
     headline: v.optional(v.string()),
     screenshotId: v.optional(v.id("_storage")),
+    // Euno Meet provenance. Each side still gets a private people row; this
+    // key only lets a repeat in-person exchange stay idempotent.
+    eunoContactUserId: v.optional(v.string()),
     // Semantic search. embeddedText doubles as the idempotency key so the
     // embed action can skip recomputing an unchanged person.
     embedding: v.optional(v.array(v.float64())),
     embeddedText: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
+    .index("by_user_and_eunoContactUserId", ["userId", "eunoContactUserId"])
     // Same reasoning as captures.by_screenshotId: the orphaned-upload sweep
     // needs a sound, bounded way to check "is this blob referenced?".
     .index("by_screenshotId", ["screenshotId"])
@@ -104,6 +108,16 @@ export default defineSchema({
     windowStart: v.number(),
     count: v.number(),
   }).index("by_user_action", ["userId", "action"]),
+
+  // A user's public-in-the-moment Euno handle. This is not a social profile:
+  // it exists only so two people standing together can intentionally exchange.
+  profiles: defineTable({
+    userId: v.string(),
+    username: v.string(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_username", ["username"]),
 
   // Opt-in, short-lived proximity sessions for Love Alarm. Kept separate from
   // people because heartbeats are intentionally high-churn operational data.
