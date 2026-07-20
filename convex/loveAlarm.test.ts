@@ -47,6 +47,27 @@ test("Love Alarm room only returns active opted-in peers", async () => {
   }
 });
 
+test("Love Alarm prefers the joiner's Euno username when set", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  const peer = asNewUser(t);
+
+  await peer.mutation(api.profiles.setUsername, { username: "maya" });
+  await me.mutation(api.loveAlarm.startPresence, {
+    roomCode: "lobby",
+    displayName: "Me",
+  });
+  await peer.mutation(api.loveAlarm.startPresence, { roomCode: "lobby" });
+
+  const nearby = await me.query(api.loveAlarm.nearby, { roomCode: "lobby" });
+  expect(nearby.peers).toEqual([
+    expect.objectContaining({
+      displayName: "@maya",
+      username: "maya",
+    }),
+  ]);
+});
+
 test("Love Alarm presence expires without a heartbeat", async () => {
   vi.useFakeTimers();
   try {

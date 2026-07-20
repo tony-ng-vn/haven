@@ -1994,6 +1994,21 @@ textarea.field {
   font-size: 14px;
 }
 
+.love-alarm-peer-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.love-alarm-meet {
+  padding: 4px 10px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 980px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
 .love-alarm-dot {
   width: 8px;
   height: 8px;

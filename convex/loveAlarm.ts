@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx } from "./_generated/server";
 import { Doc } from "./_generated/dataModel";
 import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
@@ -18,6 +18,7 @@ const presenceStartedValidator = v.object({
 
 const peerValidator = v.object({
   displayName: v.string(),
+  username: v.optional(v.string()),
   lastSeenAt: v.number(),
 });
 
@@ -40,8 +41,31 @@ function normalizeDisplayName(displayName: string | undefined): string {
 function projectPeer(presence: Doc<"loveAlarmPresence">) {
   return {
     displayName: presence.displayName,
+    username: presence.username,
     lastSeenAt: presence.lastSeenAt,
   };
+}
+
+async function resolveDisplayName(
+  ctx: MutationCtx,
+  userId: string,
+  displayName: string | undefined,
+): Promise<{ displayName: string; username?: string }> {
+  const profile = await ctx.db
+    .query("profiles")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .unique();
+  if (profile !== null) {
+    const override = displayName?.trim() ?? "";
+    return {
+      displayName:
+        override === ""
+          ? `@${profile.username}`
+          : override.slice(0, MAX_DISPLAY_NAME_LENGTH),
+      username: profile.username,
+    };
+  }
+  return { displayName: normalizeDisplayName(displayName) };
 }
 
 export const startPresence = mutation({
@@ -56,7 +80,7 @@ export const startPresence = mutation({
     const roomCode = normalizeRoomCode(args.roomCode);
     const now = Date.now();
     const expiresAt = now + PRESENCE_TTL_MS;
-    const displayName = normalizeDisplayName(args.displayName);
+    const resolved = await resolveDisplayName(ctx, userId, args.displayName);
     const existing = await ctx.db
       .query("loveAlarmPresence")
       .withIndex("by_userId_and_roomCode", (q) =>
@@ -68,14 +92,16 @@ export const startPresence = mutation({
       await ctx.db.insert("loveAlarmPresence", {
         userId,
         roomCode,
-        displayName,
+        displayName: resolved.displayName,
+        username: resolved.username,
         joinedAt: now,
         lastSeenAt: now,
         expiresAt,
       });
     } else {
-      await ctx.db.patch(existing._id, {
-        displayName,
+      await ctx.db.patch("loveAlarmPresence", existing._id, {
+        displayName: resolved.displayName,
+        username: resolved.username,
         lastSeenAt: now,
         expiresAt,
       });
@@ -105,7 +131,10 @@ export const heartbeat = mutation({
       throw new Error("Join this Love Alarm room before sending a heartbeat");
     }
 
-    await ctx.db.patch(existing._id, { lastSeenAt: now, expiresAt });
+    await ctx.db.patch("loveAlarmPresence", existing._id, {
+      lastSeenAt: now,
+      expiresAt,
+    });
     return { roomCode, expiresAt };
   },
 });
@@ -123,7 +152,7 @@ export const stopPresence = mutation({
       )
       .unique();
     if (existing !== null) {
-      await ctx.db.delete(existing._id);
+      await ctx.db.delete("loveAlarmPresence", existing._id);
     }
     return null;
   },

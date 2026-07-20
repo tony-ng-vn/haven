@@ -157,6 +157,14 @@ export function SearchAdd({
     meetLookupUsername.length >= 3 ? { username: meetLookupUsername } : "skip",
   );
 
+  function openMeetWithUsername(username: string) {
+    setMeetOpen(true);
+    setMeetUsername(username);
+    setMeetError(null);
+    setMeetStatus(null);
+    setLastMeet(null);
+  }
+
   // Meaning-based matches arrive quietly beside the instant name search:
   // debounced, stale-guarded, and silent on failure.
   useEffect(() => {
@@ -702,7 +710,9 @@ export function SearchAdd({
         <p className="atlas-hint sky-label">search to find everyone else</p>
       )}
 
-      {fieldLoaded && <LoveAlarmPanel />}
+      {fieldLoaded && (
+        <LoveAlarmPanel onMeetUsername={openMeetWithUsername} />
+      )}
 
       {/* Capture floats bottom-center whenever the sky already holds someone. */}
       {fieldLoaded && !isEmpty && (

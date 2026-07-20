@@ -76,6 +76,59 @@ async function ensureMeetPerson(args: {
   return personId;
 }
 
+// Canonical pair order so a second Meet (either direction) finds the same
+// connection row instead of inserting a duplicate.
+async function ensureConnection(args: {
+  ctx: MutationCtx;
+  userId: string;
+  peerUserId: string;
+  personId: Id<"people">;
+  peerPersonId: Id<"people">;
+  now: number;
+}): Promise<Id<"connections">> {
+  const ordered =
+    args.userId < args.peerUserId
+      ? {
+          userAId: args.userId,
+          userBId: args.peerUserId,
+          personAId: args.personId,
+          personBId: args.peerPersonId,
+        }
+      : {
+          userAId: args.peerUserId,
+          userBId: args.userId,
+          personAId: args.peerPersonId,
+          personBId: args.personId,
+        };
+
+  const existing = await args.ctx.db
+    .query("connections")
+    .withIndex("by_userAId_and_userBId", (q) =>
+      q.eq("userAId", ordered.userAId).eq("userBId", ordered.userBId),
+    )
+    .unique();
+  if (existing !== null) {
+    if (
+      existing.personAId !== ordered.personAId ||
+      existing.personBId !== ordered.personBId
+    ) {
+      await args.ctx.db.patch("connections", existing._id, {
+        personAId: ordered.personAId,
+        personBId: ordered.personBId,
+        updatedAt: args.now,
+      });
+    }
+    return existing._id;
+  }
+
+  return await args.ctx.db.insert("connections", {
+    ...ordered,
+    status: "connected",
+    createdAt: args.now,
+    updatedAt: args.now,
+  });
+}
+
 export const getMyProfile = query({
   args: {},
   returns: v.union(v.null(), myProfileValidator),
@@ -196,11 +249,20 @@ export const meetExchange = mutation({
       contactUsername: peerProfile.username,
       now,
     });
-    await ensureMeetPerson({
+    const peerPersonId = await ensureMeetPerson({
       ctx,
       ownerUserId: peerProfile.userId,
       contactUserId: userId,
       contactUsername: myProfile.username,
+      now,
+    });
+    // Unlock pair-scoped shared notes once both private people rows exist.
+    await ensureConnection({
+      ctx,
+      userId,
+      peerUserId: peerProfile.userId,
+      personId,
+      peerPersonId,
       now,
     });
 

@@ -125,6 +125,9 @@ export default defineSchema({
     userId: v.string(),
     roomCode: v.string(),
     displayName: v.string(),
+    // Optional Euno username when the joiner has claimed one -- lets a peer
+    // confirm Meet without retyping the handle.
+    username: v.optional(v.string()),
     joinedAt: v.number(),
     lastSeenAt: v.number(),
     expiresAt: v.number(),

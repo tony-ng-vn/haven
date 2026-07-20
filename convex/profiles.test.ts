@@ -120,6 +120,26 @@ test("meetExchange creates private people rows for both sides", async () => {
     handle: "alice",
   });
 
+  const connection = await t.run((ctx) =>
+    ctx.db
+      .query("connections")
+      .withIndex("by_userAId_and_userBId", (q) => {
+        const [a, b] =
+          alice.userId < bob.userId
+            ? [alice.userId, bob.userId]
+            : [bob.userId, alice.userId];
+        return q.eq("userAId", a).eq("userBId", b);
+      })
+      .unique(),
+  );
+  expect(connection).toMatchObject({ status: "connected" });
+
+  const sharedFromAlice = await alice.as.query(api.sharedNotes.getForPerson, {
+    personId: exchanged.personId,
+  });
+  expect(sharedFromAlice).not.toBeNull();
+  expect(sharedFromAlice?.connectionId).toBe(connection?._id);
+
   expect(
     (await alice.as.query(api.people.searchPeople, { query: "bob" })).map(
       (p) => p.name,
@@ -159,6 +179,10 @@ test("meetExchange is idempotent for repeated in-person confirmations", async ()
   }));
   expect(counts.alice).toHaveLength(1);
   expect(counts.bob).toHaveLength(1);
+  const connections = await t.run((ctx) =>
+    ctx.db.query("connections").collect(),
+  );
+  expect(connections).toHaveLength(1);
 });
 
 test("meetExchange requires a username for self and rejects self exchange", async () => {

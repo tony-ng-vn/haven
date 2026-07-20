@@ -11,7 +11,11 @@ function defaultRoomCode(): string {
   return new Date().toISOString().slice(0, 10).replace(/-/g, "");
 }
 
-export function LoveAlarmPanel() {
+export function LoveAlarmPanel({
+  onMeetUsername,
+}: {
+  onMeetUsername?: (username: string) => void;
+}) {
   const startPresence = useMutation(api.loveAlarm.startPresence);
   const heartbeat = useMutation(api.loveAlarm.heartbeat);
   const stopPresence = useMutation(api.loveAlarm.stopPresence);
@@ -121,7 +125,7 @@ export function LoveAlarmPanel() {
               className="love-alarm-input"
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
-              placeholder="Someone nearby"
+              placeholder="Uses your @username if set"
               autoComplete="off"
             />
           </label>
@@ -142,9 +146,21 @@ export function LoveAlarmPanel() {
           ) : (
             <ul className="love-alarm-peers" aria-label="Nearby people">
               {peers.map((peer) => (
-                <li key={`${peer.displayName}-${peer.lastSeenAt}`}>
+                <li key={`${peer.displayName}-${peer.lastSeenAt}-${peer.username ?? ""}`}>
                   <span className="love-alarm-dot" aria-hidden="true" />
-                  {peer.displayName}
+                  <span className="love-alarm-peer-name">{peer.displayName}</span>
+                  {peer.username !== undefined && onMeetUsername !== undefined && (
+                    <button
+                      type="button"
+                      className="love-alarm-meet"
+                      onClick={() => {
+                        const username = peer.username;
+                        if (username !== undefined) onMeetUsername(username);
+                      }}
+                    >
+                      Meet
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
