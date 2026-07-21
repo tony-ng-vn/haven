@@ -114,7 +114,7 @@ export function Waitlist() {
             </div>
             <p className="wl-checkline">You are on the list.</p>
             <p className="wl-sub wl-joined-sub">
-              We will reach out when your invite is ready. Thanks for your patience.
+              Thank you for joining us, to be in the true social that brings you to other people in your life
             </p>
           </div>
         ) : (
