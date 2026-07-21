@@ -47,7 +47,7 @@ An X followers/following import is the same class of feature as that out-of-scop
 There is no free tier for new developers.
 Legacy Basic ($200/month) and Pro ($5,000/month) subscriptions are closed to new signups and are being migrated to pay-per-use; Enterprise starts around $42,000/month for volume above the pay-per-use read cap.
 Under pay-per-use, `GET /2/users/{id}/followers` and `GET /2/users/{id}/following` are billed as "Owned Reads" at $0.001 per resource (1,000 records for $1) when the request reads the authenticated user's own account through a user-context OAuth token.
-Non-owned reads (looking up someone else's list) are billed at $0.005 per resource and, per multi-year developer-community reports, effectively require Enterprise access for followers/following of an arbitrary account.
+Non-owned reads (looking up someone else's list) fall under the "Following/Followers: Read" rate, billed at $0.010 per resource - double the $0.005 "Posts: Read" rate, and, per multi-year developer-community reports, effectively require Enterprise access for followers/following of an arbitrary account.
 Even the cheap path has real friction: it needs a registered X developer app, pre-purchased credits (no free trial of the endpoint itself), and a working OAuth 2.0 user-context sign-in flow, none of which exist in Euno today.
 More importantly, whether the discounted "Owned Reads" rate even applies to a multi-tenant app like Euro reading many different end users' own follow graphs (versus only the app owner's single account) is disputed in X's own developer forum as of this pricing change; one active thread is titled "Owned Reads and Lists," another documents a billing bug where the discount silently did not apply to the bookmarks endpoint.
 A pricing model that shipped in February 2026, had a billing correction announced for endpoints effective April 20, 2026, and is still being clarified by X's own developers is not a stable foundation to build a paid integration on.
@@ -87,7 +87,7 @@ This is not a viable substitute for the API path the way LinkedIn's CSV export i
 **What people usually mean:** User pastes `x.com/handle` -> Euno fills name, bio, follower count.
 
 **API reality:** Unlike LinkedIn, X does expose a general-purpose, non-partner-gated endpoint for this: `GET /2/users/by/username/{username}` returns a user's id, name, username, and (with additional fields requested) description and other public profile fields for any public account, not just the authenticated user's own.
-This is a "non-owned" read, billed at the standard $0.005 per resource under pay-per-use, with no Enterprise or partner approval required for the lookup itself.
+This is a "non-owned" read under the "User: Read" rate, billed at $0.010 per resource under pay-per-use - not the cheaper $0.005 "Posts: Read" rate - with no Enterprise or partner approval required for the lookup itself.
 That is a real difference from LinkedIn, which has no self-serve profile-lookup path at any price.
 The catch is the same developer-app and pre-purchased-credit setup as option 1, for a feature that duplicates what screenshot capture already does today at zero marginal API cost.
 
@@ -167,7 +167,7 @@ Treat any "Connect X" marketing language as **auth**, not **import**, and do not
 
 ## Sources
 
-- [X API pay-per-usage pricing and credits (docs.x.com)](https://docs.x.com/x-api/getting-started/pricing) - official pricing page: $0.005 per post read (2M/month cap before Enterprise), $0.015/$0.20 per post created, $0.001 per resource for Owned Reads, full Owned Reads endpoint list including `GET /2/users/{id}/followers` and `GET /2/users/{id}/following`
+- [X API pay-per-usage pricing and credits (docs.x.com)](https://docs.x.com/x-api/getting-started/pricing) - official pricing page: $0.005 per post read ("Posts: Read", 2M/month cap before Enterprise) versus $0.010 per resource for "User: Read" and "Following/Followers: Read" (the rate that applies to non-owned followers/following lookups and username lookups), $0.015/$0.20 per post created, $0.001 per resource for Owned Reads, full Owned Reads endpoint list including `GET /2/users/{id}/followers` and `GET /2/users/{id}/following`
 - [Announcing the Launch of X API Pay-Per-Use Pricing (X Developer Community)](https://devcommunity.x.com/t/announcing-the-launch-of-x-api-pay-per-use-pricing/256476) - official February 2026 pricing-change announcement
 - [X API Pricing Update: Owned Reads Now $0.001 + Other Changes Effective April 20, 2026 (X Developer Community)](https://devcommunity.x.com/t/x-api-pricing-update-owned-reads-now-0-001-other-changes-effective-april-20-2026/263025) - confirms the pricing model was still being revised months after its February 2026 launch
 - [Owned Reads $0.001 rate not applied to bookmarks endpoint - billed at $0.005 instead (X Developer Community)](https://devcommunity.x.com/t/owned-reads-0-001-rate-not-applied-to-bookmarks-endpoint-billed-at-0-005-instead/263311) - documented billing inconsistency in the new pricing model
