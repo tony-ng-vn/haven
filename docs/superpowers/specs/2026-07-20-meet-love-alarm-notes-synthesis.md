@@ -1,4 +1,4 @@
-# Meet · Love Alarm · Shared Notes Synthesis
+# Meet - Love Alarm - Shared Notes Synthesis
 
 Date: 2026-07-20
 Status: Integrated MVP on atlas
@@ -17,37 +17,42 @@ Three parallel worktrees each owned one idea:
 
 ```
 Claim @username
-      │
-      ▼
-┌─────────────┐     room code      ┌──────────────┐
-│ Love Alarm  │ ─────────────────▶ │ see peer @x  │
-│ (detect)    │                    │ tap Meet     │
-└─────────────┘                    └──────┬───────┘
-                                          │
-                                          ▼
-                               ┌────────────────────┐
-                               │ Euno Meet exchange │
-                               │ private people ×2  │
-                               │ connections row    │
-                               └─────────┬──────────┘
-                                         │
-                                         ▼
-                               ┌────────────────────┐
-                               │ Shared notes on    │
-                               │ PersonDetail       │
-                               └────────────────────┘
+      |
+      v
++-------------+     room code      +--------------+
+| Love Alarm  | -----------------> | see peer @x  |
+| (detect)    |                    | tap Meet     |
++-------------+                    +------+-------+
+                                          |
+                                          v
+                               +--------------------+
+                               | Euno Meet exchange |
+                               | private people x2  |
+                               | connections row    |
+                               +---------+----------+
+                                         |
+                                         v
+                               +--------------------+
+                               | Shared notes on    |
+                               | PersonDetail       |
+                               +--------------------+
 ```
 
-1. **Detect** — Love Alarm is only a quiet radar. Two people share a short-lived room code; no geolocation, no always-on tracking.
-2. **Exchange** — Meet is NameDrop-for-web: say or tap the username, confirm once, both get a private contact. Meet also writes the `connections` row that unlocks shared notes.
-3. **Remember together** — Shared notes live on the mutual connection. Private context stays private.
+1. **Detect** -- Love Alarm is only a quiet radar.
+   Two people share a short-lived room code; no geolocation, no always-on tracking.
+2. **Exchange** -- Meet is NameDrop-for-web: say or tap the username, confirm once, both get a private contact.
+   Meet also writes the `connections` row that unlocks shared notes.
+3. **Remember together** -- Shared notes live on the mutual connection.
+   Private context stays private.
 
 ## Privacy stance
 
-Euno remains a personal memory layer first. Multi-user surface is opt-in and in-person:
+Euno remains a personal memory layer first.
+Multi-user surface is opt-in and in-person:
 
 - Usernames exist only to exchange, not to browse a directory.
 - Presence expires in minutes and is room-scoped.
+- Room codes are randomly generated per session and shared in person, not a guessable default like the date.
 - Shared notes require an explicit Meet (or equivalent mutual connection).
 - No feeds, follows, or activity streams.
 
