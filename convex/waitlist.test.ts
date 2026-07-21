@@ -7,10 +7,11 @@ import { MAX_JOINS_PER_MINUTE } from "./waitlist";
 
 const modules = import.meta.glob("./**/*.ts");
 
-test("joinWaitlist stores a normalized email and reports joined", async () => {
+test("joinWaitlist stores a trimmed name and normalized email, and reports joined", async () => {
   const t = convexTest(schema, modules);
 
   const result = await t.mutation(api.waitlist.joinWaitlist, {
+    name: "  Ada Lovelace  ",
     email: "  Tony@Example.COM ",
     source: "desktop",
   });
@@ -18,6 +19,7 @@ test("joinWaitlist stores a normalized email and reports joined", async () => {
 
   const rows = await t.run((ctx) => ctx.db.query("waitlist").collect());
   expect(rows).toHaveLength(1);
+  expect(rows[0].name).toBe("Ada Lovelace");
   expect(rows[0].email).toBe("tony@example.com");
   expect(rows[0].source).toBe("desktop");
 });
@@ -26,10 +28,12 @@ test("joining the same address again is idempotent and keeps the first row", asy
   const t = convexTest(schema, modules);
 
   await t.mutation(api.waitlist.joinWaitlist, {
+    name: "Ada",
     email: "a@b.com",
     source: "phone",
   });
   const again = await t.mutation(api.waitlist.joinWaitlist, {
+    name: "Impostor",
     email: "A@B.com",
     source: "desktop",
   });
@@ -37,7 +41,8 @@ test("joining the same address again is idempotent and keeps the first row", asy
   expect(again).toEqual({ status: "already" });
   const rows = await t.run((ctx) => ctx.db.query("waitlist").collect());
   expect(rows).toHaveLength(1);
-  // A re-join must not overwrite the source captured the first time.
+  // A re-join must not overwrite the name or source captured the first time.
+  expect(rows[0].name).toBe("Ada");
   expect(rows[0].source).toBe("phone");
 });
 
@@ -46,7 +51,23 @@ test("an invalid email is rejected and stores nothing", async () => {
 
   await expect(
     t.mutation(api.waitlist.joinWaitlist, {
+      name: "Ada",
       email: "not-an-email",
+      source: "desktop",
+    }),
+  ).rejects.toThrow();
+
+  const rows = await t.run((ctx) => ctx.db.query("waitlist").collect());
+  expect(rows).toHaveLength(0);
+});
+
+test("a blank or whitespace-only name is rejected and stores nothing", async () => {
+  const t = convexTest(schema, modules);
+
+  await expect(
+    t.mutation(api.waitlist.joinWaitlist, {
+      name: "   ",
+      email: "ada@example.com",
       source: "desktop",
     }),
   ).rejects.toThrow();
@@ -61,6 +82,7 @@ test("a flood is capped by the global per-minute rate limit", async () => {
   // Fill the window with distinct addresses so dedupe never masks the cap.
   for (let i = 0; i < MAX_JOINS_PER_MINUTE; i++) {
     await t.mutation(api.waitlist.joinWaitlist, {
+      name: "Flood Tester",
       email: `flood${i}@example.com`,
       source: "desktop",
     });
@@ -68,6 +90,7 @@ test("a flood is capped by the global per-minute rate limit", async () => {
 
   await expect(
     t.mutation(api.waitlist.joinWaitlist, {
+      name: "One Too Many",
       email: "one-too-many@example.com",
       source: "desktop",
     }),

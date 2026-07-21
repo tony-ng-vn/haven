@@ -145,7 +145,11 @@ export default defineSchema({
   // strangers, not users. Email is stored normalized (trimmed + lowercased)
   // so by_email gives an exact dedupe lookup. `source` records which
   // responsive layout they joined from. _creationTime is the signup time.
+  // `name` is required by the joinWaitlist mutation for every new signup, but
+  // stays optional in the schema because rows created before this field
+  // existed have none -- same reasoning as people.normalizedName above.
   waitlist: defineTable({
+    name: v.optional(v.string()),
     email: v.string(),
     source: v.union(v.literal("desktop"), v.literal("phone")),
   }).index("by_email", ["email"]),

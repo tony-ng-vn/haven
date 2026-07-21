@@ -53,6 +53,7 @@ export function Waitlist() {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [mode, setMode] = useState<Mode>(initialMode);
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -81,13 +82,19 @@ export function Waitlist() {
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    // Checked in field order (name above email) so the first error shown is
+    // the first thing the person needs to fix.
+    if (name.trim() === "") {
+      setError("Enter your name.");
+      return;
+    }
     if (!isValidEmail(email)) {
       setError("Enter a valid email address.");
       return;
     }
     setStatus("submitting");
     try {
-      await join({ email, source: mode });
+      await join({ name: name.trim(), email, source: mode });
       setStatus("joined");
     } catch (err) {
       setStatus("idle");
@@ -128,20 +135,34 @@ export function Waitlist() {
               <form className="wl-form" onSubmit={onSubmit} noValidate>
                 <input
                   className="wl-field"
-                  type="email"
-                  inputMode="email"
-                  autoComplete="email"
-                  placeholder="Your email"
-                  aria-label="Email address"
-                  value={email}
+                  type="text"
+                  autoComplete="name"
+                  placeholder="Your name"
+                  aria-label="Your name"
+                  value={name}
                   onChange={(event) => {
-                    setEmail(event.target.value);
+                    setName(event.target.value);
                     if (error !== null) setError(null);
                   }}
                 />
-                <button className="wl-go" type="submit" disabled={status === "submitting"}>
-                  {status === "submitting" ? "Joining" : copy.cta}
-                </button>
+                <div className="wl-email-row">
+                  <input
+                    className="wl-field"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    placeholder="Your email"
+                    aria-label="Email address"
+                    value={email}
+                    onChange={(event) => {
+                      setEmail(event.target.value);
+                      if (error !== null) setError(null);
+                    }}
+                  />
+                  <button className="wl-go" type="submit" disabled={status === "submitting"}>
+                    {status === "submitting" ? "Joining" : copy.cta}
+                  </button>
+                </div>
               </form>
               {error !== null ? (
                 <p className="wl-error" role="alert">{error}</p>

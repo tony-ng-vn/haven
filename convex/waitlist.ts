@@ -22,6 +22,7 @@ const RATE_SENTINEL = "public:waitlist";
 // an address was seen before.
 export const joinWaitlist = mutation({
   args: {
+    name: v.string(),
     email: v.string(),
     source: v.union(v.literal("desktop"), v.literal("phone")),
   },
@@ -37,6 +38,11 @@ export const joinWaitlist = mutation({
       RATE_WINDOW_MS,
     );
 
+    const name = args.name.trim();
+    if (name === "") {
+      throw new ConvexError("Enter your name.");
+    }
+
     const email = normalizeEmail(args.email);
     if (!isValidEmail(email)) {
       throw new ConvexError("Enter a valid email address.");
@@ -50,7 +56,7 @@ export const joinWaitlist = mutation({
       return { status: "already" as const };
     }
 
-    await ctx.db.insert("waitlist", { email, source: args.source });
+    await ctx.db.insert("waitlist", { name, email, source: args.source });
     return { status: "joined" as const };
   },
 });

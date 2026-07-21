@@ -2208,7 +2208,14 @@ feedback-widget.feedback-fab {
   max-width: 460px;
 }
 
+/* Name sits on its own full-width row above the email + submit row. */
 .wl-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wl-email-row {
   display: flex;
   gap: 10px;
 }
@@ -2380,7 +2387,7 @@ feedback-widget.feedback-fab {
 
 /* On a real phone the inline field + button can get tight; stack under ~380px. */
 @media (max-width: 380px) {
-  .waitlist[data-mode="phone"] .wl-form {
+  .waitlist[data-mode="phone"] .wl-email-row {
     flex-direction: column;
   }
   .waitlist[data-mode="phone"] .wl-go {
