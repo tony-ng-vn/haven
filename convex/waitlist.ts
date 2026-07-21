@@ -1,8 +1,10 @@
-import { mutation } from "./_generated/server";
+import { mutation, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { ConvexError } from "convex/values";
+import { internal } from "./_generated/api";
 import { isValidEmail, normalizeEmail } from "../src/lib";
 import { checkRateLimit } from "./rateLimit";
+import { sendWaitlistConfirmation } from "./emailClient";
 
 // This endpoint is public and unauthenticated, so there is no per-user key to
 // throttle on -- the guard is a single global fixed-window cap. It blunts a
@@ -57,6 +59,42 @@ export const joinWaitlist = mutation({
     }
 
     await ctx.db.insert("waitlist", { name, email, source: args.source });
+    // Schedule (not await) the confirmation so it fires only after this row
+    // commits and never blocks or fails the join. A first join returns
+    // "joined"; the "already" path above returns before here, so a re-submit
+    // never re-emails.
+    await ctx.scheduler.runAfter(0, internal.waitlist.sendConfirmationEmail, {
+      email,
+      name,
+    });
     return { status: "joined" as const };
+  },
+});
+
+// Sends the waitlist confirmation out of band. Any mail failure is logged and
+// swallowed: the join already succeeded, so a Resend outage or a missing key
+// must never surface to the person or roll anything back.
+export const sendConfirmationEmail = internalAction({
+  args: { email: v.string(), name: v.string() },
+  returns: v.null(),
+  handler: async (_ctx, args) => {
+    try {
+      const result = await sendWaitlistConfirmation({
+        to: args.email,
+        name: args.name,
+      });
+      if (result.status === "skipped") {
+        console.warn(
+          `Waitlist confirmation skipped for ${args.email}: ${result.reason}`,
+        );
+      } else if (result.status === "failed") {
+        console.error(
+          `Waitlist confirmation failed for ${args.email}: ${result.error}`,
+        );
+      }
+    } catch (err) {
+      console.error(`Waitlist confirmation threw for ${args.email}:`, err);
+    }
+    return null;
   },
 });
