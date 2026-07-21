@@ -8,12 +8,17 @@
  * @module
  */
 
+import type * as authz from "../authz.js";
 import type * as captures from "../captures.js";
+import type * as crons from "../crons.js";
 import type * as loveAlarm from "../loveAlarm.js";
+import type * as nameSearch from "../nameSearch.js";
 import type * as openaiClient from "../openaiClient.js";
 import type * as people from "../people.js";
 import type * as profiles from "../profiles.js";
+import type * as rateLimit from "../rateLimit.js";
 import type * as sharedNotes from "../sharedNotes.js";
+import type * as waitlist from "../waitlist.js";
 
 import type {
   ApiFromModules,
@@ -22,12 +27,17 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  authz: typeof authz;
   captures: typeof captures;
+  crons: typeof crons;
   loveAlarm: typeof loveAlarm;
+  nameSearch: typeof nameSearch;
   openaiClient: typeof openaiClient;
   people: typeof people;
   profiles: typeof profiles;
+  rateLimit: typeof rateLimit;
   sharedNotes: typeof sharedNotes;
+  waitlist: typeof waitlist;
 }>;
 
 /**
