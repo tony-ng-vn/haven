@@ -107,7 +107,7 @@ This is meaningfully *easier* than the LinkedIn CSV path, since the export is in
 
 **Product fit:** Weak, for the reason the MVP design already states outright.
 
-- PRODUCT.md: "A relationship cannot be captured by data plus a friend list," and Euno's anti-CRM, anti-bulk-import stance.
+- PRODUCT.md never uses the phrase "bulk import," but its anti-CRM stance is explicit: "Not a CRM or sales tool: no pipelines, deal stages, lead scoring, or dashboards of metrics. These people are relationships, not leads to work." (Anti-references). Its Positioning line is the closest fit for why a contact dump is off-strategy: "It is the one place built to refind the people you have met, not to collect, rank, or broadcast them."
 - MVP design: "Apple Contacts or any bulk import" is explicitly out of scope for the MVP, and is filed under Future, not under "do this now."
 - A vCard dump is a phonebook, not a memory: rows have no context, no "how did I meet them," and would land in Euno as a wall of names with nothing to search by beyond the name itself - the opposite of the fragment-of-memory recall loop the product is built around.
 
@@ -185,4 +185,4 @@ If product ever deliberately reopens that Future item, come back to this documen
 - [Meet the Contact Access Button - WWDC24](https://developer.apple.com/videos/play/wwdc2024/10121/) - iOS 18 limited-access contacts picker, native-app-only feature
 - [Import, export, or print contacts on iCloud.com - Apple Support](https://support.apple.com/guide/icloud/import-export-and-print-contacts-mmfba748b2/icloud) - vCard export steps and desktop/tablet-only limitation for iCloud.com
 - In-repo: `PRODUCT.md`, `docs/superpowers/specs/2026-07-15-euno-mvp-design.md`, `src/lib.ts`, `convex/openaiClient.ts`, `src/CaptureTriage.tsx`
-- Sibling doc (unmerged branch `cursor/linkedin-integration-research-05dc`): `docs/superpowers/specs/2026-07-20-linkedin-integration-research.md`
+- Sibling doc: `docs/superpowers/specs/2026-07-20-linkedin-integration-research.md`
