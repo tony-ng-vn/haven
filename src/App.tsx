@@ -10,10 +10,8 @@ import { PersonSky } from "./PersonSky";
 import { FeedbackWidget } from "./FeedbackWidget";
 import { Waitlist } from "./Waitlist";
 import {
-  bootMode,
   isClerkFlowHash,
-  isJoinHash,
-  type BootMode,
+  resolveView,
   type PersonSnapshot,
 } from "./lib";
 
@@ -241,43 +239,31 @@ function writeSessionHint(present: boolean): void {
 
 export default function App() {
   const { isLoading, isAuthenticated } = useConvexAuth();
-  // The boot decision reads the hash and hint once, at first paint -- that frame
-  // is the whole point, since it renders before Clerk can weigh in. After auth
-  // resolves we follow the live Convex state, so a stale mode never matters.
-  const [mode] = useState<BootMode>(() =>
-    bootMode({
-      hash: window.location.hash,
-      hasSessionHint: readSessionHint(),
-    }),
-  );
 
-  // The public waitlist is its own route, independent of auth: strangers land
-  // on /#/join, existing users never see it. Tracked live so an in-app hash
-  // change (or the back button) swaps it in and out without a reload.
-  const [isJoin, setIsJoin] = useState(() => isJoinHash(window.location.hash));
+  // The hash is tracked live so a "Sign in" tap on the waitlist (or the back
+  // button) re-routes in place, without a reload.
+  const [hash, setHash] = useState(() => window.location.hash);
   useEffect(() => {
-    const onHashChange = () => setIsJoin(isJoinHash(window.location.hash));
+    const onHashChange = () => setHash(window.location.hash);
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
+  // Read once at first paint -- it only steers the frame before Clerk resolves;
+  // after that, isAuthenticated drives the choice.
+  const [hasSessionHint] = useState(readSessionHint);
+
   // Keep the hint honest against the resolved auth state: set it when signed in,
   // clear it the moment we resolve signed out -- covering both a sign-out and a
-  // stale hint whose session no longer holds (which then self-heals to the
-  // landing on the next boot). Left untouched while auth is still loading.
+  // stale hint whose session no longer holds. Left untouched while auth loads.
   useEffect(() => {
     if (isLoading) return;
     writeSessionHint(isAuthenticated);
   }, [isLoading, isAuthenticated]);
 
-  // Waitlist takes precedence over every auth state: it must render even while
-  // Clerk is still resolving, and for signed-in visitors who open the link too.
-  if (isJoin) return <Waitlist />;
-  if (isAuthenticated) return <Home />;
-  // A returning visitor or an in-flight Clerk callback waits on the splash;
-  // only a first-time visitor gets the landing painted before Clerk loads. The
-  // signed-out resolved state falls through to the same <SignIn/>, so a
-  // pre-Clerk tap on the landing is preserved across the flip -- no remount.
-  if (isLoading && mode !== "landing") return <Splash />;
-  return <SignIn />;
+  const view = resolveView({ isAuthenticated, isLoading, hash, hasSessionHint });
+  if (view === "home") return <Home />;
+  if (view === "signin") return <SignIn />;
+  if (view === "splash") return <Splash />;
+  return <Waitlist />;
 }
