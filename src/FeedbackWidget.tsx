@@ -14,5 +14,9 @@ export function FeedbackWidget() {
   }, []);
 
   if (!endpoint || !token) return null;
-  return <feedback-widget endpoint={endpoint} token={token} />;
+  // feedback-fab lifts the button above the Meet FAB, which shares the same
+  // bottom-right corner (see index.css).
+  return (
+    <feedback-widget className="feedback-fab" endpoint={endpoint} token={token} />
+  );
 }
