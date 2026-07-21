@@ -31,7 +31,7 @@ const COPY: Record<Mode, {
     headline: "Your people are a constellation.",
     sub: "Every person you meet becomes a point of light - and Euno keeps them from drifting away.",
     cta: "Join",
-    fine: "Private beta.",
+    fine: "Private beta",
   },
   phone: {
     headline: "The people you meet, never lost again.",
