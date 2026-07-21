@@ -8,9 +8,14 @@
  * @module
  */
 
+import type * as authz from "../authz.js";
 import type * as captures from "../captures.js";
+import type * as crons from "../crons.js";
+import type * as nameSearch from "../nameSearch.js";
 import type * as openaiClient from "../openaiClient.js";
 import type * as people from "../people.js";
+import type * as rateLimit from "../rateLimit.js";
+import type * as waitlist from "../waitlist.js";
 
 import type {
   ApiFromModules,
@@ -19,9 +24,14 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  authz: typeof authz;
   captures: typeof captures;
+  crons: typeof crons;
+  nameSearch: typeof nameSearch;
   openaiClient: typeof openaiClient;
   people: typeof people;
+  rateLimit: typeof rateLimit;
+  waitlist: typeof waitlist;
 }>;
 
 /**

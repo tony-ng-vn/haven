@@ -11,9 +11,53 @@ import {
   deriveProfileUrl,
   formatMonthYear,
   isClerkFlowHash,
+  isJoinHash,
+  isValidEmail,
+  normalizeEmail,
   normalizeUrl,
   triageCountLabel,
 } from "./lib";
+
+describe("normalizeEmail", () => {
+  test("trims and lowercases so dedupe is case- and space-insensitive", () => {
+    expect(normalizeEmail("  Tony@Example.COM ")).toBe("tony@example.com");
+  });
+});
+
+describe("isValidEmail", () => {
+  test("accepts an ordinary address", () => {
+    expect(isValidEmail("tony@example.com")).toBe(true);
+    expect(isValidEmail("a.b+tag@sub.domain.io")).toBe(true);
+  });
+
+  test("rejects missing parts, spaces, and empties", () => {
+    expect(isValidEmail("")).toBe(false);
+    expect(isValidEmail("tony")).toBe(false);
+    expect(isValidEmail("tony@")).toBe(false);
+    expect(isValidEmail("@example.com")).toBe(false);
+    expect(isValidEmail("tony@example")).toBe(false);
+    expect(isValidEmail("tony @example.com")).toBe(false);
+  });
+
+  test("rejects an address longer than the 254-char limit", () => {
+    const long = `${"a".repeat(250)}@ex.com`;
+    expect(isValidEmail(long)).toBe(false);
+  });
+});
+
+describe("isJoinHash", () => {
+  test("matches the waitlist route with or without a trailing slash", () => {
+    expect(isJoinHash("#/join")).toBe(true);
+    expect(isJoinHash("#/join/")).toBe(true);
+  });
+
+  test("does not match the app or Clerk flow hashes", () => {
+    expect(isJoinHash("")).toBe(false);
+    expect(isJoinHash("#/")).toBe(false);
+    expect(isJoinHash("#/sso-callback")).toBe(false);
+    expect(isJoinHash("#/joinery")).toBe(false);
+  });
+});
 
 describe("normalizeUrl", () => {
   test("keeps http and https URLs as they are", () => {

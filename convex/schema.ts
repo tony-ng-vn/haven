@@ -91,4 +91,13 @@ export default defineSchema({
     key: v.string(),
     watermark: v.number(),
   }).index("by_key", ["key"]),
+
+  // Public waitlist signups from the /#/join landing. No auth: these are
+  // strangers, not users. Email is stored normalized (trimmed + lowercased)
+  // so by_email gives an exact dedupe lookup. `source` records which
+  // responsive layout they joined from. _creationTime is the signup time.
+  waitlist: defineTable({
+    email: v.string(),
+    source: v.union(v.literal("desktop"), v.literal("phone")),
+  }).index("by_email", ["email"]),
 });

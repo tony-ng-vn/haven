@@ -31,6 +31,28 @@ export function normalizeUrl(raw: string): string | null {
   return `https://${trimmed}`;
 }
 
+// Waitlist join. One normalized form so "Tony@Example.com " and
+// "tony@example.com" collapse to the same row when we dedupe.
+export function normalizeEmail(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
+// A deliberately conservative shape check: exactly one @, non-empty local and
+// domain, a dot in the domain, no whitespace, within RFC 5321's 254-char
+// ceiling. Real deliverability is proven by the invite, not by a regex.
+export function isValidEmail(raw: string): boolean {
+  const email = raw.trim();
+  if (email.length === 0 || email.length > 254) return false;
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
+}
+
+// The public waitlist lives at "#/join" (a trailing slash is tolerated). Kept
+// separate from isClerkFlowHash so this route reads as a public page, not an
+// auth callback to hand to Clerk.
+export function isJoinHash(hash: string): boolean {
+  return /^#\/join\/?$/.test(hash);
+}
+
 // "June 2026" -- the quiet memory anchor under a person's name.
 export function formatMonthYear(ms: number, locale?: string): string {
   return new Intl.DateTimeFormat(locale, {
