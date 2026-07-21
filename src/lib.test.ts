@@ -10,6 +10,7 @@ import {
   decideSwipe,
   deriveProfileUrl,
   formatMonthYear,
+  generateRoomCode,
   isClerkFlowHash,
   normalizeUrl,
   triageCountLabel,
@@ -290,5 +291,37 @@ describe("composeAtlasField", () => {
     const recent = [p("a")];
     const out = composeAtlasField(recent, [p("z")], [p("z"), p("m"), p("a")]);
     expect(out.map((x) => x._id)).toEqual(["a", "z", "m"]);
+  });
+});
+
+describe("generateRoomCode", () => {
+  // Mirrors convex/loveAlarm.ts's ROOM_CODE_RE (applied after normalizeRoomCode
+  // upper-cases the value) -- a generated code must clear that gate untouched.
+  const NORMALIZED_ROOM_CODE_RE = /^[A-Z0-9-]{3,32}$/;
+  // No 0/O or 1/l/I: a code read aloud or glanced at over someone's shoulder
+  // should never be ambiguous.
+  const UNAMBIGUOUS_ALPHABET_RE = /^[abcdefghjkmnpqrstuvwxyz23456789]+$/;
+
+  test("is six characters long", () => {
+    expect(generateRoomCode()).toHaveLength(6);
+  });
+
+  test("only uses the unambiguous lowercase alphabet", () => {
+    for (let i = 0; i < 50; i++) {
+      expect(generateRoomCode()).toMatch(UNAMBIGUOUS_ALPHABET_RE);
+    }
+  });
+
+  test("passes normalizeRoomCode's validation unchanged", () => {
+    for (let i = 0; i < 50; i++) {
+      expect(generateRoomCode().toUpperCase()).toMatch(
+        NORMALIZED_ROOM_CODE_RE,
+      );
+    }
+  });
+
+  test("is not deterministic", () => {
+    const codes = new Set(Array.from({ length: 20 }, () => generateRoomCode()));
+    expect(codes.size).toBeGreaterThan(1);
   });
 });

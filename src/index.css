@@ -2007,6 +2007,24 @@ textarea.field {
   border-radius: 980px;
   font-size: 13px;
   cursor: pointer;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .love-alarm-meet:hover {
+    background: rgba(255, 255, 255, 0.22);
+  }
+}
+
+.love-alarm-meet:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.14);
+}
+
+.love-alarm-meet:active {
+  transform: scale(0.97);
 }
 
 .love-alarm-dot {

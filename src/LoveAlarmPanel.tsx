@@ -2,13 +2,14 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "../convex/_generated/api";
+import { generateRoomCode } from "./lib";
 
 type NearbyResult = FunctionReturnType<typeof api.loveAlarm.nearby>;
 
 const HEARTBEAT_MS = 25_000;
 
 function defaultRoomCode(): string {
-  return new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  return generateRoomCode();
 }
 
 export function LoveAlarmPanel({
@@ -106,8 +107,8 @@ export function LoveAlarmPanel({
       {joinedRoom === null ? (
         <form className="love-alarm-form" onSubmit={handleJoin}>
           <p className="love-alarm-copy">
-            Share a small code with someone nearby. Euno listens only while this room
-            is open.
+            Euno made up a one-time code below. Tell it to someone nearby so they can
+            join the same room; Euno listens only while this room is open.
           </p>
           <label>
             <span>Room code</span>
@@ -115,6 +116,7 @@ export function LoveAlarmPanel({
               className="love-alarm-input"
               value={roomCode}
               onChange={(event) => setRoomCode(event.target.value)}
+              placeholder="Share this with the other person in person"
               autoCapitalize="characters"
               autoComplete="off"
             />
@@ -146,7 +148,7 @@ export function LoveAlarmPanel({
           ) : (
             <ul className="love-alarm-peers" aria-label="Nearby people">
               {peers.map((peer) => (
-                <li key={`${peer.displayName}-${peer.lastSeenAt}-${peer.username ?? ""}`}>
+                <li key={peer.username ?? peer.displayName}>
                   <span className="love-alarm-dot" aria-hidden="true" />
                   <span className="love-alarm-peer-name">{peer.displayName}</span>
                   {peer.username !== undefined && onMeetUsername !== undefined && (

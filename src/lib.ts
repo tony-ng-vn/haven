@@ -187,6 +187,34 @@ export function triageCountLabel(queueLength: number): string {
   return `${queueLength} to review`;
 }
 
+// No 0/O or 1/l/I: a Love Alarm room code gets read aloud or glanced at over
+// someone's shoulder, so it must never be ambiguous. convex/loveAlarm.ts's
+// normalizeRoomCode upper-cases whatever we hand it, and every character here
+// survives that unchanged (its ROOM_CODE_RE allows A-Z, 0-9, and dashes).
+const ROOM_CODE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
+const ROOM_CODE_LENGTH = 6;
+
+// A room code is something one person generates and speaks to the other in
+// person -- not a value a stranger can guess, so it must come from a real
+// random source rather than e.g. today's date.
+export function generateRoomCode(): string {
+  const alphabetLength = ROOM_CODE_ALPHABET.length;
+  // Reject bytes that would bias the distribution towards the first
+  // (256 % alphabetLength) letters instead of drawing them uniformly.
+  const maxUnbiased = 256 - (256 % alphabetLength);
+  let code = "";
+  while (code.length < ROOM_CODE_LENGTH) {
+    const bytes = new Uint8Array(ROOM_CODE_LENGTH - code.length);
+    crypto.getRandomValues(bytes);
+    for (const byte of bytes) {
+      if (byte < maxUnbiased) {
+        code += ROOM_CODE_ALPHABET[byte % alphabetLength];
+      }
+    }
+  }
+  return code;
+}
+
 export type SwipeVelocitySample = { t: number; x: number };
 export type SwipeDecision = "save" | "context" | "settle";
 
