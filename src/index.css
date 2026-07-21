@@ -2173,31 +2173,6 @@ feedback-widget.feedback-fab {
   z-index: 0;
 }
 
-/* Quiet sign-in affordance for existing users; the waitlist is for strangers. */
-.wl-signin {
-  position: absolute;
-  top: max(20px, env(safe-area-inset-top));
-  right: max(20px, env(safe-area-inset-right));
-  z-index: 2;
-  padding: 8px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #d1d1d6;
-  font-size: 14px;
-  font-weight: 500;
-  text-decoration: none;
-  transition: background var(--t-fast) var(--ease-out),
-    border-color var(--t-fast) var(--ease-out),
-    color var(--t-fast) var(--ease-out);
-}
-
-.wl-signin:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.28);
-  color: #fff;
-}
-
 .wl-content {
   position: relative;
   z-index: 1;
@@ -2357,12 +2332,12 @@ feedback-widget.feedback-fab {
   line-height: 0.94;
 }
 
-/* ---- desktop / constellation: copy settled in the lower third ---- */
+/* ---- desktop / constellation: copy centered in the viewport ---- */
 .waitlist[data-mode="desktop"] .wl-content {
-  justify-content: flex-end;
+  justify-content: center;
   align-items: center;
   text-align: center;
-  padding: 0 32px 12vh;
+  padding: 0 32px;
 }
 
 .waitlist[data-mode="desktop"] .wl-eyebrow {
