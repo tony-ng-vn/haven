@@ -31,13 +31,13 @@ export function renderConfirmation(name: string): Confirmation {
   const text = [
     `Hi ${name},`,
     "",
-    "You're on the Euno waitlist -- thank you for joining.",
+    "You're on the list.",
     "",
-    "Euno is a quiet memory layer over the people of your life, so the",
-    "people you meet never drift away. Invites go out in waves, and we'll",
-    "email you the moment yours is ready.",
+    "Euno's mission is to bring everyone together as we move through life. We have a strong belief that while new people are fascinating, it becomes less important to meet them if we eventually forget who they are and lose them along the way. With Euno, we will prevent that, and every connection will become a part of your life.",
     "",
-    "-- The Euno team",
+    "Thank you for joining us on this journey. We're looking forward to having you with us.",
+    "",
+    "- Tony (Euno's founder)",
   ].join("\n");
 
   const html = `<!doctype html>
@@ -51,9 +51,9 @@ export function renderConfirmation(name: string): Confirmation {
               <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#f5f7fb;">
                 <p style="margin:0 0 24px;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:#7c8496;">Euno &middot; private beta</p>
                 <h1 style="margin:0 0 16px;font-size:24px;line-height:1.3;font-weight:600;color:#ffffff;">Hi ${safeName}, you're on the list.</h1>
-                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#c7cdda;">Thank you for joining the Euno waitlist.</p>
-                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#c7cdda;">Euno is a quiet memory layer over the people of your life, so the people you meet never drift away. Invites go out in waves, and we'll email you the moment yours is ready.</p>
-                <p style="margin:32px 0 0;font-size:14px;color:#7c8496;">-- The Euno team</p>
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#c7cdda;">Euno's mission is to bring everyone together as we move through life. We have a strong belief that while new people are fascinating, it becomes less important to meet them if we eventually forget who they are and lose them along the way. With Euno, we will prevent that, and every connection will become a part of your life.</p>
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#c7cdda;">Thank you for joining us on this journey. We're looking forward to having you with us.</p>
+                <p style="margin:32px 0 0;font-size:14px;color:#7c8496;">- Tony (Euno's founder)</p>
               </td>
             </tr>
           </table>
