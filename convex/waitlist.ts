@@ -83,11 +83,15 @@ export const sendConfirmationEmail = internalAction({
         to: args.email,
         name: args.name,
       });
-      if (result.status === "skipped") {
+      if (result.status === "sent") {
+        console.log(
+          `Waitlist confirmation sent to ${args.email} (id ${result.id})`,
+        );
+      } else if (result.status === "skipped") {
         console.warn(
           `Waitlist confirmation skipped for ${args.email}: ${result.reason}`,
         );
-      } else if (result.status === "failed") {
+      } else {
         console.error(
           `Waitlist confirmation failed for ${args.email}: ${result.error}`,
         );
