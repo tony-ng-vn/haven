@@ -2208,34 +2208,81 @@ feedback-widget.feedback-fab {
   max-width: 460px;
 }
 
-/* Name sits on its own full-width row above the email + submit row. */
+/* Name leads on its own row with the submit button; the email row folds in
+   below once the person engages the name field (see .wl-email-wrap). */
 .wl-form {
   display: flex;
   flex-direction: column;
+}
+
+.wl-name-row {
+  display: flex;
   gap: 10px;
+}
+
+/* Folded at rest. grid 0fr -> 1fr animates to the email row's real height, so
+   it stays correct when the row stacks on narrow phones (no magic max-height). */
+.wl-email-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-top: 0;
+  opacity: 0;
+  transition: grid-template-rows var(--t-slow) var(--ease-out),
+    opacity var(--t-slow) var(--ease-out),
+    margin-top var(--t-slow) var(--ease-out);
+}
+
+.wl-form.is-revealed .wl-email-wrap {
+  grid-template-rows: 1fr;
+  margin-top: 10px;
+  opacity: 1;
 }
 
 .wl-email-row {
   display: flex;
   gap: 10px;
+  min-height: 0;
+  overflow: hidden;
 }
 
+/* The name's Join collapses away as the email row's Join takes over, reading as
+   the button dropping down to the email. */
+.wl-go-name {
+  max-width: 180px;
+  overflow: hidden;
+  transition: max-width var(--t-slow) var(--ease-out),
+    padding var(--t-slow) var(--ease-out),
+    margin-left var(--t-slow) var(--ease-out),
+    opacity var(--t-med) var(--ease-out);
+}
+
+.wl-form.is-revealed .wl-go-name {
+  max-width: 0;
+  margin-left: -10px;
+  padding-left: 0;
+  padding-right: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Inset: the field reads as a shallow well sunk into the dark, lit only by a
+   hairline edge. Focus wakes the well rather than framing it -- no hard ring. */
 .wl-field {
   flex: 1;
   min-width: 0;
   height: 54px;
   padding: 0 18px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.32);
+  box-shadow: inset 0 1.5px 4px rgba(0, 0, 0, 0.45);
   font: inherit;
   font-size: 17px;
   color: #fff;
   -webkit-appearance: none;
   appearance: none;
   transition: border-color var(--t-fast) var(--ease-out),
-    background var(--t-fast) var(--ease-out),
-    box-shadow var(--t-fast) var(--ease-out);
+    background var(--t-fast) var(--ease-out);
 }
 
 .wl-field::placeholder {
@@ -2243,14 +2290,13 @@ feedback-widget.feedback-fab {
 }
 
 .wl-field:hover {
-  border-color: rgba(255, 255, 255, 0.24);
+  border-color: rgba(255, 255, 255, 0.13);
 }
 
 .wl-field:focus {
   outline: none;
-  border-color: var(--accent);
-  background: rgba(255, 255, 255, 0.09);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.22);
 }
 
 .wl-go {
@@ -2436,5 +2482,10 @@ feedback-widget.feedback-fab {
   .wl-joined,
   .wl-check {
     animation: none;
+  }
+  /* The email row still appears on cue -- it just snaps instead of sliding. */
+  .wl-email-wrap,
+  .wl-go-name {
+    transition: none;
   }
 }

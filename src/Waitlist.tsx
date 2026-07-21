@@ -55,6 +55,9 @@ export function Waitlist() {
   const [mode, setMode] = useState<Mode>(initialMode);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  // The email row stays folded until the person engages the name field, so the
+  // page opens as one calm line. Once revealed it stays revealed.
+  const [revealed, setRevealed] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const join = useMutation(api.waitlist.joinWaitlist);
@@ -132,36 +135,56 @@ export function Waitlist() {
             </div>
             <div className="wl-bottom">
               <p className="wl-sub">{copy.sub}</p>
-              <form className="wl-form" onSubmit={onSubmit} noValidate>
-                <input
-                  className="wl-field"
-                  type="text"
-                  autoComplete="name"
-                  placeholder="Your name"
-                  aria-label="Your name"
-                  value={name}
-                  onChange={(event) => {
-                    setName(event.target.value);
-                    if (error !== null) setError(null);
-                  }}
-                />
-                <div className="wl-email-row">
+              <form
+                className={revealed ? "wl-form is-revealed" : "wl-form"}
+                onSubmit={onSubmit}
+                noValidate
+              >
+                <div className="wl-name-row">
                   <input
                     className="wl-field"
-                    type="email"
-                    inputMode="email"
-                    autoComplete="email"
-                    placeholder="Your email"
-                    aria-label="Email address"
-                    value={email}
+                    type="text"
+                    autoComplete="name"
+                    placeholder="Your name"
+                    aria-label="Your name"
+                    value={name}
+                    onFocus={() => setRevealed(true)}
                     onChange={(event) => {
-                      setEmail(event.target.value);
+                      setName(event.target.value);
+                      setRevealed(true);
                       if (error !== null) setError(null);
                     }}
                   />
-                  <button className="wl-go" type="submit" disabled={status === "submitting"}>
+                  {/* Join rides alongside the name until the email drops in,
+                      then hands off to the email row's button. */}
+                  <button
+                    className="wl-go wl-go-name"
+                    type="submit"
+                    disabled={status === "submitting"}
+                    inert={revealed}
+                  >
                     {status === "submitting" ? "Joining" : copy.cta}
                   </button>
+                </div>
+                <div className="wl-email-wrap" inert={!revealed}>
+                  <div className="wl-email-row">
+                    <input
+                      className="wl-field"
+                      type="email"
+                      inputMode="email"
+                      autoComplete="email"
+                      placeholder="Your email"
+                      aria-label="Email address"
+                      value={email}
+                      onChange={(event) => {
+                        setEmail(event.target.value);
+                        if (error !== null) setError(null);
+                      }}
+                    />
+                    <button className="wl-go" type="submit" disabled={status === "submitting"}>
+                      {status === "submitting" ? "Joining" : copy.cta}
+                    </button>
+                  </div>
                 </div>
               </form>
               {error !== null ? (
