@@ -24,7 +24,27 @@ test("joinWaitlist stores a trimmed name and normalized email, and reports joine
   expect(rows[0].source).toBe("desktop");
 });
 
-test("joining the same address again is idempotent and keeps the first row", async () => {
+test("a new join schedules exactly one confirmation email", async () => {
+  const t = convexTest(schema, modules);
+
+  await t.mutation(api.waitlist.joinWaitlist, {
+    name: "Ada",
+    email: "a@b.com",
+    source: "desktop",
+  });
+
+  const scheduled = await t.run((ctx) =>
+    ctx.db.system.query("_scheduled_functions").collect(),
+  );
+  expect(scheduled).toHaveLength(1);
+  expect(scheduled[0].name).toContain("sendConfirmationEmail");
+
+  // With no RESEND_API_KEY set the action must run to completion as a no-op,
+  // never throwing -- a missing provider can't break the join flow.
+  await t.finishInProgressScheduledFunctions();
+});
+
+test("joining the same address again is idempotent and does not re-email", async () => {
   const t = convexTest(schema, modules);
 
   await t.mutation(api.waitlist.joinWaitlist, {
@@ -44,6 +64,12 @@ test("joining the same address again is idempotent and keeps the first row", asy
   // A re-join must not overwrite the name or source captured the first time.
   expect(rows[0].name).toBe("Ada");
   expect(rows[0].source).toBe("phone");
+
+  // Only the first join scheduled a confirmation; the "already" path emails no one.
+  const scheduled = await t.run((ctx) =>
+    ctx.db.system.query("_scheduled_functions").collect(),
+  );
+  expect(scheduled).toHaveLength(1);
 });
 
 test("an invalid email is rejected and stores nothing", async () => {
