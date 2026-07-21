@@ -8,9 +8,11 @@ import { PersonDetail } from "./PersonDetail";
 import { CaptureTriage } from "./CaptureTriage";
 import { PersonSky } from "./PersonSky";
 import { FeedbackWidget } from "./FeedbackWidget";
+import { Waitlist } from "./Waitlist";
 import {
   bootMode,
   isClerkFlowHash,
+  isJoinHash,
   type BootMode,
   type PersonSnapshot,
 } from "./lib";
@@ -249,6 +251,16 @@ export default function App() {
     }),
   );
 
+  // The public waitlist is its own route, independent of auth: strangers land
+  // on /#/join, existing users never see it. Tracked live so an in-app hash
+  // change (or the back button) swaps it in and out without a reload.
+  const [isJoin, setIsJoin] = useState(() => isJoinHash(window.location.hash));
+  useEffect(() => {
+    const onHashChange = () => setIsJoin(isJoinHash(window.location.hash));
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
   // Keep the hint honest against the resolved auth state: set it when signed in,
   // clear it the moment we resolve signed out -- covering both a sign-out and a
   // stale hint whose session no longer holds (which then self-heals to the
@@ -258,6 +270,9 @@ export default function App() {
     writeSessionHint(isAuthenticated);
   }, [isLoading, isAuthenticated]);
 
+  // Waitlist takes precedence over every auth state: it must render even while
+  // Clerk is still resolving, and for signed-in visitors who open the link too.
+  if (isJoin) return <Waitlist />;
   if (isAuthenticated) return <Home />;
   // A returning visitor or an in-flight Clerk callback waits on the splash;
   // only a first-time visitor gets the landing painted before Clerk loads. The
