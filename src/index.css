@@ -1487,6 +1487,12 @@ textarea.field {
 
 .atlas-pill .search-icon {
   flex: 0 0 auto;
+  /* The base .search-icon rule absolutely-positions the icon for the legacy
+     search field. In the flex pill it must sit inline with the input, spaced
+     by the pill's gap -- otherwise it overlaps the placeholder text. */
+  position: static;
+  translate: none;
+  color: inherit;
 }
 
 .atlas-input {
@@ -1579,6 +1585,16 @@ textarea.field {
   .atlas-meet-fab:hover {
     background: rgba(255, 255, 255, 0.18);
   }
+}
+
+/* The feedback widget is a third-party custom element that defaults to the
+   bottom-right corner -- the same spot as the Meet FAB, so the two stack on
+   top of each other. Lift it just above the FAB. The element selector plus a
+   class outweighs the widget's own :host rule, so no !important is needed;
+   position:fixed still comes from the widget. */
+feedback-widget.feedback-fab {
+  right: max(20px, env(safe-area-inset-right));
+  bottom: calc(max(28px, env(safe-area-inset-bottom)) + 56px);
 }
 
 .atlas-meet-fab:active {
