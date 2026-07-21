@@ -21,12 +21,16 @@ export default defineSchema({
     handle: v.optional(v.string()),
     headline: v.optional(v.string()),
     screenshotId: v.optional(v.id("_storage")),
+    // Euno Meet provenance. Each side still gets a private people row; this
+    // key only lets a repeat in-person exchange stay idempotent.
+    eunoContactUserId: v.optional(v.string()),
     // Semantic search. embeddedText doubles as the idempotency key so the
     // embed action can skip recomputing an unchanged person.
     embedding: v.optional(v.array(v.float64())),
     embeddedText: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
+    .index("by_user_and_eunoContactUserId", ["userId", "eunoContactUserId"])
     // Same reasoning as captures.by_screenshotId: the orphaned-upload sweep
     // needs a sound, bounded way to check "is this blob referenced?".
     .index("by_screenshotId", ["screenshotId"])
@@ -39,6 +43,27 @@ export default defineSchema({
       dimensions: 1536,
       filterFields: ["userId"],
     }),
+  // A future mutual-link flow should create one row only after both Euno users
+  // have explicitly connected. Each side binds the relationship to their own
+  // private person row; the shared-note API uses this as its access gate.
+  connections: defineTable({
+    userAId: v.string(),
+    userBId: v.string(),
+    personAId: v.id("people"),
+    personBId: v.id("people"),
+    status: v.literal("connected"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_userAId_and_personAId", ["userAId", "personAId"])
+    .index("by_userBId_and_personBId", ["userBId", "personBId"])
+    .index("by_userAId_and_userBId", ["userAId", "userBId"]),
+  sharedNotes: defineTable({
+    connectionId: v.id("connections"),
+    content: v.optional(v.string()),
+    updatedAt: v.number(),
+    updatedByUserId: v.string(),
+  }).index("by_connectionId", ["connectionId"]),
   // A screenshot waiting to be triaged into a person. Deleted on accept
   // (the file moves to the person) or discard (the file is deleted too).
   captures: defineTable({
@@ -83,6 +108,30 @@ export default defineSchema({
     windowStart: v.number(),
     count: v.number(),
   }).index("by_user_action", ["userId", "action"]),
+
+  // A user's public-in-the-moment Euno handle. This is not a social profile:
+  // it exists only so two people standing together can intentionally exchange.
+  profiles: defineTable({
+    userId: v.string(),
+    username: v.string(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_username", ["username"]),
+
+  // Opt-in, short-lived proximity sessions for Love Alarm. Kept separate from
+  // people because heartbeats are intentionally high-churn operational data.
+  loveAlarmPresence: defineTable({
+    userId: v.string(),
+    roomCode: v.string(),
+    displayName: v.string(),
+    joinedAt: v.number(),
+    lastSeenAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_userId_and_roomCode", ["userId", "roomCode"])
+    .index("by_userId_and_expiresAt", ["userId", "expiresAt"])
+    .index("by_roomCode_and_expiresAt", ["roomCode", "expiresAt"]),
 
   // Cursor state for paginated background sweeps: without a persisted
   // watermark a bounded sweep re-reads the same head of the table forever

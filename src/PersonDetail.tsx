@@ -29,13 +29,20 @@ export function PersonDetail({
   onSaved: () => void;
 }) {
   const live = useQuery(api.people.getPerson, { id });
+  const sharedNote = useQuery(api.sharedNotes.getForPerson, { personId: id });
   const updatePerson = useMutation(api.people.updatePerson);
+  const updateSharedNote = useMutation(api.sharedNotes.updateForPerson);
   const deletePerson = useMutation(api.people.deletePerson);
   const [link, setLink] = useState(initial?.link ?? "");
   const [context, setContext] = useState(initial?.context ?? "");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [sharedContext, setSharedContext] = useState("");
+  const [sharedDirty, setSharedDirty] = useState(false);
+  const [savingSharedNote, setSavingSharedNote] = useState(false);
+  const [sharedSaveError, setSharedSaveError] = useState<string | null>(null);
+  const [sharedSaved, setSharedSaved] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -56,6 +63,12 @@ export function PersonDetail({
       setContext(live.context ?? "");
     }
   }, [live, dirty]);
+
+  useEffect(() => {
+    if (sharedNote !== undefined && sharedNote !== null && !sharedDirty) {
+      setSharedContext(sharedNote.content ?? "");
+    }
+  }, [sharedNote, sharedDirty]);
 
   // Live doc wins once loaded (null means not found / not owned).
   const person = live !== undefined ? live : initial;
@@ -96,6 +109,26 @@ export function PersonDetail({
     } catch {
       setSaveError("Could not save. Please try again.");
       setSaving(false);
+    }
+  }
+
+  async function handleSaveSharedNote() {
+    if (savingSharedNote || sharedNote === undefined || sharedNote === null) {
+      return;
+    }
+    setSavingSharedNote(true);
+    setSharedSaveError(null);
+    try {
+      await updateSharedNote({
+        personId: id,
+        content: sharedContext.trim() === "" ? undefined : sharedContext.trim(),
+      });
+      setSharedDirty(false);
+      setSharedSaved(true);
+    } catch {
+      setSharedSaveError("Could not save shared notes. Please try again.");
+    } finally {
+      setSavingSharedNote(false);
     }
   }
 
@@ -168,7 +201,7 @@ export function PersonDetail({
         />
       </div>
       <div className="detail-field">
-        <label htmlFor="person-context">Context</label>
+        <label htmlFor="person-context">Private context</label>
         <textarea
           id="person-context"
           className="field"
@@ -202,6 +235,65 @@ export function PersonDetail({
           )}
         </button>
       </div>
+
+      <section
+        className="shared-note-card"
+        aria-busy={sharedNote === undefined ? "true" : "false"}
+      >
+        <div className="shared-note-heading">
+          <h2 className="shared-note-title">Shared notes</h2>
+          <p className="shared-note-copy">
+            A quiet space for mutual memory. Your private context above stays
+            yours.
+          </p>
+        </div>
+        {sharedNote === undefined ? (
+          <div className="skeleton-line skeleton-block" />
+        ) : sharedNote === null ? (
+          <p className="shared-note-copy">
+            Available after you and {person.name} both connect in Euno.
+          </p>
+        ) : (
+          <>
+            <textarea
+              id="person-shared-note"
+              className="field shared-note-field"
+              aria-label="Shared notes"
+              placeholder="What you both want to remember about this connection"
+              value={sharedContext}
+              onChange={(e) => {
+                setSharedContext(e.target.value);
+                setSharedDirty(true);
+                setSharedSaved(false);
+              }}
+            />
+            <div className="shared-note-actions">
+              <p className="shared-note-status" role={sharedSaved ? "status" : undefined}>
+                {sharedSaved
+                  ? "Shared notes saved"
+                  : sharedNote.updatedAt === undefined
+                    ? "Only visible to this connected pair"
+                    : sharedNote.updatedByMe
+                      ? "Last updated by you"
+                      : `Last updated by ${person.name}`}
+              </p>
+              <button
+                className="btn-ghost"
+                type="button"
+                disabled={savingSharedNote || !sharedDirty}
+                onClick={() => void handleSaveSharedNote()}
+              >
+                {savingSharedNote ? "Saving" : "Save shared notes"}
+              </button>
+            </div>
+            {sharedSaveError !== null && (
+              <p className="form-error" role="alert">
+                {sharedSaveError}
+              </p>
+            )}
+          </>
+        )}
+      </section>
 
       <div className="person-danger">
         {confirmingDelete ? (
