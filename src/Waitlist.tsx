@@ -106,6 +106,11 @@ export function Waitlist() {
   return (
     <div ref={rootRef} className="waitlist" data-mode={mode}>
       <canvas ref={canvasRef} className="wl-sky" aria-hidden="true" />
+      {/* Existing beta users reach the Clerk flow here; the "#/sign-in" hash
+          routes App to sign-in without leaving this page for strangers. */}
+      <a className="wl-signin" href="#/sign-in">
+        Sign in
+      </a>
       <div className="wl-content">
         {status === "joined" ? (
           <div className="wl-joined" role="status">

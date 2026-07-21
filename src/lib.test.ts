@@ -15,8 +15,59 @@ import {
   isValidEmail,
   normalizeEmail,
   normalizeUrl,
+  resolveView,
   triageCountLabel,
 } from "./lib";
+
+describe("resolveView", () => {
+  const base = {
+    isAuthenticated: false,
+    isLoading: false,
+    hash: "",
+    hasSessionHint: false,
+  };
+
+  test("a signed-in visitor always gets home, whatever the hash", () => {
+    expect(resolveView({ ...base, isAuthenticated: true })).toBe("home");
+    expect(
+      resolveView({ ...base, isAuthenticated: true, hash: "#/join" }),
+    ).toBe("home");
+  });
+
+  test("the signed-out default landing is the waitlist", () => {
+    expect(resolveView(base)).toBe("waitlist");
+    // A first-time visitor paints the waitlist immediately, before Clerk loads.
+    expect(resolveView({ ...base, isLoading: true })).toBe("waitlist");
+    expect(resolveView({ ...base, hash: "#/join" })).toBe("waitlist");
+  });
+
+  test("Clerk callbacks and the explicit sign-in route mount sign-in", () => {
+    expect(resolveView({ ...base, hash: "#/sso-callback" })).toBe("signin");
+    expect(resolveView({ ...base, hash: "#/sign-in" })).toBe("signin");
+    // A flow hash outranks a returning-visitor splash.
+    expect(
+      resolveView({
+        ...base,
+        hash: "#/verify",
+        isLoading: true,
+        hasSessionHint: true,
+      }),
+    ).toBe("signin");
+  });
+
+  test("a returning visitor waits on the splash while auth resolves", () => {
+    expect(
+      resolveView({ ...base, isLoading: true, hasSessionHint: true }),
+    ).toBe("splash");
+    // Once resolved signed-out, they fall through to the waitlist.
+    expect(resolveView({ ...base, hasSessionHint: true })).toBe("waitlist");
+  });
+
+  test("the waitlist route is never treated as a Clerk flow", () => {
+    // #/join matches the generic Clerk-flow shape but must stay public.
+    expect(resolveView({ ...base, hash: "#/join" })).toBe("waitlist");
+  });
+});
 
 describe("normalizeEmail", () => {
   test("trims and lowercases so dedupe is case- and space-insensitive", () => {

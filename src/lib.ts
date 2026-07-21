@@ -180,6 +180,27 @@ export function bootMode(input: {
   return "landing";
 }
 
+// The single source of truth for which top-level screen App renders. The
+// signed-out default is the public waitlist -- that is the shareable root URL.
+// Existing users still reach sign-in: Clerk OAuth/verification callbacks and
+// the explicit "#/sign-in" route mount it, and a returning visitor with a live
+// session resolves straight to Home (via the splash) without ever seeing the
+// waitlist. The "#/join" route stays public even though it matches the generic
+// Clerk-flow shape.
+export type View = "home" | "signin" | "splash" | "waitlist";
+
+export function resolveView(input: {
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  hash: string;
+  hasSessionHint: boolean;
+}): View {
+  if (input.isAuthenticated) return "home";
+  if (!isJoinHash(input.hash) && isClerkFlowHash(input.hash)) return "signin";
+  if (input.isLoading && bootMode(input) === "splash") return "splash";
+  return "waitlist";
+}
+
 // The triage card's drag gesture: scroll-style momentum projection for
 // "where would the card coast to if released now?".
 export function project(velocity: number, decelerationRate = 0.998): number {
