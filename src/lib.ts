@@ -37,6 +37,35 @@ export function normalizeEmail(raw: string): string {
   return raw.trim().toLowerCase();
 }
 
+// Haven's admin allowlist. Baked in as a default so admin-only surfaces work
+// in any deployment without extra env wiring; VITE_ADMIN_EMAILS can extend it
+// (comma-separated) without a code change. All comparisons go through
+// normalizeEmail, so case and stray whitespace never matter.
+export const DEFAULT_ADMIN_EMAILS = ["tonythiennguyen17@gmail.com"];
+
+// Merge the baked-in admins with any from VITE_ADMIN_EMAILS into one
+// deduped, normalized list. Kept pure (env value passed in) so it is
+// trivially testable and never touches import.meta at call time.
+export function parseAdminEmails(raw: string | undefined): string[] {
+  const fromEnv = (raw ?? "")
+    .split(",")
+    .map(normalizeEmail)
+    .filter((email) => email !== "");
+  return [
+    ...new Set([...DEFAULT_ADMIN_EMAILS.map(normalizeEmail), ...fromEnv]),
+  ];
+}
+
+// Whether a signed-in identity's email is on the admin allowlist. A missing
+// email (null/undefined) is never an admin.
+export function isAdminEmail(
+  email: string | null | undefined,
+  admins: string[],
+): boolean {
+  if (email === null || email === undefined) return false;
+  return admins.includes(normalizeEmail(email));
+}
+
 // A deliberately conservative shape check: exactly one @, non-empty local and
 // domain, a dot in the domain, no whitespace, within RFC 5321's 254-char
 // ceiling. Real deliverability is proven by the invite, not by a regex.

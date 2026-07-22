@@ -10,10 +10,13 @@ import {
   decideSwipe,
   deriveProfileUrl,
   formatMonthYear,
+  isAdminEmail,
   isClerkFlowHash,
   isJoinHash,
   isValidEmail,
+  DEFAULT_ADMIN_EMAILS,
   normalizeEmail,
+  parseAdminEmails,
   normalizeUrl,
   resolveView,
   triageCountLabel,
@@ -72,6 +75,48 @@ describe("resolveView", () => {
 describe("normalizeEmail", () => {
   test("trims and lowercases so dedupe is case- and space-insensitive", () => {
     expect(normalizeEmail("  Tony@Example.COM ")).toBe("tony@example.com");
+  });
+});
+
+describe("parseAdminEmails", () => {
+  test("returns the baked-in default when env is unset", () => {
+    expect(parseAdminEmails(undefined)).toEqual(
+      DEFAULT_ADMIN_EMAILS.map(normalizeEmail),
+    );
+  });
+
+  test("adds env addresses, normalized, deduped against the default", () => {
+    const parsed = parseAdminEmails(
+      " Second@Example.com , tonythiennguyen17@gmail.com ",
+    );
+    expect(parsed).toContain("second@example.com");
+    // The default is not duplicated even though env repeats it.
+    expect(
+      parsed.filter((e) => e === "tonythiennguyen17@gmail.com"),
+    ).toHaveLength(1);
+  });
+
+  test("ignores empty entries from stray commas", () => {
+    expect(parseAdminEmails(",, ,")).toEqual(
+      DEFAULT_ADMIN_EMAILS.map(normalizeEmail),
+    );
+  });
+});
+
+describe("isAdminEmail", () => {
+  const admins = parseAdminEmails(undefined);
+
+  test("matches an allowlisted address case-insensitively", () => {
+    expect(isAdminEmail("TonyThienNguyen17@Gmail.com ", admins)).toBe(true);
+  });
+
+  test("rejects a non-admin address", () => {
+    expect(isAdminEmail("someone@else.com", admins)).toBe(false);
+  });
+
+  test("a missing email is never an admin", () => {
+    expect(isAdminEmail(null, admins)).toBe(false);
+    expect(isAdminEmail(undefined, admins)).toBe(false);
   });
 });
 
