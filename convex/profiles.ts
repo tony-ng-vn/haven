@@ -66,9 +66,9 @@ async function ensureMeetPerson(args: {
     userId: args.ownerUserId,
     name: displayName,
     normalizedName: normalizeName(args.contactUsername),
-    context: "Met in person through Euno Meet.",
+    context: "Met in person through Haven Meet.",
     updatedAt: args.now,
-    platform: "Euno",
+    platform: "Haven",
     handle: args.contactUsername,
     eunoContactUserId: args.contactUserId,
   });
@@ -173,7 +173,7 @@ export const meetExchange = mutation({
     await checkRateLimit(ctx, userId, "meetExchange", 20, MINUTE_MS);
     const myProfile = await getProfileByUser(ctx, userId);
     if (myProfile === null) {
-      throw new Error("Choose your Euno username first");
+      throw new Error("Choose your Haven username first");
     }
 
     const username = validateUsername(args.username);
@@ -182,7 +182,7 @@ export const meetExchange = mutation({
       .withIndex("by_username", (q) => q.eq("username", username))
       .unique();
     if (peerProfile === null) {
-      throw new Error("No Euno profile found for that username");
+      throw new Error("No Haven profile found for that username");
     }
     if (peerProfile.userId === userId) {
       throw new Error("Enter the other person's username");

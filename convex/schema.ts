@@ -21,7 +21,7 @@ export default defineSchema({
     handle: v.optional(v.string()),
     headline: v.optional(v.string()),
     screenshotId: v.optional(v.id("_storage")),
-    // Euno Meet provenance. Each side still gets a private people row; this
+    // Haven Meet provenance. Each side still gets a private people row; this
     // key only lets a repeat in-person exchange stay idempotent.
     eunoContactUserId: v.optional(v.string()),
     // Semantic search. embeddedText doubles as the idempotency key so the
@@ -43,7 +43,7 @@ export default defineSchema({
       dimensions: 1536,
       filterFields: ["userId"],
     }),
-  // A future mutual-link flow should create one row only after both Euno users
+  // A future mutual-link flow should create one row only after both Haven users
   // have explicitly connected. Each side binds the relationship to their own
   // private person row; the shared-note API uses this as its access gate.
   connections: defineTable({
@@ -109,7 +109,7 @@ export default defineSchema({
     count: v.number(),
   }).index("by_user_action", ["userId", "action"]),
 
-  // A user's public-in-the-moment Euno handle. This is not a social profile:
+  // A user's public-in-the-moment Haven handle. This is not a social profile:
   // it exists only so two people standing together can intentionally exchange.
   profiles: defineTable({
     userId: v.string(),

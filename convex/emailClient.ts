@@ -26,18 +26,18 @@ export type Confirmation = {
 // part is what non-HTML clients (and spam filters) read, so it is not optional.
 export function renderConfirmation(name: string): Confirmation {
   const safeName = escapeHtml(name);
-  const subject = "You're on the Euno waitlist";
+  const subject = "You're on the Haven waitlist";
 
   const text = [
-    `Hi ${name},`,
+    `${name},`,
     "",
     "You're on the list.",
     "",
-    "Euno's mission is to bring everyone together as we move through life. We have a strong belief that while new people are fascinating, it becomes less important to meet them if we eventually forget who they are and lose them along the way. With Euno, we will prevent that, and every connection will become a part of your life.",
+    "Haven's mission is to bring everyone together as we move through life. We have a strong belief that while new people are fascinating, it becomes less important to meet them if we eventually forget who they are and lose them along the way. With Haven, we will prevent that, and every connection will become a part of your life.",
     "",
     "Thank you for joining us on this journey. We're looking forward to having you with us.",
     "",
-    "- Tony (Euno's founder)",
+    "- Tony (Haven's founder)",
   ].join("\n");
 
   const html = `<!doctype html>
@@ -49,11 +49,11 @@ export function renderConfirmation(name: string): Confirmation {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
             <tr>
               <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#f5f7fb;">
-                <p style="margin:0 0 24px;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:#7c8496;">Euno &middot; private beta</p>
-                <h1 style="margin:0 0 16px;font-size:24px;line-height:1.3;font-weight:600;color:#ffffff;">Hi ${safeName}, you're on the list.</h1>
-                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#c7cdda;">Euno's mission is to bring everyone together as we move through life. We have a strong belief that while new people are fascinating, it becomes less important to meet them if we eventually forget who they are and lose them along the way. With Euno, we will prevent that, and every connection will become a part of your life.</p>
+                <p style="margin:0 0 24px;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:#7c8496;">Haven &middot; private beta</p>
+                <h1 style="margin:0 0 16px;font-size:24px;line-height:1.3;font-weight:600;color:#ffffff;">${safeName}, you're on the list.</h1>
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#c7cdda;">Haven's mission is to bring everyone together as we move through life. We have a strong belief that while new people are fascinating, it becomes less important to meet them if we eventually forget who they are and lose them along the way. With Haven, we will prevent that, and every connection will become a part of your life.</p>
                 <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#c7cdda;">Thank you for joining us on this journey. We're looking forward to having you with us.</p>
-                <p style="margin:32px 0 0;font-size:14px;color:#7c8496;">- Tony (Euno's founder)</p>
+                <p style="margin:32px 0 0;font-size:14px;color:#7c8496;">- Tony (Haven's founder)</p>
               </td>
             </tr>
           </table>
