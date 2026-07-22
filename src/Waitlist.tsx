@@ -10,7 +10,11 @@ import { isValidEmail } from "./lib";
 // the same drifting star field. The 620px breakpoint drives layout and copy
 // together so they never disagree.
 type Mode = "desktop" | "phone";
-type Status = "idle" | "submitting" | "joined";
+// "already" is a first-class outcome, not an error: the person is on the list,
+// they just submitted a second time. The server dedups by email and returns it
+// so the UI can say so honestly instead of faking a fresh "joined" (which would
+// promise a confirmation email that never comes for a repeat).
+type Status = "idle" | "submitting" | "joined" | "already";
 
 const BREAKPOINT = 620;
 
@@ -97,8 +101,10 @@ export function Waitlist() {
     }
     setStatus("submitting");
     try {
-      await join({ name: name.trim(), email, source: mode });
-      setStatus("joined");
+      // Honor the server's dedup verdict: a repeat email comes back "already"
+      // (no new row, no email), so show that instead of a false fresh join.
+      const result = await join({ name: name.trim(), email, source: mode });
+      setStatus(result.status === "already" ? "already" : "joined");
     } catch (err) {
       setStatus("idle");
       // ConvexError carries our own server message; anything else is a network
@@ -117,14 +123,20 @@ export function Waitlist() {
     <div ref={rootRef} className="waitlist" data-mode={mode}>
       <canvas ref={canvasRef} className="wl-sky" aria-hidden="true" />
       <div className="wl-content">
-        {status === "joined" ? (
+        {status === "joined" || status === "already" ? (
           <div className="wl-joined" role="status">
             <div className="wl-check" aria-hidden="true">
               <CheckIcon />
             </div>
-            <p className="wl-checkline">You are on the list.</p>
+            <p className="wl-checkline">
+              {status === "already"
+                ? "You're already on the list."
+                : "You are on the list."}
+            </p>
             <p className="wl-sub wl-joined-sub">
-              Thank you for joining us, to be in the true social that brings you to other people in your life
+              {status === "already"
+                ? "This email is already registered - no need to sign up again. We'll be in touch."
+                : "Thank you for joining us, to be in the true social that brings you to other people in your life"}
             </p>
           </div>
         ) : (
