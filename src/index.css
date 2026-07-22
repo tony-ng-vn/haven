@@ -769,6 +769,58 @@ textarea.field {
   }
 }
 
+/* -------------------------------------------------------- error boundary */
+
+/* The last-resort fallback when a render throws. Kept in the same quiet
+   register as the rest of Haven: one soft card, muted words, a single way
+   back. Uses the shared tokens, so it follows light and dark on its own. */
+.error-boundary {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.error-boundary-card {
+  max-width: 32ch;
+  text-align: center;
+}
+
+.error-boundary-lead {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.error-boundary-body {
+  margin: 0 0 24px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.error-boundary-retry {
+  padding: 11px 26px;
+  border-radius: 980px;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent-fill);
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.error-boundary-retry:active {
+  transform: scale(0.97);
+}
+
 /* --------------------------------------------------------------- spinner */
 
 .spinner {
