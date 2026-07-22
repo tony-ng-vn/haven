@@ -665,17 +665,13 @@ textarea.field {
   padding: 24px;
 }
 
-/* The sign-in landing reuses the deep-field sky (see .sky-space / PersonSky)
-   so the glass button has real depth to sit on, matching the sky card. */
+/* The sign-in landing rides the same drifting star field as the waitlist (see
+   DriftSky / .wl-sky) so the glass button has real depth to sit on and both
+   public surfaces share one sky. Black to match the waitlist exactly. */
 .auth-sky {
   position: relative;
   overflow: hidden;
-  background: #060a1a;
-}
-
-.auth-sky .sky-svg {
-  position: absolute;
-  inset: 0;
+  background: #000;
 }
 
 .auth-sky-content {

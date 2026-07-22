@@ -6,9 +6,9 @@ import type { Id } from "../convex/_generated/dataModel";
 import { SearchAdd } from "./SearchAdd";
 import { PersonDetail } from "./PersonDetail";
 import { CaptureTriage } from "./CaptureTriage";
-import { PersonSky } from "./PersonSky";
 import { FeedbackWidget } from "./FeedbackWidget";
 import { Waitlist } from "./Waitlist";
+import { DriftSky } from "./DriftSky";
 import {
   isClerkFlowHash,
   resolveView,
@@ -62,9 +62,7 @@ function SignIn() {
   const [tapped, setTapped] = useState(false);
   return (
     <div className="auth auth-sky">
-      <div className="sky-space" aria-hidden="true" />
-      <PersonSky name="Haven" />
-      <div className="sky-vignette" aria-hidden="true" />
+      <DriftSky className="wl-sky" />
       <div className="auth-sky-content">
         {flow || tapped ? (
           // Clerk holds on `fallback` until its script loads and the card
