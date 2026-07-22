@@ -29,7 +29,7 @@ const COPY: Record<Mode, {
 }> = {
   desktop: {
     headline: "Your people are a constellation.",
-    sub: "Every person you meet becomes a point of light - and Euno keeps them from drifting away.",
+    sub: "Every person you meet becomes a point of light - and Haven keeps them from drifting away.",
     cta: "Join",
     fine: "Private beta",
   },
@@ -130,7 +130,7 @@ export function Waitlist() {
         ) : (
           <>
             <div className="wl-top">
-              <span className="wl-eyebrow">Euno - private beta</span>
+              <span className="wl-eyebrow">Haven - private beta</span>
               <h1 className="wl-headline">{copy.headline}</h1>
             </div>
             <div className="wl-bottom">

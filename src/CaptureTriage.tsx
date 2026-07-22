@@ -446,7 +446,7 @@ export function CaptureTriage() {
           </h2>
           <p className="empty-body">
             {savedCount === 0
-              ? "Screenshot profiles as you meet people. Upload them here and Euno reads out who they are."
+              ? "Screenshot profiles as you meet people. Upload them here and Haven reads out who they are."
               : savedCount === 1
                 ? "1 person added to your people."
                 : `${savedCount} people added to your people.`}

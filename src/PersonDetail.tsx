@@ -251,7 +251,7 @@ export function PersonDetail({
           <div className="skeleton-line skeleton-block" />
         ) : sharedNote === null ? (
           <p className="shared-note-copy">
-            Available after you and {person.name} both connect in Euno.
+            Available after you and {person.name} both connect in Haven.
           </p>
         ) : (
           <>

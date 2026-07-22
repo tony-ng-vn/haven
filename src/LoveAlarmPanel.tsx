@@ -102,7 +102,7 @@ export function LoveAlarmPanel() {
       {joinedRoom === null ? (
         <form className="love-alarm-form" onSubmit={handleJoin}>
           <p className="love-alarm-copy">
-            Share a small code with someone nearby. Euno listens only while this room
+            Share a small code with someone nearby. Haven listens only while this room
             is open.
           </p>
           <label>
