@@ -1,4 +1,4 @@
-// Plain helpers for the two OpenAI endpoints Euno uses. Not registered
+// Plain helpers for the two OpenAI endpoints Haven uses. Not registered
 // Convex functions; call these only from actions (they do network IO).
 // fetch is available in the default Convex runtime, so no "use node".
 

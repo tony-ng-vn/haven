@@ -1,4 +1,4 @@
-/* Euno -- The Quiet Room.
+/* Haven -- The Quiet Room.
    Flat at rest, soft on lift, one blue, motion only as confirmation.
    Every value here is deliberate; see DESIGN.md for the rules. */
 
@@ -2042,7 +2042,7 @@ feedback-widget.feedback-fab {
 /* ------------------------------------------------------ view transitions */
 
 /* Screens crossfade quietly; the tapped name is the only thing that
-   travels. That morph is the product thesis: Euno hands you back the
+   travels. That morph is the product thesis: Haven hands you back the
    person. */
 ::view-transition-old(root) {
   animation-duration: 180ms;

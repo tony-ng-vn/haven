@@ -109,14 +109,14 @@ test("meetExchange creates private people rows for both sides", async () => {
     name: "@bob",
     userId: alice.userId,
     eunoContactUserId: bob.userId,
-    platform: "Euno",
+    platform: "Haven",
     handle: "bob",
   });
   expect(bobPeople[0]).toMatchObject({
     name: "@alice",
     userId: bob.userId,
     eunoContactUserId: alice.userId,
-    platform: "Euno",
+    platform: "Haven",
     handle: "alice",
   });
 
@@ -167,7 +167,7 @@ test("meetExchange requires a username for self and rejects self exchange", asyn
 
   await expect(
     alice.as.mutation(api.profiles.meetExchange, { username: "bob" }),
-  ).rejects.toThrow("Choose your Euno username first");
+  ).rejects.toThrow("Choose your Haven username first");
 
   await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
   await expect(

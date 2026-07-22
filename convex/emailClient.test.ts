@@ -5,9 +5,9 @@ import { renderConfirmation, sendWaitlistConfirmation } from "./emailClient";
 describe("renderConfirmation", () => {
   test("greets the person by name in every part", () => {
     const { subject, html, text } = renderConfirmation("Ada");
-    expect(subject).toBe("You're on the Euno waitlist");
-    expect(html).toContain("Hi Ada, you're on the list.");
-    expect(text).toContain("Hi Ada,");
+    expect(subject).toBe("You're on the Haven waitlist");
+    expect(html).toContain("Ada, you're on the list.");
+    expect(text).toContain("Ada,");
   });
 
   test("escapes HTML in the name so a crafted name cannot inject markup", () => {
@@ -28,7 +28,7 @@ describe("renderConfirmation", () => {
   test("leaves the plain-text part unescaped", () => {
     // Text has no markup to break out of, so entities would be noise there.
     const { text } = renderConfirmation("Tom & Jerry");
-    expect(text).toContain("Hi Tom & Jerry,");
+    expect(text).toContain("Tom & Jerry,");
   });
 });
 
@@ -63,7 +63,7 @@ describe("sendWaitlistConfirmation", () => {
 
   test("posts to Resend and reports sent once both credentials are set", async () => {
     process.env.RESEND_API_KEY = "re_test_key";
-    process.env.WAITLIST_FROM_EMAIL = "Euno <hello@euno.app>";
+    process.env.WAITLIST_FROM_EMAIL = "Haven <hello@inhavens.com>";
     // Typed params so mock.calls[0] is [string, RequestInit], not [] -- the
     // Convex deploy typechecks this file and rejects a cast from an empty tuple.
     const fetchSpy = vi.fn((_url: string, _init: RequestInit) =>
@@ -81,14 +81,14 @@ describe("sendWaitlistConfirmation", () => {
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe("https://api.resend.com/emails");
     const body = JSON.parse(init.body as string);
-    expect(body.from).toBe("Euno <hello@euno.app>");
+    expect(body.from).toBe("Haven <hello@inhavens.com>");
     expect(body.to).toBe("a@b.com");
-    expect(body.subject).toBe("You're on the Euno waitlist");
+    expect(body.subject).toBe("You're on the Haven waitlist");
   });
 
   test("reports failed (not thrown) when Resend rejects the request", async () => {
     process.env.RESEND_API_KEY = "re_test_key";
-    process.env.WAITLIST_FROM_EMAIL = "hello@euno.app";
+    process.env.WAITLIST_FROM_EMAIL = "hello@inhavens.com";
     vi.stubGlobal(
       "fetch",
       async () => new Response("domain not verified", { status: 403 }),
