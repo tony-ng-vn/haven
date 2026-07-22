@@ -448,9 +448,9 @@ export function SearchAdd({
       )}
 
       {fieldLoaded && meetOpen && (
-        <section className="meet-sheet" aria-label="Meet by Euno username">
+        <section className="meet-sheet" aria-label="Meet by Haven username">
           <div className="meet-sheet-head">
-            <span className="sky-label">euno meet</span>
+            <span className="sky-label">haven meet</span>
             <button
               type="button"
               className="meet-close"
@@ -462,8 +462,8 @@ export function SearchAdd({
           </div>
           <h2 className="meet-title">Exchange in person</h2>
           <p className="meet-copy">
-            Stand together, say the other person's Euno username, then confirm.
-            Euno privately adds each of you to the other's sky.
+            Stand together, say the other person's Haven username, then confirm.
+            Haven privately adds each of you to the other's sky.
           </p>
 
           {!profileLoaded && (
@@ -475,7 +475,7 @@ export function SearchAdd({
           {profileLoaded && profile === null && (
             <div className="meet-stack">
               <label className="meet-label" htmlFor="meet-username-setup">
-                Your Euno username
+                Your Haven username
               </label>
               <div className="meet-input-row">
                 <span className="meet-at">@</span>
@@ -556,7 +556,7 @@ export function SearchAdd({
               {meetLookupUsername.length >= 3 &&
                 meetLookup === null &&
                 meetError === null && (
-                  <p className="meet-error">No Euno profile found for that username.</p>
+                  <p className="meet-error">No Haven profile found for that username.</p>
                 )}
               {meetLookup !== undefined &&
                 meetLookup !== null &&

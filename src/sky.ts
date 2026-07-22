@@ -261,7 +261,7 @@ export type DustStar = {
 // One shared field of faint background stars behind every cluster -- seeded
 // from a fixed string, NOT per person, so the whole sky twinkles as one. Unit
 // coordinates keep it resolution-independent across resizes.
-export function buildDust(count = 80, seed = "euno-atlas-dust"): DustStar[] {
+export function buildDust(count = 80, seed = "haven-atlas-dust"): DustStar[] {
   const rand = seededRandom(hashString(seed));
   const dust: DustStar[] = [];
   for (let i = 0; i < count; i++) {

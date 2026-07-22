@@ -36,7 +36,7 @@ function ChevronLeft() {
 function SkyLanding({ busy, onEnter }: { busy: boolean; onEnter?: () => void }) {
   return (
     <>
-      <span className="auth-brand">Euno</span>
+      <span className="auth-brand">Haven</span>
       <p className="auth-tagline">Find your way back to the people you meet.</p>
       <button
         className="sky-cta"
@@ -52,7 +52,7 @@ function SkyLanding({ busy, onEnter }: { busy: boolean; onEnter?: () => void }) 
   );
 }
 
-// The signed-out view opens on Euno's own sky -- a glass button over the deep
+// The signed-out view opens on Haven's own sky -- a glass button over the deep
 // field -- and only reveals Clerk's card once the person chooses to enter, so
 // we never drop them straight into a third-party form.
 function SignIn() {
@@ -63,7 +63,7 @@ function SignIn() {
   return (
     <div className="auth auth-sky">
       <div className="sky-space" aria-hidden="true" />
-      <PersonSky name="Euno" />
+      <PersonSky name="Haven" />
       <div className="sky-vignette" aria-hidden="true" />
       <div className="auth-sky-content">
         {flow || tapped ? (
@@ -157,7 +157,7 @@ function Home() {
         <div className="header-inner">
           {screen.kind === "search" ? (
             <>
-              <span className="brand">Euno</span>
+              <span className="brand">Haven</span>
               <button className="btn-ghost" type="button" onClick={() => void signOut()}>
                 Sign out
               </button>
@@ -209,7 +209,7 @@ function Home() {
 function Splash() {
   return (
     <div className="splash">
-      <span className="splash-brand">Euno</span>
+      <span className="splash-brand">Haven</span>
     </div>
   );
 }
@@ -218,7 +218,7 @@ function Splash() {
 // returning visitor splash straight toward the app instead of flashing the
 // landing while Clerk wakes. Reads can fail (private mode); we degrade to "no
 // hint" rather than throw, so those visitors just meet the landing first.
-const SESSION_HINT_KEY = "euno:hasSession";
+const SESSION_HINT_KEY = "haven:hasSession";
 
 function readSessionHint(): boolean {
   try {
