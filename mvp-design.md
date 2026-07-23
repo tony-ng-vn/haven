@@ -285,6 +285,7 @@ This validates our SwiftUI ceiling early and sets the standard everything else i
 Now you can save and open people, and the app is dogfoodable immediately.
 The local pending queue ships here, because capture must never fail offline.
 The notes editor ships here and gets money-screen treatment.
+Prototype the contacts data model before building this phase (see todo.md, Prototype checkpoints).
 
 ### Phase 3, Search
 
@@ -303,6 +304,12 @@ For Haven this is the product, so it gets its own real phase, not leftover time.
 
 TestFlight to the waitlist cohort first, then App Store submission.
 Submission needs the compliance checklist below done.
+
+## Prototype checkpoints
+
+The spots worth a throwaway prototype, and the rule for when, are tracked in todo.md under "Prototype checkpoints".
+In short: the contacts overlay, connection, and deletion data model is the one high-value prototype, done right before Phase 2; a couple of roadmap items (calendar matching, swipe queue) get one when built.
+UI and feel questions go through SwiftUI previews in Xcode, not the web prototype skill.
 
 ## App Store compliance checklist
 
