@@ -1,0 +1,12 @@
+# The Xcode project is generated from project.yml. Run `xcodegen generate`.
+*.xcodeproj
+
+# Xcode / SwiftPM build artifacts
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+
+# macOS
+.DS_Store
