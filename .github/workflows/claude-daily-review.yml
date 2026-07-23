@@ -1,11 +1,11 @@
 name: Claude Daily Review
 
 # Scheduled bot: every morning it finds the single highest-impact, safe
-# improvement and opens a pull request for you to review.
+# improvement and OPENS A PULL REQUEST for you to review.
 on:
   schedule:
     # 13:08 UTC = ~6:08am America/Los_Angeles during PDT.
-    # Note: GitHub cron is UTC, so after DST ends this runs ~5:08am PST.
+    # GitHub cron is UTC, so after DST ends this runs ~5:08am PST.
     - cron: '8 13 * * *'
   workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab
 
@@ -28,35 +28,34 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: '--max-turns 120'
           prompt: |
-            You are a daily automated code-improvement bot for this repository
-            (a Vite + TypeScript app with a Convex backend and an iOS folder).
-            Work autonomously and efficiently — you have a limited number of
-            turns, so be economical: read only what you need and avoid redundant
-            exploration.
+            You are a daily code-improvement bot for this repository (a Vite +
+            TypeScript app with a Convex backend and an iOS folder). The WHOLE
+            POINT of this job is to open a pull request, so you MUST finish each
+            run by opening one. Do not end the run without either (a) an OPEN PR,
+            or (b) — only if no safe change genuinely exists — a clear written
+            explanation on your final line of why not.
 
-            1. Skim the key docs (README.md, CLAUDE.md, todo.md) and only the
-               files relevant to the change you choose. Do not read the whole repo.
-            2. Check existing open PRs / `claude/auto-*` branches and do NOT
-               duplicate an improvement that is already in flight.
-            3. Pick ONE focus: the single highest-impact, SAFE improvement you can
-               justify quickly, from (a) a real bug, (b) a performance win,
-               (c) a security issue, or (d) a UX improvement. Prefer a
-               high-confidence, low-risk, self-contained change. No sweeping
-               refactors. Keep the diff small (well under ~150 changed lines).
-            4. Create a branch `claude/auto-<YYYY-MM-DD>-<short-slug>` and make the
-               change.
-            5. Validate LIGHTLY to conserve turns: run ONE quick check that fits
-               the change — prefer `npx tsc --noEmit` for type safety, or
-               `npm run lint` — rather than a full install+build+test cycle. Skip
-               `npm ci`/build unless the change specifically needs it. If the check
-               fails because of your change, fix or shrink the change.
-            6. Commit (clear conventional-commit message), push the branch, and
-               OPEN A PULL REQUEST into the default branch. PR description:
-               problem, fix, category (bug/perf/security/UX), files touched,
-               what you validated, and a short "how to test".
-            7. Prioritize actually opening the PR before you run low on turns. If
-               you truly cannot find a safe change, open no PR and leave a brief
-               summary comment instead.
+            Be economical with turns:
+            1. Briefly read README.md, CLAUDE.md, todo.md and only the files
+               relevant to the change you pick. Do not read the whole repo.
+            2. Check existing open PRs and `claude/auto-*` branches; do NOT
+               duplicate work that is already in flight.
+            3. Choose ONE small, safe, high-confidence improvement — a real bug,
+               a performance win, a security issue, or a UX fix. Keep the diff
+               under ~150 changed lines. No sweeping refactors.
+            4. Make the edit, then validate LIGHTLY with a single quick check that
+               fits the change (prefer `npx tsc --noEmit`, or the repo's lint).
+               Skip a full install/build/test cycle unless the change needs it.
+               If the check fails because of your change, fix or shrink it.
+            5. Create a branch `claude/auto-<YYYY-MM-DD>-<short-slug>`, commit with
+               a clear conventional-commit message, PUSH the branch, and OPEN A
+               PULL REQUEST into `main` using the GitHub tools available to you
+               (for example `gh pr create --base main --head <branch> --title "..."
+               --body "..."`). Confirm the PR was actually created.
+            6. The PR body must state: the problem, the fix, the category
+               (bug/perf/security/UX), files touched, what you validated, and a
+               short "how to test".
+            7. Your FINAL message must be the URL of the PR you opened.
 
-            Rules: never push to or force-push the default branch; never commit
-            secrets; at most one branch and one PR per run.
+            Rules: never push to or force-push `main`; never commit secrets;
+            exactly one branch and one PR per run.
