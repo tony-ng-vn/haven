@@ -1,13 +1,12 @@
 name: Claude Daily Review
 
-# Scheduled bot: every morning it finds the single highest-impact, safe
-# improvement and OPENS A PULL REQUEST for you to review.
+# Scheduled bot: every morning Claude proposes ONE safe improvement by editing
+# files; a deterministic step then opens a pull request with those changes.
 on:
   schedule:
-    # 13:08 UTC = ~6:08am America/Los_Angeles during PDT.
-    # GitHub cron is UTC, so after DST ends this runs ~5:08am PST.
+    # 13:08 UTC = ~6:08am America/Los_Angeles during PDT (shifts 1h after DST).
     - cron: '8 13 * * *'
-  workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab
+  workflow_dispatch: {}
 
 jobs:
   daily-review:
@@ -22,40 +21,74 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Claude daily improvement
+
+      - name: Claude proposes one improvement
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: '--max-turns 120'
           prompt: |
             You are a daily code-improvement bot for this repository (a Vite +
-            TypeScript app with a Convex backend and an iOS folder). The WHOLE
-            POINT of this job is to open a pull request, so you MUST finish each
-            run by opening one. Do not end the run without either (a) an OPEN PR,
-            or (b) — only if no safe change genuinely exists — a clear written
-            explanation on your final line of why not.
+            TypeScript app with a Convex backend and an iOS folder). Your ONLY job
+            this run is to propose ONE improvement by EDITING FILES.
 
-            Be economical with turns:
-            1. Briefly read README.md, CLAUDE.md, todo.md and only the files
-               relevant to the change you pick. Do not read the whole repo.
-            2. Check existing open PRs and `claude/auto-*` branches; do NOT
-               duplicate work that is already in flight.
-            3. Choose ONE small, safe, high-confidence improvement — a real bug,
-               a performance win, a security issue, or a UX fix. Keep the diff
-               under ~150 changed lines. No sweeping refactors.
-            4. Make the edit, then validate LIGHTLY with a single quick check that
-               fits the change (prefer `npx tsc --noEmit`, or the repo's lint).
-               Skip a full install/build/test cycle unless the change needs it.
-               If the check fails because of your change, fix or shrink it.
-            5. Create a branch `claude/auto-<YYYY-MM-DD>-<short-slug>`, commit with
-               a clear conventional-commit message, PUSH the branch, and OPEN A
-               PULL REQUEST into `main` using the GitHub tools available to you
-               (for example `gh pr create --base main --head <branch> --title "..."
-               --body "..."`). Confirm the PR was actually created.
-            6. The PR body must state: the problem, the fix, the category
-               (bug/perf/security/UX), files touched, what you validated, and a
-               short "how to test".
-            7. Your FINAL message must be the URL of the PR you opened.
+            1. Read only what you need: README.md, CLAUDE.md, todo.md, and the
+               files relevant to the change you pick. Do not read the whole repo.
+            2. Make ONE small, safe, high-confidence improvement by editing files in
+               the working tree — a real bug, a performance win, a security issue,
+               or a UX fix. Keep the diff under ~150 changed lines. No sweeping
+               refactors.
+            3. Validate lightly if relevant (for example `npx tsc --noEmit`).
+            4. DO NOT use git. Do NOT commit, push, create a branch, or open a PR.
+               Only edit files in place — a later automated step handles the PR.
+            5. ALWAYS write a file named `CLAUDE_PR_BODY.md` at the repository root:
+               - First line, exactly: `TITLE: <concise pull request title>`
+               - Then a blank line, then the description: the problem, the fix, the
+                 category (bug/perf/security/UX), files touched, what you validated,
+                 and a short "how to test".
+               - If you genuinely found NO safe change and edited nothing, instead
+                 make the first line exactly `TITLE: NO_CHANGE` and below it explain
+                 what you examined and why nothing was safe to change today.
 
-            Rules: never push to or force-push `main`; never commit secrets;
-            exactly one branch and one PR per run.
+      - name: Prepare PR content
+        id: prep
+        run: |
+          if [ ! -f CLAUDE_PR_BODY.md ]; then
+            {
+              echo "## Claude Daily Review"
+              echo "Claude did not produce CLAUDE_PR_BODY.md. See the \"Claude proposes one improvement\" step log."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "make_pr=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          TITLE="$(sed -n '1s/^TITLE: //p' CLAUDE_PR_BODY.md)"
+          tail -n +2 CLAUDE_PR_BODY.md > "$RUNNER_TEMP/pr_body.md"
+          # Always surface Claude's write-up on the run's Summary page.
+          {
+            echo "## Claude Daily Review"
+            echo "**${TITLE}**"
+            echo ""
+            cat "$RUNNER_TEMP/pr_body.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Remove the helper file so it is NOT part of the PR diff.
+          rm -f CLAUDE_PR_BODY.md
+          if [ "$TITLE" = "NO_CHANGE" ] || [ -z "$(git status --porcelain)" ]; then
+            echo "No PR opened (title='$TITLE', changed files=$(git status --porcelain | wc -l | tr -d ' '))."
+            echo "make_pr=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "make_pr=true" >> "$GITHUB_OUTPUT"
+            echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open Pull Request
+        if: steps.prep.outputs.make_pr == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          base: main
+          branch: claude/auto-${{ github.run_id }}
+          title: ${{ steps.prep.outputs.title }}
+          body-path: ${{ runner.temp }}/pr_body.md
+          commit-message: ${{ steps.prep.outputs.title }}
+          author: "Claude Daily Bot <claude-bot@users.noreply.github.com>"
+          committer: "Claude Daily Bot <claude-bot@users.noreply.github.com>"
+          delete-branch: false
