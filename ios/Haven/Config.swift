@@ -11,6 +11,6 @@ import Foundation
 // The Convex side also needs a JWT template named "convex" in Clerk, and
 // CLERK_JWT_ISSUER_DOMAIN set on the Convex deployment (see convex/auth.config.ts).
 enum Config {
-    static let clerkPublishableKey = "YOUR_CLERK_PUBLISHABLE_KEY"
-    static let convexDeploymentUrl = "YOUR_CONVEX_DEPLOYMENT_URL"
+    static let clerkPublishableKey = "pk_test_dmFsdWVkLWJvbmVmaXNoLTY0LmNsZXJrLmFjY291bnRzLmRldiQ"
+    static let convexDeploymentUrl = "https://brilliant-puma-925.convex.cloud"
 }
