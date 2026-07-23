@@ -1,0 +1,57 @@
+name: Claude Daily Review
+
+# Scheduled bot: every morning it finds the single highest-impact, safe
+# improvement and opens a pull request for you to review.
+on:
+  schedule:
+    # 13:08 UTC = ~6:08am America/Los_Angeles during PDT.
+    # Note: GitHub cron is UTC, so after DST ends this runs ~5:08am PST.
+    - cron: '8 13 * * *'
+  workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab
+
+jobs:
+  daily-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Claude daily improvement
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: '--max-turns 40'
+          prompt: |
+            You are a daily automated code-improvement bot for this repository
+            (a Vite + TypeScript app with a Convex backend and an iOS folder).
+            Work autonomously end to end.
+
+            1. Read the project docs (README.md, AGENTS.md, CLAUDE.md, DESIGN.md,
+               PRODUCT.md, todo.md) and skim src/ and convex/ to understand the code.
+            2. Check existing branches and open PRs. Do NOT duplicate an improvement
+               that already has an open `claude/auto-*` branch or PR.
+            3. Pick ONE focus for today: the single highest-impact, SAFE improvement
+               you can fully justify, from (a) a real bug, (b) a performance win,
+               (c) a security vulnerability, or (d) a UX improvement. Prefer
+               high-confidence, low-risk, self-contained changes. Do NOT attempt a
+               sweeping refactor. Keep the diff small and reviewable (well under
+               ~200 changed lines).
+            4. Create a new branch named `claude/auto-<YYYY-MM-DD>-<short-slug>`,
+               make the change, then validate: run `npm ci` and whatever applies
+               (`npm run build`, `npx tsc --noEmit`, `npm run lint`, `npm test`).
+               Only keep the change if it builds/type-checks.
+            5. Commit with a clear conventional-commit message, push the branch, and
+               OPEN A PULL REQUEST into the default branch. The PR description must
+               summarize the problem, the fix, the category (bug/perf/security/UX),
+               files touched, validation results, and a short "how to test".
+            6. If you cannot find a safe, worthwhile change today, open no PR and
+               instead leave a brief note (as an issue comment or workflow log)
+               summarizing what you looked at and your suggestions.
+
+            Rules: never push to or force-push the default branch; never commit
+            secrets; make at most one branch and one PR per run.
