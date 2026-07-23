@@ -1,0 +1,41 @@
+name: Haven
+options:
+  bundleIdPrefix: com.inhavens
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: "YES"
+    SWIFT_VERSION: "5.0"
+packages:
+  ConvexMobile:
+    url: https://github.com/get-convex/convex-swift
+    from: "0.8.0"
+  Clerk:
+    url: https://github.com/clerk/clerk-ios
+    from: "1.3.0"
+  ClerkConvex:
+    url: https://github.com/clerk/clerk-convex-swift
+    exactVersion: "0.1.0"
+targets:
+  Haven:
+    type: application
+    platform: iOS
+    sources:
+      - path: Haven
+    dependencies:
+      - package: ConvexMobile
+        product: ConvexMobile
+      - package: Clerk
+        product: ClerkKit
+      - package: Clerk
+        product: ClerkKitUI
+      - package: ClerkConvex
+        product: ClerkConvex
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.inhavens.haven
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
