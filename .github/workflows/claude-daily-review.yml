@@ -26,33 +26,37 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: '--max-turns 40'
+          claude_args: '--max-turns 120'
           prompt: |
             You are a daily automated code-improvement bot for this repository
             (a Vite + TypeScript app with a Convex backend and an iOS folder).
-            Work autonomously end to end.
+            Work autonomously and efficiently — you have a limited number of
+            turns, so be economical: read only what you need and avoid redundant
+            exploration.
 
-            1. Read the project docs (README.md, AGENTS.md, CLAUDE.md, DESIGN.md,
-               PRODUCT.md, todo.md) and skim src/ and convex/ to understand the code.
-            2. Check existing branches and open PRs. Do NOT duplicate an improvement
-               that already has an open `claude/auto-*` branch or PR.
-            3. Pick ONE focus for today: the single highest-impact, SAFE improvement
-               you can fully justify, from (a) a real bug, (b) a performance win,
-               (c) a security vulnerability, or (d) a UX improvement. Prefer
-               high-confidence, low-risk, self-contained changes. Do NOT attempt a
-               sweeping refactor. Keep the diff small and reviewable (well under
-               ~200 changed lines).
-            4. Create a new branch named `claude/auto-<YYYY-MM-DD>-<short-slug>`,
-               make the change, then validate: run `npm ci` and whatever applies
-               (`npm run build`, `npx tsc --noEmit`, `npm run lint`, `npm test`).
-               Only keep the change if it builds/type-checks.
-            5. Commit with a clear conventional-commit message, push the branch, and
-               OPEN A PULL REQUEST into the default branch. The PR description must
-               summarize the problem, the fix, the category (bug/perf/security/UX),
-               files touched, validation results, and a short "how to test".
-            6. If you cannot find a safe, worthwhile change today, open no PR and
-               instead leave a brief note (as an issue comment or workflow log)
-               summarizing what you looked at and your suggestions.
+            1. Skim the key docs (README.md, CLAUDE.md, todo.md) and only the
+               files relevant to the change you choose. Do not read the whole repo.
+            2. Check existing open PRs / `claude/auto-*` branches and do NOT
+               duplicate an improvement that is already in flight.
+            3. Pick ONE focus: the single highest-impact, SAFE improvement you can
+               justify quickly, from (a) a real bug, (b) a performance win,
+               (c) a security issue, or (d) a UX improvement. Prefer a
+               high-confidence, low-risk, self-contained change. No sweeping
+               refactors. Keep the diff small (well under ~150 changed lines).
+            4. Create a branch `claude/auto-<YYYY-MM-DD>-<short-slug>` and make the
+               change.
+            5. Validate LIGHTLY to conserve turns: run ONE quick check that fits
+               the change — prefer `npx tsc --noEmit` for type safety, or
+               `npm run lint` — rather than a full install+build+test cycle. Skip
+               `npm ci`/build unless the change specifically needs it. If the check
+               fails because of your change, fix or shrink the change.
+            6. Commit (clear conventional-commit message), push the branch, and
+               OPEN A PULL REQUEST into the default branch. PR description:
+               problem, fix, category (bug/perf/security/UX), files touched,
+               what you validated, and a short "how to test".
+            7. Prioritize actually opening the PR before you run low on turns. If
+               you truly cannot find a safe change, open no PR and leave a brief
+               summary comment instead.
 
             Rules: never push to or force-push the default branch; never commit
-            secrets; make at most one branch and one PR per run.
+            secrets; at most one branch and one PR per run.
