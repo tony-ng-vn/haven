@@ -138,7 +138,8 @@ Three tables. This is the whole backend for MVP.
 ### profiles
 
 A Haven user's own card, the canonical source of their data.
-Fields: name, photo, socials (IG, X, WhatsApp, Telegram, phone, and any other handles), preferred contact method, and structured attributes (city, company, role).
+Fields: name, photo, handles (Instagram, X, LinkedIn, phone, each flagged verified when it came from an OAuth connection), the primary platform, structured attributes (city as name plus admin area plus country, company, role), and a unique `havenHandle` that the beacon URL resolves to.
+The exact field list Phase 1 adds is in `phase1-build-plan.md`.
 
 ### contacts
 
@@ -170,9 +171,14 @@ The model is deliberately small so it stays portable if we ever leave Convex.
 
 ## Screens (SwiftUI)
 
-Onboarding: Clerk sign-in (Sign in with Apple first), then create your profile (name, photo, socials, preferred contact, city, company, role).
+Onboarding: one welcome screen carrying Clerk sign-in (Sign in with Apple first), then three questions - name, city, and one way to reach you - then your card.
+Photo is never asked; it arrives with an OAuth connection or later in edit.
+Company and role live in the schema and on the edit screen, never in onboarding.
+The screen-by-screen spec is in `phase1-build-plan.md`.
 
-My Card: your profile as a card that you show people. Editable.
+My Card: your profile as a card that you show people. Editable, and the surface where unfilled fields read as unlit stars.
+
+Your beacon: your QR, resolving to `inhavens.com/<havenHandle>` rather than to any social profile.
 
 Connect: start or accept a connection, and save a non-user manually.
 
@@ -182,7 +188,8 @@ Contact detail with the notes editor: one person's attributes, socials, a tappab
 
 Add contact manually: for people not on Haven (name, photo, socials, notes).
 
-Search: filter chips for structured attributes (company, city, role) plus a keyword field over notes, and results.
+Search: its own main screen alongside Directory, not a field buried on the directory list.
+Filter chips for structured attributes (company, city, role) plus a keyword field over notes, and results.
 
 ## The search contract (MVP)
 
@@ -277,8 +284,13 @@ Also in Phase 0: verify App Store name availability for "Haven" (the name is cro
 
 Onboarding, create and edit profile, My Card.
 
-Plus the hero-interaction spike: one moment (the connect animation, or directory scroll and card open) built to the full quality bar with real springs, haptics, and gesture physics.
+Plus the hero-interaction spike: one moment built to the full quality bar with real springs, haptics, and gesture physics.
 This validates our SwiftUI ceiling early and sets the standard everything else inherits.
+The moment is the card reveal at the end of onboarding, the person's constellation completing and settling, because Phase 1 ships that screen anyway and it is what a person holds up to someone forever after.
+
+`phase1-build-plan.md` is the implementation document for this phase and owns every Phase 1 detail: screen specs, design tokens, the Convex schema additions, the per-platform contact contracts, and the milestone order.
+Where it and this document disagree on a Phase 1 decision, the build plan wins.
+It also adds four things beyond the original scope here, each a deliberate decision rather than drift: the Haven handle plus beacon URL, the Lock Screen widget and its explainer, a public web card page at `inhavens.com/<handle>`, and Search as a separate main screen (a shell in Phase 1, wired in Phase 3).
 
 ### Phase 2, Directory, manual save, contact detail
 
