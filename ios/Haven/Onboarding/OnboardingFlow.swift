@@ -33,10 +33,11 @@ struct OnboardingFlow: View {
     private var answered: some View {
         if model.step == .name {
             NameScreen(model: model)
+        } else if model.step == .location {
+            LocationScreen(model: model)
         } else {
-            // Questions 2 and 3 are next, and this becomes a switch over `step`
-            // when they land. Until then, answering the name goes through to
-            // what there is.
+            // Question 3 and the card reveal are next. Until they land, a person
+            // who is through the first two goes on to what there is.
             ProfileProbeView()
         }
     }

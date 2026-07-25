@@ -116,8 +116,10 @@ Compiling and passing tests says nothing about whether something looks right, so
 - `OnboardingModel` decides which question is on screen from the card that `profiles:getMyCard` returns, never from a counter. A counter is lost on reinstall and lies after an edit made on another device.
 - The constellation is seeded from the Clerk user id. Names collide and change, and the profile row does not exist yet on the first question, where the figure is already on screen.
 - A commit publishes the new card first and the next question a beat later, so the star the person just lit is actually on screen before the next question replaces it.
+- Skipping is remembered on the device, not on the card. The server has no field for "asked and declined", and adding one would make a skipped city indistinguishable from one nobody has got round to asking for. The store is keyed by user, so a second account on the same phone starts clean.
+- `CityCompleter` wraps `MKLocalSearchCompleter` for the typeahead and resolves the chosen completion with `MKLocalSearch`, because a completion is two display strings while the card stores a real locality, admin area and country. A city MapKit does not know is still accepted as typed text; being unknown to MapKit is not a reason to be told to skip the question.
 
-Built so far: screen 0 (welcome) and screen 1 (name). Location, contact and the card reveal are next; until they exist, a person who has answered the name falls through to the Phase 0 probe.
+Built so far: screen 0 (welcome), screen 1 (name), screen 2 (location). Contact and the card reveal are next; until they exist, a person through the first two falls through to the Phase 0 probe.
 
 ## Architecture notes
 
