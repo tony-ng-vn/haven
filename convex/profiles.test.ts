@@ -282,6 +282,11 @@ test("profile functions reject unauthenticated callers", async () => {
   await expect(
     t.mutation(api.profiles.updateMyProfile, { name: "Maya" }),
   ).rejects.toThrow("Not signed in");
+  await expect(
+    t.mutation(api.profiles.claimHandle, { handle: "maya" }),
+  ).rejects.toThrow("Not signed in");
+  // getByHandle is absent on purpose: it is the public web card page, so a
+  // signed-out visitor reaching it is the whole point, not an oversight.
 });
 
 test("lookupByUsername returns only public username data", async () => {
