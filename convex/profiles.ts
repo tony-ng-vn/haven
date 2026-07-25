@@ -5,6 +5,7 @@ import { Doc, Id } from "./_generated/dataModel";
 import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
 import { normalizeName } from "./nameSearch";
+import { requireImageBlob } from "./imageBlobs";
 import {
   cityInputValidator,
   cityValidator,
@@ -14,7 +15,6 @@ import {
 } from "./profileFields";
 
 const MINUTE_MS = 60_000;
-const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 
 const USERNAME_MAX_LENGTH = 24;
 const USERNAME_PATTERN = /^[a-z0-9_]{3,24}$/;
@@ -136,23 +136,6 @@ function validateHandles(handles: HandleInput[]): HandleInput[] {
       verified: handle.verified,
     };
   });
-}
-
-// Never trust the client's claim about what it uploaded, and drop a blob that
-// fails validation -- same reasoning as createCapture in captures.ts.
-async function requirePhotoBlob(ctx: MutationCtx, photoStorageId: Id<"_storage">) {
-  const meta = await ctx.db.system.get("_storage", photoStorageId);
-  const isValidImage =
-    meta !== null &&
-    meta.contentType !== undefined &&
-    meta.contentType.startsWith("image/") &&
-    meta.size <= MAX_PHOTO_BYTES;
-  if (!isValidImage) {
-    if (meta !== null) {
-      await ctx.storage.delete(photoStorageId);
-    }
-    throw new Error("Please choose an image under 10 MB");
-  }
 }
 
 const HANDLE_SUFFIX_TRIES = 10;
@@ -392,7 +375,11 @@ export const updateMyProfile = mutation({
     }
     if (args.photoStorageId !== undefined) {
       if (args.photoStorageId !== null) {
-        await requirePhotoBlob(ctx, args.photoStorageId);
+        await requireImageBlob(
+          ctx,
+          args.photoStorageId,
+          "Please choose an image under 10 MB",
+        );
       }
       fields.photoStorageId = args.photoStorageId ?? undefined;
     }

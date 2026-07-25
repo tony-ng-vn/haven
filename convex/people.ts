@@ -6,8 +6,13 @@ import {
   mutation,
   query,
   ActionCtx,
+  QueryCtx,
 } from "./_generated/server";
-import { v } from "convex/values";
+import { Infer, v } from "convex/values";
+import {
+  paginationOptsValidator,
+  paginationResultValidator,
+} from "convex/server";
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { buildEmbedText } from "../src/lib";
@@ -15,6 +20,9 @@ import { embedText } from "./openaiClient";
 import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
 import { normalizeName } from "./nameSearch";
+import { cityInputValidator } from "./profileFields";
+import { contactHandleValidator } from "./peopleFields";
+import { requireImageBlob } from "./imageBlobs";
 
 // Bound every list read so the query stays scalable as the table grows.
 const RESULT_LIMIT = 20;
@@ -30,6 +38,10 @@ const MINUTE_MS = 60_000;
 const MAX_CONTEXT_LENGTH = 4000;
 const CONTEXT_TOO_LONG_ERROR =
   "Context is too long -- keep it under 4000 characters";
+
+// Same wording as the profile photo path: from the user's seat both are
+// "pick a photo of this person".
+const PHOTO_ERROR = "Please choose an image under 10 MB";
 
 // The embeddings request has its own size ceiling; slicing here means an
 // over-long stored context can never fail the whole embed call.
@@ -55,10 +67,18 @@ const personValidator = v.object({
   handle: v.optional(v.string()),
   headline: v.optional(v.string()),
   screenshotId: v.optional(v.id("_storage")),
+  city: v.optional(cityInputValidator),
+  company: v.optional(v.string()),
+  role: v.optional(v.string()),
+  contactHandles: v.optional(v.array(contactHandleValidator)),
+  preferredPlatform: v.optional(v.string()),
+  // Resolved server-side: clients get a usable signed url, never a raw
+  // storage id they cannot render.
+  photoUrl: v.union(v.null(), v.string()),
   updatedAt: v.number(),
 });
 
-function projectPerson(person: Doc<"people">) {
+async function projectPerson(ctx: QueryCtx, person: Doc<"people">) {
   return {
     _id: person._id,
     _creationTime: person._creationTime,
@@ -69,12 +89,124 @@ function projectPerson(person: Doc<"people">) {
     handle: person.handle,
     headline: person.headline,
     screenshotId: person.screenshotId,
+    city: person.city,
+    company: person.company,
+    role: person.role,
+    contactHandles: person.contactHandles,
+    preferredPlatform: person.preferredPlatform,
+    photoUrl:
+      person.photoStorageId === undefined
+        ? null
+        : await ctx.storage.getUrl(person.photoStorageId),
     updatedAt: person.updatedAt,
   };
 }
 
+type CityInput = Infer<typeof cityInputValidator>;
+
+// Validators for the structured attributes shared by addPerson and editPerson.
+const structuredAttributeArgs = {
+  city: v.optional(cityInputValidator),
+  company: v.optional(v.string()),
+  role: v.optional(v.string()),
+};
+
+// Display value plus derived accent-folded key, so the Phase 3 chip filters
+// can equality-match regardless of accents or casing while the UI keeps what
+// the user typed. A key is never written without its display value.
+function structuredAttributeFields(args: {
+  city?: CityInput;
+  company?: string;
+  role?: string;
+}) {
+  const fields: {
+    city?: CityInput;
+    cityKey?: string;
+    company?: string;
+    companyKey?: string;
+    role?: string;
+    roleKey?: string;
+  } = {};
+  if (args.company !== undefined) {
+    const company = args.company.trim();
+    if (company === "") {
+      throw new Error("Company cannot be blank");
+    }
+    fields.company = company;
+    fields.companyKey = normalizeName(company);
+  }
+  if (args.role !== undefined) {
+    const role = args.role.trim();
+    if (role === "") {
+      throw new Error("Role cannot be blank");
+    }
+    fields.role = role;
+    fields.roleKey = normalizeName(role);
+  }
+  if (args.city !== undefined) {
+    const name = args.city.name.trim();
+    if (name === "") {
+      throw new Error("City cannot be blank");
+    }
+    fields.city = { ...args.city, name };
+    fields.cityKey = normalizeName(name);
+  }
+  return fields;
+}
+
+type ContactHandleInput = Infer<typeof contactHandleValidator>;
+
+const MAX_CONTACT_HANDLES = 8;
+
+// One handle per normalized platform keeps the preferredPlatform pointer
+// unambiguous -- same reasoning as profiles.primaryPlatform, except the
+// platform itself is free-form text here rather than a fixed union.
+function validateContactHandles(
+  handles: ContactHandleInput[],
+): ContactHandleInput[] {
+  if (handles.length > MAX_CONTACT_HANDLES) {
+    throw new Error(`Keep at most ${MAX_CONTACT_HANDLES} contact handles`);
+  }
+  const seen = new Set<string>();
+  return handles.map((handle) => {
+    const platform = handle.platform.trim().toLowerCase();
+    if (platform === "") {
+      throw new Error("A platform cannot be blank");
+    }
+    const value = handle.value.trim();
+    if (value === "") {
+      throw new Error("A handle cannot be blank");
+    }
+    if (seen.has(platform)) {
+      throw new Error("Keep one handle per platform");
+    }
+    seen.add(platform);
+    return { platform, value };
+  });
+}
+
+// The preferred platform must point at a handle that exists once the write
+// lands, so callers pass the handle list the row will actually hold.
+function validatePreferredPlatform(
+  raw: string,
+  handles: ContactHandleInput[],
+): string {
+  const preferred = raw.trim().toLowerCase();
+  if (!handles.some((handle) => handle.platform === preferred)) {
+    throw new Error("Choose a preferred platform you have a handle for");
+  }
+  return preferred;
+}
+
 export const addPerson = mutation({
-  args: { name: v.string(), context: v.optional(v.string()) },
+  args: {
+    name: v.string(),
+    context: v.optional(v.string()),
+    contactHandles: v.optional(v.array(contactHandleValidator)),
+    preferredPlatform: v.optional(v.string()),
+    photoStorageId: v.optional(v.id("_storage")),
+    ...structuredAttributeArgs,
+  },
   returns: v.id("people"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
@@ -86,11 +218,26 @@ export const addPerson = mutation({
     if (args.context !== undefined && args.context.length > MAX_CONTEXT_LENGTH) {
       throw new Error(CONTEXT_TOO_LONG_ERROR);
     }
+    if (args.photoStorageId !== undefined) {
+      await requireImageBlob(ctx, args.photoStorageId, PHOTO_ERROR);
+    }
+    const contactHandles =
+      args.contactHandles === undefined
+        ? undefined
+        : validateContactHandles(args.contactHandles);
+    const preferredPlatform =
+      args.preferredPlatform === undefined
+        ? undefined
+        : validatePreferredPlatform(args.preferredPlatform, contactHandles ?? []);
     const personId = await ctx.db.insert("people", {
       userId,
       name,
       normalizedName: normalizeName(name),
       context: args.context,
+      contactHandles,
+      preferredPlatform,
+      photoStorageId: args.photoStorageId,
+      ...structuredAttributeFields(args),
       updatedAt: Date.now(),
     });
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
@@ -119,7 +266,29 @@ export const searchPeople = query({
               q.search("normalizedName", normalizedTerm).eq("userId", userId),
             )
             .take(RESULT_LIMIT);
-    return people.map(projectPerson);
+    return await Promise.all(people.map((person) => projectPerson(ctx, person)));
+  },
+});
+
+// The Directory home screen: one page of the caller's people, most recently
+// touched first. Recency exists to keep the screen useful, never as a
+// closeness signal (design principles).
+export const listPeople = query({
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(personValidator),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    const result = await ctx.db
+      .query("people")
+      .withIndex("by_user_and_updatedAt", (q) => q.eq("userId", userId))
+      .order("desc")
+      .paginate(args.paginationOpts);
+    return {
+      ...result,
+      page: await Promise.all(
+        result.page.map((person) => projectPerson(ctx, person)),
+      ),
+    };
   },
 });
 
@@ -132,7 +301,7 @@ export const getPerson = query({
     if (person === null || person.userId !== userId) {
       return null;
     }
-    return projectPerson(person);
+    return await projectPerson(ctx, person);
   },
 });
 
@@ -170,6 +339,133 @@ export const updatePerson = mutation({
   },
 });
 
+// The iOS contact editor. An omitted field is left alone; an explicit null
+// clears it -- the same contract as profiles.updateMyProfile. Name is the
+// one field with no null, because a person cannot exist without one. The
+// legacy web detail screen keeps updatePerson's send-everything semantics
+// above; the two contracts must not be merged.
+export const editPerson = mutation({
+  args: {
+    id: v.id("people"),
+    name: v.optional(v.string()),
+    link: v.optional(v.union(v.string(), v.null())),
+    context: v.optional(v.union(v.string(), v.null())),
+    contactHandles: v.optional(v.array(contactHandleValidator)),
+    preferredPlatform: v.optional(v.union(v.string(), v.null())),
+    photoStorageId: v.optional(v.union(v.id("_storage"), v.null())),
+    city: v.optional(v.union(cityInputValidator, v.null())),
+    company: v.optional(v.union(v.string(), v.null())),
+    role: v.optional(v.union(v.string(), v.null())),
+  },
+  returns: personValidator,
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    await checkRateLimit(ctx, userId, "editPerson", 60, MINUTE_MS);
+    const person = await ctx.db.get("people", args.id);
+    if (person === null || person.userId !== userId) {
+      throw new Error("Person not found");
+    }
+
+    const fields: Partial<Doc<"people">> = {};
+    if (args.name !== undefined) {
+      const name = args.name.trim();
+      if (name === "") {
+        throw new Error("Name is required");
+      }
+      fields.name = name;
+      // A rename that skips this leaves the person findable only under the
+      // old name.
+      fields.normalizedName = normalizeName(name);
+    }
+    if (args.link !== undefined) {
+      fields.link = args.link ?? undefined;
+    }
+    if (args.context !== undefined) {
+      if (args.context !== null && args.context.length > MAX_CONTEXT_LENGTH) {
+        throw new Error(CONTEXT_TOO_LONG_ERROR);
+      }
+      fields.context = args.context ?? undefined;
+    }
+    // A cleared attribute drops its derived key too, or the chip filter
+    // would keep matching a value the card no longer shows.
+    if (args.company !== undefined) {
+      if (args.company === null) {
+        fields.company = undefined;
+        fields.companyKey = undefined;
+      } else {
+        Object.assign(
+          fields,
+          structuredAttributeFields({ company: args.company }),
+        );
+      }
+    }
+    if (args.role !== undefined) {
+      if (args.role === null) {
+        fields.role = undefined;
+        fields.roleKey = undefined;
+      } else {
+        Object.assign(fields, structuredAttributeFields({ role: args.role }));
+      }
+    }
+    if (args.city !== undefined) {
+      if (args.city === null) {
+        fields.city = undefined;
+        fields.cityKey = undefined;
+      } else {
+        Object.assign(fields, structuredAttributeFields({ city: args.city }));
+      }
+    }
+    if (args.contactHandles !== undefined) {
+      fields.contactHandles = validateContactHandles(args.contactHandles);
+    }
+
+    // The preferred platform must point at a handle that exists once this
+    // write lands, so it is checked against the merged list, not the args.
+    const nextHandles = fields.contactHandles ?? person.contactHandles ?? [];
+    if (args.preferredPlatform !== undefined) {
+      fields.preferredPlatform =
+        args.preferredPlatform === null
+          ? undefined
+          : validatePreferredPlatform(args.preferredPlatform, nextHandles);
+    } else if (
+      person.preferredPlatform !== undefined &&
+      !nextHandles.some(
+        (handle) => handle.platform === person.preferredPlatform,
+      )
+    ) {
+      // Removing the preferred handle clears the pointer instead of
+      // dangling it.
+      fields.preferredPlatform = undefined;
+    }
+
+    if (args.photoStorageId !== undefined) {
+      if (args.photoStorageId !== null) {
+        await requireImageBlob(ctx, args.photoStorageId, PHOTO_ERROR);
+      }
+      const next = args.photoStorageId ?? undefined;
+      // Deleting works here, unlike on a throwing path: this commits, and a
+      // replaced blob would otherwise be unreachable until the orphan sweep.
+      if (
+        person.photoStorageId !== undefined &&
+        person.photoStorageId !== next
+      ) {
+        await ctx.storage.delete(person.photoStorageId);
+      }
+      fields.photoStorageId = next;
+    }
+
+    await ctx.db.patch("people", args.id, { ...fields, updatedAt: Date.now() });
+    await ctx.scheduler.runAfter(0, internal.people.embed, {
+      personId: args.id,
+    });
+    const updated = await ctx.db.get("people", args.id);
+    if (updated === null) {
+      throw new Error("Could not save person");
+    }
+    return await projectPerson(ctx, updated);
+  },
+});
+
 export const deletePerson = mutation({
   args: { personId: v.id("people") },
   returns: v.null(),
@@ -181,6 +477,9 @@ export const deletePerson = mutation({
     }
     if (person.screenshotId !== undefined) {
       await ctx.storage.delete(person.screenshotId);
+    }
+    if (person.photoStorageId !== undefined) {
+      await ctx.storage.delete(person.photoStorageId);
     }
     await ctx.db.delete("people", args.personId);
     return null;

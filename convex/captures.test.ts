@@ -1009,6 +1009,22 @@ test("sweepOrphanedUploads never deletes a blob referenced by a profile photo", 
   ).not.toBeNull();
 });
 
+test("sweepOrphanedUploads never deletes a blob referenced by a person photo", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const photoId = await seedScreenshot(t);
+  await as.mutation(api.people.addPerson, {
+    name: "Ada Lovelace",
+    photoStorageId: photoId,
+  });
+
+  vi.setSystemTime(Date.now() + 61 * 60_000);
+  const swept = await t.mutation(internal.captures.sweepOrphanedUploads, {});
+
+  expect(swept).toBe(0);
+  expect(await t.run((ctx) => ctx.storage.getUrl(photoId))).not.toBeNull();
+});
+
 test("sweepOrphanedUploads leaves a young unreferenced blob alone", async () => {
   const t = convexTest(schema, modules);
   const screenshotId = await seedScreenshot(t);
