@@ -10,7 +10,10 @@ Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
 - [~] Phase 1: Onboarding, card, and the two home screens. Full spec and milestone definitions of done in `phase1-build-plan.md`.
   - [x] Design settled: interactive prototype at `design/onboarding-prototype.html`, decisions ratified in the build plan.
   - [ ] 1. Hero spike: card reveal against hardcoded data, full quality bar. Done when it feels right on a physical device.
-  - [ ] 2. Design system: color and type tokens, shared controls, screen skeleton, dust layer, sky renderer ported from `src/sky.ts` with fixed star slots.
+  - [~] 2. Design system: color and type tokens, shared controls, screen skeleton, dust layer, sky renderer ported from `src/sky.ts` with fixed star slots.
+    - [x] Sky generator ported to Swift, asserted against vectors dumped from the TypeScript so the app and the future web card page cannot drift apart.
+    - [ ] SwiftUI renderer for it, plus the fixed star-slot mapping (name 0, city 1, contact 2, photo 3, company 4, role 5).
+    - [ ] Colour and type tokens, Field, PrimaryButton, GhostButton, Row, screen skeleton, dust layer.
   - [ ] 3. Convex schema and functions, test-first, including `claimHandle`.
   - [ ] 4. Onboarding wired end to end, all four contact paths, with resume and retry.
   - [ ] 5. My Card / edit with unlit-star states, handle management, photo add.
@@ -19,7 +22,7 @@ Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
   - [ ] 8. Lock Screen widget and deep link.
   - [ ] 9. Public web card page at `inhavens.com/<handle>` (web repo, parallel track after milestone 3).
   - [ ] Answer the six open questions in the build plan. None block milestone 1. Question 5 (`havenHandle` versus the existing `username`) blocks milestone 3, so it goes first; the handle UX question is due before milestone 4.
-  - [ ] Fix `ios/`: `HavenConvexAuthProvider.swift` is on disk but missing from `project.pbxproj`, so a clean checkout does not build. Batch it with converting `ios/Haven/` to an Xcode 16 buildable folder and adding a `HavenTests` target, since all three touch the same file.
+  - [x] Confirmed `ios/` builds green from a clean checkout, and added the `HavenTests` target. Run `xcodegen generate` in `ios/` first: the `.xcodeproj` is git-ignored and generated from `project.yml`, so a stale local copy can look broken when nothing is wrong.
 - [ ] Decide the fate of the orphaned web product surface (`people`, `captures`, `loveAlarm`, `sharedNotes`): formally parked, or deleted. Note `profiles.username` is entangled with this, see build plan question 5.
 - [ ] Housekeeping: pull `main` into the working checkout, then remove the leftover `.worktrees/feat-ios-foundations` worktree and its branch so there is one copy.
 

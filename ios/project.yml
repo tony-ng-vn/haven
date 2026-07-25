@@ -43,3 +43,18 @@ targets:
         # keychain-access-group entitlement it fails with OSStatus -34018 and
         # sign-in returns 401 "signed out".
         CODE_SIGN_ENTITLEMENTS: Haven/Haven.entitlements
+    scheme:
+      testTargets:
+        - HavenTests
+
+  HavenTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: HavenTests
+    dependencies:
+      - target: Haven
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.inhavens.haven.tests
+        GENERATE_INFOPLIST_FILE: "YES"
