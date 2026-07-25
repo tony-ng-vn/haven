@@ -8,8 +8,9 @@ import { DriftSky } from "./DriftSky";
 // The public /#/join waitlist. One page that becomes two: a wide viewport gets
 // the "constellation" layout (copy settled in the lower third), a narrow one
 // gets the "drift" layout (headline up top, capture at the bottom). Both ride
-// the same drifting star field. The 620px breakpoint drives layout and copy
-// together so they never disagree.
+// the same drifting star field, and this page takes its constellation lens:
+// stars near the pointer join up, which is the headline made interactive. The
+// 620px breakpoint drives layout and copy together so they never disagree.
 type Mode = "desktop" | "phone";
 // "already" is a first-class outcome, not an error: the person is on the list,
 // they just submitted a second time. The server dedups by email and returns it
@@ -113,7 +114,7 @@ export function Waitlist() {
 
   return (
     <div ref={rootRef} className="waitlist" data-mode={mode}>
-      <DriftSky className="wl-sky" />
+      <DriftSky className="wl-sky" lens />
       <div className="wl-content">
         {status === "joined" || status === "already" ? (
           <div className="wl-joined" role="status">

@@ -88,8 +88,9 @@ function placeMajors(rand: () => number, count: number): Array<{ x: number; y: n
 }
 
 // Prim's minimum spanning tree: each star joins its nearest branch, which is
-// why real star charts look calm instead of criss-crossed.
-function spanningTree(points: Array<{ x: number; y: number }>): Array<[number, number]> {
+// why real star charts look calm instead of criss-crossed. Exported so the
+// waitlist lens draws its figure with the same math a person's own card uses.
+export function spanningTree(points: Array<{ x: number; y: number }>): Array<[number, number]> {
   const inTree = [0];
   const edges: Array<[number, number]> = [];
   while (inTree.length < points.length) {
