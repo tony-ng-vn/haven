@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grilling: where the figure lives when a question owns the top</title>
+<style>
+  :root {
+    --night: #0E1123; --dusk: #232A4D; --ember: #E8A87C; --star: #FFD9A0;
+    --ink: #F2EFE9; --muted: #9DA3BE; --faint: #767C9C;
+    --cream: #F2E7D5; --cream-ink: #1A1730; --page: #08090F;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 26px 24px 40px;
+  }
+  .stage {
+    display: flex; align-items: flex-start; gap: 48px;
+    padding-left: 4vw; max-width: 1500px; margin: 0 auto;
+  }
+  .stage header { flex: 1 1 380px; min-width: 300px; max-width: 640px; }
+  .eyebrow {
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--faint); margin: 0 0 10px;
+  }
+  h1 { font-size: 25px; line-height: 1.22; margin: 0 0 12px; font-weight: 600; }
+  header p { color: var(--muted); margin: 0 0 9px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; color: var(--star); }
+  .callout {
+    border-left: 2px solid var(--ember); padding: 2px 0 2px 13px;
+    margin: 14px 0 0; color: var(--ink); font-size: 14px;
+  }
+
+  .fit { transform-origin: top left; }
+  .device {
+    width: 393px; height: 852px; position: relative; flex: none;
+    border-radius: 46px; overflow: hidden;
+    box-shadow: 0 0 0 9px #14151c, 0 30px 70px rgba(0,0,0,0.6);
+  }
+  .device canvas { position: absolute; inset: 0; width: 393px; height: 852px; }
+  .ui { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 58px 22px 30px; }
+  .statusbar {
+    position: absolute; top: 16px; left: 28px; right: 28px; display: flex;
+    justify-content: space-between; font-size: 13px; font-weight: 600; opacity: 0.9;
+  }
+  .qa { flex: none; }
+  .q { font-size: 25px; line-height: 1.16; font-weight: 600; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .hint { color: var(--muted); font-size: 15px; margin: 0; }
+  .mid { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  .rows { display: flex; flex-direction: column; }
+  .row {
+    display: flex; justify-content: space-between; align-items: center;
+    min-height: 44px; padding: 13px 4px; border-bottom: 1px solid rgba(255,255,255,0.09);
+  }
+  .row .name { font-size: 17px; }
+  .row .acc { color: var(--muted); font-size: 16px; }
+  .acts { display: flex; flex-direction: column; gap: 8px; }
+  .btn {
+    background: var(--cream); color: var(--cream-ink); border: 0; border-radius: 12px;
+    min-height: 44px; padding: 13px 20px; font: 600 16px/1 inherit; text-align: center;
+  }
+  .ghost { background: none; border: 0; color: var(--muted); min-height: 44px; font: 400 15px/1 inherit; }
+  .cardname {
+    font-family: "New York", ui-serif, Georgia, serif;
+    font-size: 31px; text-align: center; margin: 0 0 6px; font-weight: 500;
+  }
+  .cardmeta { text-align: center; color: var(--muted); font-size: 15px; margin: 0; }
+  .wordmark { font-size: 34px; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .field {
+    border-bottom: 1px solid rgba(255,255,255,0.22); padding: 10px 2px;
+    font-size: 21px; color: var(--ink);
+  }
+
+  .picker {
+    position: fixed; bottom: 22px; right: 22px; z-index: 9999; min-width: 330px; max-width: 360px;
+    background: rgba(16,18,28,0.95); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 14px; padding: 12px 14px 13px;
+    box-shadow: 0 16px 44px rgba(0,0,0,0.6); backdrop-filter: blur(14px);
+    cursor: grab; user-select: none;
+  }
+  .picker.dragging { cursor: grabbing; }
+  .pnav { display: flex; align-items: center; gap: 10px; }
+  .pnav button {
+    background: rgba(255,255,255,0.08); border: 0; color: var(--ink);
+    width: 30px; height: 30px; border-radius: 8px; font-size: 15px; cursor: pointer;
+  }
+  .pnav button:hover { background: rgba(255,255,255,0.16); }
+  .vname { flex: 1; text-align: center; font-weight: 600; font-size: 14px; }
+  .vnum { color: var(--faint); font-size: 11px; text-align: center; }
+  .vwhy { color: var(--muted); font-size: 12px; line-height: 1.45; margin: 9px 0 0; }
+  .verdict { font-size: 12px; margin: 8px 0 0; padding: 7px 9px; border-radius: 7px; line-height: 1.42; }
+  .v-good { background: rgba(122,200,150,0.13); color: #9ad8b0; }
+  .v-bad { background: rgba(215,90,90,0.14); color: #e89a9a; }
+  .v-mix { background: rgba(232,168,124,0.13); color: var(--ember); }
+  .collide {
+    font-size: 11px; margin: 7px 0 0; padding: 6px 9px; border-radius: 6px;
+    background: rgba(255,255,255,0.05); color: var(--muted);
+  }
+  .collide b { color: var(--ink); }
+  .toggles { margin-top: 11px; border-top: 1px solid rgba(255,255,255,0.09); padding-top: 10px; }
+  .tgroup { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+  .tgroup:last-child { margin-bottom: 0; }
+  .tlabel {
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--faint); width: 50px; flex: none;
+  }
+  .tgroup button {
+    background: rgba(255,255,255,0.06); border: 0; color: var(--muted);
+    padding: 5px 9px; border-radius: 6px; font-size: 11px; cursor: pointer;
+  }
+  .tgroup button.on { background: var(--star); color: var(--cream-ink); font-weight: 600; }
+  kbd { background: rgba(255,255,255,0.1); border-radius: 4px; padding: 1px 5px; font-size: 10px; }
+  .hintline { color: var(--faint); font-size: 11px; margin: 9px 0 0; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <div class="device fit" id="device">
+    <canvas id="sky" width="786" height="1704"></canvas>
+    <div class="statusbar"><span>9:41</span><span>oooo</span></div>
+    <div class="ui" id="ui"></div>
+  </div>
+
+  <header>
+    <p class="eyebrow">Haven iOS - sky rendering, round 2</p>
+    <h1>Where does the figure live when a question already owns the top?</h1>
+    <p>
+      Round 1 asked how to scale the sky and got the wrong answer, because scaling was never the problem.
+      <code>placeMajors</code> caps every star at 62% of the sky's own height, so the figure occupies the top 62% of whatever region it is given.
+      Give it the screen and it lands on the rows. Give it a taller source and it still lands on the rows.
+    </p>
+    <p class="callout">
+      Decision 7 says "figure owns the top, serif name below it". That describes the card reveal, which has no header.
+      Screen 1 also says committing your name lights the first star, so the figure is live during onboarding too.
+      Nobody ever decided what happens when a question and the figure both want the top. That is the real gap.
+    </p>
+    <p>
+      Each variant answers it differently. The figure region is measured from where the content actually is, not hardcoded, so it adapts as you switch screens.
+      The panel counts how many figure stars land on any text, headline included.
+      That last part matters: a variant can clear the rows and still sit on the question.
+    </p>
+  </header>
+</div>
+
+<div class="picker" id="picker">
+  <div class="pnav">
+    <button id="prev" title="Previous">&larr;</button>
+    <div style="flex:1">
+      <div class="vname" id="vname"></div>
+      <div class="vnum" id="vnum"></div>
+    </div>
+    <button id="next" title="Next">&rarr;</button>
+  </div>
+  <p class="vwhy" id="vwhy"></p>
+  <p class="verdict" id="verdict"></p>
+  <p class="collide" id="collide"></p>
+
+  <div class="toggles">
+    <div class="tgroup">
+      <span class="tlabel">Screen</span>
+      <button data-screen="contact" class="on">Contact</button>
+      <button data-screen="name">Name</button>
+      <button data-screen="welcome">Welcome</button>
+      <button data-screen="card">Card</button>
+    </div>
+    <div class="tgroup">
+      <span class="tlabel">Seed</span>
+      <button data-seed="user_2abcDEF123" class="on">A</button>
+      <button data-seed="jd7h1k2m9n0p">B</button>
+      <button data-seed="x">C</button>
+      <button data-seed="user_zzzz9999">D</button>
+    </div>
+    <div class="tgroup">
+      <span class="tlabel">Motion</span>
+      <button data-motion="on" class="on">Animate</button>
+      <button data-motion="off">Reduced</button>
+    </div>
+    <div class="tgroup">
+      <span class="tlabel">Guides</span>
+      <button data-guides="off" class="on">Off</button>
+      <button data-guides="on">Show</button>
+    </div>
+  </div>
+  <p class="hintline">Drag to move. <kbd>&larr;</kbd> <kbd>&rarr;</kbd> to switch.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---- generator, ported from src/sky.ts (same hash, PRNG, draw order) ---- */
+  var PAD = 34, MIN_SEP = 68, MINOR_COUNT = 150, FEATURED = 22;
+  function hashString(s) {
+    var h = 2166136261;
+    for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  function seededRandom(seed) {
+    var a = seed;
+    return function () {
+      a |= 0; a = (a + 0x6d2b79f5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function personHues(seed) {
+    var h = hashString(seed);
+    return [h % 360, (h >>> 9) % 360, (h >>> 18) % 360];
+  }
+  function placeMajors(rand, count, W, H) {
+    var pts = [], tries = 0;
+    while (pts.length < count && tries < 600) {
+      tries++;
+      var x = PAD + rand() * (W - PAD * 2), y = PAD + rand() * (H * 0.62 - PAD);
+      var crowded = pts.some(function (p) {
+        var dx = p.x - x, dy = p.y - y;
+        return dx * dx + dy * dy < MIN_SEP * MIN_SEP;
+      });
+      if (!crowded) pts.push({ x: x, y: y });
+    }
+    return pts;
+  }
+  function spanningTree(pts) {
+    if (!pts.length) return [];
+    var inTree = [0], edges = [];
+    while (inTree.length < pts.length) {
+      var best = null;
+      for (var k = 0; k < inTree.length; k++) {
+        var i = inTree[k];
+        for (var j = 0; j < pts.length; j++) {
+          if (inTree.indexOf(j) !== -1) continue;
+          var dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y, d = dx * dx + dy * dy;
+          if (best === null || d < best.d) best = { i: i, j: j, d: d };
+        }
+      }
+      if (best === null) break;
+      edges.push([best.i, best.j]); inTree.push(best.j);
+    }
+    return edges;
+  }
+  var skyCache = {};
+  function buildSky(seed) {
+    if (skyCache[seed]) return skyCache[seed];
+    var W = 384, H = 560;
+    var rand = seededRandom(hashString(seed)), hues = personHues(seed);
+    var nebulae = [
+      { cx: W * 0.35, cy: H * 0.25, rx: W * 0.75, ry: H * 0.42, hue: hues[0], alpha: 0.18 },
+      { cx: W * 0.75, cy: H * 0.5, rx: W * 0.65, ry: H * 0.36, hue: hues[1], alpha: 0.15 },
+      { cx: W * 0.4, cy: H * 0.7, rx: W * 0.6, ry: H * 0.3, hue: hues[2], alpha: 0.13 }
+    ];
+    var minors = [];
+    for (var i = 0; i < MINOR_COUNT; i++) {
+      var hi = 0.25 + rand() * 0.55;
+      minors.push({
+        x: rand() * W, y: rand() * H, r: 0.4 + Math.pow(rand(), 2.6) * 1.4,
+        hi: hi, lo: Math.max(0.08, hi - 0.3),
+        dur: 2.6 + rand() * 4.5, delay: rand() * 6, rvd: rand(), featured: false
+      });
+    }
+    var giants = [];
+    for (var g = 0; g < 5; g++) {
+      giants.push({
+        x: PAD + rand() * (W - PAD * 2), y: PAD + rand() * (H * 0.8), r: 1.2 + rand(),
+        hue: hues[g % 3], hi: 0.9, lo: 0.5, dur: 3 + rand() * 3, delay: rand() * 4, rvd: rand()
+      });
+    }
+    var count = 7 + Math.floor(rand() * 2);
+    var placed = placeMajors(rand, count, W, H);
+    var edges = spanningTree(placed);
+    var majors = placed.map(function (p, idx) {
+      return {
+        x: p.x, y: p.y, r: 1.5 + rand() * 1.9, hue: hues[idx % 3],
+        hi: 1, lo: 0.62, dur: 3 + rand() * 3.4, delay: rand() * 5, rvd: rand()
+      };
+    });
+    var flares = majors.map(function (m, idx) { return { r: m.r, i: idx }; })
+      .sort(function (a, b) { return b.r - a.r || a.i - b.i; }).slice(0, 2)
+      .map(function (e) {
+        return { x: majors[e.i].x, y: majors[e.i].y, len: e.r * 9, dur: 4 + rand() * 3, delay: rand() * 4 };
+      });
+    var sx = 40 + rand() * 160, sy = 30 + rand() * 120;
+    var shoot = { x1: sx, y1: sy, x2: sx - 34, y2: sy - 19, delay: 3 + rand() * 8 };
+    var order = minors.map(function (_, idx) { return idx; });
+    for (var f = 0; f < Math.min(FEATURED, order.length); f++) {
+      var j2 = f + Math.floor(rand() * (order.length - f));
+      var tmp = order[f]; order[f] = order[j2]; order[j2] = tmp;
+      minors[order[f]].featured = true;
+    }
+    skyCache[seed] = { width: W, height: H, hues: hues, nebulae: nebulae, minors: minors,
+                       giants: giants, majors: majors, edges: edges, flares: flares, shoot: shoot };
+    return skyCache[seed];
+  }
+
+  /* ------------------------------- variants ------------------------------- */
+  // Each returns the region the FIGURE may occupy, given measured content, or
+  // null for "draw no figure at all on this screen".
+  var VARIANTS = [
+    {
+      name: "Shrink to clear",
+      why: "The region is sized so the figure's lowest star lands on the first line of content. Clears the rows, the field, the buttons.",
+      verdict: ["v-bad", "Clears the CONTENT and still hits the HEADLINE, because the figure and the question both want the top. Proof that clearing content is not the whole problem."],
+      figureRegion: function (m) {
+        // ceiling = h * 0.62, and we want ceiling == contentTop.
+        return { x: 0, y: 0, w: 393, h: Math.max(90, m.contentTop) };
+      },
+      scrim: false
+    },
+    {
+      name: "Band between",
+      why: "The figure lives in the gap that actually exists: below the header, above the content. Its region is that band, so it moves and resizes per screen.",
+      verdict: ["v-good", "The only variant at zero collisions on every screen. The cost is brutal on a busy screen: 0.51x on Contact, so the figure squashes to half the size it was drawn for."],
+      figureRegion: function (m) {
+        var top = m.headerBottom + 10;
+        return { x: 0, y: top, w: 393, h: Math.max(60, m.contentTop - top) };
+      },
+      scrim: false
+    },
+    {
+      name: "Two layouts",
+      why: "Question screens get a shallow horizon strip behind the header only. The card reveal gets the full figure. Different jobs, different treatment.",
+      verdict: ["v-good", "Accepts that a question screen and a card want different things. The figure stays a promise during onboarding and pays off at the reveal."],
+      figureRegion: function (m) {
+        if (m.screen === "card") return { x: 0, y: 0, w: 393, h: 393 * (560 / 384) };
+        return { x: 0, y: 0, w: 393, h: 250 };
+      },
+      scrim: false
+    },
+    {
+      name: "Earned overlap",
+      why: "Keep the figure full-bleed and stop apologising for the overlap. A soft scrim sits behind each text block so type stays legible and the crossing reads as depth.",
+      verdict: ["v-mix", "The most atmospheric, and the riskiest. It contradicts the principle that light lives behind content, and every new text block has to remember its scrim."],
+      figureRegion: function () { return { x: 0, y: 0, w: 393, h: 852 }; },
+      mode: "fill", scrim: true
+    },
+    {
+      name: "Reveal only",
+      why: "No figure at all while answering questions -- just dust and the night wash. The constellation appears for the first time on the card.",
+      verdict: ["v-mix", "Makes the reveal hit hardest, and zero collisions by construction. But it drops decision 14's progressive lighting, so nothing responds as you answer."],
+      figureRegion: function (m) {
+        if (m.screen === "card") return { x: 0, y: 0, w: 393, h: 393 * (560 / 384) };
+        return null;
+      },
+      scrim: false
+    }
+  ];
+
+  var vi = 0, screenKind = "contact", seed = "user_2abcDEF123", motion = true, guides = false;
+  var VW = 393, VH = 852, DPR = 2, deviceScale = 1, clock = 0;
+  var canvas = document.getElementById("sky"), ctx = canvas.getContext("2d");
+
+  /* Measures where the content really is, in device points. The figure region
+     is derived from this rather than guessed, so a variant stays honest when
+     the screen or the text length changes. */
+  function measure() {
+    var dev = document.getElementById("device").getBoundingClientRect();
+    function rel(sel) {
+      var el = document.querySelector(".ui " + sel);
+      if (!el) return null;
+      var r = el.getBoundingClientRect();
+      return { top: (r.top - dev.top) / deviceScale, bottom: (r.bottom - dev.top) / deviceScale };
+    }
+    var qa = rel(".qa"), body = rel(".rows") || rel(".cardname") || rel(".field"), acts = rel(".acts");
+    return {
+      screen: screenKind,
+      headerBottom: qa ? qa.bottom : 100,
+      contentTop: body ? body.top : (acts ? acts.top : 600),
+      contentBottom: body ? body.bottom : (acts ? acts.top : 700),
+      actionsTop: acts ? acts.top : 720
+    };
+  }
+
+  function fillLayout(region, src) {
+    var s = Math.max(region.w / src.w, region.h / src.h);
+    return { scale: s, ox: region.x + (region.w - src.w * s) / 2,
+             oy: region.y + (region.h - src.h * s) / 2 };
+  }
+
+  /* Figure layout. placeMajors never puts a star below 62% of the source
+     height, so that band is the figure's real extent -- scaling by the full
+     560 would leave a third of the region empty and push the stars into it.
+     Whichever of width or that band runs out first sets the scale, so the
+     figure is contained instead of spilling past the region it was given. */
+  function figureLayout(region, src) {
+    var band = src.h * 0.62;
+    var s = Math.min(region.w / src.w, region.h / band);
+    return { scale: s, ox: region.x + (region.w - src.w * s) / 2, oy: region.y };
+  }
+
+  function twinkle(st, t) {
+    if (!motion) return (st.hi + st.lo) / 2;
+    var e = t - st.delay;
+    if (e <= 0) return st.hi;
+    var sw = (e / st.dur) % 2, p = sw <= 1 ? sw : 2 - sw;
+    p = p * p * (3 - 2 * p);
+    return st.hi + (st.lo - st.hi) * p;
+  }
+
+  // Rectangles type actually occupies, used both for the scrim and for
+  // counting how many figure stars land on words.
+  function textBoxes() {
+    var dev = document.getElementById("device").getBoundingClientRect();
+    var out = [];
+    Array.prototype.forEach.call(
+      document.querySelectorAll(".ui .q, .ui .hint, .ui .wordmark, .ui .row, .ui .cardname, .ui .cardmeta, .ui .btn, .ui .ghost, .ui .field"),
+      function (el) {
+        var r = el.getBoundingClientRect();
+        out.push({
+          x: (r.left - dev.left) / deviceScale, y: (r.top - dev.top) / deviceScale,
+          w: r.width / deviceScale, h: r.height / deviceScale
+        });
+      }
+    );
+    return out;
+  }
+
+  function draw(t) {
+    var v = VARIANTS[vi];
+    var sky = buildSky(seed);
+    var m = measure();
+    var region = v.figureRegion(m);
+    var src = { w: sky.width, h: sky.height };
+    var full = { x: 0, y: 0, w: VW, h: VH };
+    var nebL = fillLayout(full, src);
+    var figL = region ? (v.mode === "fill" ? fillLayout(region, src) : figureLayout(region, src)) : null;
+
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.clearRect(0, 0, VW, VH);
+
+    var grad = ctx.createLinearGradient(0, 0, 0, VH);
+    grad.addColorStop(0, "#0E1123"); grad.addColorStop(0.26, "#0E1123");
+    grad.addColorStop(0.72, "#1a2039"); grad.addColorStop(1, "#232A4D");
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, VW, VH);
+
+    var em = ctx.createRadialGradient(VW * 0.5, VH * 1.02, 0, VW * 0.5, VH * 1.02, VW * 0.95);
+    em.addColorStop(0, "rgba(232,168,124,0.28)"); em.addColorStop(1, "rgba(232,168,124,0)");
+    ctx.fillStyle = em; ctx.fillRect(0, 0, VW, VH);
+
+    // Nebulae stay full bleed and damped -- round 1 settled that the wash is
+    // atmosphere and nobody compares it between their phone and their web card.
+    sky.nebulae.forEach(function (n) {
+      var cx = n.cx * nebL.scale + nebL.ox, cy = n.cy * nebL.scale + nebL.oy;
+      var rx = n.rx * nebL.scale, ry = n.ry * nebL.scale;
+      ctx.save(); ctx.translate(cx, cy); ctx.scale(1, ry / rx);
+      var g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+      g.addColorStop(0, "hsla(" + n.hue + ",82%,58%," + (n.alpha * 0.4) + ")");
+      g.addColorStop(1, "hsla(" + n.hue + ",82%,58%,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, rx, 0, 6.2832); ctx.fill(); ctx.restore();
+    });
+
+    var dr = seededRandom(hashString("haven-dust"));
+    for (var d = 0; d < 28; d++) {
+      var dx = dr() * VW, dy = dr() * VH, rad = 0.5 + dr() * 0.9, ph = dr() * 6.283;
+      var drift = motion ? Math.sin(t * 0.16 + ph) * 9 : 0;
+      ctx.fillStyle = "rgba(242,239,233," + (0.10 + 0.09 * Math.abs(Math.cos(ph))) + ")";
+      ctx.beginPath(); ctx.arc(dx + drift, dy + drift * 0.4, rad, 0, 6.2832); ctx.fill();
+    }
+
+    var boxes = textBoxes();
+
+    if (v.scrim) {
+      boxes.forEach(function (b) {
+        var pad = 12;
+        var g2 = ctx.createRadialGradient(
+          b.x + b.w / 2, b.y + b.h / 2, 0,
+          b.x + b.w / 2, b.y + b.h / 2, Math.max(b.w, b.h) / 2 + pad
+        );
+        g2.addColorStop(0, "rgba(14,17,35,0.72)");
+        g2.addColorStop(1, "rgba(14,17,35,0)");
+        ctx.fillStyle = g2;
+        ctx.fillRect(b.x - pad * 3, b.y - pad, b.w + pad * 6, b.h + pad * 2);
+      });
+    }
+
+    var collisions = 0;
+
+    if (figL) {
+      var shimmer = motion ? 0.86 + 0.14 * Math.sin(t * 0.5) : 1;
+      sky.minors.forEach(function (mi) {
+        var x = mi.x * figL.scale + figL.ox, y = mi.y * figL.scale + figL.oy;
+        if (x < -6 || x > VW + 6 || y < -6 || y > VH + 6) return;
+        var o = mi.featured ? twinkle(mi, t) : (mi.hi + mi.lo) / 2 * shimmer;
+        ctx.fillStyle = "rgba(255,255,255," + o.toFixed(3) + ")";
+        ctx.beginPath(); ctx.arc(x, y, Math.max(0.35, mi.r * figL.scale), 0, 6.2832); ctx.fill();
+      });
+
+      sky.giants.forEach(function (gi) {
+        var x = gi.x * figL.scale + figL.ox, y = gi.y * figL.scale + figL.oy;
+        var o = twinkle(gi, t);
+        ctx.fillStyle = "hsla(" + gi.hue + ",72%,72%," + o.toFixed(3) + ")";
+        ctx.beginPath(); ctx.arc(x, y, gi.r * figL.scale, 0, 6.2832); ctx.fill();
+      });
+
+      ctx.lineWidth = Math.max(0.5, 0.7 * figL.scale);
+      ctx.strokeStyle = "rgba(255,217,160,0.26)";
+      ctx.beginPath();
+      sky.edges.forEach(function (e) {
+        var a = sky.majors[e[0]], b = sky.majors[e[1]];
+        ctx.moveTo(a.x * figL.scale + figL.ox, a.y * figL.scale + figL.oy);
+        ctx.lineTo(b.x * figL.scale + figL.ox, b.y * figL.scale + figL.oy);
+      });
+      ctx.stroke();
+
+      sky.majors.forEach(function (ma) {
+        var x = ma.x * figL.scale + figL.ox, y = ma.y * figL.scale + figL.oy;
+        var o = twinkle(ma, t), rr = ma.r * figL.scale;
+        var halo = ctx.createRadialGradient(x, y, 0, x, y, rr * 5);
+        halo.addColorStop(0, "rgba(255,217,160," + (0.5 * o).toFixed(3) + ")");
+        halo.addColorStop(1, "rgba(255,217,160,0)");
+        ctx.fillStyle = halo;
+        ctx.beginPath(); ctx.arc(x, y, rr * 5, 0, 6.2832); ctx.fill();
+        ctx.fillStyle = "rgba(255,232,196," + o.toFixed(3) + ")";
+        ctx.beginPath(); ctx.arc(x, y, rr, 0, 6.2832); ctx.fill();
+
+        // A major counts as colliding when its glowing core sits inside a
+        // text box. That is the thing that actually looks like a mistake.
+        boxes.forEach(function (b) {
+          if (x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h) collisions++;
+        });
+      });
+
+      sky.flares.forEach(function (fl) {
+        var x = fl.x * figL.scale + figL.ox, y = fl.y * figL.scale + figL.oy;
+        var len = fl.len * figL.scale * 1.5;
+        var o = motion ? 0.5 + 0.3 * Math.abs(Math.sin((t + fl.delay) / fl.dur)) : 0.62;
+        [[len, 2.1], [2.1, len]].forEach(function (dim) {
+          var g3 = ctx.createLinearGradient(x - dim[0], y - dim[1], x + dim[0], y + dim[1]);
+          g3.addColorStop(0, "rgba(255,232,196,0)");
+          g3.addColorStop(0.5, "rgba(255,232,196," + (o * 0.55).toFixed(3) + ")");
+          g3.addColorStop(1, "rgba(255,232,196,0)");
+          ctx.fillStyle = g3;
+          ctx.beginPath(); ctx.ellipse(x, y, dim[0], dim[1], 0, 0, 6.2832); ctx.fill();
+        });
+      });
+    }
+
+    if (guides) {
+      ctx.setLineDash([6, 5]); ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(120,200,255,0.55)";
+      boxes.forEach(function (b) { ctx.strokeRect(b.x, b.y, b.w, b.h); });
+      if (region) {
+        ctx.strokeStyle = "rgba(232,168,124,0.8)";
+        ctx.strokeRect(region.x + 0.5, region.y + 0.5, region.w - 1, region.h - 1);
+        var ceil = figL.oy + sky.height * 0.62 * figL.scale;
+        ctx.strokeStyle = "rgba(255,217,160,0.6)";
+        ctx.beginPath(); ctx.moveTo(0, ceil); ctx.lineTo(VW, ceil); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(232,168,124,0.95)";
+        ctx.font = "10px -apple-system, sans-serif";
+        ctx.fillText("figure region, " + figL.scale.toFixed(2) + "x", 8, region.y + region.h - 7);
+        ctx.fillText("62% ceiling", 8, ceil - 5);
+      }
+      ctx.setLineDash([]);
+    }
+
+    var el = document.getElementById("collide");
+    if (!region) {
+      el.innerHTML = "<b>No figure</b> on this screen, so nothing can collide.";
+    } else {
+      el.innerHTML = "<b>" + collisions + "</b> figure star" + (collisions === 1 ? "" : "s") +
+        " sitting on text. Region scale <b>" + figL.scale.toFixed(2) + "x</b>" +
+        (figL.scale < 0.95 ? " (below 1:1, stars smaller than authored)" : "") + ".";
+    }
+  }
+
+  /* -------------------------------- screens -------------------------------- */
+  var SCREENS = {
+    contact: '<div class="qa"><p class="q">How should people reach you?</p>' +
+      '<p class="hint">Connect an account and we fill in the rest. We never post.</p></div>' +
+      '<div class="mid"><div class="rows">' +
+      '<div class="row"><span class="name">Instagram</span><span class="acc">Connect</span></div>' +
+      '<div class="row"><span class="name">X</span><span class="acc">Connect</span></div>' +
+      '<div class="row"><span class="name">LinkedIn</span><span class="acc">Connect</span></div>' +
+      '<div class="row"><span class="name">Phone</span><span class="acc">Add</span></div>' +
+      '</div></div><div class="acts"><button class="btn">Continue</button>' +
+      '<button class="ghost">Skip for now</button></div>',
+    name: '<div class="qa"><p class="q">What is your name?</p></div>' +
+      '<div class="mid"><div class="field">Tony Nguyen</div></div>' +
+      '<div class="acts"><button class="btn">Continue</button></div>',
+    welcome: '<div class="qa"><p class="wordmark">Haven</p>' +
+      '<p class="hint">Everyone you meet, findable later.</p></div><div class="mid"></div>' +
+      '<div class="acts"><button class="btn">Continue with Apple</button>' +
+      '<button class="ghost">Other sign-in options</button></div>',
+    card: '<div class="qa"></div><div class="mid" style="justify-content:flex-end">' +
+      '<p class="cardname">Tony Nguyen</p><p class="cardmeta">San Francisco</p>' +
+      '<p class="cardmeta" style="margin-top:10px;color:#FFD9A0">linkedin.com/in/tony-nguyen</p></div>' +
+      '<div class="acts"><button class="btn">This is me</button>' +
+      '<button class="ghost">Add another way to reach me</button></div>'
+  };
+
+  function renderUI() { document.getElementById("ui").innerHTML = SCREENS[screenKind]; }
+  function renderPicker() {
+    var v = VARIANTS[vi];
+    document.getElementById("vname").textContent = v.name;
+    document.getElementById("vnum").textContent = (vi + 1) + " of " + VARIANTS.length;
+    document.getElementById("vwhy").textContent = v.why;
+    var el = document.getElementById("verdict");
+    el.className = "verdict " + v.verdict[0];
+    el.textContent = v.verdict[1];
+  }
+  function paint() { draw(clock); }
+  function go(d) { vi = (vi + d + VARIANTS.length) % VARIANTS.length; renderPicker(); paint(); }
+
+  document.getElementById("prev").onclick = function (e) { e.stopPropagation(); go(-1); };
+  document.getElementById("next").onclick = function (e) { e.stopPropagation(); go(1); };
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowLeft") go(-1);
+    if (e.key === "ArrowRight") go(1);
+  });
+
+  function wire(attr, apply) {
+    var btns = document.querySelectorAll("[data-" + attr + "]");
+    Array.prototype.forEach.call(btns, function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        Array.prototype.forEach.call(btns, function (x) { x.classList.remove("on"); });
+        b.classList.add("on");
+        apply(b.getAttribute("data-" + attr));
+        paint();
+      };
+    });
+  }
+  wire("screen", function (v) { screenKind = v; renderUI(); });
+  wire("seed", function (v) { seed = v; });
+  wire("motion", function (v) { motion = v === "on"; });
+  wire("guides", function (v) { guides = v === "on"; });
+
+  (function () {
+    var p = document.getElementById("picker");
+    var on = false, sx = 0, sy = 0, ox = 0, oy = 0;
+    p.addEventListener("mousedown", function (e) {
+      if (e.target.tagName === "BUTTON") return;
+      on = true; p.classList.add("dragging");
+      var r = p.getBoundingClientRect();
+      p.style.left = r.left + "px"; p.style.top = r.top + "px";
+      p.style.right = "auto"; p.style.bottom = "auto";
+      sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top;
+      e.preventDefault();
+    });
+    document.addEventListener("mousemove", function (e) {
+      if (!on) return;
+      p.style.left = (ox + e.clientX - sx) + "px";
+      p.style.top = (oy + e.clientY - sy) + "px";
+    });
+    document.addEventListener("mouseup", function () { on = false; p.classList.remove("dragging"); });
+  })();
+
+  function fitDevice() {
+    var device = document.getElementById("device"), stage = document.getElementById("stage");
+    device.style.transform = "scale(1)";
+    var avail = window.innerHeight - device.getBoundingClientRect().top - 24;
+    deviceScale = Math.min(1, Math.max(0.4, avail / VH));
+    device.style.transform = "scale(" + deviceScale + ")";
+    stage.style.height = VH * deviceScale + "px";
+  }
+  window.addEventListener("resize", function () { fitDevice(); paint(); });
+
+  var start = null;
+  function frame(now) {
+    if (start === null) start = now;
+    clock = (now - start) / 1000;
+    draw(clock);
+    requestAnimationFrame(frame);
+  }
+
+  renderUI();
+  renderPicker();
+  fitDevice();
+  paint();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
