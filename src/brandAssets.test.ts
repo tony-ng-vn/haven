@@ -12,7 +12,7 @@ describe("Haven brand assets", () => {
     expect(html).toContain('href="/favicon-32x32.png"');
     expect(html).toContain('href="/apple-touch-icon.png"');
     expect(html).toContain("https://inhavens.com/og.png");
-    expect(html).toMatch(/<title>Haven<\/title>/);
+    expect(html).toMatch(/<title>Haven[^<]*<\/title>/);
     expect(html).not.toMatch(/euno/i);
     expect(html).not.toContain("icon.svg");
 

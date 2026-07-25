@@ -3,10 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="description" content="A personal memory layer over the people of your life." />
+    <meta name="description" content="Haven is a personal memory layer over the people of your life. Join the private beta at inhavens.com." />
+    <link rel="canonical" href="https://inhavens.com/" />
     <!-- Social preview. Card regenerated via scripts/generate-brand-assets.py
          from brand/nori.png (star field + Nori + Haven wordmark). -->
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Haven" />
     <meta property="og:url" content="https://inhavens.com/" />
     <meta property="og:title" content="Haven" />
     <meta property="og:description" content="A personal memory layer over the people of your life." />
@@ -19,6 +21,32 @@
     <meta name="twitter:image" content="https://inhavens.com/og.png" />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f5f7" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000" />
+    <!-- Site identity for search. "Inhavens" as alternateName ties the brand
+         query to this site; Google reads WebSite/Organization on the homepage
+         to pick the SERP site name and logo. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://inhavens.com/#org",
+            "name": "Haven",
+            "alternateName": ["Inhavens", "inhavens.com"],
+            "url": "https://inhavens.com/",
+            "logo": "https://inhavens.com/icon-512.png"
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://inhavens.com/#website",
+            "name": "Haven",
+            "alternateName": ["Inhavens", "inhavens.com"],
+            "url": "https://inhavens.com/",
+            "publisher": { "@id": "https://inhavens.com/#org" }
+          }
+        ]
+      }
+    </script>
     <link rel="preconnect" href="https://valued-bonefish-64.clerk.accounts.dev" crossorigin />
     <link rel="preconnect" href="https://third-hound-186.convex.cloud" crossorigin />
     <link rel="icon" href="/favicon.ico" sizes="any" />
@@ -29,10 +57,13 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <title>Haven</title>
+    <title>Haven (inhavens.com) - A personal memory layer over the people of your life</title>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <p>Haven (inhavens.com) - a personal memory layer over the people of your life.</p>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

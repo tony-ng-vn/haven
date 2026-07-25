@@ -168,10 +168,14 @@ export function Waitlist() {
                   </div>
                 </div>
               </form>
+              {/* The domain in the fine print lives here, not in the copy
+                  deck: it is the one crawlable "inhavens.com" in the body
+                  (locked by seo.test.ts), SEO chrome rather than wording a
+                  copy pass may touch. */}
               {error !== null ? (
                 <p className="wl-error" role="alert">{error}</p>
               ) : (
-                <p className="wl-fine">{WAITLIST_COPY.fine}</p>
+                <p className="wl-fine">{WAITLIST_COPY.fine} - inhavens.com</p>
               )}
             </div>
           </>
