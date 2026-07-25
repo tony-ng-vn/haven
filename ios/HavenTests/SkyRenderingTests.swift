@@ -148,3 +148,67 @@ struct SkyTwinkleTests {
         #expect(value.isFinite)
     }
 }
+
+// MARK: - Figure band
+
+/// A question screen owns its top, so the figure takes the gap between the
+/// header and the content instead. These assert the figure actually stays in
+/// that gap, because a star drawn over the question is the one thing that reads
+/// as a mistake rather than as atmosphere.
+@Suite("Figure band layout")
+struct FigureBandTests {
+    private let source = CGSize(width: SkyGenerator.width, height: SkyGenerator.height)
+
+    /// The lowest a star can be placed: placeMajors caps y at 62% of the source.
+    private func figureBottom(_ layout: SkyLayout) -> Double {
+        layout.point(x: 0, y: SkyGenerator.height * 0.62).y
+    }
+
+    @Test("the figure stays inside the band it was given")
+    func staysInBand() {
+        for height in [90.0, 140.0, 260.0, 420.0] {
+            let band = CGRect(x: 0, y: 210, width: 393, height: height)
+            let layout = SkyLayout(band: band)
+            #expect(layout.point(x: 0, y: 0).y >= band.minY - 0.001,
+                    "band \(height): figure starts above the band")
+            #expect(figureBottom(layout) <= band.maxY + 0.001,
+                    "band \(height): figure reaches past the band")
+        }
+    }
+
+    @Test("a thin band shrinks the figure rather than overflowing it")
+    func thinBandShrinks() {
+        let thin = SkyLayout(band: CGRect(x: 0, y: 200, width: 393, height: 120))
+        let roomy = SkyLayout(band: CGRect(x: 0, y: 200, width: 393, height: 600))
+        #expect(thin.scale < roomy.scale)
+        // Width is the other limit, so a roomy band is capped at 1:1-ish rather
+        // than growing without bound.
+        #expect(roomy.scale == 393.0 / SkyGenerator.width)
+    }
+
+    @Test("the figure is centred horizontally when the band limits by height")
+    func centredWhenHeightLimited() {
+        let band = CGRect(x: 0, y: 100, width: 393, height: 150)
+        let layout = SkyLayout(band: band)
+        let drawnWidth = SkyGenerator.width * layout.scale
+        let left = layout.point(x: 0, y: 0).x
+        let right = layout.point(x: SkyGenerator.width, y: 0).x
+        #expect(abs(left - (band.midX - drawnWidth / 2)) < 0.001)
+        #expect(abs(right - (band.midX + drawnWidth / 2)) < 0.001)
+    }
+
+    @Test("a degenerate band collapses to nothing instead of dividing by zero")
+    func degenerateBand() {
+        #expect(SkyLayout(band: CGRect(x: 0, y: 0, width: 0, height: 100)).scale == 0)
+        #expect(SkyLayout(band: CGRect(x: 0, y: 0, width: 393, height: 0)).scale == 0)
+    }
+
+    @Test("no band falls back to filling the view")
+    func noBandFills() {
+        let container = CGSize(width: 393, height: 852)
+        let banded = SkyLayout(figureBand: CGRect(x: 0, y: 0, width: 393, height: 300), container: container)
+        let filled = SkyLayout(figureBand: nil, container: container)
+        #expect(filled.scale == SkyLayout(container: container).scale)
+        #expect(banded.scale != filled.scale)
+    }
+}

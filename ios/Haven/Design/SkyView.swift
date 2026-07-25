@@ -16,20 +16,31 @@ struct SkyView: View {
     /// `StarSlot.litMajorIndices` to derive it from filled fields; the default
     /// is the complete figure, which is what the card and the beacon show.
     let litMajors: Set<Int>
+    /// The band the figure may occupy, in this view's own coordinate space.
+    ///
+    /// Nil fills the whole view, which is what the card and the beacon want:
+    /// they have no header competing for the top. A question screen passes the
+    /// gap between its header and its content, because a figure drawn over the
+    /// question is the one thing that reads as a mistake.
+    let figureBand: CGRect?
 
     @HavenReduceMotion private var reduceMotion
 
-    init(sky: Sky, litMajors: Set<Int>? = nil) {
+    init(sky: Sky, litMajors: Set<Int>? = nil, figureBand: CGRect? = nil) {
         self.sky = sky
         self.litMajors = litMajors ?? Set(sky.majors.indices)
+        self.figureBand = figureBand
     }
 
     var body: some View {
         ZStack {
             // Three layers, split by how often each has to repaint.
+            // The nebulae stay full bleed whatever the figure does. They are
+            // the ground, not the person, and cropping them to a band would
+            // leave the rest of the screen flat.
             SkyBackdrop(sky: sky)
-            ShimmerField(sky: sky)
-            AnimatedSky(sky: sky, litMajors: litMajors, animating: !reduceMotion)
+            ShimmerField(sky: sky, figureBand: figureBand)
+            AnimatedSky(sky: sky, litMajors: litMajors, animating: !reduceMotion, figureBand: figureBand)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -42,11 +53,22 @@ struct SkyView: View {
 private struct SkyBackdrop: View {
     let sky: Sky
 
+    /// How far the generator's nebula alphas are pulled back for a full-screen
+    /// phone. See the note where it is applied.
+    private static let nebulaDamping: Double = 0.4
+
     var body: some View {
         Canvas(rendersAsynchronously: true) { context, size in
             let layout = SkyLayout(container: size)
             for nebula in sky.nebulae {
                 let colour = Color(skyHue: nebula.hue, saturation: 0.82, lightness: 0.58)
+                // Damped well below the alpha the generator carries. Those
+                // values were authored for a 384-wide card, where you see a
+                // whole soft ellipse. Filling a phone screen crops to the
+                // middle, and the middle of a radial gradient is its core --
+                // undamped, a person whose hues land on green and teal gets a
+                // screen washed in colours the dusk palette does not contain.
+                let alpha = nebula.alpha * Self.nebulaDamping
                 context.drawLayer { layer in
                     // Radial gradients are circular, so the ellipse is drawn in a
                     // scaled space instead of being stretched afterwards.
@@ -56,7 +78,7 @@ private struct SkyBackdrop: View {
                     layer.fill(
                         Path(ellipseIn: CGRect(x: -1, y: -1, width: 2, height: 2)),
                         with: .radialGradient(
-                            Gradient(colors: [colour.opacity(nebula.alpha), colour.opacity(0)]),
+                            Gradient(colors: [colour.opacity(alpha), colour.opacity(0)]),
                             center: .zero,
                             startRadius: 0,
                             endRadius: 1
@@ -76,6 +98,7 @@ private struct SkyBackdrop: View {
 /// instead of 150. Do not move these into the animated canvas.
 private struct ShimmerField: View {
     let sky: Sky
+    let figureBand: CGRect?
 
     @HavenReduceMotion private var reduceMotion
     @State private var dimmed = false
@@ -84,7 +107,7 @@ private struct ShimmerField: View {
 
     var body: some View {
         Canvas(rendersAsynchronously: true) { context, size in
-            let layout = SkyLayout(container: size)
+            let layout = SkyLayout(figureBand: figureBand, container: size)
             for star in sky.minors where !star.featured {
                 context.fill(
                     circle(at: layout.point(x: star.x, y: star.y), radius: layout.length(star.r)),
@@ -113,6 +136,7 @@ private struct AnimatedSky: View {
     let sky: Sky
     let litMajors: Set<Int>
     let animating: Bool
+    let figureBand: CGRect?
 
     var body: some View {
         if animating {
@@ -130,7 +154,7 @@ private struct AnimatedSky: View {
     /// `time` is nil when nothing is animating, which is the Reduce Motion path.
     private func canvas(time: Double?) -> some View {
         Canvas(rendersAsynchronously: true) { context, size in
-            let layout = SkyLayout(container: size)
+            let layout = SkyLayout(figureBand: figureBand, container: size)
             drawMinors(&context, layout, time)
             drawGiants(&context, layout, time)
             drawEdges(&context, layout)

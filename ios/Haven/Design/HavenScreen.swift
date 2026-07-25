@@ -14,21 +14,67 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
     @ViewBuilder var actions: Actions
 
     @State private var contentAreaHeight: CGFloat = 0
+    @State private var headerBottom: CGFloat = 0
+    @State private var contentTop: CGFloat = 0
+
+    /// The gap between the header and the content, which is where the figure
+    /// goes. Nil when there is no figure to place or no gap worth using.
+    ///
+    /// A question and the figure both want the top of the screen, and the
+    /// question wins -- so the figure takes the space that is actually free.
+    /// The band is measured rather than assumed, because how much room is left
+    /// depends on the screen, the text length and the Dynamic Type size.
+    private var figureBand: CGRect? {
+        guard sky != nil, headerBottom > 0, contentTop > headerBottom else { return nil }
+        let top = headerBottom + FigureBand.inset
+        let height = contentTop - top - FigureBand.inset
+        guard height >= FigureBand.minimum else { return nil }
+        return CGRect(x: 0, y: top, width: screenWidth, height: height)
+    }
+
+    @State private var screenWidth: CGFloat = 0
 
     var body: some View {
         ZStack {
-            NightBackground()
-            DustLayer()
-            if let sky {
-                SkyView(sky: sky, litMajors: litMajors)
+            // All three decorative layers have to reach the physical edge, not
+            // the safe area. Inset even one of them and its straight edge shows
+            // as a square corner inside the display's rounded one -- the app
+            // stops looking like it belongs on the device. iOS clips the window
+            // to the corner radius itself once the content actually fills it.
+            ZStack {
+                NightBackground()
+                DustLayer()
+                if let sky {
+                    SkyView(sky: sky, litMajors: litMajors, figureBand: figureBand)
+                }
             }
+            .ignoresSafeArea()
 
             VStack(spacing: 0) {
                 header
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .background {
+                        GeometryReader { geo in
+                            Color.clear.preference(
+                                key: HeaderBottomKey.self,
+                                value: geo.frame(in: .named(FigureBand.space)).maxY
+                            )
+                        }
+                    }
 
                 ScrollView {
                     content
+                        // Measured before the centring frame, so this is where
+                        // the content visually starts rather than where its
+                        // scroll area does.
+                        .background {
+                            GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: ContentTopKey.self,
+                                    value: geo.frame(in: .named(FigureBand.space)).minY
+                                )
+                            }
+                        }
                         .frame(maxWidth: .infinity, minHeight: contentAreaHeight, alignment: .center)
                         .padding(.vertical, 20)
                 }
@@ -49,13 +95,68 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
             .padding(.top, 8)
             .padding(.bottom, 12)
         }
+        .coordinateSpace(name: FigureBand.space)
+        .background {
+            GeometryReader { geo in
+                Color.clear.preference(key: ScreenWidthKey.self, value: geo.size.width)
+            }
+        }
         .onPreferenceChange(ContentAreaHeightKey.self) { height in
             contentAreaHeight = height
         }
+        .onPreferenceChange(HeaderBottomKey.self) { value in
+            headerBottom = value
+        }
+        .onPreferenceChange(ContentTopKey.self) { value in
+            contentTop = value
+        }
+        .onPreferenceChange(ScreenWidthKey.self) { value in
+            screenWidth = value
+        }
     }
+
+}
+
+/// Constants for the figure band. Free-standing because HavenScreen is generic
+/// and Swift has no static stored properties in generic types.
+private enum FigureBand {
+    static let space = "havenScreen"
+    /// Breathing room so the figure never crowds the type it sits between.
+    static let inset: CGFloat = 12
+    /// Below this the figure is squashed past reading as a figure at all, and
+    /// showing none beats showing a smear.
+    static let minimum: CGFloat = 90
 }
 
 private struct ContentAreaHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct HeaderBottomKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// Reduced with `min` over non-zero values: the topmost thing the content draws
+/// is what the figure has to stay clear of.
+private struct ContentTopKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        guard next > 0 else { return }
+        value = value > 0 ? min(value, next) : next
+    }
+}
+
+private struct ScreenWidthKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {

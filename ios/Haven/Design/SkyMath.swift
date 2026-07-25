@@ -24,6 +24,39 @@ struct SkyLayout {
         )
     }
 
+    /// Fits the figure into a band of the view rather than filling the whole of
+    /// it, for a screen whose top is already taken by a question.
+    ///
+    /// The scale is set by the figure's real extent, not the full source height:
+    /// `placeMajors` never puts a star below 62% of it, so scaling by 560 would
+    /// leave the bottom third of the band empty and push stars out past it.
+    /// Whichever of the width or that band runs out first wins, which is what
+    /// keeps the figure inside the space it was given.
+    init(band: CGRect, source: CGSize = CGSize(width: SkyGenerator.width, height: SkyGenerator.height)) {
+        let extent = source.height * 0.62
+        guard source.width > 0, extent > 0, band.width > 0, band.height > 0 else {
+            scale = 0
+            offset = .zero
+            return
+        }
+        let s = min(band.width / source.width, band.height / extent)
+        scale = s
+        offset = CGSize(
+            width: band.minX + (band.width - source.width * s) / 2,
+            height: band.minY
+        )
+    }
+
+    /// Band if there is one, whole view otherwise. Every figure layer resolves
+    /// its layout through here so they cannot disagree about where the figure is.
+    init(figureBand: CGRect?, container: CGSize) {
+        if let figureBand, figureBand.height > 0 {
+            self.init(band: figureBand)
+        } else {
+            self.init(container: container)
+        }
+    }
+
     func point(x: Double, y: Double) -> CGPoint {
         CGPoint(x: x * scale + offset.width, y: y * scale + offset.height)
     }
