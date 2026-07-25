@@ -88,6 +88,23 @@ Springs and haptics are judged by hand on a device, because no assertion capture
 
 Verified: this scaffold builds green against ConvexMobile 0.8.1, ClerkKit/ClerkKitUI 1.3.2, and ClerkConvex 0.1.0 on the iOS 26.5 simulator.
 
+## Design system
+
+Everything in `Haven/Design` is milestone 2 of `../phase1-build-plan.md`, and everything downstream imports its vocabulary rather than inventing its own.
+
+- `HavenColor` is the committed dusk palette. The list is closed: a surface that seems to need a new hue almost always needs an existing one at a different opacity.
+- `HavenFont` holds the type rules as view modifiers, not raw fonts, for one reason: it keeps `.serif` inside that one file. Serif (New York) is reserved for people's names via `personName(_:)`, and everything else is SF Pro. A grep for "serif" anywhere else in `Haven/` should return nothing. Every style is built from a relative text style, so Dynamic Type scales all of it.
+- `HavenMotion` holds the four durations and the strong ease-out. Use `havenAnimation(_:value:)` instead of `.animation(_:value:)` and Reduce Motion is handled for you: the state change still happens, it just arrives instantly.
+- `NightBackground` and `DustLayer` are the atmosphere. Neither ever responds to progress.
+- `SkyView` renders a `Sky` from `SkyGenerator`. It draws the sky at rest and deliberately knows nothing about ignition order or the card reveal.
+- `StarSlot` fixes which figure star each profile field owns. Do not make it dynamic; the edit screen's unlit stars are only legible because a field's star never moves.
+- `HavenScreen`, `HavenField`, `PrimaryButton`, `GhostButton` and `HavenRow` are the shared controls.
+
+There are no screens yet. The way to look at any of this is the SwiftUI previews, which cover the default size, an accessibility text size, and the Reduce Motion path.
+SwiftUI's own `accessibilityReduceMotion` is read-only, so the previews flip it with `havenReduceMotion()` instead.
+
+The visual result has never been looked at by a human. Compiling and passing tests says nothing about whether it looks right.
+
 ## Architecture notes
 
 - Dependencies (SPM, pinned in `project.yml`): `ConvexMobile` (convex-swift), `ClerkKit` + `ClerkKitUI` (clerk-ios), `ClerkConvex` (clerk-convex-swift).
