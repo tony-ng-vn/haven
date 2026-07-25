@@ -2,7 +2,7 @@
 // profiles.ts both need this exact shape, and one definition is what keeps
 // the stored document and the mutation arguments from drifting apart.
 
-import { Infer, v } from "convex/values";
+import { v } from "convex/values";
 
 // Email is deliberately absent: it was cut from the contact step on
 // 2026-07-24 and nothing should reintroduce it as a platform.
@@ -12,8 +12,6 @@ export const platformValidator = v.union(
   v.literal("linkedin"),
   v.literal("phone"),
 );
-
-export type Platform = Infer<typeof platformValidator>;
 
 // `verified` means the handle VALUE itself was proven, not merely that an
 // OAuth round trip happened: X hands back the username, so it is verified,

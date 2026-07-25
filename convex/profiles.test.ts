@@ -243,13 +243,7 @@ test("setUsername claims a normalized username owned by the caller", async () =>
   expect(await me.as.query(api.profiles.getMyProfile, {})).toMatchObject({
     username: "maya_7",
   });
-  const stored = await t.run((ctx) =>
-    ctx.db
-      .query("profiles")
-      .withIndex("by_user", (q) => q.eq("userId", me.userId))
-      .unique(),
-  );
-  expect(stored?.username).toBe("maya_7");
+  expect((await storedProfile(t, me.userId))?.username).toBe("maya_7");
 });
 
 test("setUsername enforces uniqueness across users", async () => {

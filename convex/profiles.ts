@@ -155,12 +155,12 @@ async function requirePhotoBlob(ctx: MutationCtx, photoStorageId: Id<"_storage">
   }
 }
 
-// Address ladder for a name: bare first name, then first_last, then a short
-// numeric suffix. Underscore rather than hyphen because USERNAME_PATTERN --
-// shared with the legacy setUsername path -- allows only a-z, 0-9 and "_".
 const HANDLE_SUFFIX_TRIES = 10;
 const HANDLE_SUGGESTIONS = 3;
 
+// Address ladder for a name: bare first name, then first_last, then a short
+// numeric suffix. Underscore rather than hyphen because USERNAME_PATTERN --
+// shared with the legacy setUsername path -- allows only a-z, 0-9 and "_".
 function handleCandidates(name: string): string[] {
   const parts = normalizeName(name)
     .split(" ")
@@ -231,6 +231,8 @@ function toPublicHandles(handles: HandleInput[] | undefined): PublicHandle[] {
 }
 
 async function toPublicCard(ctx: QueryCtx, profile: Doc<"profiles">) {
+  // A row claimed by the legacy web flow has no card yet, and an empty card
+  // page is worse than a plain "no such person".
   if (profile.name === undefined) {
     return null;
   }
@@ -517,8 +519,6 @@ export const getByHandle = query({
     if (profile === null) {
       return null;
     }
-    // A row claimed by the legacy web flow has no card yet, and an empty card
-    // page is worse than a plain "no such person".
     return await toPublicCard(ctx, profile);
   },
 });
