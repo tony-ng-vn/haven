@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { LENS, edgeAlpha, falloff, figureStars, magnify } from "./lens";
+import { LENS, edgeAlpha, falloff, figureStars, magnify, wanderPoint } from "./lens";
 import { spanningTree } from "./sky";
 
 type Star = {
@@ -16,9 +16,12 @@ type Star = {
 // stars move faster. Returns its own teardown. Ported from the approved
 // prototype so the shipped page matches it exactly.
 //
-// With `withLens`, stars near the pointer also join into a constellation. The
+// With `withLens`, stars near the pointer join into a constellation. The
 // figure is additive: the sky underneath is never dimmed and the lens has no
 // rim, so it reads as a region of attention rather than a hole in the page.
+// When the pointer is gone or still for a couple of seconds the lens wanders
+// on its own, which is what a phone sees (and what keeps an idle desktop
+// alive). A finger down on the page aims it the way a cursor does.
 function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
   const ctx = canvas.getContext("2d");
   if (ctx === null) return () => {};
@@ -32,9 +35,14 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
   let stars: Star[] = [];
 
   // Where the lens is, where it is heading, and how far it has faded in. It
-  // starts off-canvas so nothing is drawn until the pointer first moves.
+  // starts off-canvas so nothing is drawn until the first drive (pointer or
+  // wander) places it.
   const lens = { x: -1, y: -1, tx: -1, ty: -1, on: 0 };
   let hasPointer = false;
+  // Touch only counts while a finger is down. Free-floating touchmoves and a
+  // leftover tap position must not stick a lens the way a hovering cursor can.
+  let touchActive = false;
+  let lastMove = -1e9;
 
   function size() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -124,15 +132,40 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
     });
   }
 
+  function placeLens(x: number, y: number) {
+    lens.tx = x;
+    lens.ty = y;
+    // First sighting: place the lens rather than flying it in from the corner.
+    if (lens.x < 0) {
+      lens.x = lens.tx;
+      lens.y = lens.ty;
+    }
+  }
+
+  function aimFromClient(clientX: number, clientY: number, now: number) {
+    const rect = canvas.getBoundingClientRect();
+    placeLens(clientX - rect.left, clientY - rect.top);
+    hasPointer = true;
+    lastMove = now;
+  }
+
   function frame(t: number) {
     const time = t / 1000;
     ctx!.clearRect(0, 0, w, h);
 
     if (lensOn) {
-      // Fade on presence, not on movement: a cursor that arrives and holds
-      // still should still bloom, and one that leaves should fade out slowly.
-      if (hasPointer) lens.on = Math.min(lens.on + 0.05, 1);
-      else lens.on = Math.max(lens.on - 0.02, 0);
+      // Follow while the pointer (or a finger) is active and recent; otherwise
+      // wander so a phone always sees the figure and an idle desktop stays alive.
+      const wandering = !hasPointer || t - lastMove > LENS.idleMs;
+      if (wandering) {
+        const p = wanderPoint(time, w, h);
+        placeLens(p.x, p.y);
+        lens.on = Math.min(lens.on + 0.012, 1);
+      } else {
+        // Fade on presence, not on movement: a cursor that arrives and holds
+        // still should still bloom.
+        lens.on = Math.min(lens.on + 0.05, 1);
+      }
       // Heavy lag: the lens trails well behind the cursor, which is what stops
       // it feeling attached to the pointer.
       lens.x += (lens.tx - lens.x) * LENS.lag;
@@ -163,26 +196,30 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
   // window and converted to canvas coordinates. The context is already scaled
   // by the device pixel ratio, so these stay CSS pixels.
   function onPointerMove(event: PointerEvent) {
-    // A touch must never masquerade as a cursor, or a phone would get a lens
-    // that teleports to wherever the last tap landed.
-    if (event.pointerType === "touch") return;
-    const rect = canvas.getBoundingClientRect();
-    lens.tx = event.clientX - rect.left;
-    lens.ty = event.clientY - rect.top;
-    // First sighting: place the lens rather than flying it in from the corner.
-    if (lens.x < 0) {
-      lens.x = lens.tx;
-      lens.y = lens.ty;
-    }
-    hasPointer = true;
+    if (event.pointerType === "touch" && !touchActive) return;
+    aimFromClient(event.clientX, event.clientY, performance.now());
+  }
+
+  function onPointerDown(event: PointerEvent) {
+    if (event.pointerType !== "touch") return;
+    touchActive = true;
+    aimFromClient(event.clientX, event.clientY, performance.now());
+  }
+
+  function onPointerUp(event: PointerEvent) {
+    if (event.pointerType !== "touch") return;
+    touchActive = false;
+    hasPointer = false;
   }
 
   // Two ways to notice the cursor is gone, because either one alone misses
   // cases: a fast exit off the top of the window can skip the leave event, and
   // switching apps with the pointer still over the page only fires blur. Miss
-  // both and the figure stays lit at the last position forever.
+  // both and the figure would stay locked to the last position forever (wander
+  // would still cover idle, but blur should release the follow target).
   function onPointerGone() {
     hasPointer = false;
+    touchActive = false;
   }
 
   build();
@@ -191,6 +228,9 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
   window.addEventListener("resize", onResize);
   if (lensOn) {
     window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
     document.addEventListener("mouseleave", onPointerGone);
     window.addEventListener("blur", onPointerGone);
   }
@@ -199,6 +239,9 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
     cancelAnimationFrame(raf);
     window.removeEventListener("resize", onResize);
     window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerdown", onPointerDown);
+    window.removeEventListener("pointerup", onPointerUp);
+    window.removeEventListener("pointercancel", onPointerUp);
     document.removeEventListener("mouseleave", onPointerGone);
     window.removeEventListener("blur", onPointerGone);
   };

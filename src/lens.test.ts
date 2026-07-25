@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { LENS, edgeAlpha, falloff, figureStars, magnify } from "./lens";
+import { LENS, edgeAlpha, falloff, figureStars, magnify, wanderPoint } from "./lens";
 import { spanningTree } from "./sky";
 
 const CENTRE = { x: 100, y: 100 };
@@ -106,6 +106,24 @@ describe("edgeAlpha", () => {
     const inside = { x: 100, y: 100 };
     const outside = { x: 100 + LENS.radius + 10, y: 100 };
     expect(edgeAlpha(inside, outside, CENTRE)).toBe(0);
+  });
+});
+
+describe("wanderPoint", () => {
+  test("stays inside the sky", () => {
+    for (let t = 0; t < 40; t += 0.5) {
+      const p = wanderPoint(t, 1000, 800);
+      expect(p.x).toBeGreaterThan(0);
+      expect(p.x).toBeLessThan(1000);
+      expect(p.y).toBeGreaterThan(0);
+      expect(p.y).toBeLessThan(800);
+    }
+  });
+
+  test("moves over time instead of sitting still", () => {
+    const a = wanderPoint(0, 1000, 800);
+    const b = wanderPoint(3, 1000, 800);
+    expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan(10);
   });
 });
 

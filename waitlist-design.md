@@ -99,7 +99,8 @@ Using the same math is the point: the marketing page and the product speak one v
 | Lit star glow | `rgba(255,200,130,0.9)`, blur `10 * a` |
 | Lit star size | 1.35x the base star |
 | Figure membership | stars with `size > 0.95` within `radius / zoom` |
-| Driver | pointer only |
+| Driver | pointer, with wander when idle |
+| Idle before wander | 2000ms |
 
 ### The three rules that make it work
 
@@ -133,17 +134,14 @@ At softness 0.85 the fade begins almost at the centre, which is what makes the e
 
 ### What happens on a phone
 
-Nothing.
-The lens is pointer-only, and touch-generated pointer events are ignored so they cannot masquerade as a cursor.
-Phone visitors get today's drifting sky exactly as it is now.
+The lens wanders on its own, and a finger can aim it.
 
-This is a deliberate choice with a real cost, recorded here so it is not rediscovered as a bug.
-Most waitlist traffic arrives from a link shared into a phone, so most visitors will never see the lens.
+Most waitlist traffic arrives from a link shared into a phone, so the driver cannot be cursor-only.
+Shipped behavior is "wander when idle" from round 5 (`design/grill-breath-driver.html`): the lens follows the pointer (or a finger held down), and after about two still seconds it detaches and drifts along a slow path of two sines per axis at incommensurate rates, so it never visibly repeats.
+With no cursor, a phone is always wandering until a finger presses the page.
 
-The prepared alternative, if that becomes unacceptable: "wander when idle".
-The lens follows the pointer, and after about two still seconds it detaches and drifts along a slow path of two sines per axis at incommensurate rates, so it never visibly repeats.
-On a phone it simply always wanders.
-That variant is built and working in `design/grill-breath-driver.html` and is a small change from the cursor-only version.
+Touch is gated on press: only `pointerdown` through `pointerup` drives the lens.
+Free-floating touchmoves and a leftover tap position are ignored, so a phone never gets a lens stuck where the last tap landed.
 
 ## How this was decided
 
@@ -228,7 +226,8 @@ Miss both and the figure stays lit at its last position forever, on a page whose
 Reduced motion gets the still sky and no lens at all, rather than a frozen one, since a motionless lens under a stationary cursor says nothing.
 That path draws its one frame synchronously and never schedules another, since the only `requestAnimationFrame` call is guarded by it.
 
-Nothing is drawn until the first pointer move, and touch-generated moves are ignored, so a phone never pays for the lens.
+Wander starts on the first frame when the lens is on, so a phone pays for the figure immediately.
+Touch only aims while a finger is down; mouse and pen still follow on move.
 The spanning tree runs once per frame over the stars inside the radius, which is a small set.
 
 The form and the copy are unaffected: the lens is a canvas layer behind them and never intercepts pointer events.
@@ -245,8 +244,8 @@ If that ever matters, the fix that preserves the look is to take the N nearest q
 Whether the sign-in landing should get the lens too.
 It is one prop away; deliberately left off for now.
 
-Whether to revisit the phone case after launch, using "wander when idle".
-Worth deciding on real traffic rather than in advance.
+The phone case now ships "wander when idle" with press-gated touch aiming.
+Tap-to-bloom and centred pulse remain in `design/grill-breath-driver.html` if the driver needs another pass.
 
 The rename pass is still outstanding across copy, emails, and meta, tracked in `mvp-design.md`.
 
