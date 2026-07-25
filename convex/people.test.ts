@@ -585,3 +585,575 @@ test("embed gives up after 3 total attempts without throwing", async () => {
 
   consoleError.mockRestore();
 });
+
+// ----------------------------------------------------- structured attributes
+
+test("addPerson stores city, company, and role and returns them from getPerson", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+
+  const id = await as.mutation(api.people.addPerson, {
+    name: "Mai Tran",
+    company: " LinkedIn ",
+    role: "Design Engineer",
+    city: { name: "S\u00e0i G\u00f2n", country: "Vietnam" },
+  });
+
+  const person = await as.query(api.people.getPerson, { id });
+  expect(person?.company).toBe("LinkedIn");
+  expect(person?.role).toBe("Design Engineer");
+  expect(person?.city).toEqual({
+    name: "S\u00e0i G\u00f2n",
+    country: "Vietnam",
+  });
+
+  // The filter keys are Phase 3 chip infrastructure: derived server-side,
+  // accent-folded, and never part of the client shape.
+  const stored = await t.run((ctx) => ctx.db.get("people", id));
+  expect(stored?.companyKey).toBe("linkedin");
+  expect(stored?.roleKey).toBe("design engineer");
+  expect(stored?.cityKey).toBe("sai gon");
+});
+
+test("addPerson rejects blank structured attributes", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  await expect(
+    as.mutation(api.people.addPerson, { name: "Mai", company: "  " }),
+  ).rejects.toThrow("Company cannot be blank");
+  await expect(
+    as.mutation(api.people.addPerson, { name: "Mai", city: { name: " " } }),
+  ).rejects.toThrow("City cannot be blank");
+});
+
+// ---------------------------------------------------------- contact handles
+
+test("addPerson stores contact handles and a preferred platform", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+
+  const id = await as.mutation(api.people.addPerson, {
+    name: "Mai Tran",
+    // Free-form platforms on purpose: a saved person can carry any way to
+    // reach them, not just the four platforms of your own card.
+    contactHandles: [
+      { platform: " Instagram ", value: "mai.makes" },
+      { platform: "whatsapp", value: "+84 90 123 4567" },
+    ],
+    preferredPlatform: "WhatsApp",
+  });
+
+  const person = await as.query(api.people.getPerson, { id });
+  expect(person?.contactHandles).toEqual([
+    { platform: "instagram", value: "mai.makes" },
+    { platform: "whatsapp", value: "+84 90 123 4567" },
+  ]);
+  expect(person?.preferredPlatform).toBe("whatsapp");
+});
+
+test("addPerson rejects bad handle lists", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+
+  // Case-differing duplicates are still duplicates: uniqueness runs on the
+  // normalized platform, which is also what the preferred pointer matches.
+  await expect(
+    as.mutation(api.people.addPerson, {
+      name: "Mai",
+      contactHandles: [
+        { platform: "Instagram", value: "a" },
+        { platform: "instagram", value: "b" },
+      ],
+    }),
+  ).rejects.toThrow("Keep one handle per platform");
+
+  await expect(
+    as.mutation(api.people.addPerson, {
+      name: "Mai",
+      contactHandles: [{ platform: "instagram", value: "a" }],
+      preferredPlatform: "telegram",
+    }),
+  ).rejects.toThrow("Choose a preferred platform you have a handle for");
+
+  await expect(
+    as.mutation(api.people.addPerson, {
+      name: "Mai",
+      contactHandles: Array.from({ length: 9 }, (_, i) => ({
+        platform: `platform${i}`,
+        value: "x",
+      })),
+    }),
+  ).rejects.toThrow("Keep at most 8 contact handles");
+});
+
+// -------------------------------------------------------------- contact photo
+
+// convex-test's storage mock drops the Blob's contentType, so photo
+// validation would always see undefined. Patch the system table directly --
+// same workaround as profiles.test.ts and captures.test.ts.
+async function seedPhoto(
+  t: ReturnType<typeof convexTest>,
+  contentType = "image/jpeg",
+) {
+  const id = await t.run((ctx) =>
+    ctx.storage.store(new Blob(["fake-photo"], { type: contentType })),
+  );
+  await t.run((ctx) => (ctx.db as any).patch("_storage", id, { contentType }));
+  return id;
+}
+
+test("addPerson stores a photo and getPerson returns a photo url", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const photoStorageId = await seedPhoto(t);
+
+  const id = await as.mutation(api.people.addPerson, {
+    name: "Mai",
+    photoStorageId,
+  });
+  const person = await as.query(api.people.getPerson, { id });
+  expect(person?.photoUrl).toEqual(expect.any(String));
+
+  // A person without a photo answers null, so the client never guesses.
+  const bareId = await as.mutation(api.people.addPerson, { name: "Vy" });
+  const bare = await as.query(api.people.getPerson, { id: bareId });
+  expect(bare?.photoUrl).toBeNull();
+});
+
+test("addPerson rejects a non-image photo without writing a person", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const blobId = await seedPhoto(t, "text/plain");
+
+  await expect(
+    as.mutation(api.people.addPerson, { name: "Mai", photoStorageId: blobId }),
+  ).rejects.toThrow("Please choose an image under 10 MB");
+
+  // The throw rolled the person insert back. The stray blob is the orphan
+  // sweep's job: a throwing mutation cannot delete storage, because the
+  // delete rolls back with everything else.
+  const people = await t.run((ctx) => ctx.db.query("people").collect());
+  expect(people).toHaveLength(0);
+});
+
+// ----------------------------------------------------------------- editPerson
+
+test("editPerson patches provided fields, clears on null, leaves the rest", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const id = await as.mutation(api.people.addPerson, {
+    name: "Mai Tran",
+    context: "met at the coffee meetup",
+    company: "LinkedIn",
+    city: { name: "Da Nang" },
+  });
+
+  vi.advanceTimersByTime(1000);
+  const before = await t.run((ctx) => ctx.db.get("people", id));
+
+  const edited = await as.mutation(api.people.editPerson, {
+    id,
+    role: "Recruiter",
+    company: null,
+  });
+
+  // role arrived, company cleared, everything omitted stayed put.
+  expect(edited.role).toBe("Recruiter");
+  expect(edited.company).toBeUndefined();
+  expect(edited.context).toBe("met at the coffee meetup");
+  expect(edited.city).toEqual({ name: "Da Nang" });
+  expect(edited.updatedAt).toBeGreaterThan(before!.updatedAt);
+
+  // The derived key clears with its display value, or the chip filter would
+  // keep matching a company the card no longer shows.
+  const stored = await t.run((ctx) => ctx.db.get("people", id));
+  expect(stored?.companyKey).toBeUndefined();
+  expect(stored?.roleKey).toBe("recruiter");
+});
+
+test("editPerson renames a person and search finds the new name", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const id = await as.mutation(api.people.addPerson, { name: "Maya Chen" });
+
+  await as.mutation(api.people.editPerson, {
+    id,
+    name: "Nguy\u1ec5n V\u0103n D\u0169ng",
+  });
+
+  const hits = await as.query(api.people.searchPeople, { query: "dung" });
+  expect(hits.map((p) => p.name)).toEqual(["Nguy\u1ec5n V\u0103n D\u0169ng"]);
+  expect(
+    await as.query(api.people.searchPeople, { query: "Maya" }),
+  ).toHaveLength(0);
+});
+
+test("editPerson rejects a blank name and never clears it", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const id = await as.mutation(api.people.addPerson, { name: "Mai" });
+  await expect(
+    as.mutation(api.people.editPerson, { id, name: "  " }),
+  ).rejects.toThrow("Name is required");
+});
+
+test("editPerson keeps the preferred pointer consistent with the handles", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const id = await as.mutation(api.people.addPerson, {
+    name: "Mai",
+    contactHandles: [
+      { platform: "instagram", value: "mai.makes" },
+      { platform: "whatsapp", value: "+84 90 123 4567" },
+    ],
+    preferredPlatform: "whatsapp",
+  });
+
+  // Replacing the list without the preferred platform clears the pointer
+  // instead of dangling it.
+  const afterDrop = await as.mutation(api.people.editPerson, {
+    id,
+    contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+  });
+  expect(afterDrop.preferredPlatform).toBeUndefined();
+
+  // Choosing a preferred platform that has no handle is refused.
+  await expect(
+    as.mutation(api.people.editPerson, { id, preferredPlatform: "telegram" }),
+  ).rejects.toThrow("Choose a preferred platform you have a handle for");
+
+  const afterPick = await as.mutation(api.people.editPerson, {
+    id,
+    preferredPlatform: "Instagram",
+  });
+  expect(afterPick.preferredPlatform).toBe("instagram");
+});
+
+test("editPerson swaps the photo and deletes the replaced blob", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const firstPhoto = await seedPhoto(t);
+  const id = await as.mutation(api.people.addPerson, {
+    name: "Mai",
+    photoStorageId: firstPhoto,
+  });
+
+  const secondPhoto = await seedPhoto(t);
+  const swapped = await as.mutation(api.people.editPerson, {
+    id,
+    photoStorageId: secondPhoto,
+  });
+  expect(swapped.photoUrl).toEqual(expect.any(String));
+  // The replaced blob is gone for good -- this commit path CAN delete.
+  expect(
+    await t.run((ctx) => ctx.db.system.get("_storage", firstPhoto)),
+  ).toBeNull();
+
+  // Clearing the photo also deletes the blob it dereferences.
+  const cleared = await as.mutation(api.people.editPerson, {
+    id,
+    photoStorageId: null,
+  });
+  expect(cleared.photoUrl).toBeNull();
+  expect(
+    await t.run((ctx) => ctx.db.system.get("_storage", secondPhoto)),
+  ).toBeNull();
+});
+
+test("deletePerson also removes the photo blob", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const photoStorageId = await seedPhoto(t);
+  const id = await as.mutation(api.people.addPerson, {
+    name: "Mai",
+    photoStorageId,
+  });
+
+  await as.mutation(api.people.deletePerson, { personId: id });
+
+  expect(
+    await t.run((ctx) => ctx.db.system.get("_storage", photoStorageId)),
+  ).toBeNull();
+});
+
+// ------------------------------------------------------------------ directory
+
+test("listPeople pages the caller's directory, most recently touched first", async () => {
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+
+  const a = await me.as.mutation(api.people.addPerson, { name: "An" });
+  vi.advanceTimersByTime(1000);
+  await me.as.mutation(api.people.addPerson, { name: "Binh" });
+  vi.advanceTimersByTime(1000);
+  await me.as.mutation(api.people.addPerson, { name: "Chi" });
+  await other.as.mutation(api.people.addPerson, { name: "Rao" });
+
+  // Editing An bumps them to the top: recency means last touched, not first
+  // created, which is what keeps the screen useful after months of use.
+  vi.advanceTimersByTime(1000);
+  await me.as.mutation(api.people.editPerson, { id: a, context: "met again" });
+
+  const page1 = await me.as.query(api.people.listPeople, {
+    paginationOpts: { numItems: 2, cursor: null },
+  });
+  expect(page1.page.map((p) => p.name)).toEqual(["An", "Chi"]);
+  expect(page1.isDone).toBe(false);
+
+  const page2 = await me.as.query(api.people.listPeople, {
+    paginationOpts: { numItems: 2, cursor: page1.continueCursor },
+  });
+  expect(page2.page.map((p) => p.name)).toEqual(["Binh"]);
+  expect(page2.isDone).toBe(true);
+
+  await expect(
+    t.query(api.people.listPeople, {
+      paginationOpts: { numItems: 1, cursor: null },
+    }),
+  ).rejects.toThrow("Not signed in");
+});
+
+// ------------------------------------------- MVP search contract (Phase 3)
+
+test("searchDirectory finds people by note keywords, scoped to the caller", async () => {
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+
+  await me.as.mutation(api.people.addPerson, {
+    name: "An Vo",
+    context: "wore a Spain shirt, works on the research team, talked soccer",
+    company: "Amazon",
+  });
+  await me.as.mutation(api.people.addPerson, {
+    name: "Binh Le",
+    context: "recruiter, met at the rooftop mixer",
+    company: "LinkedIn",
+  });
+  // Same keyword in another user's note must never surface here.
+  await other.as.mutation(api.people.addPerson, {
+    name: "Rao",
+    context: "planning a Spain trip",
+  });
+
+  const hits = await me.as.query(api.people.searchDirectory, {
+    keyword: "spain",
+  });
+  expect(hits.map((p) => p.name)).toEqual(["An Vo"]);
+});
+
+test("searchDirectory combines a keyword with chip filters", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+
+  await as.mutation(api.people.addPerson, {
+    name: "An Vo",
+    context: "talked soccer at the meetup",
+    company: "Amazon",
+  });
+  await as.mutation(api.people.addPerson, {
+    name: "Binh Le",
+    context: "talked soccer over coffee",
+    company: "LinkedIn",
+  });
+
+  const both = await as.query(api.people.searchDirectory, {
+    keyword: "soccer",
+  });
+  expect(both.map((p) => p.name).sort()).toEqual(["An Vo", "Binh Le"]);
+
+  const chipped = await as.query(api.people.searchDirectory, {
+    keyword: "soccer",
+    company: "amazon",
+  });
+  expect(chipped.map((p) => p.name)).toEqual(["An Vo"]);
+
+  const none = await as.query(api.people.searchDirectory, {
+    keyword: "soccer",
+    company: "Photon",
+  });
+  expect(none).toEqual([]);
+});
+
+test("searchDirectory filters by chips alone, accent-insensitively", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+
+  await as.mutation(api.people.addPerson, {
+    name: "An Vo",
+    company: "LinkedIn",
+    city: { name: "San Francisco" },
+  });
+  await as.mutation(api.people.addPerson, {
+    name: "Binh Le",
+    company: "LinkedIn",
+    role: "Recruiter",
+    city: { name: "S\u00e0i G\u00f2n" },
+  });
+
+  const company = await as.query(api.people.searchDirectory, {
+    company: "linkedin",
+  });
+  expect(company.map((p) => p.name).sort()).toEqual(["An Vo", "Binh Le"]);
+
+  // The accented stored city matches the plain-typed chip, same folding as
+  // name search.
+  const city = await as.query(api.people.searchDirectory, {
+    company: "LinkedIn",
+    city: "sai gon",
+  });
+  expect(city.map((p) => p.name)).toEqual(["Binh Le"]);
+
+  const role = await as.query(api.people.searchDirectory, { role: "recruiter" });
+  expect(role.map((p) => p.name)).toEqual(["Binh Le"]);
+
+  const miss = await as.query(api.people.searchDirectory, {
+    company: "LinkedIn",
+    city: "Da Nang",
+  });
+  expect(miss).toEqual([]);
+});
+
+test("searchDirectory with no keyword and no chips returns recent people", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  await as.mutation(api.people.addPerson, { name: "An" });
+  vi.advanceTimersByTime(1000);
+  await as.mutation(api.people.addPerson, { name: "Binh" });
+
+  const hits = await as.query(api.people.searchDirectory, {});
+  expect(hits.map((p) => p.name)).toEqual(["Binh", "An"]);
+});
+
+test("searchDirectory keyword also matches names and card text", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  await as.mutation(api.people.addPerson, {
+    name: "Nguy\u1ec5n V\u0103n D\u0169ng",
+    company: "Photon",
+  });
+
+  // The contract promises notes; matching the rest of the card is a strict
+  // superset that keeps one search box honest.
+  const byName = await as.query(api.people.searchDirectory, {
+    keyword: "dung",
+  });
+  expect(byName.map((p) => p.name)).toEqual(["Nguy\u1ec5n V\u0103n D\u0169ng"]);
+
+  const byCompany = await as.query(api.people.searchDirectory, {
+    keyword: "photon",
+  });
+  expect(byCompany).toHaveLength(1);
+});
+
+test("backfillSearchText patches legacy rows so keyword search finds them", async () => {
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  // A row from before searchText existed, inserted raw like a legacy write.
+  await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "Ada Lovelace",
+      normalizedName: "ada lovelace",
+      context: "compiler engineer, met at the analytical engines meetup",
+      updatedAt: Date.now(),
+    }),
+  );
+
+  // No pre-backfill query here: convex-test crashes iterating a search
+  // index over a row whose search field is missing, where real Convex just
+  // leaves the row out of the index. The patched count proves targeting.
+  const patched = await t.mutation(internal.people.backfillSearchText, {});
+  expect(patched).toBe(1);
+
+  const hits = await as.query(api.people.searchDirectory, {
+    keyword: "compiler",
+  });
+  expect(hits.map((p) => p.name)).toEqual(["Ada Lovelace"]);
+
+  // A second run finds nothing left to patch.
+  expect(await t.mutation(internal.people.backfillSearchText, {})).toBe(0);
+});
+
+test("directoryFacets lists the caller's chip values with counts", async () => {
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+
+  await me.as.mutation(api.people.addPerson, {
+    name: "A",
+    company: "LinkedIn",
+    city: { name: "S\u00e0i G\u00f2n" },
+  });
+  vi.advanceTimersByTime(1000);
+  await me.as.mutation(api.people.addPerson, {
+    name: "B",
+    company: "linkedin",
+    role: "Recruiter",
+  });
+  vi.advanceTimersByTime(1000);
+  await me.as.mutation(api.people.addPerson, {
+    name: "C",
+    company: "Amazon",
+    city: { name: "Sai Gon" },
+  });
+  await other.as.mutation(api.people.addPerson, { name: "D", company: "Photon" });
+
+  const facets = await me.as.query(api.people.directoryFacets, {});
+
+  // Case and accent variants collapse into one chip; the most recently used
+  // spelling is the label; bigger groups list first. Another user's values
+  // never appear.
+  expect(facets.companies).toEqual([
+    { value: "linkedin", count: 2 },
+    { value: "Amazon", count: 1 },
+  ]);
+  expect(facets.cities).toEqual([{ value: "Sai Gon", count: 2 }]);
+  expect(facets.roles).toEqual([{ value: "Recruiter", count: 1 }]);
+});
+
+test("searchDirectory reflects edits immediately", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const id = await as.mutation(api.people.addPerson, {
+    name: "An",
+    context: "met at the soccer game",
+  });
+
+  await as.mutation(api.people.editPerson, {
+    id,
+    context: "runs a pho place in district 3",
+  });
+
+  expect(
+    await as.query(api.people.searchDirectory, { keyword: "soccer" }),
+  ).toEqual([]);
+  expect(
+    (await as.query(api.people.searchDirectory, { keyword: "pho" })).map(
+      (p) => p.name,
+    ),
+  ).toEqual(["An"]);
+});
+
+test("editPerson enforces ownership, auth, and the context cap", async () => {
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+  const otherId = await other.as.mutation(api.people.addPerson, { name: "Rao" });
+
+  await expect(
+    me.as.mutation(api.people.editPerson, { id: otherId, context: "x" }),
+  ).rejects.toThrow("Person not found");
+  await expect(
+    t.mutation(api.people.editPerson, { id: otherId, context: "x" }),
+  ).rejects.toThrow("Not signed in");
+
+  const myId = await me.as.mutation(api.people.addPerson, { name: "Mai" });
+  await expect(
+    me.as.mutation(api.people.editPerson, {
+      id: myId,
+      context: "x".repeat(4001),
+    }),
+  ).rejects.toThrow("Context is too long");
+});

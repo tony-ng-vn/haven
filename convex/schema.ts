@@ -1,10 +1,12 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
+  cityInputValidator,
   cityValidator,
   handleValidator,
   platformValidator,
 } from "./profileFields";
+import { contactHandleValidator } from "./peopleFields";
 
 export default defineSchema({
   people: defineTable({
@@ -29,19 +31,55 @@ export default defineSchema({
     // Haven Meet provenance. Each side still gets a private people row; this
     // key only lets a repeat in-person exchange stay idempotent.
     havenContactUserId: v.optional(v.string()),
+    // Structured attributes for the MVP search contract: the display value
+    // and its accent-folded filter key travel together, because the Phase 3
+    // chips equality-match on the key (normalizeName in nameSearch.ts) while
+    // the UI shows what the user actually typed.
+    city: v.optional(cityInputValidator),
+    cityKey: v.optional(v.string()),
+    company: v.optional(v.string()),
+    companyKey: v.optional(v.string()),
+    role: v.optional(v.string()),
+    roleKey: v.optional(v.string()),
+    // A photo the user attached to this person, distinct from the capture
+    // screenshot above: the screenshot is provenance, the photo is the face.
+    photoStorageId: v.optional(v.id("_storage")),
+    // Bounded, not unbounded: the mutations cap the list at 8 entries with
+    // one handle per platform, so this array can never grow past that.
+    contactHandles: v.optional(v.array(contactHandleValidator)),
+    // Must name a platform present in contactHandles; removing that handle
+    // clears the pointer (enforced in people.ts, same invariant as
+    // profiles.primaryPlatform).
+    preferredPlatform: v.optional(v.string()),
     // Semantic search. embeddedText doubles as the idempotency key so the
     // embed action can skip recomputing an unchanged person.
     embedding: v.optional(v.array(v.float64())),
     embeddedText: v.optional(v.string()),
+    // Keyword haystack for search_text, pre-folded by personSearchText in
+    // nameSearch.ts. Optional because legacy rows need a backfill -- same
+    // reasoning as normalizedName above; see backfillSearchText.
+    searchText: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
+    // The Directory screen pages most-recently-touched first.
+    .index("by_user_and_updatedAt", ["userId", "updatedAt"])
     .index("by_user_and_havenContactUserId", ["userId", "havenContactUserId"])
     // Same reasoning as captures.by_screenshotId: the orphaned-upload sweep
     // needs a sound, bounded way to check "is this blob referenced?".
     .index("by_screenshotId", ["screenshotId"])
+    .index("by_photoStorageId", ["photoStorageId"])
+    // Chip-only searches (no keyword) range on one of these; a keyword
+    // search reaches the same chips through search_text's filterFields.
+    .index("by_user_and_companyKey", ["userId", "companyKey"])
+    .index("by_user_and_cityKey", ["userId", "cityKey"])
+    .index("by_user_and_roleKey", ["userId", "roleKey"])
     .searchIndex("search_normalized_name", {
       searchField: "normalizedName",
       filterFields: ["userId"],
+    })
+    .searchIndex("search_text", {
+      searchField: "searchText",
+      filterFields: ["userId", "companyKey", "cityKey", "roleKey"],
     })
     .vectorIndex("by_embedding", {
       vectorField: "embedding",

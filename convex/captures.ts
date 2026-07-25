@@ -11,12 +11,12 @@ import { Doc } from "./_generated/dataModel";
 import { extractProfile } from "./openaiClient";
 import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
-import { normalizeName } from "./nameSearch";
+import { normalizeName, personSearchText } from "./nameSearch";
+import { requireImageBlob } from "./imageBlobs";
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const extractedValidator = v.object({
   platform: v.string(),
@@ -45,21 +45,11 @@ export const createCapture = mutation({
     await checkRateLimit(ctx, userId, "createCapture:minute", 10, MINUTE_MS);
     await checkRateLimit(ctx, userId, "createCapture:day", 100, DAY_MS);
 
-    // Never trust the client's claim about what it uploaded -- read the
-    // real metadata Convex recorded for the blob before touching anything
-    // else, and delete the blob outright when it fails validation.
-    const meta = await ctx.db.system.get("_storage", args.screenshotId);
-    const isValidImage =
-      meta !== null &&
-      meta.contentType !== undefined &&
-      meta.contentType.startsWith("image/") &&
-      meta.size <= MAX_UPLOAD_BYTES;
-    if (!isValidImage) {
-      if (meta !== null) {
-        await ctx.storage.delete(args.screenshotId);
-      }
-      throw new Error("Please upload an image under 10 MB");
-    }
+    await requireImageBlob(
+      ctx,
+      args.screenshotId,
+      "Please upload an image under 10 MB",
+    );
 
     const captureId = await ctx.db.insert("captures", {
       userId,
@@ -210,9 +200,15 @@ export const acceptCapture = mutation({
     const personId = await ctx.db.insert("people", {
       userId,
       name: capture.extracted.name,
-      // Written here because this insert bypasses addPerson; without it the
-      // person is invisible to the normalized search index.
+      // Written here because this insert bypasses addPerson; without these
+      // the person is invisible to the name and keyword search indexes.
       normalizedName: normalizeName(capture.extracted.name),
+      searchText: personSearchText({
+        name: capture.extracted.name,
+        headline: capture.extracted.headline,
+        handle: capture.extracted.handle,
+        context: args.context,
+      }),
       link: args.link,
       context: args.context,
       updatedAt: Date.now(),
@@ -264,6 +260,11 @@ export const acceptManualCapture = mutation({
       name,
       // Same reason as acceptCapture: search visibility requires it.
       normalizedName: normalizeName(name),
+      searchText: personSearchText({
+        name,
+        headline: args.headline,
+        context: args.context,
+      }),
       link: args.link,
       context: args.context,
       headline: args.headline,
@@ -408,6 +409,13 @@ export const sweepOrphanedUploads = internalMutation({
         .withIndex("by_screenshotId", (q) => q.eq("screenshotId", file._id))
         .first();
       if (referencingPerson !== null) {
+        continue;
+      }
+      const referencingPersonPhoto = await ctx.db
+        .query("people")
+        .withIndex("by_photoStorageId", (q) => q.eq("photoStorageId", file._id))
+        .first();
+      if (referencingPersonPhoto !== null) {
         continue;
       }
       const referencingProfile = await ctx.db

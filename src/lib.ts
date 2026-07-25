@@ -126,12 +126,28 @@ export function buildEmbedText(fields: {
   platform?: string;
   handle?: string;
   headline?: string;
+  role?: string;
+  company?: string;
+  cityName?: string;
   context?: string;
 }): string {
   const platformLine = [fields.platform, fields.handle]
     .filter((part) => part !== undefined && part.trim() !== "")
     .join(" ");
-  return [fields.name, platformLine, fields.headline, fields.context]
+  // "Compiler engineer at Analytical Engines" embeds as the phrase a memory
+  // would use; either side alone still stands on its own.
+  const role = fields.role?.trim() ?? "";
+  const company = fields.company?.trim() ?? "";
+  const workLine =
+    role !== "" && company !== "" ? `${role} at ${company}` : role + company;
+  return [
+    fields.name,
+    platformLine,
+    fields.headline,
+    workLine,
+    fields.cityName,
+    fields.context,
+  ]
     .filter((part): part is string => part !== undefined && part.trim() !== "")
     .join("\n");
 }
