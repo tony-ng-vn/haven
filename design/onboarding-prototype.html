@@ -1,3 +1,8 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haven onboarding - revision 3</title>
 <style>
   :root, :root[data-theme="light"], :root[data-theme="dark"] {
@@ -213,6 +218,8 @@
   @media (prefers-reduced-motion: reduce) { .maj, .edge, .glow, .scr, .sky, .stepper { transition: none; } .btn, .row, .person { transition: none; } .sky.reveal { animation: none; } .spin { animation: none; } }
 </style>
 
+</head>
+<body>
 <div class="wrap">
 
   <header>
@@ -220,7 +227,7 @@
     <h1>Three questions, a card that is the constellation, and a real connect flow</h1>
     <p>
       Onboarding is <strong>three questions</strong> - photo is gone.
-      Contact is a real <strong>authorize</strong> flow: social rows connect, phone and email are typed, and a link field only ever appears after an attempt comes back empty.
+      Contact is a real <strong>authorize</strong> flow: social rows connect, phone is typed, and a link field only ever appears after an attempt comes back empty.
       The card lets the constellation be the hero instead of hiding it, the Lock Screen step is a picture, and search has an intelligent layer over literal matching.
     </p>
   </header>
@@ -406,8 +413,8 @@
         <p><strong>What this mock does:</strong> tapping a row waits three quarters of a second and fills in a fixed demo handle. On device that pause is the real round trip out to the app and back. The prototype cannot perform an actual redirect; the shipped app will.</p>
         <p>The screen is now split by input model, because that is the honest division:</p>
         <ul>
-          <li><strong>Connect an account</strong> - every social row. All four say <em>Connect</em> and all four start by authorizing. None of them advertise a link field.</li>
-          <li><strong>Or type one</strong> - phone and email, where there is no account to authorize against, so typing is the correct primary path rather than a compromise.</li>
+          <li><strong>Connect an account</strong> - every social row. All three say <em>Connect</em> and all three start by authorizing. None of them advertise a link field.</li>
+          <li><strong>Or type one</strong> - phone, where there is no account to authorize against, so typing is the correct primary path rather than a compromise.</li>
         </ul>
         <p>Cut to four: <strong>LinkedIn, X, Instagram, phone.</strong> What comes back from an authorization differs by platform, so the flow degrades in steps, and each step only becomes visible after the one above it fails:</p>
         <ul>
@@ -600,7 +607,7 @@
        auth         - authorize and the handle comes back with the token
        auth-confirm - authorizes and verifies you, but the payload has no handle
        auth-pro     - authorizes only for Professional accounts, else falls back
-       type         - there is nothing to authorize against (phone, email)
+       type         - there is nothing to authorize against (phone)
      Pasting a link is never a platform's advertised action. It only appears
      after an attempt, which is what keeps it a fallback instead of a path.
      slug is only used to derive a plausible demo handle in this mock. */
@@ -823,7 +830,7 @@
     /* Typed by definition: there is no account to authorize against. */
     if (p.method === "type") {
       hideEntry();
-      showEntry("", p.id === "phone" ? "Phone number" : "Email address", "");
+      showEntry("", "Phone number", "");
       fallbackText.hidden = true;
       renderContacts(); contactGo.disabled = true;
       return;
@@ -857,7 +864,7 @@
       state.awaiting = false;
       if (!silent) {
         renderContacts(); contactGo.disabled = false; applySky();
-        showEntry("Connected as <b>" + (state.name || DEMO.name) + "</b>. " + p.label + " " + AUTH_NOTE[p.id],
+        showEntry("Connected as <b>" + escapeHtml(state.name || DEMO.name) + "</b>. " + p.label + " " + AUTH_NOTE[p.id],
           p.url + "handle", state.handle);
       }
       return;
@@ -895,10 +902,9 @@
     var idrow = document.getElementById("idrow");
     var photoHtml = "";
     if (state.photo && state.platform) {
-      var tint = platform(state.platform).tint;
-      photoHtml = '<span class="idphoto" style="background:linear-gradient(140deg,#e8a87c,#b8788c)">' + name.charAt(0).toUpperCase() + "</span>";
+      photoHtml = '<span class="idphoto" style="background:linear-gradient(140deg,#e8a87c,#b8788c)">' + escapeHtml(name.charAt(0).toUpperCase()) + "</span>";
     }
-    idrow.innerHTML = photoHtml + '<p class="cardname">' + name + "</p>";
+    idrow.innerHTML = photoHtml + '<p class="cardname">' + escapeHtml(name) + "</p>";
     document.getElementById("cardMeta").textContent = state.city || "";
     var p = state.platform ? platform(state.platform) : null;
     var cc = document.getElementById("cardContact");
@@ -1078,3 +1084,5 @@
   go("welcome");
 })();
 </script>
+</body>
+</html>
