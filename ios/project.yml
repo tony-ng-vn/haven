@@ -45,7 +45,11 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.inhavens.haven
-        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        # Haven/Info.plist carries the UILaunchScreen dict (the launch colour
+        # has no INFOPLIST_KEY_* form); everything else is still generated and
+        # merged in. The generation flag for the launch screen is gone on
+        # purpose: it emits an empty UILaunchScreen that would fight the file's.
+        INFOPLIST_FILE: Haven/Info.plist
         # Clerk iOS persists its device token in the keychain; without a
         # keychain-access-group entitlement it fails with OSStatus -34018 and
         # sign-in returns 401 "signed out".

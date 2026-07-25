@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Partial plist: everything else is generated from build settings
+	  (GENERATE_INFOPLIST_FILE merges this file in). This exists for one key
+	  that has no INFOPLIST_KEY_* build-setting form: the launch screen's
+	  background colour. It points at the LaunchBackground colour set, which
+	  is HavenColor.night, so launch paints the exact colour the first frame
+	  starts on and the handoff is invisible.
+	-->
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+</dict>
+</plist>

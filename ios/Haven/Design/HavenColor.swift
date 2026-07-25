@@ -7,6 +7,11 @@ import SwiftUI
 // needs an existing one at a different opacity instead.
 enum HavenColor {
     /// Ground. The bottom of every screen's gradient starts here.
+    ///
+    /// Also duplicated as the `LaunchBackground` colour set, because a launch
+    /// screen is rendered by the system before any Swift runs and can only read
+    /// an asset. Change one and change the other, or the launch screen stops
+    /// matching the first frame.
     static let night = Color(havenHex: "#0E1123")
     /// Raised surfaces and the top of the background gradient.
     static let dusk = Color(havenHex: "#232A4D")
