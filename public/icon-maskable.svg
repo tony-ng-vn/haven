@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" fill="#0071e3"/>
-  <!-- Same path-drawn "H" as icon.svg; see the note there. -->
-  <g transform="translate(10.88 10.88) scale(0.66)">
-    <path d="M22.5 17.5v29M41.5 17.5v29M22.5 32h19" fill="none" stroke="#fff" stroke-width="6.5" stroke-linecap="round"/>
-  </g>
-</svg>

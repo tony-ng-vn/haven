@@ -1,5 +1,5 @@
 ---
-name: Euno
+name: Haven
 description: A quiet, content-first memory layer that hands you back the people you have met.
 colors:
   signal-blue: "#0071e3"
@@ -85,7 +85,7 @@ components:
     padding: "32px 28px"
 ---
 
-# Design System: Euno
+# Design System: Haven
 
 Scope: this covers the legacy web surface only, under the app's old name.
 The native iOS client has its own visual language, a dark dusk palette with serif reserved for people's names, defined in `phase1-build-plan.md` under Design tokens.
@@ -95,21 +95,21 @@ Do not apply the tokens below to anything in `ios/`.
 
 **Creative North Star: "The Quiet Room"**
 
-Euno is a calm, private space where a person is gently handed back to you. The whole visual
+Haven is a calm, private space where a person is gently handed back to you. The whole visual
 system exists to get out of the way: the search box and the person are the heroes, and every
 other pixel steps back so they can lead. Depth is soft, color is rare, and motion only ever
 confirms that something happened. Nothing here performs, competes for attention, or asks the
 user to stop and figure it out.
 
 The palette is drawn from Apple's platform conventions on purpose. Familiarity is the feature:
-a person opening Euno should feel like they already know how it works. The system stack, the
+a person opening Haven should feel like they already know how it works. The system stack, the
 16px rounded surfaces, the single blue reserved for the one action worth taking -- these are
 trustworthy defaults, not brand flair. The design earns quiet by leaning on what people already
 recognize, then removing everything else.
 
 The Quiet Room explicitly rejects two neighbors. It is not a social network: no feeds, follower
 counts, activity streams, or engagement mechanics. It is not a CRM: no pipelines, stages, scores,
-or dashboards of metrics. These are relationships, not leads, and Euno never grades how well you
+or dashboards of metrics. These are relationships, not leads, and Haven never grades how well you
 know someone. The interface should always feel like a private room, never a stage and never a
 sales floor.
 
@@ -171,9 +171,9 @@ the words carry the meaning and the letterforms never announce themselves.
 
 ### Hierarchy
 - **Display** (600, 28px, 1.1 line-height, -0.02em tracking): The person's name on the detail
-  screen and the Euno wordmark on sign-in. The largest type in the product; there is no hero
-  display scale above it because Euno never shouts.
-- **Title** (600, 20px, 1.2, -0.02em): The Euno wordmark in the app header. Quiet brand presence,
+  screen and the Haven wordmark on sign-in. The largest type in the product; there is no hero
+  display scale above it because Haven never shouts.
+- **Title** (600, 20px, 1.2, -0.02em): The Haven wordmark in the app header. Quiet brand presence,
   not a banner.
 - **Body** (400, 17px, 1.5): Everything the user reads or types -- inputs, result rows, button
   labels, context. The workhorse size. Prose in the context field stays comfortable at 65-75ch.
@@ -256,12 +256,12 @@ If it looks like a 2014 app, the shadow is too dark and the blur is too tight.
 The tapped name is the only element that travels between screens: the search row's text glides
 into the detail title (280ms, strong ease-in-out) while the rest of the screen quietly
 crossfades (180ms out, 220ms in). It is the product thesis rendered as motion -- you bring a
-fragment, Euno hands you back the person. Browsers without the View Transitions API get a
+fragment, Haven hands you back the person. Browsers without the View Transitions API get a
 260ms rise-and-fade instead; reduced motion gets an instant swap.
 
 ### Layout
 - **Frame:** A single centered column, max-width 640px, 24px page padding with safe-area
-  insets. Euno is a phone-shaped reading width even on desktop; the person is meant to be
+  insets. Haven is a phone-shaped reading width even on desktop; the person is meant to be
   read, not spread across a dashboard.
 - **Responsive:** The column simply narrows on small screens. There are no sidebars, panels, or
   breakpoint-driven grids to collapse -- structure this simple does not need them.
@@ -283,11 +283,11 @@ fragment, Euno hands you back the person. Browsers without the View Transitions 
 
 ### Don't:
 - **Don't** build anything that reads as a social network -- no feeds, likes, follower counts,
-  activity streams, or engagement mechanics. Euno is a private room, not a stage.
+  activity streams, or engagement mechanics. Haven is a private room, not a stage.
 - **Don't** build anything that reads as a CRM or sales tool -- no pipelines, deal stages, lead
   scoring, or dashboards of metrics. These are relationships, not leads.
 - **Don't** show a health score, closeness ranking, streak, or "reconnect before you lose them"
-  nudge. Euno holds memory; it never grades a relationship.
+  nudge. Haven holds memory; it never grades a relationship.
 - **Don't** run Muted gray as body text on a tinted surface; it reads as washed-out and fails
   contrast. Body is Ink.
 - **Don't** introduce a second accent hue, a gradient, or gradient text. The system is one blue

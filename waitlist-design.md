@@ -144,6 +144,8 @@ With no cursor, a phone is always wandering until a finger presses the page.
 
 Touch is gated on press: only `pointerdown` through `pointerup` drives the lens.
 Free-floating touchmoves and a leftover tap position are ignored, so a phone never gets a lens stuck where the last tap landed.
+A finger press snaps the lens under the touch and follows with a tighter lag than the desktop trail; the waitlist root uses `touch-action: none` so iOS cannot rubber-band the page and steal the gesture (that pan is what read as "the whole sky moves").
+Form fields keep `touch-action: manipulation` so typing still works.
 
 ## How this was decided
 

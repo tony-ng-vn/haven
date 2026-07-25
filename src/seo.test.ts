@@ -53,7 +53,7 @@ describe("brand SEO for the inhavens query", () => {
     // Google's favicon crawler cannot index data: URIs; the SERP fell back to
     // a generic letter tile. The icon must live at a real URL.
     expect(indexHtml).not.toMatch(/rel="icon"[^>]*href="data:/);
-    expect(indexHtml).toMatch(/<link rel="icon"[^>]*href="\/icon\.svg"/);
+    expect(indexHtml).toMatch(/<link rel="icon"[^>]*href="\/favicon\.ico"/);
   });
 
   test("robots.txt allows crawling and points at the sitemap", () => {

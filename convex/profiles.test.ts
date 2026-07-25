@@ -108,14 +108,14 @@ test("meetExchange creates private people rows for both sides", async () => {
     _id: exchanged.personId,
     name: "@bob",
     userId: alice.userId,
-    eunoContactUserId: bob.userId,
+    havenContactUserId: bob.userId,
     platform: "Haven",
     handle: "bob",
   });
   expect(bobPeople[0]).toMatchObject({
     name: "@alice",
     userId: bob.userId,
-    eunoContactUserId: alice.userId,
+    havenContactUserId: alice.userId,
     platform: "Haven",
     handle: "alice",
   });

@@ -51,10 +51,10 @@ async function ensureMeetPerson(args: {
 }): Promise<Id<"people">> {
   const existing = await args.ctx.db
     .query("people")
-    .withIndex("by_user_and_eunoContactUserId", (q) =>
+    .withIndex("by_user_and_havenContactUserId", (q) =>
       q
         .eq("userId", args.ownerUserId)
-        .eq("eunoContactUserId", args.contactUserId),
+        .eq("havenContactUserId", args.contactUserId),
     )
     .unique();
   if (existing !== null) {
@@ -70,7 +70,7 @@ async function ensureMeetPerson(args: {
     updatedAt: args.now,
     platform: "Haven",
     handle: args.contactUsername,
-    eunoContactUserId: args.contactUserId,
+    havenContactUserId: args.contactUserId,
   });
   await args.ctx.scheduler.runAfter(0, internal.people.embed, { personId });
   return personId;

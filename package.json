@@ -1,5 +1,5 @@
 {
-  "name": "euno-app",
+  "name": "haven-app",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "brand:assets": "python3 scripts/generate-brand-assets.py"
   },
   "dependencies": {
     "@clerk/react": "^6.12.5",

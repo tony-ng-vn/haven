@@ -4,7 +4,9 @@ dist/
 .env
 .friendy/
 .euno/
+.haven/
 *.tsbuildinfo
+.DS_Store
 
 # tool artifact
 .entire/

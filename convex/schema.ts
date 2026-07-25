@@ -23,14 +23,14 @@ export default defineSchema({
     screenshotId: v.optional(v.id("_storage")),
     // Haven Meet provenance. Each side still gets a private people row; this
     // key only lets a repeat in-person exchange stay idempotent.
-    eunoContactUserId: v.optional(v.string()),
+    havenContactUserId: v.optional(v.string()),
     // Semantic search. embeddedText doubles as the idempotency key so the
     // embed action can skip recomputing an unchanged person.
     embedding: v.optional(v.array(v.float64())),
     embeddedText: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
-    .index("by_user_and_eunoContactUserId", ["userId", "eunoContactUserId"])
+    .index("by_user_and_havenContactUserId", ["userId", "havenContactUserId"])
     // Same reasoning as captures.by_screenshotId: the orphaned-upload sweep
     // needs a sound, bounded way to check "is this blob referenced?".
     .index("by_screenshotId", ["screenshotId"])

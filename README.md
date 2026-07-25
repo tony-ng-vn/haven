@@ -5,7 +5,7 @@ Haven helps you remember the people you meet.
 It is a private, searchable memory of everyone you know.
 You save a person, jot down whatever you want to remember about them, and later find them by any detail, not just their name.
 
-(The repo is named "euno", the project's original codename. The product is Haven.)
+(The git remote may still say euno; the product and package are Haven.)
 
 ## Why it exists
 
@@ -35,6 +35,15 @@ The phone comes first, because that is where you meet people and hold your phone
 - The iPhone app (SwiftUI) is just getting started. The foundation, signing in and talking to the backend, works.
 - The backend runs on Convex, with Clerk for sign-in.
 - There is a web page for the waitlist.
+
+## Brand assets
+
+Favicon, Apple touch, PWA icons, and the social card are generated from Nori (`brand/nori.png`):
+
+```bash
+python3 -m pip install -r scripts/requirements.txt
+npm run brand:assets
+```
 
 ## Learn more
 

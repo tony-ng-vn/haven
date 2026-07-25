@@ -11,6 +11,9 @@ export const LENS = {
   // Fraction of the pointer gap closed each frame. Low enough that the lens
   // visibly trails the cursor instead of feeling stuck to it.
   lag: 0.055,
+  // Finger follow must feel attached: desktop lag reads as breath, but on a
+  // phone the same number makes the figure ignore the touch.
+  touchLag: 0.28,
   // Where the fade starts, as a fraction of the radius. Below 1 the lens keeps
   // a bright plateau and dies out gradually, so it never shows an edge.
   softness: 0.85,
@@ -22,6 +25,15 @@ export const LENS = {
   // phone (or an idle desktop) still sees the constellation form.
   idleMs: 2000,
 } as const;
+
+// True for real fingers. Empty pointerType is treated as touch too: some
+// WebViews omit the type, and those events must not get the mouse path
+// (hover-follow without a press), or a tap sticks a lens forever.
+export function isTouchPointer(pointerType: string): boolean {
+  return pointerType === "touch" || pointerType === "";
+}
+
+export type Point = { x: number; y: number };
 
 // Two slow sines per axis at incommensurate rates, so the path never visibly
 // repeats and never reads as a loop. `time` is seconds.
@@ -35,8 +47,6 @@ export function wanderPoint(
     y: height * (0.46 + 0.24 * Math.cos(time * 0.09) + 0.08 * Math.cos(time * 0.23)),
   };
 }
-
-export type Point = { x: number; y: number };
 
 // 1 at the centre, 0 at the radius, never negative and never above 1.
 export function falloff(distance: number, radius: number = LENS.radius): number {
