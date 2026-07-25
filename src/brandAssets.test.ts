@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("Haven brand assets", () => {
-  test("site icons and OG card use the mascot PNGs", () => {
+  test("site icons and OG card use Nori PNGs", () => {
     const html = readFileSync(join(root, "index.html"), "utf8");
     expect(html).toContain('rel="icon" href="/favicon.ico"');
     expect(html).toContain('href="/favicon-32x32.png"');
@@ -39,7 +39,7 @@ describe("Haven brand assets", () => {
     ]) {
       expect(existsSync(join(root, "public", file))).toBe(true);
     }
-    expect(existsSync(join(root, "brand/mascot.png"))).toBe(true);
+    expect(existsSync(join(root, "brand/nori.png"))).toBe(true);
   });
 
   test("package name is haven-app", () => {
