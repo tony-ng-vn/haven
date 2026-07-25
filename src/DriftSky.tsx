@@ -1,5 +1,13 @@
 import { useEffect, useRef } from "react";
-import { LENS, edgeAlpha, falloff, figureStars, magnify, wanderPoint } from "./lens";
+import {
+  LENS,
+  edgeAlpha,
+  falloff,
+  figureStars,
+  isTouchPointer,
+  magnify,
+  wanderPoint,
+} from "./lens";
 import { spanningTree } from "./sky";
 
 type Star = {
@@ -12,6 +20,11 @@ type Star = {
   hot: boolean;
 };
 
+function isFormTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return target.closest("input, textarea, button, select, label, a") !== null;
+}
+
 // A layered parallax field drifting rightward -- deeper (bigger, brighter)
 // stars move faster. Returns its own teardown. Ported from the approved
 // prototype so the shipped page matches it exactly.
@@ -21,7 +34,8 @@ type Star = {
 // rim, so it reads as a region of attention rather than a hole in the page.
 // When the pointer is gone or still for a couple of seconds the lens wanders
 // on its own, which is what a phone sees (and what keeps an idle desktop
-// alive). A finger down on the page aims it the way a cursor does.
+// alive). A finger down on the page snaps the lens under it and follows
+// tightly for the press; lifting returns to wander.
 function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
   const ctx = canvas.getContext("2d");
   if (ctx === null) return () => {};
@@ -132,19 +146,19 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
     });
   }
 
-  function placeLens(x: number, y: number) {
+  function placeLens(x: number, y: number, snap: boolean) {
     lens.tx = x;
     lens.ty = y;
-    // First sighting: place the lens rather than flying it in from the corner.
-    if (lens.x < 0) {
+    // First sighting, or a fresh finger press: place rather than flying in.
+    if (snap || lens.x < 0) {
       lens.x = lens.tx;
       lens.y = lens.ty;
     }
   }
 
-  function aimFromClient(clientX: number, clientY: number, now: number) {
+  function aimFromClient(clientX: number, clientY: number, now: number, snap: boolean) {
     const rect = canvas.getBoundingClientRect();
-    placeLens(clientX - rect.left, clientY - rect.top);
+    placeLens(clientX - rect.left, clientY - rect.top, snap);
     hasPointer = true;
     lastMove = now;
   }
@@ -159,17 +173,18 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
       const wandering = !hasPointer || t - lastMove > LENS.idleMs;
       if (wandering) {
         const p = wanderPoint(time, w, h);
-        placeLens(p.x, p.y);
+        placeLens(p.x, p.y, false);
         lens.on = Math.min(lens.on + 0.012, 1);
       } else {
         // Fade on presence, not on movement: a cursor that arrives and holds
         // still should still bloom.
         lens.on = Math.min(lens.on + 0.05, 1);
       }
-      // Heavy lag: the lens trails well behind the cursor, which is what stops
-      // it feeling attached to the pointer.
-      lens.x += (lens.tx - lens.x) * LENS.lag;
-      lens.y += (lens.ty - lens.y) * LENS.lag;
+      // Desktop trails; a finger needs a tighter chase or the figure never
+      // seems to answer the touch.
+      const lag = touchActive ? LENS.touchLag : LENS.lag;
+      lens.x += (lens.tx - lens.x) * lag;
+      lens.y += (lens.ty - lens.y) * lag;
     }
 
     for (const s of stars) {
@@ -196,20 +211,35 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
   // window and converted to canvas coordinates. The context is already scaled
   // by the device pixel ratio, so these stay CSS pixels.
   function onPointerMove(event: PointerEvent) {
-    if (event.pointerType === "touch" && !touchActive) return;
-    aimFromClient(event.clientX, event.clientY, performance.now());
+    if (isTouchPointer(event.pointerType) && !touchActive) return;
+    aimFromClient(event.clientX, event.clientY, performance.now(), false);
   }
 
   function onPointerDown(event: PointerEvent) {
-    if (event.pointerType !== "touch") return;
+    if (!isTouchPointer(event.pointerType)) return;
     touchActive = true;
-    aimFromClient(event.clientX, event.clientY, performance.now());
+    // Snap under the finger and bloom immediately -- lag-from-afar is why a
+    // phone felt like "nothing moves" while the sky kept drifting.
+    aimFromClient(event.clientX, event.clientY, performance.now(), true);
+    lens.on = Math.max(lens.on, 0.7);
   }
 
   function onPointerUp(event: PointerEvent) {
-    if (event.pointerType !== "touch") return;
+    if (!isTouchPointer(event.pointerType)) return;
     touchActive = false;
     hasPointer = false;
+  }
+
+  // Stop iOS from rubber-banding / panning the page under a drag. That pan is
+  // what read as "the whole sky moves" when the lens was not following.
+  // Form controls keep their native behavior.
+  function onTouchMove(event: TouchEvent) {
+    if (!touchActive) return;
+    if (isFormTarget(event.target)) return;
+    if (event.cancelable) event.preventDefault();
+    const touch = event.touches[0];
+    if (touch === undefined) return;
+    aimFromClient(touch.clientX, touch.clientY, performance.now(), false);
   }
 
   // Two ways to notice the cursor is gone, because either one alone misses
@@ -231,6 +261,8 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
     window.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
+    // Non-passive: we must preventDefault on sky drags so Safari cannot pan.
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
     document.addEventListener("mouseleave", onPointerGone);
     window.addEventListener("blur", onPointerGone);
   }
@@ -242,6 +274,7 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
     window.removeEventListener("pointerdown", onPointerDown);
     window.removeEventListener("pointerup", onPointerUp);
     window.removeEventListener("pointercancel", onPointerUp);
+    window.removeEventListener("touchmove", onTouchMove);
     document.removeEventListener("mouseleave", onPointerGone);
     window.removeEventListener("blur", onPointerGone);
   };

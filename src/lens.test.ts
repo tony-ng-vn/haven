@@ -1,5 +1,13 @@
 import { describe, expect, test } from "vitest";
-import { LENS, edgeAlpha, falloff, figureStars, magnify, wanderPoint } from "./lens";
+import {
+  LENS,
+  edgeAlpha,
+  falloff,
+  figureStars,
+  isTouchPointer,
+  magnify,
+  wanderPoint,
+} from "./lens";
 import { spanningTree } from "./sky";
 
 const CENTRE = { x: 100, y: 100 };
@@ -106,6 +114,15 @@ describe("edgeAlpha", () => {
     const inside = { x: 100, y: 100 };
     const outside = { x: 100 + LENS.radius + 10, y: 100 };
     expect(edgeAlpha(inside, outside, CENTRE)).toBe(0);
+  });
+});
+
+describe("isTouchPointer", () => {
+  test("treats touch and blank types as fingers", () => {
+    expect(isTouchPointer("touch")).toBe(true);
+    expect(isTouchPointer("")).toBe(true);
+    expect(isTouchPointer("mouse")).toBe(false);
+    expect(isTouchPointer("pen")).toBe(false);
   });
 });
 
