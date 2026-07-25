@@ -1,4 +1,6 @@
-node_modules/
+# Worktrees symlink node_modules back to the root install, and a trailing
+# slash matches only real directories, so the symlink showed as untracked.
+node_modules
 dist/
 .env.local
 .env
