@@ -8,6 +8,7 @@ Requires Pillow (see scripts/requirements.txt):
 
 from __future__ import annotations
 
+import json
 import math
 import random
 from pathlib import Path
@@ -17,6 +18,11 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parents[1]
 NORI = ROOT / "brand" / "nori.png"
 PUBLIC = ROOT / "public"
+APPICON = ROOT / "ios" / "Haven" / "Assets.xcassets" / "AppIcon.appiconset"
+
+# HavenColor.night. The icon sits on the same ground the app opens on, which is
+# also what the launch screen paints.
+NIGHT = (0x0E, 0x11, 0x23, 255)
 
 
 def fit_square(img: Image.Image, size: int) -> Image.Image:
@@ -58,6 +64,42 @@ def write_icons(nori: Image.Image) -> None:
     sizes = [(16, 16), (32, 32), (48, 48)]
     ico_images = [fit_square(nori, w) for w, _ in sizes]
     ico_images[-1].save(PUBLIC / "favicon.ico", format="ICO", sizes=sizes)
+
+
+def write_app_icon(nori: Image.Image) -> None:
+    """The iOS app icon: one 1024 image, flattened onto Night.
+
+    Two things this has to get right. App Store Connect rejects an icon with
+    an alpha channel, so it is composited rather than resized in place. And iOS
+    masks the icon to a squircle itself, so the artwork is inset rather than
+    full bleed -- at full bleed the mask would clip Nori's edges.
+    """
+    APPICON.mkdir(parents=True, exist_ok=True)
+
+    size = 1024
+    inset = 880
+    icon = Image.new("RGBA", (size, size), NIGHT)
+    art = fit_square(nori, inset)
+    icon.paste(art, ((size - inset) // 2, (size - inset) // 2), art)
+    icon.convert("RGB").save(APPICON / "AppIcon.png", optimize=True)
+
+    (APPICON / "Contents.json").write_text(
+        json.dumps(
+            {
+                "images": [
+                    {
+                        "filename": "AppIcon.png",
+                        "idiom": "universal",
+                        "platform": "ios",
+                        "size": "1024x1024",
+                    }
+                ],
+                "info": {"author": "xcode", "version": 1},
+            },
+            indent=2,
+        )
+        + "\n"
+    )
 
 
 def write_og(nori: Image.Image) -> None:
@@ -118,6 +160,7 @@ def main() -> None:
     PUBLIC.mkdir(exist_ok=True)
     nori = Image.open(NORI).convert("RGBA")
     write_icons(nori)
+    write_app_icon(nori)
     write_og(nori)
     print(f"Regenerated Haven brand assets from {NORI.relative_to(ROOT)}")
 

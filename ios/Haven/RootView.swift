@@ -1,36 +1,71 @@
-import ClerkKitUI
+import ClerkKit
 import SwiftUI
 
-// Phase 0 smoke test for the Clerk -> Convex authenticated seam.
-// Unauthenticated: show Clerk's prebuilt AuthView (custom sign-in UI is Phase 1).
-// Authenticated: call an auth-gated Convex query and render its result.
+// Routes on Convex auth state.
+// Unauthenticated: the welcome screen, which owns sign-in.
+// Authenticated: the Phase 0 probe, until onboarding replaces it.
 struct RootView: View {
     @StateObject private var auth = AuthModel()
-    @State private var showingAuth = false
 
     var body: some View {
-        VStack(spacing: 16) {
-            switch auth.authState {
-            case .loading:
-                ProgressView()
-            case .unauthenticated:
-                Text("Haven")
-                    .font(.largeTitle.bold())
-                Text("Phase 0 foundations")
-                    .foregroundStyle(.secondary)
-                Button("Sign in") { showingAuth = true }
-                    .buttonStyle(.borderedProminent)
-            case .authenticated:
-                ProfileProbeView()
-            }
+        // Split into `screen` and one modifier deliberately: with the switch
+        // and the feedback condition in a single expression, the type-checker
+        // gives up ("unable to type-check in reasonable time").
+        screen
+            // Signing in is a completed task, so it gets the success haptic. It
+            // lives here rather than on the welcome screen, because success
+            // swaps that screen out and a haptic on a view being unmounted may
+            // never fire. Only signedOut -> signedIn buzzes: a cold launch
+            // arrives from .loading and stays silent, and signing out is not a
+            // success.
+            .sensoryFeedback(.success, trigger: phase, condition: Self.isSignIn)
+    }
+
+    @ViewBuilder
+    private var screen: some View {
+        switch auth.authState {
+        case .loading:
+            loading
+        case .unauthenticated:
+            WelcomeScreen()
+        case .authenticated:
+            ProfileProbeView()
         }
-        .padding()
-        .sheet(isPresented: $showingAuth) {
-            AuthView()
+    }
+
+    /// On the night background rather than the system default, so launch does
+    /// not flash white before the first screen paints.
+    private var loading: some View {
+        ZStack {
+            NightBackground()
+            ProgressView()
+                .tint(HavenColor.ink)
         }
+        .ignoresSafeArea()
+    }
+
+    private var phase: Phase {
+        switch auth.authState {
+        case .loading: return .loading
+        case .unauthenticated: return .signedOut
+        case .authenticated: return .signedIn
+        }
+    }
+
+    private static func isSignIn(from old: Phase, to new: Phase) -> Bool {
+        old == .signedOut && new == .signedIn
+    }
+
+    /// The auth state reduced to something Equatable, so it can drive
+    /// `sensoryFeedback` without depending on the SDK's own conformances.
+    private enum Phase {
+        case loading
+        case signedOut
+        case signedIn
     }
 }
 
 #Preview {
     RootView()
+        .environment(Clerk.shared)
 }

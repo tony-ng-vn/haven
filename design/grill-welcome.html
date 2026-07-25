@@ -1,0 +1,596 @@
+<title>Haven welcome - round 6, the words</title>
+<style>
+  :root {
+    /* HavenColor, verbatim. This list is closed. */
+    --night: #0E1123;
+    --dusk: #232A4D;
+    --ember: #E8A87C;
+    --star: #FFD9A0;
+    --ink: #F2EFE9;
+    --muted: #9DA3BE;
+    --faint: #767C9C;
+    --cream: #F2E7D5;
+    --cream-ink: #1A1730;
+    --hairline: rgba(255,255,255,0.1);
+    --fill: rgba(255,255,255,0.06);
+
+    --sf: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    --stage: #0b0d16;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: radial-gradient(120% 80% at 50% 0%, #161a2c 0%, var(--stage) 60%);
+    color: var(--ink);
+    font-family: var(--sf);
+    min-height: 100vh;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 24px;
+    padding: 26px 20px 120px;
+  }
+
+  header { text-align: center; display: grid; gap: 6px; }
+  header h1 {
+    margin: 0; font-size: 15px; font-weight: 600;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint);
+  }
+  header p {
+    margin: 0; font-size: 13px; color: var(--muted);
+    max-width: 64ch; margin-inline: auto; line-height: 1.5;
+  }
+
+  .stage { display: grid; place-items: start center; }
+
+  /* ---------- device ---------- */
+
+  .phone {
+    position: relative;
+    width: 393px; height: 852px;
+    border-radius: 54px;
+    overflow: hidden;
+    background: var(--night);
+    box-shadow: 0 0 0 11px #1c1e26, 0 0 0 13px #2e313c, 0 40px 90px rgba(0,0,0,0.6);
+    isolation: isolate;
+  }
+  @media (max-width: 460px) { .phone { transform: scale(0.82); transform-origin: top center; } }
+
+  .sky {
+    position: absolute; inset: 0;
+    background:
+      linear-gradient(to bottom,
+        rgba(35,42,77,0) 26%,
+        rgba(35,42,77,0.5) 72%,
+        rgba(35,42,77,1) 100%),
+      var(--night);
+  }
+  .ember {
+    position: absolute; left: 50%; bottom: 0;
+    width: 140%; height: 50%;
+    transform: translate(-50%, 5%);
+    background: radial-gradient(ellipse at 50% 100%,
+      rgba(232,168,124,0.15) 0%, rgba(232,168,124,0.05) 45%, rgba(232,168,124,0) 74%);
+    pointer-events: none;
+  }
+  canvas.field { position: absolute; inset: 0; pointer-events: none; }
+
+  .statusbar {
+    position: absolute; top: 0; left: 0; right: 0; height: 54px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 32px; font-size: 15px; font-weight: 600; color: var(--ink); z-index: 3;
+  }
+  .statusbar .notch {
+    position: absolute; left: 50%; top: 11px; transform: translateX(-50%);
+    width: 125px; height: 36px; border-radius: 20px; background: #000;
+  }
+  .statusbar .right { display: flex; gap: 6px; align-items: center; opacity: 0.9; }
+
+  /* ---------- Arrival composition, fixed for this round ---------- */
+
+  .screen {
+    position: absolute; inset: 0; z-index: 2;
+    display: grid; grid-template-rows: auto 1fr auto;
+    padding: 62px 24px 34px;
+  }
+  .mid { display: grid; place-items: center; min-height: 0; }
+  .block { display: grid; gap: 12px; justify-items: center; text-align: center; }
+  .acts { display: grid; gap: 8px; }
+
+  .wordmark { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.4px; color: var(--ink); }
+  .tagline { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
+
+  .btn {
+    appearance: none; border: 0; width: 100%; min-height: 44px;
+    padding: 13px 20px; border-radius: 12px;
+    background: var(--cream); color: var(--cream-ink);
+    font-family: inherit; font-size: 15px; font-weight: 600;
+    cursor: pointer; transition: transform 140ms ease;
+    display: grid; place-items: center;
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn .label { grid-area: 1/1; }
+  .btn .spin {
+    grid-area: 1/1; width: 17px; height: 17px; border-radius: 50%;
+    border: 2px solid rgba(26,23,48,0.25); border-top-color: var(--cream-ink);
+    animation: spin 720ms linear infinite; opacity: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .ghost {
+    appearance: none; border: 0; background: none; width: 100%; min-height: 44px;
+    padding: 8px; font-family: inherit; font-size: 13px; color: var(--muted); cursor: pointer;
+  }
+  .error { margin: 0 0 2px; font-size: 13px; color: var(--ink); text-align: center; line-height: 1.4; }
+
+  /* ---------- round 4: the proportion of Held large ----------
+
+     Two variables move: the size ratio between the two lines, and where the
+     block sits vertically. A block on the exact centre reads as low, because
+     the eye puts the optical centre above the geometric one - so most of these
+     lift it. `--lift` is the share of the free space above the block. */
+
+  .rule, .tagline.sent { display: none; }
+
+  .mid { align-content: center; }
+  .block { padding-bottom: var(--lift, 0px); }
+
+  /* Proportion settled in round 4: 34 / 15, lifted a little off dead centre,
+     the two lines close enough to read as a pair. Only the tagline's own
+     shape is in question now. */
+  .phone { --lift: 34px; }
+  .wordmark { font-size: 34px; letter-spacing: -0.9px; }
+  .tagline { font-size: 15px; color: var(--muted); line-height: 1.4; }
+  .block { gap: 11px; }
+
+  /* These lines are a whole sentence rather than a label, so they get a wider
+     column and balanced breaking - the break should land where the sense
+     breaks, not where the column runs out. */
+  .tagline { max-width: 27ch; text-wrap: balance; }
+  .btn:focus-visible, .ghost:focus-visible { outline: 2px solid var(--star); outline-offset: 3px; }
+
+  .phone:not([data-state="loading"]) .spin { display: none; }
+  .phone[data-state="loading"] .btn .label { opacity: 0; }
+  .phone[data-state="loading"] .btn .spin { opacity: 1; }
+  .phone:not([data-state="error"]) .error { display: none; }
+
+  /* The arrival sequence, held constant across all five skies. */
+  .wordmark, .tagline, .acts > * { opacity: 0; }
+  .phone.play .wordmark { animation: rise 900ms cubic-bezier(0.2,0.7,0.2,1) 250ms forwards; }
+  .phone.play .tagline  { animation: rise 900ms cubic-bezier(0.2,0.7,0.2,1) 700ms forwards; }
+  .phone.play .acts > *  { animation: rise 800ms cubic-bezier(0.2,0.7,0.2,1) 1150ms forwards; }
+  .phone.play .acts > *:last-child { animation-delay: 1320ms; }
+  @keyframes rise { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+
+  .sky, .ember, canvas.field { opacity: 0; }
+  .phone.play .sky { animation: fade 1200ms ease forwards; }
+  .phone.play .ember { animation: fade 1800ms ease 300ms forwards; }
+  .phone.play canvas.field { animation: fade 2400ms ease 400ms forwards; }
+  @keyframes fade { to { opacity: 1; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .phone.play .wordmark, .phone.play .tagline, .phone.play .acts > *,
+    .phone.play .sky, .phone.play .ember, .phone.play canvas.field {
+      animation: none; opacity: 1;
+    }
+    .btn .spin { animation: none; }
+  }
+
+  /* ---------- picker ---------- */
+
+  .picker {
+    position: fixed; right: 22px; bottom: 22px; z-index: 50; width: 280px;
+    background: rgba(18,21,36,0.94);
+    border: 1px solid var(--hairline); border-radius: 16px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.55);
+    backdrop-filter: blur(14px); user-select: none;
+  }
+  .picker .grab {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; cursor: grab; border-bottom: 1px solid var(--hairline);
+  }
+  .picker .grab:active { cursor: grabbing; }
+  .picker .grab span {
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--faint); font-weight: 600;
+  }
+  .picker .grab .keys { color: var(--faint); font-size: 11px; letter-spacing: 0; text-transform: none; }
+  .picker ol { list-style: none; margin: 0; padding: 6px; display: grid; gap: 2px; }
+  .picker button.opt {
+    width: 100%; text-align: left; appearance: none; background: none; border: 0;
+    border-radius: 9px; padding: 9px 10px; color: var(--muted);
+    font-family: inherit; font-size: 13px; cursor: pointer; display: grid; gap: 2px;
+  }
+  .picker button.opt:hover { background: var(--fill); }
+  .picker button.opt[aria-current="true"] { background: rgba(255,217,160,0.1); color: var(--ink); }
+  .picker button.opt b { font-weight: 600; }
+  .picker button.opt small { color: var(--faint); font-size: 11px; line-height: 1.35; }
+  .picker button.opt[aria-current="true"] small { color: var(--muted); }
+  .picker .states { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--hairline); }
+  .picker .states button {
+    flex: 1; appearance: none; border: 1px solid var(--hairline); background: none;
+    border-radius: 8px; padding: 7px 4px; color: var(--muted);
+    font-family: inherit; font-size: 11px; cursor: pointer;
+  }
+  .picker .states button[aria-pressed="true"] {
+    background: var(--star); border-color: var(--star); color: var(--cream-ink); font-weight: 600;
+  }
+  .picker .replay {
+    width: calc(100% - 20px); margin: 0 10px 10px; appearance: none;
+    border: 1px solid var(--hairline); background: none; border-radius: 8px;
+    padding: 8px; color: var(--muted); font-family: inherit; font-size: 11px; cursor: pointer;
+  }
+  .picker .replay:hover { background: var(--fill); }
+  .picker button:focus-visible { outline: 2px solid var(--star); outline-offset: 2px; }
+</style>
+
+<header>
+  <h1>Haven welcome - round 6, the words</h1>
+  <p>Settled: the Arrival sequence, a sky of other people's constellations passing through, and Held large as the greeting - the wordmark carries the screen. This round fixes its proportion. Two things move: the size ratio between the two lines, and how high the block sits. Type and style come after this, once the layout is right.</p>
+</header>
+
+<div class="stage">
+  <div class="phone play" id="phone" data-state="idle">
+    <div class="sky"></div>
+    <div class="ember"></div>
+    <canvas class="field" id="field" width="393" height="852"></canvas>
+
+    <div class="statusbar">
+      <div>12:04</div>
+      <div class="notch"></div>
+      <div class="right">
+        <svg width="17" height="12" viewBox="0 0 17 12" fill="currentColor" aria-hidden="true"><path d="M8.5 9.6 6.4 7.5a3 3 0 0 1 4.2 0L8.5 9.6Zm0-4.2A6 6 0 0 0 4.3 7L3 5.7a8 8 0 0 1 11 0L12.7 7a6 6 0 0 0-4.2-1.6Z"/></svg>
+        <svg width="25" height="12" viewBox="0 0 25 12" fill="none" aria-hidden="true"><rect x="0.5" y="0.5" width="21" height="11" rx="3.2" stroke="currentColor" opacity="0.5"/><rect x="2" y="2" width="18" height="8" rx="2" fill="currentColor"/><path d="M23 4v4a2 2 0 0 0 0-4Z" fill="currentColor" opacity="0.5"/></svg>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="top"></div>
+      <div class="mid">
+        <div class="block">
+          <p class="wordmark">Haven</p>
+          <div class="rule" aria-hidden="true"></div>
+          <p class="tagline">Everyone you connect with socially, findable again here.</p>
+        </div>
+      </div>
+      <div class="acts">
+        <p class="tagline sent">Everyone you connect with socially, findable again here.</p>
+        <p class="error">That did not go through. Try again, or use another option.</p>
+        <button class="btn" type="button">
+          <span class="label">Continue with Apple</span>
+          <span class="spin" aria-hidden="true"></span>
+        </button>
+        <button class="ghost" type="button">Other sign-in options</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<aside class="picker" id="picker" aria-label="Design picker">
+  <div class="grab" id="grab">
+    <span>Round 6 - the words</span>
+    <span class="keys">&larr; &rarr;</span>
+  </div>
+  <ol id="opts"></ol>
+  <div class="states" role="group" aria-label="Screen state">
+    <button type="button" data-state="idle" aria-pressed="true">Idle</button>
+    <button type="button" data-state="loading" aria-pressed="false">Signing in</button>
+    <button type="button" data-state="error" aria-pressed="false">Failed</button>
+  </div>
+  <button class="replay" type="button" id="replay">Replay the arrival</button>
+</aside>
+
+<script>
+  const VARIANTS = [
+    { id: "a", name: "Matched clauses", note: "Both halves the same length. 'They' carries the people you meet." },
+    { id: "b", name: "Two sentences",   note: "The pair as a drum beat. Shortest way to say both." },
+    { id: "c", name: "Place and way",   note: "Two nouns instead of two verbs. Warmer, and it keeps 'a place'." },
+    { id: "d", name: "Mirrored",        note: "Same shape twice, the halves swapped. Both parties named." },
+    { id: "e", name: "One subject",     note: "Collapses both onto you. Loses the exchange, gains a clean line." },
+  ];
+
+  const phone = document.getElementById("phone");
+  const opts = document.getElementById("opts");
+  let index = 0;
+
+  VARIANTS.forEach((v, i) => {
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "opt";
+    b.innerHTML = "<b>" + (i + 1) + ". " + v.name + "</b><small>" + v.note + "</small>";
+    b.addEventListener("click", () => select(i));
+    li.appendChild(b);
+    opts.appendChild(li);
+  });
+
+  function replay() {
+    phone.classList.remove("play");
+    void phone.offsetWidth;
+    phone.classList.add("play");
+  }
+
+  // The copy itself changes in the last two, so the text is set here rather
+  // than being one string wrapped five ways.
+  const COPY = {
+    a: "A place where you are seen, and they are found.",
+    b: "You are seen. They are found.",
+    c: "A place to be seen, and a way back to everyone you meet.",
+    d: "Everyone you meet is found. Everyone here is seen.",
+    e: "A place to be seen, and to be found again.",
+  };
+
+  function select(i) {
+    index = (i + VARIANTS.length) % VARIANTS.length;
+    VARIANTS.forEach(v => phone.classList.remove("v-" + v.id));
+    const id = VARIANTS[index].id;
+    phone.classList.add("v-" + id);
+    document.querySelector(".block .tagline").textContent = COPY[id];
+    replay();
+    [...opts.querySelectorAll("button")].forEach((b, n) =>
+      b.setAttribute("aria-current", String(n === index)));
+  }
+
+  addEventListener("keydown", e => {
+    if (e.key === "ArrowRight") { select(index + 1); e.preventDefault(); }
+    if (e.key === "ArrowLeft") { select(index - 1); e.preventDefault(); }
+  });
+
+  document.querySelectorAll(".states button").forEach(b => {
+    b.addEventListener("click", () => {
+      phone.dataset.state = b.dataset.state;
+      document.querySelectorAll(".states button").forEach(o =>
+        o.setAttribute("aria-pressed", String(o === b)));
+    });
+  });
+  document.getElementById("replay").addEventListener("click", replay);
+
+  (function () {
+    const picker = document.getElementById("picker");
+    const grab = document.getElementById("grab");
+    let dx = 0, dy = 0, dragging = false;
+    grab.addEventListener("pointerdown", e => {
+      dragging = true;
+      const r = picker.getBoundingClientRect();
+      dx = e.clientX - r.left; dy = e.clientY - r.top;
+      picker.style.right = "auto"; picker.style.bottom = "auto";
+      grab.setPointerCapture(e.pointerId);
+    });
+    grab.addEventListener("pointermove", e => {
+      if (!dragging) return;
+      picker.style.left = Math.max(8, Math.min(innerWidth - picker.offsetWidth - 8, e.clientX - dx)) + "px";
+      picker.style.top = Math.max(8, Math.min(innerHeight - picker.offsetHeight - 8, e.clientY - dy)) + "px";
+    });
+    grab.addEventListener("pointerup", e => { dragging = false; grab.releasePointerCapture(e.pointerId); });
+  })();
+
+  /* ---------------- the sky ---------------- */
+
+  (function () {
+    const canvas = document.getElementById("field");
+    const ctx = canvas.getContext("2d");
+    const W = 393, H = 852;
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    canvas.style.width = W + "px"; canvas.style.height = H + "px";
+    ctx.scale(dpr, dpr);
+
+    // Seeded, not random, so every reload draws the same sky - the same
+    // discipline SkyGenerator uses when it mints a person's constellation.
+    function prng(seed) {
+      let s = seed >>> 0;
+      return () => {
+        s ^= s << 13; s >>>= 0;
+        s ^= s >>> 17;
+        s ^= s << 5;  s >>>= 0;
+        return (s % 100000) / 100000;
+      };
+    }
+
+    const rnd = prng(0x9e3779b9);
+
+    // 28 motes, matching DustLayer.
+    const motes = Array.from({ length: 28 }, () => ({
+      x: rnd(), y: rnd(),
+      r: 0.6 + rnd() * 1.1,
+      o: 0.05 + rnd() * 0.14,
+      speed: 1.5 + rnd() * 5,
+      phase: rnd() * Math.PI * 2,
+    }));
+
+    // Three parallax layers. Far stars are smaller, dimmer and slower: depth
+    // comes from the rate difference, not from the count.
+    const r2 = prng(0x51ed2701);
+    const LAYERS = [
+      { count: 150, r: [0.35, 0.75], o: [0.10, 0.26], speed: 1.2 },
+      { count: 70,  r: [0.6,  1.1 ], o: [0.20, 0.44], speed: 2.6 },
+      { count: 28,  r: [0.9,  1.6 ], o: [0.34, 0.68], speed: 4.4 },
+    ].map(spec => ({
+      speed: spec.speed,
+      stars: Array.from({ length: spec.count }, () => ({
+        x: r2(), y: r2(),
+        r: spec.r[0] + r2() * (spec.r[1] - spec.r[0]),
+        o: spec.o[0] + r2() * (spec.o[1] - spec.o[0]),
+        phase: r2() * Math.PI * 2,
+        tw: 0.5 + r2() * 1.4,
+      })),
+    }));
+
+    // A milky band: stars clustered along a diagonal, densest at its spine.
+    const r3 = prng(0x2545f491);
+    const BAND = { x0: -0.15, y0: 0.05, x1: 1.15, y1: 0.62 };
+    const galaxyStars = Array.from({ length: 260 }, () => {
+      const t = r3();
+      // Sum of three uniforms approximates a normal, so density falls off the
+      // spine smoothly instead of ending at a hard edge.
+      const spread = (r3() + r3() + r3() - 1.5) * 0.13;
+      const nx = -(BAND.y1 - BAND.y0), ny = (BAND.x1 - BAND.x0);
+      const len = Math.hypot(nx, ny);
+      return {
+        x: BAND.x0 + t * (BAND.x1 - BAND.x0) + (nx / len) * spread,
+        y: BAND.y0 + t * (BAND.y1 - BAND.y0) + (ny / len) * spread,
+        r: 0.35 + r3() * 1.0,
+        o: (0.12 + r3() * 0.4) * (1 - Math.min(1, Math.abs(spread) / 0.18)),
+        phase: r3() * Math.PI * 2,
+        tw: 0.4 + r3() * 1.2,
+      };
+    });
+
+    // Other people's figures drifting through. Every person in Haven really does
+    // have a sky, so strangers' skies passing is the product's own idea rather
+    // than decoration borrowed from a screensaver.
+    const r4 = prng(0x1b873593);
+    function figure(nodes) {
+      const pts = Array.from({ length: nodes }, () => ({ x: r4(), y: r4() }));
+      // Grown nearest-neighbour first, which is what SkyGenerator's MST does.
+      const edges = [];
+      const used = [0];
+      while (used.length < pts.length) {
+        let best = null;
+        for (const a of used) {
+          for (let b = 0; b < pts.length; b++) {
+            if (used.includes(b)) continue;
+            const d = Math.hypot(pts[a].x - pts[b].x, pts[a].y - pts[b].y);
+            if (!best || d < best.d) best = { a, b, d };
+          }
+        }
+        edges.push([best.a, best.b]);
+        used.push(best.b);
+      }
+      return { pts, edges };
+    }
+    // Five distinct people. Node count, scale, tilt and speed all differ, so no
+    // two passes read as the same sky coming round again. Scale and brightness
+    // track together: a bigger figure is nearer, so it is also brighter.
+    const FIGURES = [
+      { fig: figure(6), scale: 0.30, y: 0.14, dur: 46, delay: 0,  tilt: -0.22, depth: 1.00 },
+      { fig: figure(4), scale: 0.19, y: 0.31, dur: 74, delay: 22, tilt:  0.34, depth: 0.62 },
+      { fig: figure(8), scale: 0.36, y: 0.47, dur: 38, delay: 44, tilt:  0.11, depth: 1.15 },
+      { fig: figure(5), scale: 0.23, y: 0.63, dur: 62, delay: 12, tilt: -0.40, depth: 0.74 },
+      { fig: figure(7), scale: 0.28, y: 0.79, dur: 52, delay: 33, tilt:  0.19, depth: 0.9 },
+    ];
+
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const INK = "rgba(242,239,233,";
+    const STAR = "rgba(255,217,160,";
+
+    function dot(x, y, r, alpha, colour) {
+      if (alpha <= 0.002) return;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = colour + alpha.toFixed(3) + ")";
+      ctx.fill();
+    }
+
+    function drawDust(t) {
+      for (const m of motes) {
+        const y = still ? m.y * H : ((m.y * H - t * m.speed) % (H + 20) + H + 20) % (H + 20);
+        const tw = still ? 1 : 0.75 + 0.25 * Math.sin(t * 0.6 + m.phase);
+        dot(m.x * W, y, m.r, m.o * tw, INK);
+      }
+    }
+
+    function drawLayers(t) {
+      for (const layer of LAYERS) {
+        for (const s of layer.stars) {
+          const y = still ? s.y * H : ((s.y * H + t * layer.speed) % (H + 8) + H + 8) % (H + 8);
+          const tw = still ? 1 : 0.72 + 0.28 * Math.sin(t * s.tw + s.phase);
+          dot(s.x * W, y, s.r, s.o * tw, INK);
+        }
+      }
+    }
+
+    function drawWheel(t) {
+      // Rotation about a point well below the bottom edge, so the motion reads
+      // as sky turning rather than as a pinwheel.
+      const cx = W * 0.5, cy = H * 1.35;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(still ? 0 : t * 0.006);
+      ctx.translate(-cx, -cy);
+      for (const layer of LAYERS) {
+        for (const s of layer.stars) {
+          const tw = still ? 1 : 0.72 + 0.28 * Math.sin(t * s.tw + s.phase);
+          dot(s.x * W, s.y * H, s.r, s.o * tw, INK);
+        }
+      }
+      ctx.restore();
+    }
+
+    function drawGalaxy(t) {
+      // The milky wash first, then its dense stars, then a thin far layer over
+      // the rest of the sky so the band is a crowd rather than an island.
+      const g = ctx.createLinearGradient(W * BAND.x0, H * BAND.y0, W * BAND.x1, H * BAND.y1);
+      g.addColorStop(0, "rgba(157,163,190,0)");
+      g.addColorStop(0.5, "rgba(157,163,190,0.055)");
+      g.addColorStop(1, "rgba(157,163,190,0)");
+      ctx.save();
+      ctx.translate(W * 0.5, H * 0.33);
+      ctx.rotate(Math.atan2(H * (BAND.y1 - BAND.y0), W * (BAND.x1 - BAND.x0)));
+      ctx.filter = "blur(18px)";
+      ctx.fillStyle = g;
+      ctx.fillRect(-W, -70, W * 2, 140);
+      ctx.restore();
+      ctx.filter = "none";
+
+      for (const s of LAYERS[0].stars) {
+        const tw = still ? 1 : 0.72 + 0.28 * Math.sin(t * s.tw + s.phase);
+        dot(s.x * W, s.y * H, s.r * 0.8, s.o * 0.5 * tw, INK);
+      }
+      for (const s of galaxyStars) {
+        const tw = still ? 1 : 0.7 + 0.3 * Math.sin(t * s.tw + s.phase);
+        dot(s.x * W, s.y * H, s.r, s.o * tw, INK);
+      }
+    }
+
+    function drawFigures(t) {
+      drawLayers(t * 0.5);
+      for (const item of FIGURES) {
+        const { fig, scale, y, dur, delay, tilt, depth } = item;
+        // Travels across more than a screen width, so a figure is fully gone
+        // before it comes round again.
+        const p = still ? 0.5 : (((t + delay) % dur) / dur);
+        const size = scale * W;
+        // Fades at both ends: nothing pops into existence mid-screen.
+        const a = (still ? 0.6 : Math.min(1, Math.min(p, 1 - p) / 0.18)) * depth;
+
+        ctx.save();
+        ctx.translate((1.25 - p * 1.7) * W, y * H);
+        ctx.rotate(tilt);
+        ctx.lineWidth = 0.8;
+        ctx.strokeStyle = "rgba(255,217,160," + (0.1 * a).toFixed(3) + ")";
+        for (const [i, j] of fig.edges) {
+          ctx.beginPath();
+          ctx.moveTo(fig.pts[i].x * size, fig.pts[i].y * size);
+          ctx.lineTo(fig.pts[j].x * size, fig.pts[j].y * size);
+          ctx.stroke();
+        }
+        for (const pt of fig.pts) {
+          dot(pt.x * size, pt.y * size, 1.3 * Math.min(1.2, depth), 0.34 * a, STAR);
+        }
+        ctx.restore();
+      }
+    }
+
+    // The sky is settled: passing figures won round 2.
+    function draw(t) {
+      ctx.clearRect(0, 0, W, H);
+      drawFigures(t);
+    }
+
+    if (still) {
+      draw(0);
+      // No loop to pick the change up, so redraw when the variant changes.
+      new MutationObserver(() => draw(0)).observe(phone, { attributes: true, attributeFilter: ["class"] });
+    } else {
+      const t0 = performance.now();
+      (function loop(now) {
+        draw((now - t0) / 1000);
+        requestAnimationFrame(loop);
+      })(t0);
+    }
+  })();
+
+  select(0);
+</script>

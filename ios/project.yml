@@ -10,6 +10,13 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     GENERATE_INFOPLIST_FILE: "YES"
     SWIFT_VERSION: "5.0"
+    # Phase 1 has no light mode (HavenColor is a single dusk palette), so the
+    # app declares dark to the system. This also fixes two real bugs: in light
+    # mode the status bar clock rendered black on the night background, and the
+    # generated launch screen flashed white before the first frame. Declared
+    # dark, the launch screen renders black, which hands off into the night
+    # gradient instead of flashing.
+    INFOPLIST_KEY_UIUserInterfaceStyle: "Dark"
 packages:
   ConvexMobile:
     url: https://github.com/get-convex/convex-swift
@@ -38,7 +45,11 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.inhavens.haven
-        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        # Haven/Info.plist carries the UILaunchScreen dict (the launch colour
+        # has no INFOPLIST_KEY_* form); everything else is still generated and
+        # merged in. The generation flag for the launch screen is gone on
+        # purpose: it emits an empty UILaunchScreen that would fight the file's.
+        INFOPLIST_FILE: Haven/Info.plist
         # Clerk iOS persists its device token in the keychain; without a
         # keychain-access-group entitlement it fails with OSStatus -34018 and
         # sign-in returns 401 "signed out".
