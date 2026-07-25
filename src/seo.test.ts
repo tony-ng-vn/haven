@@ -13,10 +13,18 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const indexHtml = readFileSync(join(root, "index.html"), "utf8");
 
 describe("brand SEO for the inhavens query", () => {
-  test("title carries the inhavens.com brand token", () => {
+  test("title carries both brand names and survives SERP truncation", () => {
     const title = indexHtml.match(/<title>([^<]*)<\/title>/)?.[1] ?? "";
+    // Both names must be in the title itself. Google's site-name feature is
+    // supposed to surface "Haven" from the JSON-LD on its own line, but it
+    // frequently falls back to the bare domain -- so the title cannot be the
+    // only place either name lives.
     expect(title).toContain("Haven");
-    expect(title.toLowerCase()).toContain("inhavens.com");
+    expect(title.toLowerCase()).toContain("inhavens");
+    // Google truncates titles around 60 characters and is likelier to discard
+    // an over-long title and write its own. Both brand tokens sit in the first
+    // 20 characters, so a trim never costs us the ranking signal.
+    expect(title.length).toBeLessThanOrEqual(60);
   });
 
   test("meta description mentions inhavens.com", () => {
