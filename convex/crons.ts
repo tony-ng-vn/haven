@@ -21,8 +21,9 @@ crons.interval(
   {},
 );
 
-// Deletes screenshot blobs an abandoned upload left with no capture or
-// person ever pointing to them -- see sweepOrphanedUploads.
+// Deletes blobs an abandoned upload left with no capture, person, or profile
+// ever pointing to them -- see sweepOrphanedUploads. Any new table that stores
+// a storage id has to be added to that sweep, or its files get deleted.
 crons.interval(
   "sweep orphaned uploads",
   { hours: 24 },

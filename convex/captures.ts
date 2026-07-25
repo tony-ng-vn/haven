@@ -410,6 +410,15 @@ export const sweepOrphanedUploads = internalMutation({
       if (referencingPerson !== null) {
         continue;
       }
+      const referencingProfile = await ctx.db
+        .query("profiles")
+        .withIndex("by_photoStorageId", (q) =>
+          q.eq("photoStorageId", file._id),
+        )
+        .first();
+      if (referencingProfile !== null) {
+        continue;
+      }
       await ctx.storage.delete(file._id);
       deleted++;
     }

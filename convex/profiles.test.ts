@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import { convexTest } from "convex-test";
+import { convexTest, type TestConvex } from "convex-test";
 import { expect, test } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
@@ -14,6 +14,223 @@ function asNewUser(t: ReturnType<typeof convexTest>) {
   return { userId, as: t.withIdentity({ subject, issuer }) };
 }
 
+// convex-test's storage mock drops the Blob's contentType, so photo
+// validation would always see undefined. Patch the system table directly --
+// same workaround as captures.test.ts, and the same reason.
+async function seedPhoto(
+  t: TestConvex<typeof schema>,
+  contentType = "image/jpeg",
+) {
+  const id = await t.run((ctx) =>
+    ctx.storage.store(new Blob(["fake-photo"], { type: contentType })),
+  );
+  await t.run((ctx) => (ctx.db as any).patch("_storage", id, { contentType }));
+  return id;
+}
+
+async function storedProfile(t: TestConvex<typeof schema>, userId: string) {
+  return await t.run((ctx) =>
+    ctx.db
+      .query("profiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .unique(),
+  );
+}
+
+test("updateMyProfile creates the profile row and mints a handle from the name", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  const saved = await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "  Maya Chen ",
+  });
+
+  expect(saved.name).toBe("Maya Chen");
+  expect(saved.username).toBe("maya");
+  expect(await storedProfile(t, me.userId)).toMatchObject({
+    name: "Maya Chen",
+    username: "maya",
+  });
+});
+
+test("updateMyProfile needs a name before it can create the row", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  await expect(
+    me.as.mutation(api.profiles.updateMyProfile, { company: "Haven" }),
+  ).rejects.toThrow("Enter your name first");
+  expect(await storedProfile(t, me.userId)).toBeNull();
+});
+
+test("updateMyProfile leaves omitted fields untouched", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  const photoStorageId = await seedPhoto(t);
+  await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+    company: "Haven",
+    role: "Founder",
+    photoStorageId,
+    city: { name: "Da Nang", admin: "Da Nang", country: "Vietnam" },
+    handles: [{ platform: "x", value: "mayac", verified: true }],
+    primaryPlatform: "x",
+  });
+
+  const saved = await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya C",
+  });
+
+  expect(saved).toMatchObject({
+    name: "Maya C",
+    company: "Haven",
+    role: "Founder",
+    photoStorageId,
+    city: { name: "Da Nang", admin: "Da Nang", country: "Vietnam" },
+    handles: [{ platform: "x", value: "mayac", verified: true }],
+    primaryPlatform: "x",
+  });
+});
+
+test("updateMyProfile clears a field when passed null", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  const photoStorageId = await seedPhoto(t);
+  await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+    company: "Haven",
+    photoStorageId,
+    city: { name: "Da Nang" },
+  });
+
+  await me.as.mutation(api.profiles.updateMyProfile, {
+    company: null,
+    photoStorageId: null,
+    city: null,
+  });
+
+  const stored = await storedProfile(t, me.userId);
+  expect(stored?.company).toBeUndefined();
+  expect(stored?.photoStorageId).toBeUndefined();
+  expect(stored?.city).toBeUndefined();
+  expect(stored?.name).toBe("Maya Chen");
+});
+
+test("updateMyProfile rejects blank strings instead of storing them", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  await expect(
+    me.as.mutation(api.profiles.updateMyProfile, { name: "   " }),
+  ).rejects.toThrow("Enter your name");
+  await expect(
+    me.as.mutation(api.profiles.updateMyProfile, { company: "  " }),
+  ).rejects.toThrow("cannot be blank");
+  await expect(
+    me.as.mutation(api.profiles.updateMyProfile, {
+      handles: [{ platform: "x", value: " ", verified: false }],
+    }),
+  ).rejects.toThrow("cannot be blank");
+});
+
+test("updateMyProfile stores an accent-insensitive city key for Phase 3 filtering", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  const saved = await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+    city: { name: "Đà Nẵng", country: "Vietnam" },
+  });
+
+  expect(saved.city).toMatchObject({ name: "Đà Nẵng" });
+  expect((await storedProfile(t, me.userId))?.city?.normalized).toBe("da nang");
+});
+
+test("updateMyProfile allows one handle per platform only", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  await expect(
+    me.as.mutation(api.profiles.updateMyProfile, {
+      handles: [
+        { platform: "x", value: "mayac", verified: true },
+        { platform: "x", value: "maya_c", verified: true },
+      ],
+    }),
+  ).rejects.toThrow("one handle per platform");
+});
+
+test("updateMyProfile rejects a primary platform that is not in the handle list", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+    handles: [{ platform: "x", value: "mayac", verified: true }],
+  });
+
+  await expect(
+    me.as.mutation(api.profiles.updateMyProfile, {
+      primaryPlatform: "linkedin",
+    }),
+  ).rejects.toThrow("Choose a primary platform you have a handle for");
+  expect((await storedProfile(t, me.userId))?.primaryPlatform).toBeUndefined();
+});
+
+test("updateMyProfile clears the primary platform when its handle is removed", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+    handles: [
+      { platform: "x", value: "mayac", verified: true },
+      { platform: "linkedin", value: "maya-chen", verified: false },
+    ],
+    primaryPlatform: "x",
+  });
+
+  const saved = await me.as.mutation(api.profiles.updateMyProfile, {
+    handles: [{ platform: "linkedin", value: "maya-chen", verified: false }],
+  });
+
+  expect(saved.primaryPlatform).toBeUndefined();
+  expect((await storedProfile(t, me.userId))?.primaryPlatform).toBeUndefined();
+});
+
+test("updateMyProfile keeps the primary platform when an unrelated handle is removed", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+    handles: [
+      { platform: "x", value: "mayac", verified: true },
+      { platform: "phone", value: "+84 90 123 4567", verified: false },
+    ],
+    primaryPlatform: "x",
+  });
+
+  const saved = await me.as.mutation(api.profiles.updateMyProfile, {
+    handles: [{ platform: "x", value: "mayac", verified: true }],
+  });
+
+  expect(saved.primaryPlatform).toBe("x");
+});
+
+test("updateMyProfile refuses a photo blob that is not an image", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+  const notAnImage = await seedPhoto(t, "application/pdf");
+
+  await expect(
+    me.as.mutation(api.profiles.updateMyProfile, {
+      photoStorageId: notAnImage,
+    }),
+  ).rejects.toThrow("image");
+  expect((await storedProfile(t, me.userId))?.photoStorageId).toBeUndefined();
+});
+
 test("setUsername claims a normalized username owned by the caller", async () => {
   const t = convexTest(schema, modules);
   const me = asNewUser(t);
@@ -26,13 +243,7 @@ test("setUsername claims a normalized username owned by the caller", async () =>
   expect(await me.as.query(api.profiles.getMyProfile, {})).toMatchObject({
     username: "maya_7",
   });
-  const stored = await t.run((ctx) =>
-    ctx.db
-      .query("profiles")
-      .withIndex("by_user", (q) => q.eq("userId", me.userId))
-      .unique(),
-  );
-  expect(stored?.username).toBe("maya_7");
+  expect((await storedProfile(t, me.userId))?.username).toBe("maya_7");
 });
 
 test("setUsername enforces uniqueness across users", async () => {
@@ -62,6 +273,14 @@ test("profile functions reject unauthenticated callers", async () => {
   await expect(
     t.mutation(api.profiles.meetExchange, { username: "maya" }),
   ).rejects.toThrow("Not signed in");
+  await expect(
+    t.mutation(api.profiles.updateMyProfile, { name: "Maya" }),
+  ).rejects.toThrow("Not signed in");
+  await expect(
+    t.mutation(api.profiles.claimHandle, { handle: "maya" }),
+  ).rejects.toThrow("Not signed in");
+  // getByHandle is absent on purpose: it is the public web card page, so a
+  // signed-out visitor reaching it is the whole point, not an oversight.
 });
 
 test("lookupByUsername returns only public username data", async () => {
@@ -173,4 +392,219 @@ test("meetExchange requires a username for self and rejects self exchange", asyn
   await expect(
     alice.as.mutation(api.profiles.meetExchange, { username: "alice" }),
   ).rejects.toThrow("Enter the other person's username");
+});
+
+test("claimHandle claims a free handle and is idempotent for the same caller", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  const first = await me.as.mutation(api.profiles.claimHandle, {
+    handle: " @Maya_C ",
+  });
+  const again = await me.as.mutation(api.profiles.claimHandle, {
+    handle: "maya_c",
+  });
+
+  expect(first).toEqual({
+    status: "claimed",
+    handle: "maya_c",
+    suggestions: [],
+  });
+  expect(again).toEqual({
+    status: "claimed",
+    handle: "maya_c",
+    suggestions: [],
+  });
+  // Same field the beacon URL and the legacy web flow read.
+  expect(await me.as.query(api.profiles.getMyProfile, {})).toMatchObject({
+    username: "maya_c",
+  });
+});
+
+test("claimHandle reports taken and offers free suggestions", async () => {
+  const t = convexTest(schema, modules);
+  const holder = asNewUser(t);
+  const me = asNewUser(t);
+  await holder.as.mutation(api.profiles.claimHandle, { handle: "sky" });
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  const result = await me.as.mutation(api.profiles.claimHandle, {
+    handle: "SKY",
+  });
+
+  expect(result.status).toBe("taken");
+  expect(result.handle).toBe("sky");
+  expect(result.suggestions[0]).toBe("maya_chen");
+  expect(result.suggestions).not.toContain("sky");
+  // A rejected claim leaves the caller's own handle alone.
+  expect(await storedProfile(t, me.userId)).toMatchObject({
+    username: "maya",
+  });
+});
+
+test("claimHandle rejects a handle the beacon URL could not carry", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  await expect(
+    me.as.mutation(api.profiles.claimHandle, { handle: "maya chen!" }),
+  ).rejects.toThrow("3-24 lowercase letters");
+  await expect(
+    me.as.mutation(api.profiles.claimHandle, { handle: "maya-chen" }),
+  ).rejects.toThrow("3-24 lowercase letters");
+});
+
+test("claimHandle creates the row for a caller who has no profile yet", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  const claimed = await me.as.mutation(api.profiles.claimHandle, {
+    handle: "maya",
+  });
+
+  expect(claimed.status).toBe("claimed");
+  expect(await storedProfile(t, me.userId)).toMatchObject({ username: "maya" });
+});
+
+test("claimHandle and setUsername write the same handle field", async () => {
+  const t = convexTest(schema, modules);
+  const legacy = asNewUser(t);
+  const other = asNewUser(t);
+  await legacy.as.mutation(api.profiles.setUsername, { username: "maya" });
+
+  expect(
+    await other.as.mutation(api.profiles.claimHandle, { handle: "maya" }),
+  ).toMatchObject({ status: "taken" });
+
+  await other.as.mutation(api.profiles.claimHandle, { handle: "maya_c" });
+  expect(
+    await legacy.as.query(api.profiles.lookupByUsername, { username: "maya_c" }),
+  ).toEqual({ username: "maya_c" });
+});
+
+test("getByHandle serves the public card to a signed-out visitor", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  const photoStorageId = await seedPhoto(t);
+  await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+    photoStorageId,
+    city: { name: "Da Nang", admin: "Da Nang", country: "Vietnam" },
+    handles: [{ platform: "x", value: "mayac", verified: true }],
+    primaryPlatform: "x",
+  });
+
+  // No withIdentity: this is the unauthenticated web card page.
+  const card = await t.query(api.profiles.getByHandle, { handle: "@MAYA " });
+
+  expect(card).toMatchObject({
+    handle: "maya",
+    name: "Maya Chen",
+    city: { name: "Da Nang", admin: "Da Nang", country: "Vietnam" },
+    handles: [{ platform: "x", value: "mayac", verified: true }],
+    primaryPlatform: "x",
+  });
+  expect(card?.photoUrl).toEqual(expect.any(String));
+  // The Phase 3 filter key is ours, not the visitor's.
+  expect(card?.city).not.toHaveProperty("normalized");
+});
+
+test("getByHandle never exposes a phone number", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+    handles: [
+      { platform: "phone", value: "+84901234567", verified: false },
+      { platform: "instagram", value: "mayac", verified: false },
+    ],
+    primaryPlatform: "phone",
+  });
+
+  const card = await t.query(api.profiles.getByHandle, { handle: "maya" });
+
+  expect(JSON.stringify(card)).not.toContain("84901234567");
+  expect(card?.handles).toEqual([
+    { platform: "instagram", value: "mayac", verified: false },
+  ]);
+  // Still says "phone" so the page can show a Connect call to action.
+  expect(card?.primaryPlatform).toBe("phone");
+});
+
+test("getByHandle returns null for an unknown, unclaimable, or nameless handle", async () => {
+  const t = convexTest(schema, modules);
+  const legacy = asNewUser(t);
+  await legacy.as.mutation(api.profiles.setUsername, { username: "maya" });
+
+  // A legacy setUsername-only row has no card to show.
+  expect(await t.query(api.profiles.getByHandle, { handle: "maya" })).toBeNull();
+  expect(await t.query(api.profiles.getByHandle, { handle: "nobody" })).toBeNull();
+  expect(
+    await t.query(api.profiles.getByHandle, { handle: "not a handle!" }),
+  ).toBeNull();
+});
+
+test("the address ladder walks first name, then first_last, then a number", async () => {
+  const t = convexTest(schema, modules);
+  const first = asNewUser(t);
+  const second = asNewUser(t);
+  const third = asNewUser(t);
+
+  const one = await first.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+  });
+  const two = await second.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+  });
+  const three = await third.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+  });
+
+  expect([one.username, two.username, three.username]).toEqual([
+    "maya",
+    "maya_chen",
+    "maya_chen2",
+  ]);
+});
+
+test("the address ladder drops diacritics and punctuation", async () => {
+  const t = convexTest(schema, modules);
+  const holder = asNewUser(t);
+  const vietnamese = asNewUser(t);
+  await holder.as.mutation(api.profiles.claimHandle, { handle: "dang" });
+
+  const minted = await vietnamese.as.mutation(api.profiles.updateMyProfile, {
+    name: "Đặng O'Brien",
+  });
+
+  expect(minted.username).toBe("dang_obrien");
+});
+
+test("the address ladder falls back when a name has no latin letters", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  const minted = await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "李雷",
+  });
+
+  expect(minted.username).toBe("haven");
+});
+
+test("the address ladder truncates a long name to a legal handle", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  const other = asNewUser(t);
+
+  const minted = await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Wolfeschlegelsteinhausenbergerdorff Featherstonehaugh",
+  });
+  const next = await other.as.mutation(api.profiles.updateMyProfile, {
+    name: "Wolfeschlegelsteinhausenbergerdorff Featherstonehaugh",
+  });
+
+  expect(minted.username).toBe("wolfeschlegelsteinhausen");
+  expect(next.username).toMatch(/^[a-z0-9_]{3,24}$/);
+  expect(next.username).not.toBe(minted.username);
 });

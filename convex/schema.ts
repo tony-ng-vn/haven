@@ -1,5 +1,10 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import {
+  cityValidator,
+  handleValidator,
+  platformValidator,
+} from "./profileFields";
 
 export default defineSchema({
   people: defineTable({
@@ -109,15 +114,31 @@ export default defineSchema({
     count: v.number(),
   }).index("by_user_action", ["userId", "action"]),
 
-  // A user's public-in-the-moment Haven handle. This is not a social profile:
-  // it exists only so two people standing together can intentionally exchange.
+  // A user's own Haven card. `username` is the one handle the product has:
+  // the legacy web meet-exchange claims it via setUsername and the beacon QR
+  // encodes it as inhavens.com/<username>. Everything below it is the Phase 1
+  // card, all optional so rows claimed by the legacy flow stay valid with no
+  // backfill.
   profiles: defineTable({
     userId: v.string(),
     username: v.string(),
     updatedAt: v.number(),
+    name: v.optional(v.string()),
+    photoStorageId: v.optional(v.id("_storage")),
+    city: v.optional(cityValidator),
+    // Bounded, not unbounded: updateMyProfile allows one handle per platform,
+    // so this array can never hold more than four entries.
+    handles: v.optional(v.array(handleValidator)),
+    primaryPlatform: v.optional(platformValidator),
+    // Edit-only fields; never asked during onboarding, filtered on in Phase 3.
+    company: v.optional(v.string()),
+    role: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
-    .index("by_username", ["username"]),
+    .index("by_username", ["username"])
+    // The orphan sweep needs this to see that a photo is still in use.
+    // Without it a profile photo reads as unreferenced and gets deleted.
+    .index("by_photoStorageId", ["photoStorageId"]),
 
   // Opt-in, short-lived proximity sessions for Love Alarm. Kept separate from
   // people because heartbeats are intentionally high-churn operational data.
