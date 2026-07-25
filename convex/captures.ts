@@ -11,7 +11,7 @@ import { Doc } from "./_generated/dataModel";
 import { extractProfile } from "./openaiClient";
 import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
-import { normalizeName } from "./nameSearch";
+import { normalizeName, personSearchText } from "./nameSearch";
 import { requireImageBlob } from "./imageBlobs";
 
 const MINUTE_MS = 60_000;
@@ -200,9 +200,15 @@ export const acceptCapture = mutation({
     const personId = await ctx.db.insert("people", {
       userId,
       name: capture.extracted.name,
-      // Written here because this insert bypasses addPerson; without it the
-      // person is invisible to the normalized search index.
+      // Written here because this insert bypasses addPerson; without these
+      // the person is invisible to the name and keyword search indexes.
       normalizedName: normalizeName(capture.extracted.name),
+      searchText: personSearchText({
+        name: capture.extracted.name,
+        headline: capture.extracted.headline,
+        handle: capture.extracted.handle,
+        context: args.context,
+      }),
       link: args.link,
       context: args.context,
       updatedAt: Date.now(),
@@ -254,6 +260,11 @@ export const acceptManualCapture = mutation({
       name,
       // Same reason as acceptCapture: search visibility requires it.
       normalizedName: normalizeName(name),
+      searchText: personSearchText({
+        name,
+        headline: args.headline,
+        context: args.context,
+      }),
       link: args.link,
       context: args.context,
       headline: args.headline,

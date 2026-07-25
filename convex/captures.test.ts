@@ -221,6 +221,33 @@ test("acceptCapture creates an owned person and consumes the capture", async () 
   // Embedding was computed in the background from the person's text.
   expect(person?.embedding).toHaveLength(1536);
   expect(await t.run((ctx) => ctx.db.get("captures", captureId))).toBeNull();
+
+  // The insert bypasses addPerson, so it must feed the keyword index itself
+  // -- same reasoning as the normalizedName it already writes.
+  const hits = await as.query(api.people.searchDirectory, {
+    keyword: "meetup",
+  });
+  expect(hits.map((p) => p.name)).toEqual(["Ada Lovelace"]);
+});
+
+test("a manually named capture is findable by keyword search", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const screenshotId = await seedScreenshot(t);
+  // Not extracted yet: manual naming is allowed while the capture is still
+  // pending, and the person it creates must be searchable all the same.
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId,
+  });
+
+  await as.mutation(api.captures.acceptManualCapture, {
+    captureId,
+    name: "Vy Ho",
+    context: "runs the pho place in district 3",
+  });
+
+  const hits = await as.query(api.people.searchDirectory, { keyword: "pho" });
+  expect(hits.map((p) => p.name)).toEqual(["Vy Ho"]);
 });
 
 test("another user cannot accept or discard my capture", async () => {

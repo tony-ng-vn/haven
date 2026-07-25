@@ -351,6 +351,23 @@ test("meetExchange creates private people rows for both sides", async () => {
   ).toEqual(["@alice"]);
 });
 
+test("a meetExchange person is findable by keyword search", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+
+  await alice.as.mutation(api.profiles.meetExchange, { username: "bob" });
+
+  // ensureMeetPerson bypasses addPerson, so it must feed the keyword index
+  // itself -- the exchanged contact is findable by their handle.
+  const hits = await alice.as.query(api.people.searchDirectory, {
+    keyword: "bob",
+  });
+  expect(hits.map((p) => p.name)).toEqual(["@bob"]);
+});
+
 test("meetExchange is idempotent for repeated in-person confirmations", async () => {
   const t = convexTest(schema, modules);
   const alice = asNewUser(t);

@@ -250,6 +250,27 @@ describe("buildEmbedText", () => {
     );
   });
 
+  test("includes the structured card fields when present", () => {
+    expect(
+      buildEmbedText({
+        name: "Ada Lovelace",
+        role: "Compiler engineer",
+        company: "Analytical Engines",
+        cityName: "London",
+        context: "Met at the meetup.",
+      }),
+    ).toBe(
+      "Ada Lovelace\nCompiler engineer at Analytical Engines\nLondon\nMet at the meetup.",
+    );
+    // One side alone still reads as a sentence fragment, not "at undefined".
+    expect(buildEmbedText({ name: "Ada", company: "Analytical Engines" })).toBe(
+      "Ada\nAnalytical Engines",
+    );
+    expect(buildEmbedText({ name: "Ada", role: "Engineer" })).toBe(
+      "Ada\nEngineer",
+    );
+  });
+
   test("skips missing and blank parts", () => {
     expect(buildEmbedText({ name: "Grace Hopper" })).toBe("Grace Hopper");
     expect(

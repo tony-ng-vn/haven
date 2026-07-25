@@ -24,3 +24,38 @@ export function normalizeName(name: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+// One normalized haystack for the keyword side of the MVP search contract:
+// everything the owner can read on the card, folded exactly the way the
+// query will be. The contract only promises keywords-over-notes; indexing
+// the rest of the card is a strict superset that keeps one search box
+// honest ("dung" finds the person whether it was in the note or the name).
+// Every code path that inserts or edits a people row must write this field,
+// or the row goes invisible to keyword search (see backfillSearchText).
+export function personSearchText(person: {
+  name: string;
+  headline?: string;
+  company?: string;
+  role?: string;
+  city?: { name: string };
+  handle?: string;
+  contactHandles?: Array<{ value: string }>;
+  context?: string;
+}): string {
+  return normalizeName(
+    [
+      person.name,
+      person.headline,
+      person.company,
+      person.role,
+      person.city?.name,
+      person.handle,
+      ...(person.contactHandles ?? []).map((handle) => handle.value),
+      person.context,
+    ]
+      .filter(
+        (part): part is string => part !== undefined && part.trim() !== "",
+      )
+      .join(" "),
+  );
+}

@@ -914,6 +914,228 @@ test("listPeople pages the caller's directory, most recently touched first", asy
   ).rejects.toThrow("Not signed in");
 });
 
+// ------------------------------------------- MVP search contract (Phase 3)
+
+test("searchDirectory finds people by note keywords, scoped to the caller", async () => {
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+
+  await me.as.mutation(api.people.addPerson, {
+    name: "An Vo",
+    context: "wore a Spain shirt, works on the research team, talked soccer",
+    company: "Amazon",
+  });
+  await me.as.mutation(api.people.addPerson, {
+    name: "Binh Le",
+    context: "recruiter, met at the rooftop mixer",
+    company: "LinkedIn",
+  });
+  // Same keyword in another user's note must never surface here.
+  await other.as.mutation(api.people.addPerson, {
+    name: "Rao",
+    context: "planning a Spain trip",
+  });
+
+  const hits = await me.as.query(api.people.searchDirectory, {
+    keyword: "spain",
+  });
+  expect(hits.map((p) => p.name)).toEqual(["An Vo"]);
+});
+
+test("searchDirectory combines a keyword with chip filters", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+
+  await as.mutation(api.people.addPerson, {
+    name: "An Vo",
+    context: "talked soccer at the meetup",
+    company: "Amazon",
+  });
+  await as.mutation(api.people.addPerson, {
+    name: "Binh Le",
+    context: "talked soccer over coffee",
+    company: "LinkedIn",
+  });
+
+  const both = await as.query(api.people.searchDirectory, {
+    keyword: "soccer",
+  });
+  expect(both.map((p) => p.name).sort()).toEqual(["An Vo", "Binh Le"]);
+
+  const chipped = await as.query(api.people.searchDirectory, {
+    keyword: "soccer",
+    company: "amazon",
+  });
+  expect(chipped.map((p) => p.name)).toEqual(["An Vo"]);
+
+  const none = await as.query(api.people.searchDirectory, {
+    keyword: "soccer",
+    company: "Photon",
+  });
+  expect(none).toEqual([]);
+});
+
+test("searchDirectory filters by chips alone, accent-insensitively", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+
+  await as.mutation(api.people.addPerson, {
+    name: "An Vo",
+    company: "LinkedIn",
+    city: { name: "San Francisco" },
+  });
+  await as.mutation(api.people.addPerson, {
+    name: "Binh Le",
+    company: "LinkedIn",
+    role: "Recruiter",
+    city: { name: "S\u00e0i G\u00f2n" },
+  });
+
+  const company = await as.query(api.people.searchDirectory, {
+    company: "linkedin",
+  });
+  expect(company.map((p) => p.name).sort()).toEqual(["An Vo", "Binh Le"]);
+
+  // The accented stored city matches the plain-typed chip, same folding as
+  // name search.
+  const city = await as.query(api.people.searchDirectory, {
+    company: "LinkedIn",
+    city: "sai gon",
+  });
+  expect(city.map((p) => p.name)).toEqual(["Binh Le"]);
+
+  const role = await as.query(api.people.searchDirectory, { role: "recruiter" });
+  expect(role.map((p) => p.name)).toEqual(["Binh Le"]);
+
+  const miss = await as.query(api.people.searchDirectory, {
+    company: "LinkedIn",
+    city: "Da Nang",
+  });
+  expect(miss).toEqual([]);
+});
+
+test("searchDirectory with no keyword and no chips returns recent people", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  await as.mutation(api.people.addPerson, { name: "An" });
+  vi.advanceTimersByTime(1000);
+  await as.mutation(api.people.addPerson, { name: "Binh" });
+
+  const hits = await as.query(api.people.searchDirectory, {});
+  expect(hits.map((p) => p.name)).toEqual(["Binh", "An"]);
+});
+
+test("searchDirectory keyword also matches names and card text", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  await as.mutation(api.people.addPerson, {
+    name: "Nguy\u1ec5n V\u0103n D\u0169ng",
+    company: "Photon",
+  });
+
+  // The contract promises notes; matching the rest of the card is a strict
+  // superset that keeps one search box honest.
+  const byName = await as.query(api.people.searchDirectory, {
+    keyword: "dung",
+  });
+  expect(byName.map((p) => p.name)).toEqual(["Nguy\u1ec5n V\u0103n D\u0169ng"]);
+
+  const byCompany = await as.query(api.people.searchDirectory, {
+    keyword: "photon",
+  });
+  expect(byCompany).toHaveLength(1);
+});
+
+test("backfillSearchText patches legacy rows so keyword search finds them", async () => {
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  // A row from before searchText existed, inserted raw like a legacy write.
+  await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "Ada Lovelace",
+      normalizedName: "ada lovelace",
+      context: "compiler engineer, met at the analytical engines meetup",
+      updatedAt: Date.now(),
+    }),
+  );
+
+  // No pre-backfill query here: convex-test crashes iterating a search
+  // index over a row whose search field is missing, where real Convex just
+  // leaves the row out of the index. The patched count proves targeting.
+  const patched = await t.mutation(internal.people.backfillSearchText, {});
+  expect(patched).toBe(1);
+
+  const hits = await as.query(api.people.searchDirectory, {
+    keyword: "compiler",
+  });
+  expect(hits.map((p) => p.name)).toEqual(["Ada Lovelace"]);
+
+  // A second run finds nothing left to patch.
+  expect(await t.mutation(internal.people.backfillSearchText, {})).toBe(0);
+});
+
+test("directoryFacets lists the caller's chip values with counts", async () => {
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+
+  await me.as.mutation(api.people.addPerson, {
+    name: "A",
+    company: "LinkedIn",
+    city: { name: "S\u00e0i G\u00f2n" },
+  });
+  vi.advanceTimersByTime(1000);
+  await me.as.mutation(api.people.addPerson, {
+    name: "B",
+    company: "linkedin",
+    role: "Recruiter",
+  });
+  vi.advanceTimersByTime(1000);
+  await me.as.mutation(api.people.addPerson, {
+    name: "C",
+    company: "Amazon",
+    city: { name: "Sai Gon" },
+  });
+  await other.as.mutation(api.people.addPerson, { name: "D", company: "Photon" });
+
+  const facets = await me.as.query(api.people.directoryFacets, {});
+
+  // Case and accent variants collapse into one chip; the most recently used
+  // spelling is the label; bigger groups list first. Another user's values
+  // never appear.
+  expect(facets.companies).toEqual([
+    { value: "linkedin", count: 2 },
+    { value: "Amazon", count: 1 },
+  ]);
+  expect(facets.cities).toEqual([{ value: "Sai Gon", count: 2 }]);
+  expect(facets.roles).toEqual([{ value: "Recruiter", count: 1 }]);
+});
+
+test("searchDirectory reflects edits immediately", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const id = await as.mutation(api.people.addPerson, {
+    name: "An",
+    context: "met at the soccer game",
+  });
+
+  await as.mutation(api.people.editPerson, {
+    id,
+    context: "runs a pho place in district 3",
+  });
+
+  expect(
+    await as.query(api.people.searchDirectory, { keyword: "soccer" }),
+  ).toEqual([]);
+  expect(
+    (await as.query(api.people.searchDirectory, { keyword: "pho" })).map(
+      (p) => p.name,
+    ),
+  ).toEqual(["An"]);
+});
+
 test("editPerson enforces ownership, auth, and the context cap", async () => {
   const t = convexTest(schema, modules);
   const me = await asNewUser(t);

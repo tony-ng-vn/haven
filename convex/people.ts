@@ -19,7 +19,7 @@ import { buildEmbedText } from "../src/lib";
 import { embedText } from "./openaiClient";
 import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
-import { normalizeName } from "./nameSearch";
+import { normalizeName, personSearchText } from "./nameSearch";
 import { cityInputValidator } from "./profileFields";
 import { contactHandleValidator } from "./peopleFields";
 import { requireImageBlob } from "./imageBlobs";
@@ -229,6 +229,7 @@ export const addPerson = mutation({
       args.preferredPlatform === undefined
         ? undefined
         : validatePreferredPlatform(args.preferredPlatform, contactHandles ?? []);
+    const attributes = structuredAttributeFields(args);
     const personId = await ctx.db.insert("people", {
       userId,
       name,
@@ -237,7 +238,15 @@ export const addPerson = mutation({
       contactHandles,
       preferredPlatform,
       photoStorageId: args.photoStorageId,
-      ...structuredAttributeFields(args),
+      ...attributes,
+      searchText: personSearchText({
+        name,
+        company: attributes.company,
+        role: attributes.role,
+        city: attributes.city,
+        contactHandles,
+        context: args.context,
+      }),
       updatedAt: Date.now(),
     });
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
@@ -292,6 +301,169 @@ export const listPeople = query({
   },
 });
 
+// The MVP search contract (mvp-design): chips over company, city, and role,
+// combined with keywords over the card and notes. Chips arrive as display
+// values and fold to keys server-side, so "Sai Gon" and "S\u00e0i G\u00f2n" (escaped)
+// are the same chip. No fragment at all falls back to the recent directory,
+// so the screen is never empty-handed.
+export const searchDirectory = query({
+  args: {
+    keyword: v.optional(v.string()),
+    company: v.optional(v.string()),
+    city: v.optional(v.string()),
+    role: v.optional(v.string()),
+  },
+  returns: v.array(personValidator),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    // A chip that folds to nothing (only punctuation/marks) is no chip:
+    // rows never store an empty key, so matching "" would silently mean
+    // "match nobody" instead of "ignore this chip".
+    const chipKey = (raw: string | undefined) => {
+      if (raw === undefined) {
+        return undefined;
+      }
+      const key = normalizeName(raw);
+      return key === "" ? undefined : key;
+    };
+    const keyword = normalizeName(args.keyword ?? "");
+    const companyKey = chipKey(args.company);
+    const cityKey = chipKey(args.city);
+    const roleKey = chipKey(args.role);
+
+    if (keyword !== "") {
+      const people = await ctx.db
+        .query("people")
+        .withSearchIndex("search_text", (q) => {
+          let search = q.search("searchText", keyword).eq("userId", userId);
+          if (companyKey !== undefined) {
+            search = search.eq("companyKey", companyKey);
+          }
+          if (cityKey !== undefined) {
+            search = search.eq("cityKey", cityKey);
+          }
+          if (roleKey !== undefined) {
+            search = search.eq("roleKey", roleKey);
+          }
+          return search;
+        })
+        .take(RESULT_LIMIT);
+      return await Promise.all(
+        people.map((person) => projectPerson(ctx, person)),
+      );
+    }
+
+    // Chip-only: range on the most selective chip's index and post-filter
+    // the rest. The filter does not shrink rows read, but the range is
+    // already bounded to one user and one chip value.
+    const indexed =
+      companyKey !== undefined
+        ? ctx.db
+            .query("people")
+            .withIndex("by_user_and_companyKey", (q) =>
+              q.eq("userId", userId).eq("companyKey", companyKey),
+            )
+        : cityKey !== undefined
+          ? ctx.db
+              .query("people")
+              .withIndex("by_user_and_cityKey", (q) =>
+                q.eq("userId", userId).eq("cityKey", cityKey),
+              )
+          : roleKey !== undefined
+            ? ctx.db
+                .query("people")
+                .withIndex("by_user_and_roleKey", (q) =>
+                  q.eq("userId", userId).eq("roleKey", roleKey),
+                )
+            : null;
+    if (indexed === null) {
+      const recent = await ctx.db
+        .query("people")
+        .withIndex("by_user_and_updatedAt", (q) => q.eq("userId", userId))
+        .order("desc")
+        .take(RESULT_LIMIT);
+      return await Promise.all(
+        recent.map((person) => projectPerson(ctx, person)),
+      );
+    }
+    const people = await indexed
+      .order("desc")
+      .filter((q) =>
+        q.and(
+          companyKey === undefined
+            ? true
+            : q.eq(q.field("companyKey"), companyKey),
+          cityKey === undefined ? true : q.eq(q.field("cityKey"), cityKey),
+          roleKey === undefined ? true : q.eq(q.field("roleKey"), roleKey),
+        ),
+      )
+      .take(RESULT_LIMIT);
+    return await Promise.all(people.map((person) => projectPerson(ctx, person)));
+  },
+});
+
+const facetValidator = v.object({ value: v.string(), count: v.number() });
+
+// Bounded honestly: only the FACET_SCAN_LIMIT most recently touched people
+// are counted, so past that size the counts go approximate. The upgrade
+// path, if a directory ever outgrows this, is denormalized per-user facet
+// counters maintained by the mutations.
+const FACET_SCAN_LIMIT = 1000;
+const FACET_LIMIT = 30;
+
+// The values behind the search screen's chips, drawn from the caller's own
+// directory. Case and accent variants collapse into one chip (by derived
+// key); the most recently used spelling is the label.
+export const directoryFacets = query({
+  args: {},
+  returns: v.object({
+    companies: v.array(facetValidator),
+    cities: v.array(facetValidator),
+    roles: v.array(facetValidator),
+  }),
+  handler: async (ctx) => {
+    const userId = await requireUser(ctx);
+    const people = await ctx.db
+      .query("people")
+      .withIndex("by_user_and_updatedAt", (q) => q.eq("userId", userId))
+      .order("desc")
+      .take(FACET_SCAN_LIMIT);
+
+    const collect = (
+      entries: Array<{ key?: string; label?: string }>,
+    ): Array<{ value: string; count: number }> => {
+      const byKey = new Map<string, { value: string; count: number }>();
+      for (const { key, label } of entries) {
+        if (key === undefined || label === undefined) {
+          continue;
+        }
+        const existing = byKey.get(key);
+        if (existing === undefined) {
+          // First sighting in a newest-first scan: the freshest spelling
+          // becomes the label.
+          byKey.set(key, { value: label, count: 1 });
+        } else {
+          existing.count++;
+        }
+      }
+      // Sort is stable, so equal counts keep their newest-first order.
+      return [...byKey.values()]
+        .sort((a, b) => b.count - a.count)
+        .slice(0, FACET_LIMIT);
+    };
+
+    return {
+      companies: collect(
+        people.map((p) => ({ key: p.companyKey, label: p.company })),
+      ),
+      cities: collect(
+        people.map((p) => ({ key: p.cityKey, label: p.city?.name })),
+      ),
+      roles: collect(people.map((p) => ({ key: p.roleKey, label: p.role }))),
+    };
+  },
+});
+
 export const getPerson = query({
   args: { id: v.id("people") },
   returns: v.union(v.null(), personValidator),
@@ -330,6 +502,7 @@ export const updatePerson = mutation({
     await ctx.db.patch("people", args.id, {
       link: args.link,
       context: args.context,
+      searchText: personSearchText({ ...person, context: args.context }),
       updatedAt: Date.now(),
     });
     await ctx.scheduler.runAfter(0, internal.people.embed, {
@@ -454,6 +627,10 @@ export const editPerson = mutation({
       fields.photoStorageId = next;
     }
 
+    // Recomputed from the merged next state, so a cleared field's words stop
+    // matching the moment the edit lands.
+    fields.searchText = personSearchText({ ...person, ...fields });
+
     await ctx.db.patch("people", args.id, { ...fields, updatedAt: Date.now() });
     await ctx.scheduler.runAfter(0, internal.people.embed, {
       personId: args.id,
@@ -533,6 +710,9 @@ async function embedPerson(
     platform: person.platform,
     handle: person.handle,
     headline: person.headline,
+    role: person.role,
+    company: person.company,
+    cityName: person.city?.name,
     context: person.context,
   }).slice(0, MAX_EMBED_INPUT_LENGTH);
   // Idempotent: the stored (sliced) text is the key for the stored vector.
@@ -709,6 +889,26 @@ export const backfillEmbeddings = internalAction({
       }
     }
     return embedded;
+  },
+});
+
+// One-off maintenance: rows written before searchText existed are invisible
+// to keyword search until patched. Run once after deploy with:
+// npx convex run people:backfillSearchText
+export const backfillSearchText = internalMutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const candidates = await ctx.db.query("people").take(BACKFILL_BATCH_SIZE);
+    const missing = candidates.filter(
+      (person) => person.searchText === undefined,
+    );
+    for (const person of missing) {
+      await ctx.db.patch("people", person._id, {
+        searchText: personSearchText(person),
+      });
+    }
+    return missing.length;
   },
 });
 

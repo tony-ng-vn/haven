@@ -4,7 +4,7 @@ import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
-import { normalizeName } from "./nameSearch";
+import { normalizeName, personSearchText } from "./nameSearch";
 import { requireImageBlob } from "./imageBlobs";
 import {
   cityInputValidator,
@@ -267,11 +267,18 @@ async function ensureMeetPerson(args: {
   }
 
   const displayName = `@${args.contactUsername}`;
+  const meetContext = "Met in person through Haven Meet.";
   const personId = await args.ctx.db.insert("people", {
     userId: args.ownerUserId,
     name: displayName,
     normalizedName: normalizeName(args.contactUsername),
-    context: "Met in person through Haven Meet.",
+    // This insert bypasses addPerson, so it feeds the keyword index itself.
+    searchText: personSearchText({
+      name: displayName,
+      handle: args.contactUsername,
+      context: meetContext,
+    }),
+    context: meetContext,
     updatedAt: args.now,
     platform: "Haven",
     handle: args.contactUsername,

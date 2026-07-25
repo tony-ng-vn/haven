@@ -55,6 +55,10 @@ export default defineSchema({
     // embed action can skip recomputing an unchanged person.
     embedding: v.optional(v.array(v.float64())),
     embeddedText: v.optional(v.string()),
+    // Keyword haystack for search_text, pre-folded by personSearchText in
+    // nameSearch.ts. Optional because legacy rows need a backfill -- same
+    // reasoning as normalizedName above; see backfillSearchText.
+    searchText: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
     // The Directory screen pages most-recently-touched first.
@@ -64,9 +68,18 @@ export default defineSchema({
     // needs a sound, bounded way to check "is this blob referenced?".
     .index("by_screenshotId", ["screenshotId"])
     .index("by_photoStorageId", ["photoStorageId"])
+    // Chip-only searches (no keyword) range on one of these; a keyword
+    // search reaches the same chips through search_text's filterFields.
+    .index("by_user_and_companyKey", ["userId", "companyKey"])
+    .index("by_user_and_cityKey", ["userId", "cityKey"])
+    .index("by_user_and_roleKey", ["userId", "roleKey"])
     .searchIndex("search_normalized_name", {
       searchField: "normalizedName",
       filterFields: ["userId"],
+    })
+    .searchIndex("search_text", {
+      searchField: "searchText",
+      filterFields: ["userId", "companyKey", "cityKey", "roleKey"],
     })
     .vectorIndex("by_embedding", {
       vectorField: "embedding",
