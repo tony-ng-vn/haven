@@ -18,7 +18,23 @@ export const LENS = {
   // Only the nearer, brighter stars join the figure. Faint background dust
   // would make it a web instead of a constellation.
   minStarSize: 0.95,
+  // After this long without a pointer move the lens detaches and wanders, so a
+  // phone (or an idle desktop) still sees the constellation form.
+  idleMs: 2000,
 } as const;
+
+// Two slow sines per axis at incommensurate rates, so the path never visibly
+// repeats and never reads as a loop. `time` is seconds.
+export function wanderPoint(
+  time: number,
+  width: number,
+  height: number,
+): Point {
+  return {
+    x: width * (0.5 + 0.3 * Math.sin(time * 0.11) + 0.1 * Math.sin(time * 0.29)),
+    y: height * (0.46 + 0.24 * Math.cos(time * 0.09) + 0.08 * Math.cos(time * 0.23)),
+  };
+}
 
 export type Point = { x: number; y: number };
 

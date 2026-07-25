@@ -4,13 +4,13 @@ import { ConvexError } from "convex/values";
 import { api } from "../convex/_generated/api";
 import { isValidEmail } from "./lib";
 import { DriftSky } from "./DriftSky";
+import { WAITLIST_COPY } from "./waitlistCopy";
 
-// The public /#/join waitlist. One page that becomes two: a wide viewport gets
-// the "constellation" layout (copy settled in the lower third), a narrow one
-// gets the "drift" layout (headline up top, capture at the bottom). Both ride
-// the same drifting star field, and this page takes its constellation lens:
-// stars near the pointer join up, which is the headline made interactive. The
-// 620px breakpoint drives layout and copy together so they never disagree.
+// The public waitlist. One page, two layouts at 620px: wide gets the centered
+// "constellation" composition, narrow gets headline-up / capture-down. Both
+// share one voice from waitlistCopy -- mode only flips layout (and the
+// analytics source), never wording. Both ride the same drifting star field
+// with the constellation lens: stars near the pointer join up.
 type Mode = "desktop" | "phone";
 // "already" is a first-class outcome, not an error: the person is on the list,
 // they just submitted a second time. The server dedups by email and returns it
@@ -25,27 +25,6 @@ function initialMode(): Mode {
     ? "desktop"
     : "phone";
 }
-
-// Copy shifts with the layout; each side keeps the wording it was designed with.
-const COPY: Record<Mode, {
-  headline: string;
-  sub: string;
-  cta: string;
-  fine: string;
-}> = {
-  desktop: {
-    headline: "Your people are a constellation.",
-    sub: "Every person you meet becomes a point of light - and Haven keeps them from drifting away.",
-    cta: "Join",
-    fine: "Private beta",
-  },
-  phone: {
-    headline: "The people you meet, never lost again.",
-    sub: "A quiet memory layer over the people of your life. Get in early.",
-    cta: "Request access",
-    fine: "No spam. Invites go out in waves.",
-  },
-};
 
 function CheckIcon() {
   return (
@@ -67,8 +46,7 @@ export function Waitlist() {
   const [error, setError] = useState<string | null>(null);
   const join = useMutation(api.waitlist.joinWaitlist);
 
-  // Layout follows the page width, flipping at the same breakpoint the copy
-  // uses so the two stay in step.
+  // Layout follows the page width. Copy does not -- see waitlistCopy.ts.
   useEffect(() => {
     const root = rootRef.current;
     if (root === null) return;
@@ -110,8 +88,6 @@ export function Waitlist() {
     }
   }
 
-  const copy = COPY[mode];
-
   return (
     <div ref={rootRef} className="waitlist" data-mode={mode}>
       <DriftSky className="wl-sky" lens />
@@ -123,23 +99,23 @@ export function Waitlist() {
             </div>
             <p className="wl-checkline">
               {status === "already"
-                ? "You're already on the list."
-                : "You are on the list."}
+                ? WAITLIST_COPY.alreadyTitle
+                : WAITLIST_COPY.joinedTitle}
             </p>
             <p className="wl-sub wl-joined-sub">
               {status === "already"
-                ? "This email is already registered - no need to sign up again. We'll be in touch."
-                : "Thank you for joining us, to be in the true social that brings you to other people in your life"}
+                ? WAITLIST_COPY.alreadyBody
+                : WAITLIST_COPY.joinedBody}
             </p>
           </div>
         ) : (
           <>
             <div className="wl-top">
-              <span className="wl-eyebrow">Haven - private beta</span>
-              <h1 className="wl-headline">{copy.headline}</h1>
+              <span className="wl-eyebrow">{WAITLIST_COPY.eyebrow}</span>
+              <h1 className="wl-headline">{WAITLIST_COPY.headline}</h1>
             </div>
             <div className="wl-bottom">
-              <p className="wl-sub">{copy.sub}</p>
+              <p className="wl-sub">{WAITLIST_COPY.sub}</p>
               <form
                 className={revealed ? "wl-form is-revealed" : "wl-form"}
                 onSubmit={onSubmit}
@@ -168,7 +144,7 @@ export function Waitlist() {
                     disabled={status === "submitting"}
                     inert={revealed}
                   >
-                    {status === "submitting" ? "Joining" : copy.cta}
+                    {status === "submitting" ? WAITLIST_COPY.submitting : WAITLIST_COPY.cta}
                   </button>
                 </div>
                 <div className="wl-email-wrap" inert={!revealed}>
@@ -187,7 +163,7 @@ export function Waitlist() {
                       }}
                     />
                     <button className="wl-go" type="submit" disabled={status === "submitting"}>
-                      {status === "submitting" ? "Joining" : copy.cta}
+                      {status === "submitting" ? WAITLIST_COPY.submitting : WAITLIST_COPY.cta}
                     </button>
                   </div>
                 </div>
@@ -195,7 +171,7 @@ export function Waitlist() {
               {error !== null ? (
                 <p className="wl-error" role="alert">{error}</p>
               ) : (
-                <p className="wl-fine">{copy.fine}</p>
+                <p className="wl-fine">{WAITLIST_COPY.fine}</p>
               )}
             </div>
           </>
