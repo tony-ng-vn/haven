@@ -138,8 +138,8 @@ Three tables. This is the whole backend for MVP.
 ### profiles
 
 A Haven user's own card, the canonical source of their data.
-Fields: name, photo, handles (Instagram, X, LinkedIn, phone, each flagged verified when it came from an OAuth connection), the primary platform, structured attributes (city as name plus admin area plus country, company, role), and a unique `havenHandle` that the beacon URL resolves to.
-The exact field list Phase 1 adds is in `phase1-build-plan.md`.
+Fields: name, photo, handles (Instagram, X, LinkedIn, phone, each flagged verified when the handle itself was proven rather than typed), the primary platform, structured attributes (city as name plus admin area plus country, company, role), and a unique handle that the beacon URL resolves to.
+The exact field list Phase 1 adds is in `phase1-build-plan.md`, including how that beacon handle settles against the `username` this table already has.
 
 ### contacts
 
@@ -176,15 +176,19 @@ Photo is never asked; it arrives with an OAuth connection or later in edit.
 Company and role live in the schema and on the edit screen, never in onboarding.
 The screen-by-screen spec is in `phase1-build-plan.md`.
 
-My Card: your profile as a card that you show people. Editable, and the surface where unfilled fields read as unlit stars.
+My Card: your profile as a card that you show people, editable field by field.
+This is also where unfilled fields read as unlit stars, which is the whole nudge to complete them.
 
 Your beacon: your QR, resolving to `inhavens.com/<havenHandle>` rather than to any social profile.
 
 Connect: start or accept a connection, and save a non-user manually.
 
-Directory (home): the list of your contacts with search on top. Money screen one.
+Directory (home): the list of your contacts, with a search field at the top that hands off to the Search screen rather than filtering in place.
+Money screen one.
 
-Contact detail with the notes editor: one person's attributes, socials, a tappable preferred-contact that opens straight into WhatsApp or IG or phone, and your memory notes with a first-class editing experience. Money screen two.
+Contact detail with the notes editor: one person's attributes, their handles, a tappable preferred contact that opens straight into whatever app they actually use, and your memory notes with a first-class editing experience.
+Money screen two.
+Note the asymmetry here: your own card offers four platforms (Instagram, X, LinkedIn, phone), but a person you save manually can carry any handle you want to record, WhatsApp and Telegram included.
 
 Add contact manually: for people not on Haven (name, photo, socials, notes).
 
@@ -228,10 +232,12 @@ The core loop is Capture, then Refine, then Recall, then Reach, wrapped by onboa
 
 ### A. Set up my card (onboarding, once)
 
-I download Haven and sign in.
-I build my card: photo, name, my handles, and I mark the one I actually want people to reach me on.
-I add where I live, where I work, and my role.
-Now I have a card I can show anyone, and I am findable by the people I connect with.
+I download Haven and sign in on the first screen.
+It asks me three things: my name, the city I am in, and one way to reach me.
+For that last one I connect an account instead of typing a handle, so it fills itself in and brings my photo with it.
+Then my card appears, my own constellation completing above my name, and I am done.
+Later, whenever I feel like it, I open My Card and fill in the rest: where I work, my role, another handle or two.
+The fields I have not filled sit there as unlit stars, so I can see what is missing without anyone nagging me.
 
 ### B. Meet someone and capture them (Capture)
 
@@ -260,7 +266,7 @@ The natural-language version of this ("who was the guy in the Spain shirt from K
 ### E. Reach out (Reach)
 
 I found them, and their card shows the contact method they actually want to be reached on.
-I tap it and it opens straight into WhatsApp or IG or their number.
+I tap it and it opens straight into that app, or dials their number.
 I never had to remember which platform they prefer or dig through five apps, because Haven centralized it.
 
 Everything on the roadmap just makes one of these steps lower-friction or richer.

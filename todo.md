@@ -18,8 +18,9 @@ Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
   - [ ] 7. Beacon screen with real QR and handle claim (flagged off until the web card page exists).
   - [ ] 8. Lock Screen widget and deep link.
   - [ ] 9. Public web card page at `inhavens.com/<handle>` (web repo, parallel track after milestone 3).
-  - [ ] Answer the four open questions in the build plan. None block milestone 1; the handle UX question is due before milestone 4.
-- [ ] Decide the fate of the orphaned web product surface (`people`, `captures`, `loveAlarm`, `sharedNotes`): formally parked, or deleted.
+  - [ ] Answer the six open questions in the build plan. None block milestone 1. Question 5 (`havenHandle` versus the existing `username`) blocks milestone 3, so it goes first; the handle UX question is due before milestone 4.
+  - [ ] Fix `ios/`: `HavenConvexAuthProvider.swift` is on disk but missing from `project.pbxproj`, so a clean checkout does not build. Batch it with converting `ios/Haven/` to an Xcode 16 buildable folder and adding a `HavenTests` target, since all three touch the same file.
+- [ ] Decide the fate of the orphaned web product surface (`people`, `captures`, `loveAlarm`, `sharedNotes`): formally parked, or deleted. Note `profiles.username` is entangled with this, see build plan question 5.
 - [ ] Housekeeping: pull `main` into the working checkout, then remove the leftover `.worktrees/feat-ios-foundations` worktree and its branch so there is one copy.
 
 ## MVP backlog (in order)

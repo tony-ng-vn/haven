@@ -67,6 +67,10 @@ The prototype is the visual truth but it cheats in places a shipped app cannot.
 - The prototype's semantic search ("Understood: people who are...") is a faked preview of the post-MVP fast-follow.
   Phase 3 ships the literal contract from `mvp-design.md` (filter chips plus keyword); keep the interp line's visual slot reserved but build none of it now.
 - Onboarding needs real failure states the prototype omits: a mutation retry path when the network drops mid-onboarding, a loading state on Continue, and a resume path if the app is killed between sign-in and card completion (persist onboarding progress locally, resume at the first unanswered question).
+- Ignore the prototype's email remnants.
+  Its prose says "phone and email are typed" and its Or-type-one group is labelled "phone and email", and there is an unreachable email branch left in the script, but email is in neither the ratified platform list nor the schema enum.
+  Build no email path.
+  Same section says "all four say Connect" about the social rows when only three of the four platforms are social.
 
 ## Screen specs
 
@@ -175,10 +179,18 @@ Schema additions on `profiles` (all optional):
 - `name: string`
 - `photoStorageId: Id<"_storage">` (upload pattern already exists in `convex/captures.ts`)
 - `city: { name, admin, country }` plus a normalized lowercase key for Phase 3 filtering (reuse the `normalizeName` approach in `convex/nameSearch.ts`)
-- `handles: [{ platform: "instagram" | "x" | "linkedin" | "phone", value, verified: boolean }]` (verified means it came from an OAuth connection)
+- `handles: [{ platform: "instagram" | "x" | "linkedin" | "phone", value, verified: boolean }]`
+  `verified` means the value itself was proven, not merely that an OAuth round trip happened.
+  So X is verified (the external account carries the username) and LinkedIn is not (OAuth proves the person but the handle is a slug they confirmed by hand), which is the whole reason its confirm panel exists.
 - `primaryPlatform: string`
 - `company: string`, `role: string` (edit-only fields)
 - `havenHandle: string` (unique, indexed)
+
+Before writing any of this, settle `havenHandle` against the `username` that `profiles` already has.
+`convex/schema.ts` already carries a unique, indexed `username`, and `convex/profiles.ts` already claims it idempotently in `setUsername` for the legacy meet-exchange flow.
+Two unique handles on one row, one resolving the beacon URL and one owned by dead web code, is a trap: nothing tells you which one the QR encodes, and they will drift.
+Recommendation: reuse `username` as the beacon handle and let `claimHandle` supersede `setUsername` (adding the suggestion ladder and returning a status instead of throwing), after checking that `validateUsername`'s rules are safe in a URL path.
+This is open question 5 below.
 
 Functions:
 
@@ -250,6 +262,12 @@ Each has a recommendation; answer before the relevant milestone, none block mile
    Recommendation: two tabs as prototyped; you asked for two main screens and the tab bar is where Phase 2 grows.
 4. "Beacon" naming: keep, or fall back to "tag"?
    Recommendation: keep beacon; revisit only if cohort testing shows confusion.
+5. `havenHandle` versus the existing `username` on `profiles`: reuse one field, or carry both?
+   Recommendation: reuse `username`, per the schema section above.
+   This one blocks milestone 3 rather than milestone 4, so answer it first.
+6. The X username read: decision 10 notes that X's username API sits behind paid tiers, while the contact contract assumes Clerk's external account hands back the username at link time.
+   Both hold only if Clerk's own app-tier access covers that read.
+   Confirm in the day-one OAuth spike of milestone 4; if it does not, X degrades to the paste-a-link path like a personal Instagram account.
 
 ## On canvasui.dev
 

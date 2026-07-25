@@ -14,7 +14,9 @@ Remembering them is hard.
 
 You meet someone great at an event, connect on some app, and months later you cannot recall their name, where they worked, or how to reach them.
 Every platform only lets you search by name or a username that might have changed.
-Haven lets you search by everything you actually remember: "who do I know at LinkedIn who lives in SF", or "the person in the Spain shirt from that party".
+Haven lets you search by everything you actually remember instead.
+Filter by company LinkedIn and city SF, or search the words you wrote down, like "Spain shirt".
+Asking it in a full sentence ("who was the guy in the Spain shirt from that party") is where this is headed, not what it does yet.
 
 ## What you can do
 
