@@ -135,7 +135,10 @@ export default defineSchema({
     role: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
-    .index("by_username", ["username"]),
+    .index("by_username", ["username"])
+    // The orphan sweep needs this to see that a photo is still in use.
+    // Without it a profile photo reads as unreferenced and gets deleted.
+    .index("by_photoStorageId", ["photoStorageId"]),
 
   // Opt-in, short-lived proximity sessions for Love Alarm. Kept separate from
   // people because heartbeats are intentionally high-churn operational data.
