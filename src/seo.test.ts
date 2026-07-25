@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { WAITLIST_COPY } from "./waitlistCopy";
 
 // Search engines rank us for the brand query "inhavens" only if that token
 // actually appears where they look: title, structured data, and visible copy.
@@ -37,12 +36,9 @@ describe("brand SEO for the inhavens query", () => {
       /<script type="application\/ld\+json">([\s\S]*?)<\/script>/,
     )?.[1];
     expect(jsonLd).toBeDefined();
-    const graph = JSON.parse(jsonLd as string)["@graph"] as Array<{
-      "@type": string;
-      name: string;
-      alternateName: string[];
-      url: string;
-    }>;
+    const graph = JSON.parse(jsonLd ?? "")["@graph"] as Array<
+      Record<string, unknown>
+    >;
     const types = graph.map((node) => node["@type"]);
     expect(types).toContain("WebSite");
     expect(types).toContain("Organization");
@@ -72,7 +68,10 @@ describe("brand SEO for the inhavens query", () => {
     expect(sitemap).toContain("<loc>https://inhavens.com/</loc>");
   });
 
-  test("visible waitlist copy carries the domain", () => {
-    expect(WAITLIST_COPY.fine.toLowerCase()).toContain("inhavens.com");
+  test("the waitlist renders the domain as visible text", () => {
+    // The layout owns this mention (SEO chrome), not the copy deck; see the
+    // comment beside the fine print in Waitlist.tsx.
+    const waitlist = readFileSync(join(root, "src", "Waitlist.tsx"), "utf8");
+    expect(waitlist).toContain("inhavens.com");
   });
 });

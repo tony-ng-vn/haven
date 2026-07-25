@@ -11,9 +11,7 @@ export const WAITLIST_COPY = {
   sub: "Every person you meet becomes a point of light - and Haven keeps them from drifting away.",
   cta: "Join",
   submitting: "Joining",
-  // The domain in the fine print doubles as the one crawlable "inhavens.com"
-  // in the page body -- see seo.test.ts before rewording it away.
-  fine: "Private beta - inhavens.com",
+  fine: "Private beta",
   joinedTitle: "You are on the list.",
   alreadyTitle: "You're already on the list.",
   joinedBody:
