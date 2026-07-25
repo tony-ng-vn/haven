@@ -83,7 +83,7 @@ Swift Testing, in the `HavenTests` target.
 The unit tests are hosted in the app, so launching them starts Clerk, which logs `OSStatus -34018` keychain failures when code signing is off.
 That noise is expected in a test run and does not affect the results; on a signed build the entitlement is present.
 
-CI runs this same command on every pull request, in the `ios-test` job of `.github/workflows/test.yml`.
+CI runs these tests on every pull request, in the `ios-test` job of `.github/workflows/test.yml`.
 The runner picks a simulator at runtime from `xcrun simctl list devices available`, because GitHub's macOS image ships a different device set than any dev machine.
 
 What is worth testing here: pure logic. Sky generation, search filtering, the pending queue, overlay merge.

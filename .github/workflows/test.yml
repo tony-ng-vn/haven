@@ -27,6 +27,9 @@ jobs:
     # Separate job because xcodebuild only exists on macOS, and macOS minutes
     # are billed at a higher multiplier than the Linux job above.
     runs-on: macos-latest
+    # A hung simulator boot is the usual macOS CI failure, and the default
+    # 6 hour timeout would bill all of it for a job that takes minutes.
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: ios
@@ -65,9 +68,9 @@ jobs:
             | to_entries
             | map(select(.key | test("SimRuntime\\.iOS")))
             | sort_by(.key | [scan("[0-9]+") | tonumber])
-            | (last // {}).value // []
+            | map(.value[])
             | map(select(.name | startswith("iPhone")))
-            | (last // {}).udid // ""
+            | last | .udid // ""
           ')
           if [ -z "$udid" ]; then
             echo "No available iPhone simulator on this runner" >&2
