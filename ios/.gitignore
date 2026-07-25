@@ -11,3 +11,6 @@ xcuserdata/
 
 # macOS
 .DS_Store
+
+# Simulator screenshots dropped here for review; local to the dev loop.
+.screens/
