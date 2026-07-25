@@ -121,6 +121,19 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
 
 }
 
+/// The screen shown while Haven is working out what to show. Night and a
+/// spinner, nothing else: anything more would be a guess at the screen it is
+/// about to be replaced by.
+struct HavenLoadingScreen: View {
+    var body: some View {
+        ZStack {
+            NightBackground()
+            ProgressView().tint(HavenColor.ink)
+        }
+        .ignoresSafeArea()
+    }
+}
+
 /// Which ambient layer sits behind a screen.
 ///
 /// Two cases, and the second exists for exactly one screen. Everywhere a person

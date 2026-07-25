@@ -103,10 +103,21 @@ Everything in `Haven/Design` is milestone 2 of `../phase1-build-plan.md`, and ev
 - `StarSlot` fixes which figure star each profile field owns. Do not make it dynamic; the edit screen's unlit stars are only legible because a field's star never moves.
 - `HavenScreen`, `HavenField`, `PrimaryButton`, `GhostButton` and `HavenRow` are the shared controls.
 
-There are no screens yet. The way to look at any of this is the SwiftUI previews, which cover the default size, an accessibility text size, and the Reduce Motion path.
+Every surface also has SwiftUI previews covering the default size, an accessibility text size, and the Reduce Motion path.
 SwiftUI's own `accessibilityReduceMotion` is read-only, so the previews flip it with `havenReduceMotion()` instead.
+Compiling and passing tests says nothing about whether something looks right, so every screen is judged by eye before it is called done.
 
-The visual result has never been looked at by a human. Compiling and passing tests says nothing about whether it looks right.
+## Onboarding
+
+`Haven/Onboarding` is milestone 4 of `../phase1-build-plan.md`, built one question at a time.
+
+- `WelcomeScreen` is screen 0 and owns sign-in.
+- `OnboardingFlow` owns everything after it: one `OnboardingModel`, so the sky and the answers so far survive every question.
+- `OnboardingModel` decides which question is on screen from the card that `profiles:getMyCard` returns, never from a counter. A counter is lost on reinstall and lies after an edit made on another device.
+- The constellation is seeded from the Clerk user id. Names collide and change, and the profile row does not exist yet on the first question, where the figure is already on screen.
+- A commit publishes the new card first and the next question a beat later, so the star the person just lit is actually on screen before the next question replaces it.
+
+Built so far: screen 0 (welcome) and screen 1 (name). Location, contact and the card reveal are next; until they exist, a person who has answered the name falls through to the Phase 0 probe.
 
 ## Architecture notes
 

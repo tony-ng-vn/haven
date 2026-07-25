@@ -53,6 +53,41 @@ test("updateMyProfile creates the profile row and mints a handle from the name",
   });
 });
 
+test("getMyCard returns null until the row exists, then the whole card", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  expect(await me.as.query(api.profiles.getMyCard, {})).toBeNull();
+
+  await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+    city: { name: "Ho Chi Minh City", admin: "", country: "Vietnam" },
+    handles: [{ platform: "x", value: "mayachen", verified: true }],
+    primaryPlatform: "x",
+  });
+
+  expect(await me.as.query(api.profiles.getMyCard, {})).toMatchObject({
+    name: "Maya Chen",
+    username: "maya",
+    city: { name: "Ho Chi Minh City", country: "Vietnam" },
+    handles: [{ platform: "x", value: "mayachen", verified: true }],
+    primaryPlatform: "x",
+  });
+});
+
+// Onboarding resumes at the first unanswered question, and the client decides
+// that from the card alone. A card that answered for someone else would send a
+// person straight past the questions they still owe.
+test("getMyCard reads only the caller's own row", async () => {
+  const t = convexTest(schema, modules);
+  const maya = asNewUser(t);
+  const other = asNewUser(t);
+
+  await maya.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  expect(await other.as.query(api.profiles.getMyCard, {})).toBeNull();
+});
+
 test("updateMyProfile needs a name before it can create the row", async () => {
   const t = convexTest(schema, modules);
   const me = asNewUser(t);
@@ -262,6 +297,9 @@ test("profile functions reject unauthenticated callers", async () => {
   const t = convexTest(schema, modules);
 
   await expect(t.query(api.profiles.getMyProfile, {})).rejects.toThrow(
+    "Not signed in",
+  );
+  await expect(t.query(api.profiles.getMyCard, {})).rejects.toThrow(
     "Not signed in",
   );
   await expect(

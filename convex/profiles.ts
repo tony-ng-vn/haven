@@ -94,7 +94,7 @@ function validateUsername(raw: string): string {
   return username;
 }
 
-async function getProfileByUser(ctx: MutationCtx, userId: string) {
+async function getProfileByUser(ctx: QueryCtx | MutationCtx, userId: string) {
   return await ctx.db
     .query("profiles")
     .withIndex("by_user", (q) => q.eq("userId", userId))
@@ -316,6 +316,19 @@ export const getMyProfile = query({
       username: profile.username,
       updatedAt: profile.updatedAt,
     };
+  },
+});
+
+// The caller's whole card. Onboarding resumes at the first unanswered question,
+// and the client works that out from this, not from a local counter: a counter
+// is lost on reinstall and lies after an edit on another device.
+export const getMyCard = query({
+  args: {},
+  returns: v.union(v.null(), myCardValidator),
+  handler: async (ctx) => {
+    const userId = await requireUser(ctx);
+    const profile = await getProfileByUser(ctx, userId);
+    return profile === null ? null : toMyCard(profile);
   },
 });
 
