@@ -177,7 +177,11 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
     hasPointer = true;
   }
 
-  function onPointerLeave() {
+  // Two ways to notice the cursor is gone, because either one alone misses
+  // cases: a fast exit off the top of the window can skip the leave event, and
+  // switching apps with the pointer still over the page only fires blur. Miss
+  // both and the figure stays lit at the last position forever.
+  function onPointerGone() {
     hasPointer = false;
   }
 
@@ -187,14 +191,16 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
   window.addEventListener("resize", onResize);
   if (lensOn) {
     window.addEventListener("pointermove", onPointerMove);
-    document.documentElement.addEventListener("pointerleave", onPointerLeave);
+    document.addEventListener("mouseleave", onPointerGone);
+    window.addEventListener("blur", onPointerGone);
   }
 
   return () => {
     cancelAnimationFrame(raf);
     window.removeEventListener("resize", onResize);
     window.removeEventListener("pointermove", onPointerMove);
-    document.documentElement.removeEventListener("pointerleave", onPointerLeave);
+    document.removeEventListener("mouseleave", onPointerGone);
+    window.removeEventListener("blur", onPointerGone);
   };
 }
 

@@ -220,11 +220,13 @@ The canvas sits behind `.wl-content`, which covers the page, so it never sees a 
 Coordinates convert through the canvas rect and stay in CSS pixels, since the context is already scaled by the device pixel ratio.
 
 The lens fades on pointer presence rather than on movement, so a cursor that arrives and holds still still blooms.
+Presence ends on either `mouseleave` or window `blur`, because each one alone misses a case: a fast exit off the top of the window can skip the leave event, and switching apps with the cursor still over the page only fires blur.
+Miss both and the figure stays lit at its last position forever, on a page whose whole point is that it follows attention.
 
 ### Accessibility and performance
 
 Reduced motion gets the still sky and no lens at all, rather than a frozen one, since a motionless lens under a stationary cursor says nothing.
-No animation loop starts in that path.
+That path draws its one frame synchronously and never schedules another, since the only `requestAnimationFrame` call is guarded by it.
 
 Nothing is drawn until the first pointer move, and touch-generated moves are ignored, so a phone never pays for the lens.
 The spanning tree runs once per frame over the stars inside the radius, which is a small set.
@@ -234,7 +236,7 @@ The form and the copy are unaffected: the lens is a canvas layer behind them and
 ### How much figure you get
 
 Star count is `min(300, w * h / 3600)`, so past roughly 1400x900 the cap binds and density falls as the window grows while the radius stays fixed.
-About 17 stars join the figure at 1090x830, and about 9 at 1800x1170, which still reads as a constellation.
+The formulas predict about 17 stars in the figure at 1090x830 and about 9 at 1800x1170; the 1800-wide window showed 7 to 8, which still reads as a constellation.
 Past roughly 2560 CSS pixels wide it would thin out to a handful.
 If that ever matters, the fix that preserves the look is to take the N nearest qualifying stars, not to raise the star cap or drop the brightness threshold, since both of those change the sky everywhere.
 
