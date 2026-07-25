@@ -1,0 +1,80 @@
+name: ios
+
+# Its own workflow, not a job in test.yml, purely so it can be path-filtered.
+# GitHub only supports `paths` at the workflow level, and macOS runners bill at
+# roughly ten times the Linux rate: most pull requests here touch no Swift at
+# all, so running this on them would spend the plan's minutes for nothing.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+
+jobs:
+  ios-test:
+    runs-on: macos-latest
+    # A hung simulator boot is the usual failure here, and the default 6 hour
+    # timeout would bill all of it at the macOS rate for a job of minutes.
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v5
+
+      # A resolve or build failure below does not say which Xcode produced it.
+      - run: xcodebuild -version
+
+      - run: brew install xcodegen
+
+      # The .xcodeproj is git-ignored, so a fresh checkout has no project yet.
+      - run: xcodegen generate
+
+      # Package versions live in project.yml, so that is the cache key. It
+      # pins ranges rather than exact versions, so a restored cache can be
+      # stale; xcodebuild re-resolves what it needs, which is why the loose
+      # restore-keys fallback is safe.
+      - uses: actions/cache@v4
+        with:
+          path: ios/.spm-cache
+          key: ios-spm-${{ hashFiles('ios/project.yml') }}
+          restore-keys: ios-spm-
+
+      # Resolving a device at runtime instead of hardcoding a name: GitHub's
+      # macOS image ships a different simulator set than any dev machine, and
+      # the set changes with every image bump.
+      - name: Pick a simulator
+        run: |
+          udid=$(xcrun simctl list devices available --json | jq -r '
+            .devices
+            | to_entries
+            | map(select(.key | test("SimRuntime\\.iOS")))
+            | sort_by(.key | [scan("[0-9]+") | tonumber])
+            | map(.value[])
+            | map(select(.name | startswith("iPhone")))
+            | last | .udid // ""
+          ')
+          if [ -z "$udid" ]; then
+            echo "No available iPhone simulator on this runner" >&2
+            # An unavailable runtime, and why, shows up here and nowhere else.
+            xcrun simctl list runtimes >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+
+      # Raw xcodebuild output on purpose. The run logs expected Clerk keychain
+      # errors (OSStatus -34018, no entitlement without code signing), and a
+      # formatter pipe would also cost us xcodebuild's exit code.
+      - name: Run tests
+        run: |
+          xcodebuild test -project Haven.xcodeproj -scheme Haven \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+            -clonedSourcePackagesDirPath .spm-cache \
+            CODE_SIGNING_ALLOWED=NO
