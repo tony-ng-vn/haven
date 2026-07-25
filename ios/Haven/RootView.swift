@@ -8,21 +8,60 @@ struct RootView: View {
     @StateObject private var auth = AuthModel()
 
     var body: some View {
+        // Split into `screen` and one modifier deliberately: with the switch
+        // and the feedback condition in a single expression, the type-checker
+        // gives up ("unable to type-check in reasonable time").
+        screen
+            // Signing in is a completed task, so it gets the success haptic. It
+            // lives here rather than on the welcome screen, because success
+            // swaps that screen out and a haptic on a view being unmounted may
+            // never fire. Only signedOut -> signedIn buzzes: a cold launch
+            // arrives from .loading and stays silent, and signing out is not a
+            // success.
+            .sensoryFeedback(.success, trigger: phase, condition: Self.isSignIn)
+    }
+
+    @ViewBuilder
+    private var screen: some View {
         switch auth.authState {
         case .loading:
-            // On the night background rather than the system default, so
-            // launch does not flash white before the first screen paints.
-            ZStack {
-                NightBackground()
-                ProgressView()
-                    .tint(HavenColor.ink)
-            }
-            .ignoresSafeArea()
+            loading
         case .unauthenticated:
             WelcomeScreen()
         case .authenticated:
             ProfileProbeView()
         }
+    }
+
+    /// On the night background rather than the system default, so launch does
+    /// not flash white before the first screen paints.
+    private var loading: some View {
+        ZStack {
+            NightBackground()
+            ProgressView()
+                .tint(HavenColor.ink)
+        }
+        .ignoresSafeArea()
+    }
+
+    private var phase: Phase {
+        switch auth.authState {
+        case .loading: return .loading
+        case .unauthenticated: return .signedOut
+        case .authenticated: return .signedIn
+        }
+    }
+
+    private static func isSignIn(from old: Phase, to new: Phase) -> Bool {
+        old == .signedOut && new == .signedIn
+    }
+
+    /// The auth state reduced to something Equatable, so it can drive
+    /// `sensoryFeedback` without depending on the SDK's own conformances.
+    private enum Phase {
+        case loading
+        case signedOut
+        case signedIn
     }
 }
 

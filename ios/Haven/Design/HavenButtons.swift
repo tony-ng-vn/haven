@@ -4,6 +4,11 @@ import SwiftUI
 /// bottom. There is never a second one.
 struct PrimaryButton: View {
     let title: String
+    /// An SF Symbol drawn before the title, in the title's own colour and size.
+    /// Exists for provider sign-in buttons: the HIG requires a custom Sign in
+    /// with Apple button to show the Apple logo, in the same colour as its
+    /// title. Everything else leaves it nil.
+    var systemImage: String? = nil
     var isLoading = false
     let action: () -> Void
 
@@ -14,7 +19,16 @@ struct PrimaryButton: View {
             ZStack {
                 // The label stays laid out while loading, so the button cannot
                 // change height under a spinner.
-                Text(title).opacity(isLoading ? 0 : 1)
+                // Baseline-aligned, not centred: at accessibility text sizes the
+                // title wraps, and a centred glyph then floats against the
+                // middle of a two-line block instead of sitting with the words.
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    if let systemImage {
+                        Image(systemName: systemImage)
+                    }
+                    Text(title)
+                }
+                .opacity(isLoading ? 0 : 1)
                 if isLoading {
                     ProgressView()
                         .progressViewStyle(.circular)

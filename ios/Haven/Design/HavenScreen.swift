@@ -6,9 +6,10 @@ import SwiftUI
 /// Content is centred but scrolls when it cannot fit, which is what keeps the
 /// screens usable at accessibility text sizes. The actions never scroll away.
 struct HavenScreen<Header: View, Content: View, Actions: View>: View {
-    /// Nil renders ambient dust with no figure, which is the welcome screen.
+    /// Nil renders the ambient layer with no figure, which is the welcome screen.
     var sky: Sky?
     var litMajors: Set<Int>?
+    var ambient: HavenAmbient = .dust
     @ViewBuilder var header: Header
     @ViewBuilder var content: Content
     @ViewBuilder var actions: Actions
@@ -43,7 +44,10 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
             // to the corner radius itself once the content actually fills it.
             ZStack {
                 NightBackground()
-                DustLayer()
+                switch ambient {
+                case .dust: DustLayer()
+                case .welcome: WelcomeSky()
+                }
                 if let sky {
                     SkyView(sky: sky, litMajors: litMajors, figureBand: figureBand)
                 }
@@ -115,6 +119,17 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
         }
     }
 
+}
+
+/// Which ambient layer sits behind a screen.
+///
+/// Two cases, and the second exists for exactly one screen. Everywhere a person
+/// has a sky of their own, the ambient layer stays below notice so it cannot
+/// compete with it. Before sign-in there is no such sky, so the welcome screen
+/// is allowed a louder one.
+enum HavenAmbient {
+    case dust
+    case welcome
 }
 
 /// Constants for the figure band. Free-standing because HavenScreen is generic

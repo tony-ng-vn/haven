@@ -38,11 +38,21 @@ extension View {
         font(scale.font)
     }
 
-    /// The "Haven" wordmark on the welcome screen.
+    /// The "Haven" wordmark on the welcome screen. Set larger than any other
+    /// text in the app: it is the only thing on screen 0 that has to carry a
+    /// whole screen on its own.
     func havenWordmark() -> some View {
-        font(.system(.title, weight: .semibold))
-            .tracking(HavenFont.tightTracking)
+        font(.system(.largeTitle, weight: .semibold))
+            .tracking(HavenFont.wordmarkTracking)
             .foregroundStyle(HavenColor.ink)
+    }
+
+    /// The line under the wordmark. A sentence rather than a label, so it sits
+    /// close to the wordmark in size -- far enough apart and the two stop
+    /// reading as one thought.
+    func havenTagline() -> some View {
+        font(.subheadline)
+            .foregroundStyle(HavenColor.muted)
     }
 
     /// An onboarding question. One per screen, pinned top.
@@ -90,6 +100,10 @@ enum HavenFont {
     /// Headlines are set slightly tight, which is what keeps them from reading
     /// as system alerts.
     static let tightTracking: CGFloat = -0.4
+
+    /// The wordmark is set tighter still. Tracking that reads as neutral at
+    /// title size reads as loose at largeTitle.
+    static let wordmarkTracking: CGFloat = -0.9
     /// All-caps labels need the opposite treatment or they set as a block.
     static let wideTracking: CGFloat = 1
 
