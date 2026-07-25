@@ -48,6 +48,29 @@ const publicProfileValidator = v.object({
   username: v.string(),
 });
 
+const claimHandleValidator = v.object({
+  status: v.union(v.literal("claimed"), v.literal("taken")),
+  handle: v.string(),
+  suggestions: v.array(v.string()),
+});
+
+// The public web card at inhavens.com/<handle>. `handles` is typed with
+// publicHandleValidator, which has no "phone" member, so Convex's own return
+// validation makes a leaked phone number structurally impossible rather than
+// merely unlikely. City reuses cityInputValidator because that is exactly the
+// visitor-facing shape: our Phase 3 `normalized` filter key stays private.
+const publicCardValidator = v.object({
+  handle: v.string(),
+  name: v.string(),
+  photoUrl: v.union(v.null(), v.string()),
+  city: v.optional(cityInputValidator),
+  handles: v.array(publicHandleValidator),
+  // Can name a platform whose handle was stripped above (phone), which is the
+  // point: the page shows a Connect call to action instead of a number. So a
+  // reader must not assume this points at an entry in `handles`.
+  primaryPlatform: v.optional(platformValidator),
+});
+
 type CardFields = Partial<
   Omit<
     Doc<"profiles">,
@@ -57,6 +80,7 @@ type CardFields = Partial<
 
 type CityInput = Infer<typeof cityInputValidator>;
 type HandleInput = Infer<typeof handleValidator>;
+type PublicHandle = Infer<typeof publicHandleValidator>;
 
 function normalizeUsername(raw: string): string {
   return raw.trim().replace(/^@+/, "").toLowerCase();
@@ -135,6 +159,7 @@ async function requirePhotoBlob(ctx: MutationCtx, photoStorageId: Id<"_storage">
 // numeric suffix. Underscore rather than hyphen because USERNAME_PATTERN --
 // shared with the legacy setUsername path -- allows only a-z, 0-9 and "_".
 const HANDLE_SUFFIX_TRIES = 10;
+const HANDLE_SUGGESTIONS = 3;
 
 function handleCandidates(name: string): string[] {
   const parts = normalizeName(name)
@@ -194,6 +219,38 @@ function toMyCard(profile: Doc<"profiles">) {
     primaryPlatform: profile.primaryPlatform,
     company: profile.company,
     role: profile.role,
+  };
+}
+
+// Phone is dropped rather than masked: an entry that carries a number never
+// reaches the public shape at all.
+function toPublicHandles(handles: HandleInput[] | undefined): PublicHandle[] {
+  return (handles ?? []).filter(
+    (handle): handle is PublicHandle => handle.platform !== "phone",
+  );
+}
+
+async function toPublicCard(ctx: QueryCtx, profile: Doc<"profiles">) {
+  if (profile.name === undefined) {
+    return null;
+  }
+  return {
+    handle: profile.username,
+    name: profile.name,
+    photoUrl:
+      profile.photoStorageId === undefined
+        ? null
+        : await ctx.storage.getUrl(profile.photoStorageId),
+    city:
+      profile.city === undefined
+        ? undefined
+        : {
+            name: profile.city.name,
+            admin: profile.city.admin,
+            country: profile.city.country,
+          },
+    handles: toPublicHandles(profile.handles),
+    primaryPlatform: profile.primaryPlatform,
   };
 }
 
@@ -400,6 +457,69 @@ export const updateMyProfile = mutation({
       throw new Error("Could not save profile");
     }
     return toMyCard(updated);
+  },
+});
+
+// The beacon address, claimed from the app. Writes the same `username` field
+// setUsername does -- one row cannot carry two addresses without drifting --
+// but answers with a status and a ladder of free alternatives instead of
+// throwing, because a taken handle is a normal step in onboarding.
+export const claimHandle = mutation({
+  args: { handle: v.string() },
+  returns: claimHandleValidator,
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    await checkRateLimit(ctx, userId, "claimHandle", 10, MINUTE_MS);
+    const handle = validateUsername(args.handle);
+    const existing = await getProfileByUser(ctx, userId);
+
+    // Check and claim in the same mutation: Convex serializes the two writes,
+    // so a race ends with one "claimed" and one "taken", never a duplicate.
+    const holder = await getProfileByUsername(ctx, handle);
+    if (holder !== null && holder.userId !== userId) {
+      // Suggestions come from the caller's own name, and only unheld rungs
+      // qualify -- which also drops the handle they already own.
+      const suggestions =
+        existing?.name === undefined
+          ? []
+          : await freeCandidates(ctx, existing.name, HANDLE_SUGGESTIONS);
+      return { status: "taken" as const, handle, suggestions };
+    }
+
+    const now = Date.now();
+    if (existing === null) {
+      await ctx.db.insert("profiles", {
+        userId,
+        username: handle,
+        updatedAt: now,
+      });
+    } else if (existing.username !== handle) {
+      await ctx.db.patch("profiles", existing._id, {
+        username: handle,
+        updatedAt: now,
+      });
+    }
+    return { status: "claimed" as const, handle, suggestions: [] };
+  },
+});
+
+// Deliberately unauthenticated: this backs the public web card that a scanned
+// beacon opens. Every field it returns is one a stranger may see.
+export const getByHandle = query({
+  args: { handle: v.string() },
+  returns: v.union(v.null(), publicCardValidator),
+  handler: async (ctx, args) => {
+    const handle = normalizeUsername(args.handle);
+    if (!USERNAME_PATTERN.test(handle)) {
+      return null;
+    }
+    const profile = await getProfileByUsername(ctx, handle);
+    if (profile === null) {
+      return null;
+    }
+    // A row claimed by the legacy web flow has no card yet, and an empty card
+    // page is worse than a plain "no such person".
+    return await toPublicCard(ctx, profile);
   },
 });
 

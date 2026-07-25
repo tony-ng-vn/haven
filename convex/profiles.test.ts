@@ -394,3 +394,218 @@ test("meetExchange requires a username for self and rejects self exchange", asyn
     alice.as.mutation(api.profiles.meetExchange, { username: "alice" }),
   ).rejects.toThrow("Enter the other person's username");
 });
+
+test("claimHandle claims a free handle and is idempotent for the same caller", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  const first = await me.as.mutation(api.profiles.claimHandle, {
+    handle: " @Maya_C ",
+  });
+  const again = await me.as.mutation(api.profiles.claimHandle, {
+    handle: "maya_c",
+  });
+
+  expect(first).toEqual({
+    status: "claimed",
+    handle: "maya_c",
+    suggestions: [],
+  });
+  expect(again).toEqual({
+    status: "claimed",
+    handle: "maya_c",
+    suggestions: [],
+  });
+  // Same field the beacon URL and the legacy web flow read.
+  expect(await me.as.query(api.profiles.getMyProfile, {})).toMatchObject({
+    username: "maya_c",
+  });
+});
+
+test("claimHandle reports taken and offers free suggestions", async () => {
+  const t = convexTest(schema, modules);
+  const holder = asNewUser(t);
+  const me = asNewUser(t);
+  await holder.as.mutation(api.profiles.claimHandle, { handle: "sky" });
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  const result = await me.as.mutation(api.profiles.claimHandle, {
+    handle: "SKY",
+  });
+
+  expect(result.status).toBe("taken");
+  expect(result.handle).toBe("sky");
+  expect(result.suggestions[0]).toBe("maya_chen");
+  expect(result.suggestions).not.toContain("sky");
+  // A rejected claim leaves the caller's own handle alone.
+  expect(await storedProfile(t, me.userId)).toMatchObject({
+    username: "maya",
+  });
+});
+
+test("claimHandle rejects a handle the beacon URL could not carry", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  await expect(
+    me.as.mutation(api.profiles.claimHandle, { handle: "maya chen!" }),
+  ).rejects.toThrow("3-24 lowercase letters");
+  await expect(
+    me.as.mutation(api.profiles.claimHandle, { handle: "maya-chen" }),
+  ).rejects.toThrow("3-24 lowercase letters");
+});
+
+test("claimHandle creates the row for a caller who has no profile yet", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  const claimed = await me.as.mutation(api.profiles.claimHandle, {
+    handle: "maya",
+  });
+
+  expect(claimed.status).toBe("claimed");
+  expect(await storedProfile(t, me.userId)).toMatchObject({ username: "maya" });
+});
+
+test("claimHandle and setUsername write the same handle field", async () => {
+  const t = convexTest(schema, modules);
+  const legacy = asNewUser(t);
+  const other = asNewUser(t);
+  await legacy.as.mutation(api.profiles.setUsername, { username: "maya" });
+
+  expect(
+    await other.as.mutation(api.profiles.claimHandle, { handle: "maya" }),
+  ).toMatchObject({ status: "taken" });
+
+  await other.as.mutation(api.profiles.claimHandle, { handle: "maya_c" });
+  expect(
+    await legacy.as.query(api.profiles.lookupByUsername, { username: "maya_c" }),
+  ).toEqual({ username: "maya_c" });
+});
+
+test("getByHandle serves the public card to a signed-out visitor", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  const photoStorageId = await seedPhoto(t);
+  await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+    photoStorageId,
+    city: { name: "Da Nang", admin: "Da Nang", country: "Vietnam" },
+    handles: [{ platform: "x", value: "mayac", verified: true }],
+    primaryPlatform: "x",
+  });
+
+  // No withIdentity: this is the unauthenticated web card page.
+  const card = await t.query(api.profiles.getByHandle, { handle: "@MAYA " });
+
+  expect(card).toMatchObject({
+    handle: "maya",
+    name: "Maya Chen",
+    city: { name: "Da Nang", admin: "Da Nang", country: "Vietnam" },
+    handles: [{ platform: "x", value: "mayac", verified: true }],
+    primaryPlatform: "x",
+  });
+  expect(card?.photoUrl).toEqual(expect.any(String));
+  // The Phase 3 filter key is ours, not the visitor's.
+  expect(card?.city).not.toHaveProperty("normalized");
+});
+
+test("getByHandle never exposes a phone number", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+    handles: [
+      { platform: "phone", value: "+84901234567", verified: false },
+      { platform: "instagram", value: "mayac", verified: false },
+    ],
+    primaryPlatform: "phone",
+  });
+
+  const card = await t.query(api.profiles.getByHandle, { handle: "maya" });
+
+  expect(JSON.stringify(card)).not.toContain("84901234567");
+  expect(card?.handles).toEqual([
+    { platform: "instagram", value: "mayac", verified: false },
+  ]);
+  // Still says "phone" so the page can show a Connect call to action.
+  expect(card?.primaryPlatform).toBe("phone");
+});
+
+test("getByHandle returns null for an unknown, unclaimable, or nameless handle", async () => {
+  const t = convexTest(schema, modules);
+  const legacy = asNewUser(t);
+  await legacy.as.mutation(api.profiles.setUsername, { username: "maya" });
+
+  // A legacy setUsername-only row has no card to show.
+  expect(await t.query(api.profiles.getByHandle, { handle: "maya" })).toBeNull();
+  expect(await t.query(api.profiles.getByHandle, { handle: "nobody" })).toBeNull();
+  expect(
+    await t.query(api.profiles.getByHandle, { handle: "not a handle!" }),
+  ).toBeNull();
+});
+
+test("the address ladder walks first name, then first_last, then a number", async () => {
+  const t = convexTest(schema, modules);
+  const first = asNewUser(t);
+  const second = asNewUser(t);
+  const third = asNewUser(t);
+
+  const one = await first.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+  });
+  const two = await second.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+  });
+  const three = await third.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+  });
+
+  expect([one.username, two.username, three.username]).toEqual([
+    "maya",
+    "maya_chen",
+    "maya_chen2",
+  ]);
+});
+
+test("the address ladder drops diacritics and punctuation", async () => {
+  const t = convexTest(schema, modules);
+  const holder = asNewUser(t);
+  const vietnamese = asNewUser(t);
+  await holder.as.mutation(api.profiles.claimHandle, { handle: "dang" });
+
+  const minted = await vietnamese.as.mutation(api.profiles.updateMyProfile, {
+    name: "Đặng O'Brien",
+  });
+
+  expect(minted.username).toBe("dang_obrien");
+});
+
+test("the address ladder falls back when a name has no latin letters", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  const minted = await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "李雷",
+  });
+
+  expect(minted.username).toBe("haven");
+});
+
+test("the address ladder truncates a long name to a legal handle", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  const other = asNewUser(t);
+
+  const minted = await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Wolfeschlegelsteinhausenbergerdorff Featherstonehaugh",
+  });
+  const next = await other.as.mutation(api.profiles.updateMyProfile, {
+    name: "Wolfeschlegelsteinhausenbergerdorff Featherstonehaugh",
+  });
+
+  expect(minted.username).toBe("wolfeschlegelsteinhausen");
+  expect(next.username).toMatch(/^[a-z0-9_]{3,24}$/);
+  expect(next.username).not.toBe(minted.username);
+});
