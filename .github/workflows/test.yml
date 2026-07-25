@@ -24,11 +24,9 @@ jobs:
       - run: npm run build
 
   ios-test:
-    # Separate job because xcodebuild only exists on macOS, and macOS minutes
-    # are billed at a higher multiplier than the Linux job above.
     runs-on: macos-latest
-    # A hung simulator boot is the usual macOS CI failure, and the default
-    # 6 hour timeout would bill all of it for a job that takes minutes.
+    # A hung simulator boot is the usual failure here, and the default 6 hour
+    # timeout would bill all of it at the macOS rate for a job of minutes.
     timeout-minutes: 30
     defaults:
       run:
@@ -36,22 +34,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # The image's default Xcode decides which Swift tools version the SDKs
-      # get compiled with, so print it: a resolve failure here is unreadable
-      # without knowing which Xcode ran.
-      - name: Show toolchain
-        run: |
-          xcodebuild -version
-          xcrun simctl list runtimes
+      # A resolve or build failure below does not say which Xcode produced it.
+      - run: xcodebuild -version
 
       - run: brew install xcodegen
 
-      # The .xcodeproj is git-ignored and generated from project.yml, so a
-      # fresh checkout has no project to build until this runs.
+      # The .xcodeproj is git-ignored, so a fresh checkout has no project yet.
       - run: xcodegen generate
 
-      # Package versions live in project.yml, so that is the cache key. The
-      # prefix restore key still saves most of the resolve when it changes.
+      # Package versions live in project.yml, so that is the cache key.
       - uses: actions/cache@v4
         with:
           path: ios/.spm-cache
@@ -74,6 +65,8 @@ jobs:
           ')
           if [ -z "$udid" ]; then
             echo "No available iPhone simulator on this runner" >&2
+            # An unavailable runtime, and why, shows up here and nowhere else.
+            xcrun simctl list runtimes >&2
             xcrun simctl list devices available >&2
             exit 1
           fi

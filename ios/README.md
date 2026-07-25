@@ -84,7 +84,6 @@ The unit tests are hosted in the app, so launching them starts Clerk, which logs
 That noise is expected in a test run and does not affect the results; on a signed build the entitlement is present.
 
 CI runs these tests on every pull request, in the `ios-test` job of `.github/workflows/test.yml`.
-The runner picks a simulator at runtime from `xcrun simctl list devices available`, because GitHub's macOS image ships a different device set than any dev machine.
 
 What is worth testing here: pure logic. Sky generation, search filtering, the pending queue, overlay merge.
 Springs and haptics are judged by hand on a device, because no assertion captures whether something feels right.
