@@ -1,13 +1,25 @@
 # Haven - TODO and backlog
 
 Living work tracker.
-The stable design and architecture live in `mvp-design.md`; this file tracks state: what is done, in progress, and queued.
+The stable design and architecture live in `mvp-design.md`, and Phase 1's implementation detail lives in `phase1-build-plan.md`; this file tracks state: what is done, in progress, and queued.
 
 Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
 
 ## Now / next
 
-- [ ] Phase 1: Profile. Onboarding, create and edit profile, My Card. Plus the hero-interaction spike (one moment built to the full quality bar) to validate the SwiftUI feel early.
+- [~] Phase 1: Onboarding, card, and the two home screens. Full spec and milestone definitions of done in `phase1-build-plan.md`.
+  - [x] Design settled: interactive prototype at `design/onboarding-prototype.html`, decisions ratified in the build plan.
+  - [ ] 1. Hero spike: card reveal against hardcoded data, full quality bar. Done when it feels right on a physical device.
+  - [ ] 2. Design system: color and type tokens, shared controls, screen skeleton, dust layer, sky renderer ported from `src/sky.ts` with fixed star slots.
+  - [ ] 3. Convex schema and functions, test-first, including `claimHandle`.
+  - [ ] 4. Onboarding wired end to end, all four contact paths, with resume and retry.
+  - [ ] 5. My Card / edit with unlit-star states, handle management, photo add.
+  - [ ] 6. Directory and Search shells, widget promo card, Lock Screen explainer.
+  - [ ] 7. Beacon screen with real QR and handle claim (flagged off until the web card page exists).
+  - [ ] 8. Lock Screen widget and deep link.
+  - [ ] 9. Public web card page at `inhavens.com/<handle>` (web repo, parallel track after milestone 3).
+  - [ ] Answer the four open questions in the build plan. None block milestone 1; the handle UX question is due before milestone 4.
+- [ ] Decide the fate of the orphaned web product surface (`people`, `captures`, `loveAlarm`, `sharedNotes`): formally parked, or deleted.
 - [ ] Housekeeping: pull `main` into the working checkout, then remove the leftover `.worktrees/feat-ios-foundations` worktree and its branch so there is one copy.
 
 ## MVP backlog (in order)
