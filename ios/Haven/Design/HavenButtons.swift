@@ -23,9 +23,9 @@ struct PrimaryButton: View {
             }
             .font(HavenFont.buttonLabel)
             .foregroundStyle(HavenColor.creamInk)
-            .frame(maxWidth: .infinity)
             .padding(.vertical, 13)
             .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .background(HavenColor.cream, in: RoundedRectangle(cornerRadius: 12))
             .opacity(isEnabled ? 1 : 0.3)
         }
@@ -47,8 +47,8 @@ struct GhostButton: View {
             Text(title)
                 .font(HavenFont.ghostLabel)
                 .foregroundStyle(HavenColor.muted)
-                .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(PressScaleStyle())
     }

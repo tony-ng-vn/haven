@@ -51,7 +51,9 @@ struct HavenRow<Leading: View, Trailing: View>: View {
         .multilineTextAlignment(.leading)
         .padding(.vertical, 13)
         .padding(.horizontal, 4)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // A one-line row at the smallest text size otherwise lands under the
+        // 44pt minimum tap target.
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(HavenColor.hairline)

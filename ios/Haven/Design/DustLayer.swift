@@ -8,12 +8,14 @@ import SwiftUI
 struct DustLayer: View {
     @HavenReduceMotion private var reduceMotion
 
-    private let motes = Mote.field()
+    // Static, not stored per instance: the field is seeded and identical every
+    // time, and SwiftUI re-creates view structs freely.
+    private static let motes = Mote.field()
 
     var body: some View {
         if reduceMotion {
             Canvas(rendersAsynchronously: true) { context, size in
-                Mote.draw(motes, in: &context, size: size, time: 0)
+                Mote.draw(Self.motes, in: &context, size: size, time: 0)
             }
             .allowsHitTesting(false)
             .accessibilityHidden(true)
@@ -21,7 +23,7 @@ struct DustLayer: View {
             TimelineView(.animation) { timeline in
                 let time = timeline.date.timeIntervalSinceReferenceDate
                 Canvas(rendersAsynchronously: true) { context, size in
-                    Mote.draw(motes, in: &context, size: size, time: time)
+                    Mote.draw(Self.motes, in: &context, size: size, time: time)
                 }
             }
             .allowsHitTesting(false)
