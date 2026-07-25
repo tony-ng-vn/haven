@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Regenerate Haven favicon / PWA / Apple / OG assets from brand/nori.png."""
+"""Regenerate Haven favicon / PWA / Apple / OG assets from brand/nori.png.
+
+Requires Pillow (see scripts/requirements.txt):
+  python3 -m pip install -r scripts/requirements.txt
+  npm run brand:assets
+"""
 
 from __future__ import annotations
 
@@ -19,6 +24,9 @@ def fit_square(img: Image.Image, size: int) -> Image.Image:
 
 
 def load_font(size: int) -> ImageFont.ImageFont:
+    # Prefer San Francisco / Helvetica on macOS so the committed card matches
+    # the app. Fall back to Pillow's bundled Aileron (load_default sized) so
+    # Linux/Windows regen stays readable and deterministic.
     for path in (
         "/System/Library/Fonts/SFNS.ttf",
         "/System/Library/Fonts/SFNSDisplay.ttf",
@@ -29,7 +37,7 @@ def load_font(size: int) -> ImageFont.ImageFont:
             return ImageFont.truetype(path, size=size)
         except OSError:
             continue
-    return ImageFont.load_default()
+    return ImageFont.load_default(size=size)
 
 
 def write_icons(nori: Image.Image) -> None:
@@ -55,8 +63,10 @@ def write_icons(nori: Image.Image) -> None:
 def write_og(nori: Image.Image) -> None:
     # Match design/og-card.html: black DriftSky field + Haven wordmark.
     width, height = 1200, 630
-    og = Image.new("RGBA", (width, height), (0, 0, 0, 255))
-    draw = ImageDraw.Draw(og)
+    background = Image.new("RGBA", (width, height), (0, 0, 0, 255))
+    stars = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(stars)
+    # Seeded for a stable card, not for cryptography.
     rng = random.Random(0x5EED11)
     count = min(300, (width * height) // 3600)
     for _ in range(count):
@@ -67,7 +77,7 @@ def write_og(nori: Image.Image) -> None:
         base = 0.1 + depth * 0.45
         hot = rng.random() < 0.04
         tw = 0.7 + 0.3 * abs(math.sin(rng.random() * 6.28))
-        radius = max(1, int(round(size)))
+        radius = max(1, round(size))
         if hot:
             color = (10, 132, 255, int(min(255, (base + 0.2) * 255)))
         else:
@@ -77,20 +87,23 @@ def write_og(nori: Image.Image) -> None:
             fill=color,
         )
 
+    og = Image.alpha_composite(background, stars)
+
     nori_og = fit_square(nori, 420)
     mx = width - 80 - 420
     my = (height - 420) // 2 + 10
     og.paste(nori_og, (mx, my), nori_og)
 
+    draw_text = ImageDraw.Draw(og)
     pad_l = 80
-    draw.text((pad_l, 360), "Haven", font=load_font(96), fill=(245, 245, 247, 255))
-    draw.text(
+    draw_text.text((pad_l, 360), "Haven", font=load_font(96), fill=(245, 245, 247, 255))
+    draw_text.text(
         (pad_l, 470),
         "A personal memory layer over the people of your life.",
         font=load_font(30),
         fill=(184, 184, 189, 255),
     )
-    draw.text(
+    draw_text.text(
         (pad_l, 530),
         "INHAVENS.COM",
         font=load_font(18),

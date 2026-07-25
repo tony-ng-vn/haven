@@ -36,6 +36,15 @@ The phone comes first, because that is where you meet people and hold your phone
 - The backend runs on Convex, with Clerk for sign-in.
 - There is a web page for the waitlist.
 
+## Brand assets
+
+Favicon, Apple touch, PWA icons, and the social card are generated from Nori (`brand/nori.png`):
+
+```bash
+python3 -m pip install -r scripts/requirements.txt
+npm run brand:assets
+```
+
 ## Learn more
 
 - `mvp-design.md` is the plan: what we are building first, and why.

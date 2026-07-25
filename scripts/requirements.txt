@@ -1,0 +1,2 @@
+# Dev-only deps for regenerating Haven brand assets (npm run brand:assets).
+Pillow==12.1.1
