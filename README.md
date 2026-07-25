@@ -5,8 +5,6 @@ Haven helps you remember the people you meet.
 It is a private, searchable memory of everyone you know.
 You save a person, jot down whatever you want to remember about them, and later find them by any detail, not just their name.
 
-(The git remote may still say euno; the product and package are Haven.)
-
 ## Why it exists
 
 Meeting people is easy.
