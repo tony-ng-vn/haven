@@ -1,5 +1,8 @@
 # Product
 
+Scope: this describes the legacy web surface, under the app's old name.
+The product Haven is building now is a native iOS client; `mvp-design.md` owns that scope and `phase1-build-plan.md` owns its current phase.
+
 ## Register
 
 product

@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Haven onboarding - revision 3</title>
+<style>
+  :root, :root[data-theme="light"], :root[data-theme="dark"] {
+    color-scheme: dark;
+    --night: #0E1123;
+    --dusk: #232A4D;
+    --ember: #E8A87C;
+    --star: #FFD9A0;
+    --ink: #F2EFE9;
+    --muted: #9DA3BE;
+    --faint: #767C9C;
+    --line: #ffffff1a;
+    --line-strong: #ffffff2e;
+    --fill: #ffffff0f;
+    --cream: #F2E7D5;
+    --cream-ink: #1A1730;
+    --good: #A8DDB0;
+    /* Serif is reserved for a person's name. Nothing else uses it, which is
+       what keeps the interface from reading as a meditation app. */
+    --name: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  body {
+    background: #0B0E1D; color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 64rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; display: flex; flex-direction: column; gap: 4.5rem; }
+  .eyebrow { font-size: 0.6875rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin: 0; }
+  header { display: flex; flex-direction: column; gap: 1rem; max-width: 38rem; }
+  header h1 { font-size: clamp(1.75rem, 4vw, 2.375rem); font-weight: 600; line-height: 1.15; letter-spacing: -0.02em; text-wrap: balance; margin: 0; }
+  header p { margin: 0; color: var(--muted); max-width: 34rem; font-size: 1.0625rem; }
+  header p strong { color: var(--ink); font-weight: 600; }
+
+  /* ---- hero ---- */
+  .hero { display: grid; grid-template-columns: auto 1fr; gap: 3.5rem; align-items: start; }
+  .device {
+    width: min(340px, calc(100vw - 3rem)); aspect-ratio: 390 / 844;
+    border-radius: 3rem; border: 1px solid #ffffff24;
+    background: linear-gradient(180deg, #0B0E1F 0%, #121632 52%, #1B2140 82%, #262a4a 100%);
+    position: relative; overflow: hidden; box-shadow: 0 30px 80px #05060fb3;
+  }
+  .device canvas, .device .sky { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .device .sky { pointer-events: none; transition: opacity 500ms ease; }
+  .device .sky.unminted { opacity: 0; }
+  .horizon {
+    position: absolute; left: -20%; right: -20%; bottom: -16%; height: 46%; pointer-events: none;
+    background: radial-gradient(120% 90% at 50% 108%, #e8a87c47 0%, #8f6f9e1f 45%, transparent 72%);
+    opacity: 0.5;
+  }
+  .statusbar { position: absolute; top: 1.05rem; left: 0; right: 0; text-align: center; font-size: 0.75rem; font-weight: 500; color: #f2efe98c; pointer-events: none; font-variant-numeric: tabular-nums; }
+  .homebar { position: absolute; bottom: 0.5rem; left: 50%; width: 7.5rem; height: 0.3rem; transform: translateX(-50%); border-radius: 999px; background: #ffffff33; pointer-events: none; }
+  .stepper { position: absolute; top: 2.9rem; left: 1.5rem; right: 1.5rem; display: flex; gap: 0.25rem; pointer-events: none; opacity: 0; transition: opacity 300ms ease; }
+  .stepper.on { opacity: 1; }
+  .stepper i { flex: 1; height: 2px; border-radius: 2px; background: #ffffff21; }
+  .stepper i.done { background: var(--star); }
+
+  .scr { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 4.25rem 1.5rem 2.75rem; opacity: 0; transform: translateY(8px); pointer-events: none; transition: opacity 240ms var(--ease), transform 240ms var(--ease); }
+  .scr.on { opacity: 1; transform: none; pointer-events: auto; transition-delay: 120ms; }
+  .scr > .top { display: flex; flex-direction: column; gap: 0.25rem; }
+  .scr > .mid { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 0.75rem; padding: 1.25rem 0; }
+  /* Content that can grow (the contact list plus a fallback panel) scrolls
+     inside the screen rather than colliding with the buttons below it. */
+  .scr > .mid.top-aligned { justify-content: flex-start; overflow-y: auto; scrollbar-width: none; }
+  .scr > .mid.top-aligned::-webkit-scrollbar { width: 0; height: 0; }
+  .scr > .acts { display: flex; flex-direction: column; gap: 0.5rem; }
+
+  .q { font-size: 1.375rem; font-weight: 600; line-height: 1.25; letter-spacing: -0.02em; text-wrap: balance; margin: 0; }
+  .hint { font-size: 0.8125rem; color: var(--muted); margin: 0; }
+
+  .field { background: var(--fill); border: 1px solid var(--line); border-radius: 0.75rem; padding: 0.8125rem 0.9375rem; font: 1rem var(--sans); color: var(--ink); width: 100%; box-sizing: border-box; transition: border-color 150ms ease, box-shadow 150ms ease; }
+  .field::placeholder { color: var(--faint); }
+  .field:focus { outline: none; border-color: #ffd9a08c; box-shadow: 0 0 0 3px #ffd9a01a; }
+  .btn { background: var(--cream); color: var(--cream-ink); border: none; border-radius: 0.75rem; padding: 0.8125rem 1.25rem; font: 600 0.9375rem var(--sans); cursor: pointer; width: 100%; transition: transform 140ms var(--ease), opacity 200ms ease, background 140ms ease; }
+  .btn:hover { background: #f8efe0; }
+  .btn:active { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.3; cursor: default; transform: none; }
+  .ghost { background: none; border: none; color: var(--muted); font: 0.875rem var(--sans); padding: 0.5rem; cursor: pointer; width: 100%; border-radius: 0.5rem; transition: color 140ms ease; }
+  .ghost:hover { color: var(--ink); }
+  .btn:focus-visible, .ghost:focus-visible, .row:focus-visible, .sugg:focus-visible, .person:focus-visible, .chip:focus-visible, .steplink:focus-visible { outline: 2px solid var(--star); outline-offset: 2px; }
+
+  .wordmark { font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 0.25rem; }
+  .tagline { color: var(--muted); font-size: 0.9375rem; margin: 0; }
+
+  /* location suggestions */
+  .suggs { display: flex; flex-direction: column; margin-top: 0.5rem; }
+  .sugg { display: flex; flex-direction: column; gap: 0.0625rem; background: none; border: none; border-bottom: 1px solid var(--line); padding: 0.625rem 0.25rem; text-align: left; width: 100%; cursor: pointer; transition: background 140ms ease; }
+  .sugg:hover { background: #ffffff0a; }
+  .sugg b { font: 500 0.9375rem var(--sans); color: var(--ink); }
+  .sugg span { font-size: 0.75rem; color: var(--faint); }
+
+  /* contact / connect rows */
+  .rows { display: flex; flex-direction: column; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; background: none; border: none; border-bottom: 1px solid var(--line); padding: 0.8125rem 0.25rem; font: 0.9375rem var(--sans); color: var(--ink); cursor: pointer; text-align: left; width: 100%; transition: background 140ms ease; }
+  .row:hover { background: #ffffff0a; }
+  .rowleft { display: flex; align-items: center; gap: 0.6875rem; min-width: 0; }
+  .glyph { width: 1.5rem; height: 1.5rem; border-radius: 0.4375rem; flex: none; display: flex; align-items: center; justify-content: center; font: 600 0.75rem var(--sans); color: #fff; }
+  .cta { color: var(--faint); font-size: 0.8125rem; display: flex; align-items: center; gap: 0.375rem; white-space: nowrap; }
+  .row.set .cta { color: var(--star); }
+  .row.set .primary-name { color: var(--ink); }
+  .check { width: 0.9375rem; height: 0.9375rem; }
+  .spin { width: 0.875rem; height: 0.875rem; border: 2px solid #ffffff33; border-top-color: var(--star); border-radius: 50%; animation: spin 600ms linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .primary-tag { font-size: 0.625rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--cream-ink); background: var(--star); border-radius: 3px; padding: 0.0625rem 0.3125rem; font-weight: 600; }
+  /* Two groups, because the input model genuinely differs: authorize vs type.
+     Anything else is a fallback and never gets to look like a first path. */
+  .grouplbl { font-size: 0.625rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); padding: 0.9375rem 0.25rem 0.3125rem; }
+  .rows > .grouplbl:first-child { padding-top: 0; }
+  .fallback { background: #ffffff0a; border: 1px solid var(--line); border-radius: 0.625rem; padding: 0.6875rem; margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+  /* An explicit display beats the UA rule for [hidden], so restate it. */
+  .fallback[hidden] { display: none; }
+  .fallback p { margin: 0; font-size: 0.75rem; color: var(--muted); line-height: 1.45; }
+  .fallback p[hidden] { display: none; }
+  .fallback p b { color: var(--ink); font-weight: 600; }
+
+  /* card reveal - constellation is the hero, identity sits below it */
+  .cardgrid { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 0; padding-bottom: 0.5rem; }
+  .idrow { display: flex; align-items: center; gap: 0.625rem; }
+  .idphoto { width: 2.25rem; height: 2.25rem; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font: 600 1rem var(--name); color: #241a2e; }
+  .cardname { font-family: var(--name); font-size: 1.875rem; font-weight: 400; text-align: center; margin: 0; line-height: 1.1; }
+  .cardmeta { text-align: center; color: var(--muted); font-size: 0.8125rem; margin: 0.25rem 0 0; }
+  .cardcontact { display: inline-flex; align-items: center; gap: 0.4375rem; margin: 0.875rem 0 0; color: var(--star); font-size: 0.875rem; font-weight: 500; border: 1px solid #ffd9a03d; border-radius: 999px; padding: 0.3125rem 0.75rem; }
+  .center { text-align: center; }
+
+  /* directory + search */
+  .navbar { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 0.75rem; }
+  .navbar h2 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; margin: 0; }
+  .navbar .count { font-size: 0.75rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .search { display: flex; align-items: center; gap: 0.5rem; background: var(--fill); border: 1px solid var(--line); border-radius: 0.75rem; padding: 0.625rem 0.8125rem; }
+  .search input { background: none; border: none; outline: none; color: var(--ink); font: 0.9375rem var(--sans); width: 100%; }
+  .search input::placeholder { color: var(--faint); }
+  .search svg { flex: none; opacity: 0.5; }
+  .interp { display: flex; align-items: center; gap: 0.4375rem; margin-top: 0.5rem; font-size: 0.75rem; color: var(--muted); }
+  .interp .ai { font-size: 0.5625rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--star); border: 1px solid #ffd9a03d; border-radius: 3px; padding: 0.0625rem 0.3125rem; font-weight: 600; }
+  .interp em { color: var(--ink); font-style: normal; }
+  .chips { display: flex; gap: 0.375rem; margin-top: 0.625rem; flex-wrap: wrap; }
+  .chip { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 0.25rem 0.625rem; font: 0.75rem var(--sans); cursor: pointer; transition: color 140ms ease, border-color 140ms ease, background 140ms ease; }
+  .chip:hover { color: var(--ink); }
+  .chip.on { background: var(--star); border-color: var(--star); color: var(--cream-ink); font-weight: 600; }
+  .people { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; margin-top: 0.75rem; scrollbar-width: none; }
+  .people::-webkit-scrollbar { width: 0; height: 0; }
+  .person { display: flex; gap: 0.6875rem; align-items: flex-start; background: none; border: none; border-bottom: 1px solid var(--line); padding: 0.6875rem 0.25rem; text-align: left; width: 100%; box-sizing: border-box; min-width: 0; cursor: pointer; transition: background 140ms ease; }
+  .person:hover { background: #ffffff0a; }
+  .pic { width: 2rem; height: 2rem; border-radius: 50%; flex: none; margin-top: 0.125rem; display: flex; align-items: center; justify-content: center; font: 600 0.8125rem var(--name); color: #241a2e; }
+  .pmeta { display: block; flex: 1; min-width: 0; }
+  .pname { font-family: var(--name); font-size: 1rem; line-height: 1.2; display: block; }
+  .pwhere { font-size: 0.75rem; color: var(--muted); display: block; margin-top: 0.125rem; overflow-wrap: anywhere; }
+  .pwhere mark { background: none; color: var(--star); }
+  .empty { text-align: center; padding: 1.5rem 0; }
+  .empty p { margin: 0 0 0.25rem; }
+  .promo { border: 1px solid var(--line); border-radius: 0.875rem; padding: 0.875rem; display: flex; flex-direction: column; gap: 0.5rem; background: #ffffff0a; margin-top: auto; }
+  .promo b { font-size: 0.875rem; font-weight: 600; }
+  .promo p { margin: 0; font-size: 0.8125rem; color: var(--muted); }
+  .promo .prow { display: flex; gap: 0.5rem; }
+  .promo .btn { padding: 0.5rem; font-size: 0.8125rem; }
+
+  /* lock-screen mockup for the widget explainer */
+  .lockmock { width: 9.5rem; margin: 0 auto; aspect-ratio: 200 / 300; border-radius: 1.375rem; border: 1px solid var(--line-strong); background: linear-gradient(180deg, #10152e 0%, #1c2344 60%, #2b2b4e 100%); position: relative; overflow: hidden; padding: 1rem 0.75rem; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; }
+  .lockmock .lt { font-size: 0.625rem; color: #f2efe999; margin-top: 0.25rem; }
+  .lockmock .lclock { font: 300 2.5rem var(--sans); letter-spacing: -0.03em; line-height: 1; margin-top: 0.125rem; font-variant-numeric: tabular-nums; }
+  .lockwidget { margin-top: auto; margin-bottom: 0.5rem; width: 100%; display: flex; align-items: center; gap: 0.4375rem; background: #ffffff1f; border: 1px solid var(--star); border-radius: 0.625rem; padding: 0.4375rem 0.5rem; box-shadow: 0 0 0 3px #ffd9a01f; }
+  .lockwidget .wc { width: 1.625rem; height: 1.625rem; border-radius: 0.4375rem; background: radial-gradient(circle at 50% 40%, #2a3157, #141833); position: relative; flex: none; }
+  .lockwidget .wt { min-width: 0; }
+  .lockwidget .wt b { font-size: 0.625rem; display: block; line-height: 1.2; }
+  .lockwidget .wt span { font-size: 0.5rem; color: var(--muted); display: block; }
+  .callout { position: absolute; right: -0.25rem; top: 62%; font-size: 0.5625rem; color: var(--star); }
+
+  /* beacon */
+  .beacon { width: 8.5rem; height: 8.5rem; margin: 0 auto; border-radius: 1rem; background: var(--cream); padding: 0.625rem; box-sizing: border-box; }
+  .beacon svg { width: 100%; height: 100%; display: block; }
+  /* The address is the point: it is ours, so no platform gates the handshake. */
+  .beaconurl { text-align: center; font: 0.75rem var(--mono); color: var(--star); margin: 0.375rem 0 0; }
+
+  .maj  { transition: opacity 800ms ease, fill 800ms ease, r 600ms var(--ease); }
+  .edge { transition: opacity 900ms ease 150ms; }
+  .glow { transition: opacity 900ms ease 100ms; }
+  .sky.reveal { animation: settle 1100ms var(--ease); transform-origin: 50% 40%; }
+  @keyframes settle { from { transform: scale(1.03); opacity: 0.85; } to { transform: scale(1); opacity: 1; } }
+
+  /* rail */
+  .rail { position: sticky; top: 2rem; display: flex; flex-direction: column; gap: 1.5rem; max-width: 23rem; }
+  .steps { display: flex; flex-direction: column; gap: 0.0625rem; }
+  .grp { font-size: 0.625rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); padding: 0.75rem 0.625rem 0.25rem; }
+  .steplink { background: none; border: none; text-align: left; font: 0.9375rem var(--sans); color: var(--muted); padding: 0.4375rem 0.625rem; border-radius: 0.5rem; cursor: pointer; display: flex; gap: 0.75rem; align-items: baseline; width: 100%; transition: color 200ms ease, background 200ms ease; }
+  .steplink .n { font-size: 0.6875rem; font-variant-numeric: tabular-nums; letter-spacing: 0.06em; color: var(--faint); transition: color 200ms ease; }
+  .steplink:hover { color: var(--ink); background: #ffffff0a; }
+  .steplink.now { color: var(--ink); background: #ffffff14; }
+  .steplink.now .n { color: var(--star); }
+  .railnote { color: var(--muted); font-size: 0.9375rem; line-height: 1.6; margin: 0; min-height: 7rem; transition: opacity 180ms ease; }
+  .replay { align-self: flex-start; background: none; border: 1px solid var(--line); color: var(--muted); font: 0.8125rem var(--sans); padding: 0.4375rem 0.875rem; border-radius: 999px; cursor: pointer; transition: color 140ms ease, border-color 140ms ease; }
+  .replay:hover { color: var(--ink); border-color: var(--line-strong); }
+  .replay:focus-visible { outline: 2px solid var(--star); outline-offset: 2px; }
+
+  /* prose */
+  section { display: flex; flex-direction: column; gap: 1.25rem; max-width: 42rem; }
+  section h2 { font-size: 1.375rem; font-weight: 600; letter-spacing: -0.02em; margin: 0; }
+  section h3 { font-size: 1rem; font-weight: 600; margin: 0 0 0.375rem; }
+  section p { margin: 0; color: var(--muted); }
+  section p strong, section li strong { color: var(--ink); font-weight: 600; }
+  section ul { margin: 0; padding-left: 1.125rem; color: var(--muted); display: flex; flex-direction: column; gap: 0.5rem; }
+  section li::marker { color: var(--faint); }
+  .qa { display: flex; flex-direction: column; gap: 2rem; }
+  .qa > div { border-left: 2px solid var(--line); padding-left: 1.25rem; }
+  .verdict { display: inline-block; font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; padding: 0.125rem 0.5rem; border-radius: 3px; margin-bottom: 0.5rem; font-weight: 600; }
+  .v-yes { background: #9fd6a833; color: #A8DDB0; }
+  .v-no  { background: #e8877733; color: #F0A093; }
+  .v-mix { background: #e8a87c33; color: var(--ember); }
+  code { font: 0.8125rem var(--mono); color: var(--star); }
+
+  @media (max-width: 58rem) { .hero { grid-template-columns: 1fr; gap: 2.5rem; } .rail { position: static; max-width: 38rem; } .railnote { min-height: 0; } }
+  @media (prefers-reduced-motion: reduce) { .maj, .edge, .glow, .scr, .sky, .stepper { transition: none; } .btn, .row, .person { transition: none; } .sky.reveal { animation: none; } .spin { animation: none; } }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Haven - onboarding and core screens, revision 3</p>
+    <h1>Three questions, a card that is the constellation, and a real connect flow</h1>
+    <p>
+      Onboarding is <strong>three questions</strong> - photo is gone.
+      Contact is a real <strong>authorize</strong> flow: social rows connect, phone is typed, and a link field only ever appears after an attempt comes back empty.
+      The card lets the constellation be the hero instead of hiding it, the Lock Screen step is a picture, and search has an intelligent layer over literal matching.
+    </p>
+  </header>
+
+  <div class="hero">
+    <div>
+      <div class="device" id="device">
+        <canvas id="dust" aria-hidden="true"></canvas>
+        <div class="horizon" aria-hidden="true"></div>
+        <svg class="sky unminted" id="sky" viewBox="0 0 390 844" aria-hidden="true"></svg>
+        <div class="statusbar">9:41</div>
+        <div class="stepper" id="stepper" aria-hidden="true"></div>
+
+        <div class="scr" data-s="welcome">
+          <div class="top"></div>
+          <div class="mid center">
+            <div>
+              <p class="wordmark">Haven</p>
+              <p class="tagline">Everyone you meet, findable later.</p>
+            </div>
+          </div>
+          <div class="acts">
+            <button class="btn" data-go="name">Continue with Apple</button>
+            <button class="ghost" data-go="name">Other sign-in options</button>
+          </div>
+        </div>
+
+        <div class="scr" data-s="name">
+          <div class="top"><p class="q">What is your name?</p></div>
+          <div class="mid">
+            <input class="field" id="nameInput" aria-label="Your name" placeholder="Full name" autocomplete="name" maxlength="40">
+          </div>
+          <div class="acts"><button class="btn" id="nameGo" disabled>Continue</button></div>
+        </div>
+
+        <div class="scr" data-s="location">
+          <div class="top">
+            <p class="q">Where are you based?</p>
+            <p class="hint">City only. Never your street address.</p>
+          </div>
+          <div class="mid top-aligned">
+            <input class="field" id="cityInput" aria-label="Your city" placeholder="Start typing a city" autocomplete="off" maxlength="40">
+            <div class="suggs" id="suggs"></div>
+          </div>
+          <div class="acts">
+            <button class="btn" id="cityGo" disabled>Continue</button>
+            <button class="ghost" id="citySkip">Skip for now</button>
+          </div>
+        </div>
+
+        <div class="scr" data-s="contact">
+          <div class="top">
+            <p class="q">How should people reach you?</p>
+            <p class="hint">Connect an account and we fill in the rest. We never post.</p>
+          </div>
+          <div class="mid top-aligned">
+            <div class="rows" id="contactRows"></div>
+            <div class="fallback" id="fallback" hidden>
+              <p id="fallbackText"></p>
+              <input class="field" id="handleInput" aria-label="Contact detail" placeholder="Handle" autocomplete="off" maxlength="60">
+            </div>
+          </div>
+          <div class="acts"><button class="btn" id="contactGo" disabled>Continue</button></div>
+        </div>
+
+        <div class="scr" data-s="card">
+          <div class="cardgrid">
+            <div class="idrow" id="idrow">
+              <p class="cardname" id="cardName"></p>
+            </div>
+            <p class="cardmeta" id="cardMeta"></p>
+            <p class="cardcontact" id="cardContact"></p>
+          </div>
+          <div class="acts">
+            <button class="btn" data-go="directory">This is me</button>
+            <button class="ghost">Add another way to reach me</button>
+          </div>
+        </div>
+
+        <div class="scr" data-s="directory">
+          <div class="top">
+            <div class="navbar"><h2>People</h2><span class="count">0</span></div>
+            <div class="search">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+              <input placeholder="Search everyone you have met" readonly>
+            </div>
+          </div>
+          <div class="mid">
+            <div class="empty">
+              <p>No one saved yet.</p>
+              <p class="hint">Scan someone's code, or add them by hand in ten seconds.</p>
+            </div>
+          </div>
+          <div class="acts">
+            <div class="promo">
+              <b>Share in one tap</b>
+              <p>Put Haven on your Lock Screen so your code is always one tap away.</p>
+              <div class="prow">
+                <button class="btn" data-go="widget">Show me</button>
+                <button class="ghost" style="width:auto;white-space:nowrap">Later</button>
+              </div>
+            </div>
+            <button class="btn" data-go="search">Add someone</button>
+          </div>
+        </div>
+
+        <div class="scr" data-s="search">
+          <div class="top">
+            <div class="search">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+              <input id="searchInput" placeholder="Try: who did I meet about design" autocomplete="off">
+            </div>
+            <div class="interp" id="interp" hidden><span class="ai">Understood</span><span id="interpText"></span></div>
+            <div class="chips" id="chips"></div>
+          </div>
+          <div class="mid top-aligned">
+            <div class="people" id="results"></div>
+          </div>
+          <div class="acts"><button class="ghost" data-go="directory">Back to people</button></div>
+        </div>
+
+        <div class="scr" data-s="widget">
+          <div class="top">
+            <p class="q">Put Haven on your Lock Screen</p>
+          </div>
+          <div class="mid">
+            <div class="lockmock" aria-label="Lock Screen preview with the Haven widget">
+              <div class="lt">Thursday, July 24</div>
+              <div class="lclock">9:41</div>
+              <div class="lockwidget">
+                <span class="wc" id="wcSky"></span>
+                <span class="wt"><b>Haven</b><span>Tap to share</span></span>
+                <span class="callout">one tap</span>
+              </div>
+            </div>
+          </div>
+          <div class="acts">
+            <button class="btn" data-go="beacon">See what it opens</button>
+            <button class="ghost" data-go="directory">Not now</button>
+          </div>
+        </div>
+
+        <div class="scr" data-s="beacon">
+          <div class="top">
+            <p class="q">Your beacon</p>
+            <p class="hint">Show this. They point a camera and land on your card.</p>
+          </div>
+          <div class="mid center">
+            <div>
+              <svg class="beacon" viewBox="0 0 100 100" id="beaconsvg" aria-label="Your Haven beacon"></svg>
+              <p class="cardname" id="beaconName" style="font-size:1.5rem;margin-top:1rem"></p>
+              <p class="beaconurl" id="beaconUrl"></p>
+            </div>
+          </div>
+          <div class="acts"><button class="ghost" data-go="directory">Done</button></div>
+        </div>
+
+        <div class="homebar"></div>
+      </div>
+    </div>
+
+    <div class="rail">
+      <div>
+        <p class="eyebrow" style="margin-bottom:0.375rem">Screens</p>
+        <p class="hint" style="margin-bottom:0.5rem">Tap the phone to walk it, or jump to any screen.</p>
+        <div class="steps" id="steps"></div>
+      </div>
+      <p class="railnote" id="railnote" aria-live="polite"></p>
+      <button class="replay" id="replay">Replay from the start</button>
+    </div>
+  </div>
+
+  <section style="max-width:46rem">
+    <p class="eyebrow">Your six notes</p>
+    <h2>What I changed, and the one place the platform still says no</h2>
+
+    <div class="qa">
+
+      <div>
+        <span class="verdict v-mix">Yes, and it doubles as the photo importer</span>
+        <h3>1. Authorize to connect. Typing is the exception, pasting is the fallback.</h3>
+        <p>The redirect-and-authorize flow you keep drawing is real and you already own the plumbing: <strong>Clerk supports X, LinkedIn, Facebook and more as one-tap social connections.</strong> Tap a platform, it bounces out to authorize, you come back connected.</p>
+        <p><strong>What this mock does:</strong> tapping a row waits three quarters of a second and fills in a fixed demo handle. On device that pause is the real round trip out to the app and back. The prototype cannot perform an actual redirect; the shipped app will.</p>
+        <p>The screen is now split by input model, because that is the honest division:</p>
+        <ul>
+          <li><strong>Connect an account</strong> - every social row. All three say <em>Connect</em> and all three start by authorizing. None of them advertise a link field.</li>
+          <li><strong>Or type one</strong> - phone, where there is no account to authorize against, so typing is the correct primary path rather than a compromise.</li>
+        </ul>
+        <p>Cut to four: <strong>LinkedIn, X, Instagram, phone.</strong> What comes back from an authorization differs by platform, so the flow degrades in steps, and each step only becomes visible after the one above it fails:</p>
+        <ul>
+          <li><strong>X</strong> returns the handle with the token. You tap once and nothing else appears.</li>
+          <li><strong>LinkedIn</strong> signs you in and verifies you, but never sends your profile address. It prefills a best guess and asks you to check it, so it is a confirm rather than an entry.</li>
+          <li><strong>Instagram</strong> connects for Creator and Business accounts. A personal account is the one case that lands on a paste field, with a line saying whose limit it is. Paste a full URL and we strip the handle out of it.</li>
+          <li><strong>Phone</strong> is typed, because there is no account to authorize against.</li>
+        </ul>
+        <p>The rule the screen encodes: <strong>a link field is never something a platform offers, only something an attempt falls back to.</strong> If Instagram loosens its rules tomorrow, that row loses its field and nothing else changes.</p>
+        <p>The upside you may not have expected: every successful authorization returns a profile <strong>photo</strong> as well. That is why removing the photo question in note 6 costs you nothing.</p>
+      </div>
+
+      <div>
+        <span class="verdict v-yes">Fixed - the constellation is the hero now</span>
+        <h3>2. The card was covering the personalization</h3>
+        <p>You were right, and it was the avatar's fault. A solid disc sat dead center, exactly over the figure we mint from your id. Since the photo question is gone, the reveal now lets the <strong>full constellation own the top of the card</strong>, completing and settling as it appears, with your name in serif below it over the warm horizon. If you connected an account, the imported photo rides small and inline next to your name, never on top of the stars.</p>
+      </div>
+
+      <div>
+        <span class="verdict v-yes">Done - it is a picture now</span>
+        <h3>3. Fewer words on the Lock Screen step</h3>
+        <p>The three-step wall is gone. It is a small <strong>Lock Screen mockup</strong> showing the Haven widget sitting under the clock, so the value reads in one glance instead of a paragraph. One line, one button. The detailed steps can live one tap deeper for anyone who needs them.</p>
+      </div>
+
+      <div>
+        <span class="verdict v-mix">Yes - literal plus an intelligent layer</span>
+        <h3>4. Intelligent search, not just character matching</h3>
+        <p>Both, layered. Literal matching stays as the instant floor. On top sits the semantic layer we discussed: type <code>who did I meet about design</code> or <code>creative people</code> and it returns the right faces even when those exact words are nowhere in the record, with a small line showing how it read your question. In the mock the ranking is faked; in the app it is embeddings over the capture notes, which is the whole reason capture records context and not just a handle.</p>
+        <p>Try a plain word like <code>figma</code> for literal, then a phrase like <code>the founder from the dinner</code> for the smart layer.</p>
+      </div>
+
+      <div>
+        <span class="verdict v-yes">Renamed to Your beacon</span>
+        <h3>5. Not "code"</h3>
+        <p>It is <strong>Your beacon</strong> now. It fits the sky the rest of the product lives in - a beacon is a light you show so someone can find you, which is exactly what this does - and it stops sounding like a settings screen. If beacon feels too poetic, the plain fallback is <strong>Your tag</strong>, the same word Instagram uses for theirs. Either beats "code".</p>
+        <p>It also now shows the address it resolves to, which is the subject of the section below.</p>
+      </div>
+
+      <div>
+        <span class="verdict v-yes">Removed</span>
+        <h3>6. Photo is out of onboarding</h3>
+        <p>Gone. Onboarding is three questions: name, city, contact. The photo has two better moments to arrive - it comes in free when you connect an account (note 1), and you can add or change it later in your profile. When you save someone else, the same import pulls their photo. No moment in the flow asks you to stop and pick an image.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <section style="max-width:46rem">
+    <p class="eyebrow">The part worth arguing about</p>
+    <h2>Authorization proves who someone is. It does not hand you a link to them.</h2>
+    <p>You drew a line between reading through an API and the sign-in-with-Facebook flow. They are the same machinery: the redirect returns a token, and what that token can tell you is set by the provider. The flow itself is genuinely easy, and Clerk does it in a line, so building it is not the problem.</p>
+    <p>The problem is the specific thing you want at the end of it. You said it plainly: <em>as long as we can get the user profile so we can redirect people there with the QR code.</em> That is the one thing an authorization reliably will not give you.</p>
+    <ul>
+      <li><strong>LinkedIn's identifier is pairwise</strong>, which means app-scoped. Every app that signs you in receives a different opaque string for you, and none of them can be turned into a public profile address.</li>
+      <li><strong>Facebook</strong> is the same shape, which is part of why it is cut.</li>
+      <li><strong>X</strong> does return the username, but reading it sits behind paid API tiers.</li>
+      <li><strong>Instagram</strong> returns it for Professional accounts only.</li>
+    </ul>
+    <p>So a perfect authorization flow still leaves you unable to construct the link in most cases. Worth knowing before it gets built rather than after.</p>
+    <h3 style="margin-top:1rem">The way out is that the beacon should never have pointed at Instagram</h3>
+    <p>Point it at an address <strong>you</strong> own. The beacon on screen 08 now resolves to <code>inhavens.com/tony</code>, and that one change dissolves the problem:</p>
+    <ul>
+      <li>No platform sits between two people connecting, so no API decision can revoke the feature.</li>
+      <li>Whoever scans it lands on a page showing <strong>every</strong> way to reach you, not just the one platform you happened to pick.</li>
+      <li>It works when they do not have Haven yet, which is the only version of this loop that functions at zero adoption.</li>
+      <li>You see the connection happen, which is the whole of Phase 2.</li>
+    </ul>
+    <p>Under that model a handle stops being the destination and becomes <strong>content on the destination</strong>. The API limits stop blocking the handshake and only affect how much someone types when adding a handle, which is the smaller problem the Connect flow already solves.</p>
+    <p>Authorization still earns its place, just for a different job than the one you had in mind: <strong>verification</strong>. Connecting a real Instagram proves the handle on a Haven page belongs to that person rather than being something they typed. Worth having. Not what unblocks the QR code.</p>
+  </section>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function hashString(s) {
+    var h = 2166136261;
+    for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  function seededRandom(seed) {
+    var a = seed;
+    return function () {
+      a |= 0; a = (a + 0x6d2b79f5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  var W = 390, H = 844;
+  var sky = document.getElementById("sky");
+  var pts = [], edges = [], radii = [];
+
+  /* In production this is the Convex user id: unique, permanent, and it
+     survives someone correcting their display name. No model, just arithmetic. */
+  var USER_ID = "usr_7fq2c8b19x";
+  var MAJORS = 6;
+
+  function mintSky() {
+    var rand = seededRandom(hashString(USER_ID));
+    var PAD = 58, SEP = 104, tries = 0;
+    pts = [];
+    /* Stars sit in the upper-middle band. On the card that is where the eye
+       lands, and during onboarding it stays clear of the controls below. */
+    while (pts.length < MAJORS && tries < 1500) {
+      tries++;
+      var x = PAD + rand() * (W - PAD * 2);
+      var y = 150 + rand() * 300;
+      var crowded = pts.some(function (p) {
+        var dx = p.x - x, dy = p.y - y;
+        return dx * dx + dy * dy < SEP * SEP;
+      });
+      if (!crowded) pts.push({ x: x, y: y });
+    }
+    var inTree = [0];
+    edges = [];
+    while (inTree.length < pts.length) {
+      var best = null;
+      for (var a = 0; a < inTree.length; a++) {
+        var i = inTree[a];
+        for (var j = 0; j < pts.length; j++) {
+          if (inTree.indexOf(j) !== -1) continue;
+          var dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y;
+          var d = dx * dx + dy * dy;
+          if (best === null || d < best.d) best = { i: i, j: j, d: d };
+        }
+      }
+      if (best === null) break;
+      edges.push([best.i, best.j]);
+      inTree.push(best.j);
+    }
+    radii = pts.map(function () { return 2.0 + rand() * 1.2; });
+
+    var s = '<defs><filter id="soft" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="4"/></filter></defs>';
+    edges.forEach(function (e) {
+      s += '<line class="edge" data-a="' + e[0] + '" data-b="' + e[1] +
+        '" x1="' + pts[e[0]].x.toFixed(1) + '" y1="' + pts[e[0]].y.toFixed(1) +
+        '" x2="' + pts[e[1]].x.toFixed(1) + '" y2="' + pts[e[1]].y.toFixed(1) +
+        '" stroke="#FFD9A0" stroke-width="0.55" opacity="0"/>';
+    });
+    pts.forEach(function (p, i) {
+      s += '<circle class="glow" data-i="' + i + '" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) +
+        '" r="' + (radii[i] * 2.6).toFixed(1) + '" fill="#FFD9A0" filter="url(#soft)" opacity="0"/>';
+    });
+    pts.forEach(function (p, i) {
+      s += '<circle class="maj" data-i="' + i + '" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) +
+        '" r="' + radii[i].toFixed(2) + '" fill="#5A648F" opacity="0.45"/>';
+    });
+    sky.innerHTML = s;
+  }
+
+  /* During onboarding, stars light one per committed answer. On the card and
+     beacon the figure is complete: it is your identity, not a checklist. */
+  function litCount() {
+    if (state.screen === "card" || state.screen === "beacon") return MAJORS;
+    return (state.name ? 1 : 0) + (state.city ? 1 : 0) + (state.handle ? 1 : 0);
+  }
+  function applySky() {
+    if (!pts.length) return;
+    var lit = litCount();
+    var complete = lit >= MAJORS;
+    var each = function (sel, fn) { Array.prototype.forEach.call(sky.querySelectorAll(sel), fn); };
+    each(".edge", function (el) {
+      var on = +el.getAttribute("data-a") < lit && +el.getAttribute("data-b") < lit;
+      el.setAttribute("opacity", on ? "0.24" : "0");
+    });
+    each(".glow", function (el) {
+      var i = +el.getAttribute("data-i");
+      var anchor = complete && i === 0;
+      el.setAttribute("opacity", i < lit ? (anchor ? "0.3" : "0.14") : "0");
+      el.setAttribute("r", (radii[i] * (anchor ? 3.4 : 2.6)).toFixed(1));
+    });
+    each(".maj", function (el) {
+      var i = +el.getAttribute("data-i");
+      var anchor = complete && i === 0;
+      el.setAttribute("fill", i < lit ? "#FFD9A0" : "#5A648F");
+      el.setAttribute("opacity", i < lit ? "1" : "0.45");
+      el.setAttribute("r", (radii[i] * (anchor ? 1.3 : 1)).toFixed(2));
+    });
+  }
+
+  /* ---- state ---- */
+  var state = { screen: "welcome", name: "", city: "", platform: null, handle: "", photo: false, awaiting: false };
+
+  /* How a platform can hand us an identity, best path first:
+       auth         - authorize and the handle comes back with the token
+       auth-confirm - authorizes and verifies you, but the payload has no handle
+       auth-pro     - authorizes only for Professional accounts, else falls back
+       type         - there is nothing to authorize against (phone)
+     Pasting a link is never a platform's advertised action. It only appears
+     after an attempt, which is what keeps it a fallback instead of a path.
+     slug is only used to derive a plausible demo handle in this mock. */
+  var PLATFORMS = [
+    { id: "instagram", label: "Instagram", tint: "#C13584", glyph: "IG", group: "social", method: "auth-pro", handle: "tonybuilds", prefix: "@", url: "instagram.com/" },
+    { id: "x", label: "X", tint: "#1d1d1f", glyph: "X", group: "social", method: "auth", handle: "tonybuilds", prefix: "@", url: "x.com/" },
+    { id: "linkedin", label: "LinkedIn", tint: "#0A66C2", glyph: "in", group: "social", method: "auth-confirm", handle: "tony-nguyen", prefix: "", url: "linkedin.com/in/" },
+    { id: "phone", label: "Phone", tint: "#3A8E4E", glyph: "#", group: "direct", method: "type", handle: "", prefix: "", url: "" }
+  ];
+  function platform(id) { return PLATFORMS.filter(function (p) { return p.id === id; })[0]; }
+
+  /* Why each platform lands where it does, shown in the panel after an attempt. */
+  var AUTH_NOTE = {
+    linkedin: "verifies you but never sends your profile address, so check this is right."
+  };
+
+  var CITIES = [
+    { city: "San Francisco", region: "California, United States" },
+    { city: "San Diego", region: "California, United States" },
+    { city: "San Jose", region: "California, United States" },
+    { city: "Santa Monica", region: "California, United States" },
+    { city: "Seattle", region: "Washington, United States" },
+    { city: "New York", region: "New York, United States" },
+    { city: "Austin", region: "Texas, United States" },
+    { city: "Ho Chi Minh City", region: "Vietnam" },
+    { city: "Hanoi", region: "Vietnam" },
+    { city: "Singapore", region: "Singapore" },
+    { city: "Tokyo", region: "Japan" },
+    { city: "London", region: "England, United Kingdom" },
+    { city: "Berlin", region: "Germany" },
+    { city: "Toronto", region: "Ontario, Canada" }
+  ];
+
+  /* Search demo: the app a few months in. tags drive the semantic layer. */
+  var PEOPLE = [
+    { name: "Sarah Chen", tint: "#e8a87c", met: "Design systems meetup", role: "Motion designer", city: "San Francisco", at: "March", tags: ["design", "creative", "motion"] },
+    { name: "Marcus Webb", tint: "#b8788c", met: "AI dinner in SoMa", role: "Founder, Relay", city: "San Francisco", at: "March", tags: ["founder", "startup", "ai"] },
+    { name: "Priya Raman", tint: "#7c9ae8", met: "Design systems meetup", role: "Staff engineer, Figma", city: "Oakland", at: "March", tags: ["design", "engineering"] },
+    { name: "Diego Alvarez", tint: "#9ad8b0", met: "Coffee, introduced by Sarah", role: "Illustrator", city: "Mexico City", at: "April", tags: ["creative", "design", "art"] },
+    { name: "Yuki Tanaka", tint: "#e8c87c", met: "Conference hallway", role: "Product lead, Loop", city: "Tokyo", at: "May", tags: ["product", "startup"] },
+    { name: "Amara Osei", tint: "#c89ae8", met: "Rooftop party in Bushwick", role: "Photographer", city: "New York", at: "June", tags: ["creative", "art"] }
+  ];
+  /* Maps a word in the query to the concept tags it should reach. */
+  var SEMANTIC = {
+    design: ["design"], designer: ["design"], ui: ["design"], product: ["product", "design"],
+    creative: ["creative"], creatives: ["creative"], art: ["art", "creative"], artist: ["art", "creative"],
+    founder: ["founder"], founders: ["founder"], startup: ["startup", "founder"], ceo: ["founder"],
+    engineer: ["engineering"], engineering: ["engineering"], dev: ["engineering"],
+    photo: ["art"], photographer: ["art", "creative"], motion: ["motion", "design"], ai: ["ai"]
+  };
+
+  var STEPS = [
+    { id: "welcome", title: "Welcome", grp: "Onboarding", note: "Sign-in and the mood screen are one screen. The tagline states what the app does in five words rather than setting a mood." },
+    { id: "name", title: "Name", grp: null, note: "The only required field. Committing it mints your sky from your user id, so two people named the same still get different constellations and fixing a typo later never reshuffles yours." },
+    { id: "location", title: "Location", grp: null, note: "Type three letters and pick from real results. On device this is MKLocalSearchCompleter: native, free, no API key. City-level only, because a card shown to strangers must never carry a street address." },
+    { id: "contact", title: "Contact", grp: null, note: "Note 1. Four options. Every social row says Connect and starts by authorizing: X comes back done, LinkedIn asks you to check a handle it will never send, and only a personal Instagram falls back to a pasted link. Phone is typed. The redirect is simulated in this mock." },
+    { id: "card", title: "Your card", grp: null, note: "Note 2. The avatar no longer covers the figure. The full constellation completes at the top, your name sits below it in serif, and any imported photo rides small beside the name." },
+    { id: "directory", title: "Directory", grp: "The app", note: "Day one, honestly empty. The Lock Screen prompt lives here as a dismissible card, not as a step in onboarding, because it is an enhancement." },
+    { id: "search", title: "Search", grp: null, note: "Note 4. Literal matching is the instant floor; the intelligent layer sits on top. Try a word like figma, then a phrase like the founder from the dinner and watch it read your intent." },
+    { id: "widget", title: "Lock Screen", grp: null, note: "Note 3. Fewer words, one picture. A Lock Screen mockup shows the widget in place so the value reads at a glance. iOS still cannot place it for you, so the how-to lives one tap deeper." },
+    { id: "beacon", title: "Your beacon", grp: null, note: "Note 5. Renamed from code. A beacon is a light you show so people can find you, which fits the sky and stops sounding like a settings row." }
+  ];
+  var ORDER = STEPS.map(function (s) { return s.id; });
+  var ONBOARDING = ["name", "location", "contact"];
+  var DEMO = { name: "Tony Nguyen", city: "San Francisco", platform: "linkedin" };
+
+  var stepsEl = document.getElementById("steps");
+  stepsEl.innerHTML = STEPS.map(function (s, i) {
+    return (s.grp ? '<div class="grp">' + s.grp + "</div>" : "") +
+      '<button class="steplink" data-step="' + s.id + '"><span class="n">0' + i + "</span><span>" + s.title + "</span></button>";
+  }).join("");
+  var railnote = document.getElementById("railnote");
+  var stepper = document.getElementById("stepper");
+  stepper.innerHTML = ONBOARDING.map(function () { return "<i></i>"; }).join("");
+
+  function go(id) {
+    var wasCard = state.screen === "card";
+    state.screen = id;
+    sky.classList.toggle("unminted", !state.name || id === "welcome" || id === "name");
+
+    Array.prototype.forEach.call(document.querySelectorAll(".scr"), function (el) {
+      el.classList.toggle("on", el.getAttribute("data-s") === id);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".steplink"), function (el) {
+      el.classList.toggle("now", el.getAttribute("data-step") === id);
+    });
+
+    var at = ONBOARDING.indexOf(id);
+    stepper.classList.toggle("on", at !== -1);
+    Array.prototype.forEach.call(stepper.children, function (el, i) {
+      el.classList.toggle("done", at !== -1 && i <= at);
+    });
+
+    var step = STEPS.filter(function (s) { return s.id === id; })[0];
+    railnote.style.opacity = "0";
+    setTimeout(function () { railnote.textContent = step ? step.note : ""; railnote.style.opacity = "1"; }, reduce ? 0 : 180);
+
+    if (id === "card") {
+      paintCard();
+      if (!reduce && !wasCard) { sky.classList.remove("reveal"); void sky.getBoundingClientRect(); sky.classList.add("reveal"); }
+    }
+    if (id === "search") renderResults();
+    if (id === "beacon") {
+      document.getElementById("beaconName").textContent = state.name || DEMO.name;
+      document.getElementById("beaconUrl").textContent = havenAddress();
+      paintBeacon();
+    }
+    applySky();
+
+    var focusId = { name: "nameInput", location: "cityInput", search: "searchInput" }[id];
+    /* preventScroll, or focusing a field inside the mock phone yanks the page. */
+    if (focusId) setTimeout(function () { document.getElementById(focusId).focus({ preventScroll: true }); }, reduce ? 0 : 300);
+  }
+
+  function seedFor(id) {
+    var i = ORDER.indexOf(id);
+    if (i <= 1) return;
+    if (!state.name) { state.name = DEMO.name; mintSky(); }
+    if (i >= 4 && !state.city) state.city = DEMO.city;
+    if (i >= 4 && !state.handle) { finishAuth(platform(DEMO.platform), true); }
+    syncControls();
+  }
+  Array.prototype.forEach.call(stepsEl.querySelectorAll(".steplink"), function (el) {
+    el.addEventListener("click", function () { var id = el.getAttribute("data-step"); seedFor(id); go(id); });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-go]"), function (el) {
+    el.addEventListener("click", function () { go(el.getAttribute("data-go")); });
+  });
+
+  /* ---- name ---- */
+  var nameInput = document.getElementById("nameInput");
+  var nameGo = document.getElementById("nameGo");
+  nameInput.addEventListener("input", function () { nameGo.disabled = !nameInput.value.trim(); });
+  function commitName() { var v = nameInput.value.trim(); if (!v) return; state.name = v; mintSky(); go("location"); }
+  nameGo.addEventListener("click", commitName);
+  nameInput.addEventListener("keydown", function (e) { if (e.key === "Enter") commitName(); });
+
+  /* ---- location ---- */
+  var cityInput = document.getElementById("cityInput");
+  var cityGo = document.getElementById("cityGo");
+  var suggs = document.getElementById("suggs");
+  function renderSuggs() {
+    var q = cityInput.value.trim().toLowerCase();
+    if (q.length < 2 || state.city === cityInput.value.trim()) { suggs.innerHTML = ""; return; }
+    var hits = CITIES.filter(function (c) { return c.city.toLowerCase().indexOf(q) === 0; }).slice(0, 4);
+    suggs.innerHTML = hits.map(function (c) {
+      return '<button class="sugg" data-city="' + c.city + '"><b>' + c.city + "</b><span>" + c.region + "</span></button>";
+    }).join("");
+    Array.prototype.forEach.call(suggs.querySelectorAll(".sugg"), function (el) {
+      el.addEventListener("click", function () {
+        state.city = el.getAttribute("data-city"); cityInput.value = state.city;
+        suggs.innerHTML = ""; cityGo.disabled = false; applySky();
+      });
+    });
+  }
+  cityInput.addEventListener("input", function () { state.city = ""; cityGo.disabled = true; applySky(); renderSuggs(); });
+  cityGo.addEventListener("click", function () { go("contact"); });
+  document.getElementById("citySkip").addEventListener("click", function () { go("contact"); });
+
+  /* ---- contact / connect ---- */
+  var contactRows = document.getElementById("contactRows");
+  var handleInput = document.getElementById("handleInput");
+  var fallbackBox = document.getElementById("fallback");
+  var fallbackText = document.getElementById("fallbackText");
+  var contactGo = document.getElementById("contactGo");
+  var connecting = null; /* platform id mid-authorize, for the spinner */
+
+  var CHECK = '<svg class="check" viewBox="0 0 16 16" fill="none" stroke="#FFD9A0" stroke-width="2"><path d="M3 8.5l3.5 3.5L13 5"/></svg>';
+
+  function displayHandle(p) { return p.prefix + state.handle; }
+
+  function ctaFor(p) {
+    /* Names the real mechanic: you get handed to the app and handed back. */
+    if (connecting === p.id) return '<span class="cta"><span class="spin"></span>Opening ' + p.label + "</span>";
+    var active = state.platform === p.id;
+    if (active && state.handle) return '<span class="cta">' + displayHandle(p) + " " + CHECK + "</span>";
+    if (active && state.awaiting) return '<span class="cta">Waiting for you below</span>';
+    if (p.group === "direct") return '<span class="cta">Add</span>';
+    return '<span class="cta">Connect</span>';
+  }
+
+  function renderContacts() {
+    var html = "";
+    ["social", "direct"].forEach(function (g) {
+      html += '<div class="grouplbl">' + (g === "social" ? "Connect an account" : "Or type one") + "</div>";
+      PLATFORMS.filter(function (p) { return p.group === g; }).forEach(function (p) {
+        var connected = state.platform === p.id && state.handle;
+        html += '<button class="row' + (connected ? " set" : "") + '" data-id="' + p.id + '">' +
+          '<span class="rowleft"><span class="glyph" style="background:' + p.tint + '">' + p.glyph + "</span>" +
+          '<span class="primary-name">' + p.label + "</span>" +
+          (connected ? ' <span class="primary-tag">Primary</span>' : "") + "</span>" +
+          ctaFor(p) + "</button>";
+      });
+    });
+    contactRows.innerHTML = html;
+    Array.prototype.forEach.call(contactRows.querySelectorAll(".row"), function (el) {
+      el.addEventListener("click", function () { chooseContact(el.getAttribute("data-id")); });
+    });
+  }
+
+  function showEntry(message, placeholder, value) {
+    fallbackBox.hidden = false;
+    fallbackText.innerHTML = message;
+    handleInput.placeholder = placeholder;
+    handleInput.value = value || "";
+    setTimeout(function () {
+      handleInput.focus({ preventScroll: true });
+      /* The panel appears below a list long enough to scroll, so bring it into
+         view inside the screen. preventScroll above keeps the page still. */
+      var mid = handleInput.closest(".mid");
+      if (mid) mid.scrollTop = mid.scrollHeight;
+    }, reduce ? 0 : 60);
+  }
+  function hideEntry() { fallbackBox.hidden = true; handleInput.value = ""; }
+
+  function chooseContact(id) {
+    var p = platform(id);
+    state.platform = id; state.handle = ""; state.awaiting = false; state.photo = false;
+
+    /* Typed by definition: there is no account to authorize against. */
+    if (p.method === "type") {
+      hideEntry();
+      showEntry("", "Phone number", "");
+      fallbackText.hidden = true;
+      renderContacts(); contactGo.disabled = true;
+      return;
+    }
+
+    /* Everything social starts the same way: authorize. What comes back differs. */
+    fallbackText.hidden = false;
+    hideEntry();
+    connecting = id;
+    renderContacts();
+    contactGo.disabled = true;
+    setTimeout(function () { finishAuth(p, false); }, reduce ? 0 : 750);
+  }
+
+  function finishAuth(p, silent) {
+    connecting = null;
+    state.platform = p.id;
+    state.photo = true; /* every successful authorization returns a photo */
+
+    if (p.method === "auth") {
+      /* Best case: the handle came back with the token. Nothing to type. */
+      state.handle = p.handle;
+      state.awaiting = false;
+      if (!silent) { hideEntry(); renderContacts(); contactGo.disabled = false; applySky(); }
+      return;
+    }
+    if (p.method === "auth-confirm") {
+      /* Connected and verified, but the handle is not in the payload. Prefill
+         our best guess so this is a confirm rather than an entry. */
+      state.handle = p.handle;
+      state.awaiting = false;
+      if (!silent) {
+        renderContacts(); contactGo.disabled = false; applySky();
+        showEntry("Connected as <b>" + escapeHtml(state.name || DEMO.name) + "</b>. " + p.label + " " + AUTH_NOTE[p.id],
+          p.url + "handle", state.handle);
+      }
+      return;
+    }
+    /* auth-pro: authorization exists but only for Professional accounts, so a
+       personal account lands here. The note says whose limit this is, or a
+       paste field reads as our failure rather than the platform's. */
+    state.handle = ""; state.awaiting = true; state.photo = false;
+    if (!silent) {
+      renderContacts(); contactGo.disabled = true; applySky();
+      showEntry("<b>" + p.label + "</b> only shares profiles for Creator and Business accounts. Paste your link and we will pull the handle out of it.",
+        "Paste your " + p.label + " link", "");
+    }
+  }
+
+  handleInput.addEventListener("input", function () {
+    var p = state.platform ? platform(state.platform) : null;
+    if (!p) return;
+    var v = handleInput.value.trim().replace(/^@/, "");
+    /* A pasted profile URL is reduced to the handle, so the fallback still
+       costs one paste rather than careful typing. */
+    var m = v.match(/(?:instagram\.com|x\.com|twitter\.com|facebook\.com|linkedin\.com\/in)\/([^/?#\s]+)/i);
+    if (m) v = m[1];
+    state.handle = v;
+    state.awaiting = !v && p.method === "auth-pro";
+    contactGo.disabled = !v;
+    renderContacts();
+    applySky();
+  });
+  contactGo.addEventListener("click", function () { go("card"); });
+
+  /* ---- card ---- */
+  function paintCard() {
+    var name = state.name || DEMO.name;
+    var idrow = document.getElementById("idrow");
+    var photoHtml = "";
+    if (state.photo && state.platform) {
+      photoHtml = '<span class="idphoto" style="background:linear-gradient(140deg,#e8a87c,#b8788c)">' + escapeHtml(name.charAt(0).toUpperCase()) + "</span>";
+    }
+    idrow.innerHTML = photoHtml + '<p class="cardname">' + escapeHtml(name) + "</p>";
+    document.getElementById("cardMeta").textContent = state.city || "";
+    var p = state.platform ? platform(state.platform) : null;
+    var cc = document.getElementById("cardContact");
+    if (p && state.handle) {
+      cc.style.display = "inline-flex";
+      cc.textContent = p.label + " - " + displayHandle(p);
+    } else { cc.style.display = "none"; }
+  }
+
+  /* ---- lock-screen widget preview icon ---- */
+  function paintWidgetIcon() {
+    var el = document.getElementById("wcSky");
+    if (!el) return;
+    var rand = seededRandom(hashString(USER_ID));
+    var s = "";
+    for (var i = 0; i < 4; i++) {
+      var x = 4 + rand() * 18, y = 4 + rand() * 18, r = 0.9 + rand() * 0.8;
+      s += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r.toFixed(1) + '" fill="#FFD9A0"/>';
+    }
+    el.innerHTML = '<svg viewBox="0 0 26 26" style="position:absolute;inset:0;width:100%;height:100%">' + s + "</svg>";
+  }
+
+  /* ---- beacon (renamed from qr) ---- */
+  /* The beacon resolves to an address Haven owns, not to a social profile.
+     That is what makes the handshake work when a platform will not hand us a
+     public link, and when the person scanning has no Haven account yet. */
+  function havenAddress() {
+    var first = (state.name || DEMO.name).trim().toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/)[0] || "you";
+    return "inhavens.com/" + first;
+  }
+  function paintBeacon() {
+    var rand = seededRandom(hashString(USER_ID + (state.name || DEMO.name)));
+    var s = "", n = 21, cell = 100 / n;
+    for (var y = 0; y < n; y++) {
+      for (var x = 0; x < n; x++) {
+        var finder = (x < 7 && y < 7) || (x > n - 8 && y < 7) || (x < 7 && y > n - 8);
+        if (finder) continue;
+        if (rand() > 0.52) s += '<rect x="' + (x * cell).toFixed(2) + '" y="' + (y * cell).toFixed(2) + '" width="' + cell.toFixed(2) + '" height="' + cell.toFixed(2) + '" fill="#1A1730"/>';
+      }
+    }
+    [[0, 0], [n - 7, 0], [0, n - 7]].forEach(function (f) {
+      var fx = f[0] * cell, fy = f[1] * cell, fs = cell * 7;
+      s += '<rect x="' + fx.toFixed(2) + '" y="' + fy.toFixed(2) + '" width="' + fs.toFixed(2) + '" height="' + fs.toFixed(2) + '" fill="none" stroke="#1A1730" stroke-width="' + cell.toFixed(2) + '"/>' +
+        '<rect x="' + (fx + cell * 2).toFixed(2) + '" y="' + (fy + cell * 2).toFixed(2) + '" width="' + (cell * 3).toFixed(2) + '" height="' + (cell * 3).toFixed(2) + '" fill="#1A1730"/>';
+    });
+    document.getElementById("beaconsvg").innerHTML = s;
+  }
+
+  /* ---- search: literal floor + semantic layer ---- */
+  var searchInput = document.getElementById("searchInput");
+  var results = document.getElementById("results");
+  var chipsEl = document.getElementById("chips");
+  var interp = document.getElementById("interp");
+  var interpText = document.getElementById("interpText");
+  var CHIPS = ["San Francisco", "March", "Meetup"];
+  var activeChip = null;
+
+  chipsEl.innerHTML = CHIPS.map(function (c) { return '<button class="chip" data-chip="' + c + '">' + c + "</button>"; }).join("");
+  Array.prototype.forEach.call(chipsEl.querySelectorAll(".chip"), function (el) {
+    el.addEventListener("click", function () {
+      var c = el.getAttribute("data-chip");
+      activeChip = activeChip === c ? null : c;
+      Array.prototype.forEach.call(chipsEl.querySelectorAll(".chip"), function (x) { x.classList.toggle("on", x.getAttribute("data-chip") === activeChip); });
+      renderResults();
+    });
+  });
+
+  function escapeHtml(s) { return s.replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function highlight(text, q) {
+    var safe = escapeHtml(text);
+    if (!q) return safe;
+    var at = text.toLowerCase().indexOf(q);
+    if (at === -1) return safe;
+    return escapeHtml(text.slice(0, at)) + "<mark>" + escapeHtml(text.slice(at, at + q.length)) + "</mark>" + escapeHtml(text.slice(at + q.length));
+  }
+  function semanticTags(q) {
+    var words = q.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+    var tags = {};
+    words.forEach(function (w) { (SEMANTIC[w] || []).forEach(function (t) { tags[t] = true; }); });
+    return Object.keys(tags);
+  }
+  function renderResults() {
+    var raw = searchInput.value.trim();
+    var q = raw.toLowerCase();
+    interp.hidden = true;
+
+    var literal = PEOPLE.filter(function (p) {
+      var hay = [p.name, p.met, p.role, p.city, p.at].join(" ").toLowerCase();
+      if (activeChip && hay.indexOf(activeChip.toLowerCase()) === -1) return false;
+      return !q || hay.indexOf(q) !== -1;
+    });
+
+    var hits = literal, hl = q;
+    /* If literal comes up short and the query reads like a question, reach for
+       the concept tags. In the app this is embeddings over the capture notes. */
+    var tags = semanticTags(q);
+    var phraseLike = raw.split(/\s+/).length >= 3;
+    if (tags.length && (literal.length === 0 || phraseLike)) {
+      var semantic = PEOPLE.filter(function (p) {
+        if (activeChip) {
+          var hay = [p.name, p.met, p.role, p.city, p.at].join(" ").toLowerCase();
+          if (hay.indexOf(activeChip.toLowerCase()) === -1) return false;
+        }
+        return p.tags.some(function (t) { return tags.indexOf(t) !== -1; });
+      });
+      if (semantic.length) {
+        hits = semantic; hl = "";
+        interp.hidden = false;
+        interpText.innerHTML = 'people who are <em>' + escapeHtml(tags.join(", ")) + "</em>";
+      }
+    }
+
+    if (!hits.length) { results.innerHTML = '<div class="empty"><p class="hint">Nobody matches that yet.</p></div>'; return; }
+    results.innerHTML = hits.map(function (p) {
+      var line = p.met + " - " + p.role + " - " + p.city;
+      return '<div class="person" tabindex="0" role="button">' +
+        '<span class="pic" style="background:' + p.tint + '">' + p.name.charAt(0) + "</span>" +
+        '<span class="pmeta"><span class="pname">' + highlight(p.name, hl) + "</span>" +
+        '<span class="pwhere">' + highlight(line, hl) + "</span></span></div>";
+    }).join("");
+  }
+  searchInput.addEventListener("input", renderResults);
+
+  /* ---- shared control sync ---- */
+  function syncControls() {
+    nameInput.value = state.name; nameGo.disabled = !state.name;
+    cityInput.value = state.city; cityGo.disabled = !state.city; suggs.innerHTML = "";
+    hideEntry();
+    contactGo.disabled = !state.handle;
+    renderContacts();
+  }
+
+  document.getElementById("replay").addEventListener("click", function () {
+    state = { screen: "welcome", name: "", city: "", platform: null, handle: "", photo: false, awaiting: false };
+    pts = []; edges = []; radii = []; sky.innerHTML = ""; sky.classList.remove("reveal");
+    connecting = null;
+    searchInput.value = ""; activeChip = null;
+    Array.prototype.forEach.call(chipsEl.querySelectorAll(".chip"), function (x) { x.classList.remove("on"); });
+    syncControls();
+    go("welcome");
+  });
+
+  /* ---- ambient dust ---- */
+  var canvas = document.getElementById("dust");
+  var ctx = canvas.getContext("2d");
+  var w = 0, h = 0, motes = [];
+  function build() {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    w = canvas.clientWidth; h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    motes = [];
+    for (var i = 0; i < 28; i++) {
+      var depth = Math.random();
+      motes.push({ x: Math.random() * w, y: Math.random() * h, r: 0.4 + depth * 0.8, base: 0.05 + depth * 0.13, sp: 0.015 + depth * 0.055, tw: Math.random() * 6.28 });
+    }
+  }
+  function frame(t) {
+    var time = t / 1000;
+    ctx.clearRect(0, 0, w, h);
+    for (var i = 0; i < motes.length; i++) {
+      var m = motes[i];
+      m.x += m.sp; if (m.x > w + 2) m.x = -2;
+      ctx.globalAlpha = m.base * (0.75 + 0.25 * Math.sin(time * 1.05 + m.tw));
+      ctx.fillStyle = "#AEB6DC";
+      ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, 6.283); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    if (!reduce) requestAnimationFrame(frame);
+  }
+  build(); requestAnimationFrame(frame);
+  window.addEventListener("resize", build);
+
+  renderContacts();
+  paintWidgetIcon();
+  renderResults();
+  go("welcome");
+})();
+</script>
+</body>
+</html>

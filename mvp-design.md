@@ -138,7 +138,8 @@ Three tables. This is the whole backend for MVP.
 ### profiles
 
 A Haven user's own card, the canonical source of their data.
-Fields: name, photo, socials (IG, X, WhatsApp, Telegram, phone, and any other handles), preferred contact method, and structured attributes (city, company, role).
+Fields: name, photo, handles (Instagram, X, LinkedIn, phone, each flagged verified when the handle itself was proven rather than typed), the primary platform, structured attributes (city as name plus admin area plus country, company, role), and a unique handle that the beacon URL resolves to.
+The exact field list Phase 1 adds is in `phase1-build-plan.md`, including how that beacon handle settles against the `username` this table already has.
 
 ### contacts
 
@@ -170,19 +171,29 @@ The model is deliberately small so it stays portable if we ever leave Convex.
 
 ## Screens (SwiftUI)
 
-Onboarding: Clerk sign-in (Sign in with Apple first), then create your profile (name, photo, socials, preferred contact, city, company, role).
+Onboarding: one welcome screen carrying Clerk sign-in (Sign in with Apple first), then three questions - name, city, and one way to reach you - then your card.
+Photo is never asked; it arrives with an OAuth connection or later in edit.
+Company and role live in the schema and on the edit screen, never in onboarding.
+The screen-by-screen spec is in `phase1-build-plan.md`.
 
-My Card: your profile as a card that you show people. Editable.
+My Card: your profile as a card that you show people, editable field by field.
+This is also where unfilled fields read as unlit stars, which is the whole nudge to complete them.
+
+Your beacon: your QR, resolving to `inhavens.com/<handle>` rather than to any social profile.
 
 Connect: start or accept a connection, and save a non-user manually.
 
-Directory (home): the list of your contacts with search on top. Money screen one.
+Directory (home): the list of your contacts, with a search field at the top that hands off to the Search screen rather than filtering in place.
+Money screen one.
 
-Contact detail with the notes editor: one person's attributes, socials, a tappable preferred-contact that opens straight into WhatsApp or IG or phone, and your memory notes with a first-class editing experience. Money screen two.
+Contact detail with the notes editor: one person's attributes, their handles, a tappable preferred contact that opens straight into whatever app they actually use, and your memory notes with a first-class editing experience.
+Money screen two.
+Note the asymmetry here: your own card offers four platforms (Instagram, X, LinkedIn, phone), but a person you save manually can carry any handle you want to record, WhatsApp and Telegram included.
 
 Add contact manually: for people not on Haven (name, photo, socials, notes).
 
-Search: filter chips for structured attributes (company, city, role) plus a keyword field over notes, and results.
+Search: its own main screen alongside Directory, not a field buried on the directory list.
+Filter chips for structured attributes (company, city, role) plus a keyword field over notes, and results.
 
 ## The search contract (MVP)
 
@@ -221,10 +232,12 @@ The core loop is Capture, then Refine, then Recall, then Reach, wrapped by onboa
 
 ### A. Set up my card (onboarding, once)
 
-I download Haven and sign in.
-I build my card: photo, name, my handles, and I mark the one I actually want people to reach me on.
-I add where I live, where I work, and my role.
-Now I have a card I can show anyone, and I am findable by the people I connect with.
+I download Haven and sign in on the first screen.
+It asks me three things: my name, the city I am in, and one way to reach me.
+For that last one I connect an account instead of typing a handle, so it fills itself in and brings my photo with it.
+Then my card appears, my own constellation completing above my name, and I am done.
+Later, whenever I feel like it, I open My Card and fill in the rest: where I work, my role, another handle or two.
+The fields I have not filled sit there as unlit stars, so I can see what is missing without anyone nagging me.
 
 ### B. Meet someone and capture them (Capture)
 
@@ -253,7 +266,7 @@ The natural-language version of this ("who was the guy in the Spain shirt from K
 ### E. Reach out (Reach)
 
 I found them, and their card shows the contact method they actually want to be reached on.
-I tap it and it opens straight into WhatsApp or IG or their number.
+I tap it and it opens straight into that app, or dials their number.
 I never had to remember which platform they prefer or dig through five apps, because Haven centralized it.
 
 Everything on the roadmap just makes one of these steps lower-friction or richer.
@@ -277,8 +290,13 @@ Also in Phase 0: verify App Store name availability for "Haven" (the name is cro
 
 Onboarding, create and edit profile, My Card.
 
-Plus the hero-interaction spike: one moment (the connect animation, or directory scroll and card open) built to the full quality bar with real springs, haptics, and gesture physics.
+Plus the hero-interaction spike: one moment built to the full quality bar with real springs, haptics, and gesture physics.
 This validates our SwiftUI ceiling early and sets the standard everything else inherits.
+The moment is the card reveal at the end of onboarding, the person's constellation completing and settling, because Phase 1 ships that screen anyway and it is what a person holds up to someone forever after.
+
+`phase1-build-plan.md` is the implementation document for this phase and owns every Phase 1 detail: screen specs, design tokens, the Convex schema additions, the per-platform contact contracts, and the milestone order.
+Where it and this document disagree on a Phase 1 decision, the build plan wins.
+It also adds four things beyond the original scope here, each a deliberate decision rather than drift: the Haven handle plus beacon URL, the Lock Screen widget and its explainer, a public web card page at `inhavens.com/<handle>`, and Search as a separate main screen (a shell in Phase 1, wired in Phase 3).
 
 ### Phase 2, Directory, manual save, contact detail
 

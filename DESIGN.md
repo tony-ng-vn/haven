@@ -87,6 +87,10 @@ components:
 
 # Design System: Euno
 
+Scope: this covers the legacy web surface only, under the app's old name.
+The native iOS client has its own visual language, a dark dusk palette with serif reserved for people's names, defined in `phase1-build-plan.md` under Design tokens.
+Do not apply the tokens below to anything in `ios/`.
+
 ## 1. Overview
 
 **Creative North Star: "The Quiet Room"**
