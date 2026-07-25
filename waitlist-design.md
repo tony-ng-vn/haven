@@ -17,17 +17,19 @@ Everything else on the page exists to make that feel worth doing.
 
 ## The page today
 
-### Two layouts, one breakpoint
+### Two layouts, one voice
 
-The page becomes two designs at 620px, and the copy changes with the layout so the two never disagree.
+The page becomes two layouts at 620px. Wording does not change with the layout.
 
 Desktop, the "constellation" layout: everything centred, copy settled in the lower third.
+Phone, the "drift" layout: headline at the top, capture at the bottom.
+
+Both say the same thing, from `src/waitlistCopy.ts`:
 Headline "Your people are a constellation.", button "Join", fine print "Private beta".
 
-Phone, the "drift" layout: headline at the top, capture at the bottom.
-Headline "The people you meet, never lost again.", button "Request access", fine print "No spam. Invites go out in waves."
-
-The breakpoint drives layout and copy together from a single `Mode` value, so there is no way to ship a mismatched pair.
+`Mode` only drives layout CSS (`data-mode`) and the analytics `source` field.
+It must never key marketing copy -- that is how "Join" on web and "Request access" on phone once shipped as two products.
+`src/waitlistCopy.test.ts` locks the single-voice contract.
 
 ### Progressive disclosure on the form
 
