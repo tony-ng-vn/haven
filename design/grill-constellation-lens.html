@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Grilling round 4: quieting the constellation lens</title>
+<style>
+  :root {
+    --ink: #f5f5f7; --muted: #98989d; --blue: #0a84ff; --star: #FFD9A0;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: #000; color: var(--ink); font-family: var(--sans); overflow: hidden; }
+
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #frame {
+    position: relative; overflow: hidden; background: #000;
+    transition: width 260ms var(--ease), height 260ms var(--ease), border-radius 260ms var(--ease);
+  }
+  #frame[data-vp="desktop"] { width: 100vw; height: 100vh; border-radius: 0; }
+  #frame[data-vp="phone"] {
+    width: 390px; height: 780px; max-height: 94vh; border-radius: 34px;
+    border: 1px solid #ffffff1f; box-shadow: 0 30px 90px #000;
+  }
+  #sky { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  .wl-content { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 6vh 24px 7vh; z-index: 1; pointer-events: none; }
+  #frame[data-vp="phone"] .wl-content { padding: 7vh 22px 6vh; }
+  .wl-bottom { margin-top: auto; }
+  #frame[data-vp="desktop"] .wl-content { align-items: center; justify-content: center; text-align: center; }
+  #frame[data-vp="desktop"] .wl-bottom { margin-top: 26px; }
+  .wl-eyebrow { display: block; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+  .wl-headline { margin: 0; font-weight: 700; letter-spacing: -0.035em; line-height: 1.05; font-size: clamp(38px, 6.4vw, 68px); text-wrap: balance; }
+  #frame[data-vp="phone"] .wl-headline { font-size: 40px; }
+  .wl-sub { margin: 18px 0 0; color: var(--muted); font-size: 17px; line-height: 1.5; max-width: 34ch; }
+  #frame[data-vp="desktop"] .wl-sub { margin-inline: auto; }
+  .wl-form { margin-top: 22px; display: flex; flex-direction: column; gap: 10px; pointer-events: auto; }
+  #frame[data-vp="desktop"] .wl-form { align-items: center; }
+  .wl-row { display: flex; gap: 10px; width: 100%; max-width: 460px; }
+  .wl-field { flex: 1; min-width: 0; background: #ffffff14; border: 1px solid #ffffff24; border-radius: 14px; padding: 15px 17px; font: 17px var(--sans); color: var(--ink); }
+  .wl-field::placeholder { color: #ffffff5c; }
+  .wl-field:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 4px #0a84ff26; }
+  .wl-go { background: var(--blue); color: #fff; border: 0; border-radius: 14px; padding: 15px 24px; font: 600 17px var(--sans); cursor: pointer; white-space: nowrap; }
+  .wl-fine { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+  #frame[data-vp="desktop"] .wl-fine { text-align: center; }
+
+  #picker {
+    position: fixed; right: 20px; bottom: 20px; z-index: 9999; width: 280px;
+    background: #16161acc; backdrop-filter: blur(18px); border: 1px solid #ffffff1f;
+    border-radius: 16px; padding: 12px; display: flex; flex-direction: column; gap: 10px;
+    font-size: 13px; box-shadow: 0 18px 50px #000a; user-select: none;
+  }
+  #grab { cursor: grab; display: flex; align-items: center; justify-content: space-between; }
+  #grab:active { cursor: grabbing; }
+  #grab b { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #8a8a90; font-weight: 600; }
+  #hide { background: none; border: 0; color: #8a8a90; cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px; }
+  .nav { display: flex; align-items: center; gap: 8px; }
+  .nav button { width: 34px; height: 34px; flex: none; background: #ffffff14; border: 1px solid #ffffff1f; border-radius: 10px; color: var(--ink); font-size: 15px; cursor: pointer; }
+  .nav button:hover { background: #ffffff24; }
+  .nav .who { flex: 1; text-align: center; }
+  .nav .who b { display: block; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .nav .who span { font-size: 11px; color: #8a8a90; font-variant-numeric: tabular-nums; }
+  .desc { margin: 0; color: #a8a8ae; font-size: 12px; line-height: 1.45; min-height: 62px; }
+  .seg { display: flex; gap: 4px; }
+  .seg button { flex: 1; padding: 7px 4px; font-size: 11px; font-weight: 600; background: #ffffff0f; border: 1px solid #ffffff1a; border-radius: 8px; color: #a8a8ae; cursor: pointer; }
+  .seg button.on { background: var(--ink); color: #16161a; border-color: transparent; }
+  .lbl { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: #6e6e75; margin-bottom: -4px; display: flex; justify-content: space-between; }
+  .lbl i { font-style: normal; color: #a8a8ae; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: #FFD9A0; }
+  #note { margin: 0; font-size: 11px; line-height: 1.45; padding: 8px 9px; border-radius: 9px; border: 1px solid #A8DDB04d; background: #9fd6a81a; color: #A8DDB0; }
+  #show { position: fixed; right: 20px; bottom: 20px; z-index: 9999; display: none; background: #16161acc; backdrop-filter: blur(18px); border: 1px solid #ffffff1f; border-radius: 12px; padding: 9px 14px; color: var(--ink); font: 600 12px var(--sans); cursor: pointer; }
+  @media (prefers-reduced-motion: reduce) { #frame { transition: none; } }
+</style>
+</head>
+<body>
+
+<div id="stage"><div id="frame" data-vp="desktop"><canvas id="sky"></canvas></div></div>
+
+<button id="show">Show picker</button>
+<div id="picker">
+  <div id="grab"><b>Quieting the lens</b><button id="hide" title="Hide">&times;</button></div>
+  <div class="nav">
+    <button id="prev" aria-label="Previous">&#8592;</button>
+    <div class="who"><b id="vname"></b><span id="vnum"></span></div>
+    <button id="next" aria-label="Next">&#8594;</button>
+  </div>
+  <p class="desc" id="vdesc"></p>
+  <div class="lbl"><span>Radius</span><i id="rval"></i></div>
+  <input type="range" id="rrange" min="50" max="240" step="5">
+  <div class="lbl">Viewport</div>
+  <div class="seg" id="vpseg">
+    <button data-vp="desktop" class="on">Desktop</button>
+    <button data-vp="phone">Phone</button>
+  </div>
+  <p id="note">Each variant sets its own radius; the slider overrides it so you can find the size by feel.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* -------------------------------------------------------------------------
+     Round 4. Constellation won on meaning; this round is about restraint.
+
+     "Distracting" was diagnosed as two things beyond size: the hard rim reads
+     as a magnifying-glass tool sitting on the page, and dimming the sky under
+     the lens makes it a hole punched through the design. So the variants below
+     remove UI-ness progressively rather than only shrinking the circle. `dim`
+     of 1 means the sky underneath is never darkened at all, so the effect is
+     purely additive -- nothing is ever taken away, only given.
+  ------------------------------------------------------------------------- */
+  const VARIANTS = [
+    { id: "smaller", name: "Just smaller", R: 110, rim: 1, dim: 0.3, lag: 0.16, soft: 0.18,
+      desc: "Round 3 unchanged, at half the radius. Keeps the bright rim and the darkened well, so it still reads as an instrument held over the page. The baseline to judge the rest against." },
+    { id: "norim", name: "No rim", R: 115, rim: 0, dim: 0.45, lag: 0.16, soft: 0.5,
+      desc: "The ring is gone and the edge dissolves over half the radius. Without a hard boundary it stops being an object and starts being a region of attention." },
+    { id: "additive", name: "Additive", R: 120, rim: 0, dim: 1, lag: 0.16, soft: 0.55,
+      desc: "Nothing is ever darkened. The sky stays exactly as it was and the lines are simply added on top. The single biggest reduction in distraction, because nothing is taken away." },
+    { id: "breath", name: "Breath", R: 175, rim: 0, dim: 1, lag: 0.055, soft: 0.85,
+      desc: "Wide, extremely soft, and lagging well behind the pointer. Large but barely there - it suggests the connections rather than displaying them, and never keeps up enough to feel attached to the cursor." },
+    { id: "pinpoint", name: "Pinpoint", R: 78, rim: 0.3, dim: 1, lag: 0.28, soft: 0.3,
+      desc: "Small, quick, and crisp. Only three or four stars connect at a time, so it reads as precision rather than spectacle. The most restrained of the five." },
+  ];
+
+  let vi = 0, vp = "desktop", rOverride = null;
+  const frame = document.getElementById("frame");
+  const canvas = document.getElementById("sky");
+  const ctx = canvas.getContext("2d");
+  const rrange = document.getElementById("rrange");
+  const rval = document.getElementById("rval");
+
+  let w = 0, h = 0, stars = [], raf = 0;
+  const lens = { x: -999, y: -999, tx: -999, ty: -999, on: 0 };
+
+  const V = () => VARIANTS[vi];
+  const RAD = () => (rOverride !== null ? rOverride : V().R);
+
+  function resize() {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    w = canvas.clientWidth; h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function build() {
+    resize();
+    const count = Math.min(300, Math.floor((w * h) / 3600));
+    stars = [];
+    for (let i = 0; i < count; i++) {
+      const d = Math.random();
+      stars.push({
+        x: Math.random() * w, y: Math.random() * h,
+        size: 0.5 + d * 1.6, base: 0.1 + d * 0.45, sp: 0.05 + d * 0.22,
+        tw: Math.random() * 6.28, hot: Math.random() < 0.04,
+      });
+    }
+  }
+
+  // 1 at the centre, 0 at the rim, fading across `soft` of the radius. This is
+  // what replaces the hard clip: no boundary means no object.
+  function falloff(dist) {
+    const R = RAD();
+    if (dist >= R) return 0;
+    const soft = V().soft;
+    if (soft <= 0) return 1;
+    const t = (1 - dist / R) / soft;
+    return t >= 1 ? 1 : t <= 0 ? 0 : t;
+  }
+  function distTo(p) { return Math.hypot(p.x - lens.x, p.y - lens.y); }
+
+  const ZOOM = 1.18;
+  function warp(p) {
+    return { x: lens.x + (p.x - lens.x) * ZOOM, y: lens.y + (p.y - lens.y) * ZOOM };
+  }
+
+  function mst(pts) {
+    if (pts.length < 2) return [];
+    const inTree = [0], edges = [];
+    while (inTree.length < pts.length) {
+      let best = null;
+      for (const i of inTree) {
+        for (let j = 0; j < pts.length; j++) {
+          if (inTree.includes(j)) continue;
+          const dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y;
+          const d = dx * dx + dy * dy;
+          if (!best || d < best.d) best = { i, j, d };
+        }
+      }
+      if (!best) break;
+      edges.push([best.i, best.j]);
+      inTree.push(best.j);
+    }
+    return edges;
+  }
+
+  function drawBaseStar(s, time, mul) {
+    const tw = reduce ? 1 : 0.7 + 0.3 * Math.sin(time * 1.3 + s.tw);
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size, 0, 6.2832);
+    if (s.hot) {
+      ctx.fillStyle = "rgba(10,132,255," + ((s.base + 0.2) * mul).toFixed(3) + ")";
+      ctx.shadowColor = "rgba(10,132,255,.8)"; ctx.shadowBlur = 6;
+    } else {
+      ctx.fillStyle = "rgba(255,255,255," + (s.base * tw * mul).toFixed(3) + ")";
+      ctx.shadowBlur = 0;
+    }
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  function drawLit(p, size, a, time, tw) {
+    const t = reduce ? 1 : 0.75 + 0.25 * Math.sin(time * 1.3 + tw);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, size, 0, 6.2832);
+    ctx.fillStyle = "rgba(255,226,180," + Math.min(a * t, 0.95).toFixed(3) + ")";
+    ctx.shadowColor = "rgba(255,200,130,.9)";
+    ctx.shadowBlur = 10 * a;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  function drawLens(time) {
+    const v = V(), R = RAD(), on = lens.on;
+    // Only the brighter stars join the figure, so the shape stays legible
+    // rather than becoming a mesh.
+    const inside = stars.filter(s => s.size > 0.95 && distTo(s) < R / ZOOM);
+    if (!inside.length) return;
+    const pts = inside.map(warp);
+    const edges = mst(pts);
+
+    for (const [a, b] of edges) {
+      const A = pts[a], B = pts[b];
+      // Fade by the weaker end so lines never stop dead at the boundary.
+      const f = Math.min(falloff(distTo(A)), falloff(distTo(B))) * on;
+      if (f <= 0.01) continue;
+      ctx.strokeStyle = "rgba(255,217,160," + (0.13 * f).toFixed(3) + ")";
+      ctx.lineWidth = 3.2;
+      ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+      ctx.strokeStyle = "rgba(255,230,190," + (0.7 * f).toFixed(3) + ")";
+      ctx.lineWidth = 0.9;
+      ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+    }
+
+    inside.forEach((s, i) => {
+      const p = pts[i];
+      const f = falloff(distTo(p)) * on;
+      if (f <= 0.01) return;
+      drawLit(p, s.size * 1.35, Math.min(s.base * 2.6, 0.9) * f, time, s.tw);
+    });
+
+    if (v.rim > 0) {
+      ctx.strokeStyle = "rgba(255,255,255," + (0.3 * v.rim * on).toFixed(3) + ")";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(lens.x, lens.y, R, 0, 6.2832); ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255," + (0.4 * v.rim * on).toFixed(3) + ")";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(lens.x, lens.y, R - 1, Math.PI * 1.12, Math.PI * 1.42);
+      ctx.stroke();
+    }
+  }
+
+  function loop(t) {
+    const time = t / 1000, v = V();
+    ctx.clearRect(0, 0, w, h);
+    lens.x += (lens.tx - lens.x) * v.lag;
+    lens.y += (lens.ty - lens.y) * v.lag;
+
+    for (const s of stars) {
+      if (!reduce) { s.x += s.sp; if (s.x > w + 2) s.x = -2; }
+      // dim of 1 means the sky is never touched: purely additive.
+      let mul = 1;
+      if (v.dim < 1 && lens.on > 0.01) {
+        const f = falloff(distTo(s)) * lens.on;
+        mul = 1 - (1 - v.dim) * f;
+      }
+      drawBaseStar(s, time, mul);
+    }
+
+    if (lens.on > 0.01) drawLens(time);
+    raf = requestAnimationFrame(loop);
+  }
+
+  frame.addEventListener("pointermove", (e) => {
+    const r = frame.getBoundingClientRect();
+    lens.tx = e.clientX - r.left; lens.ty = e.clientY - r.top;
+    if (lens.on === 0) { lens.x = lens.tx; lens.y = lens.ty; }
+    lens.on = Math.min(lens.on + 0.3, 1);
+  });
+  frame.addEventListener("pointerleave", () => { lens.on = 0; });
+
+  function contentHTML() {
+    const c = vp === "desktop"
+      ? { headline: "Your people are a constellation.",
+          sub: "Every person you meet becomes a point of light - and Haven keeps them from drifting away.",
+          cta: "Join", fine: "Private beta" }
+      : { headline: "The people you meet, never lost again.",
+          sub: "A quiet memory layer over the people of your life. Get in early.",
+          cta: "Request access", fine: "No spam. Invites go out in waves." };
+    return '<div class="wl-content"><div class="wl-top">' +
+      '<span class="wl-eyebrow">Haven - private beta</span>' +
+      '<h1 class="wl-headline">' + c.headline + '</h1></div>' +
+      '<div class="wl-bottom"><p class="wl-sub">' + c.sub + '</p>' +
+      '<form class="wl-form" onsubmit="return false"><div class="wl-row">' +
+      '<input class="wl-field" placeholder="Your name" aria-label="Your name">' +
+      '<button class="wl-go" type="submit">' + c.cta + '</button></div></form>' +
+      '<p class="wl-fine">' + c.fine + '</p></div></div>';
+  }
+  function mountContent() {
+    const old = frame.querySelector(".wl-content");
+    if (old) old.remove();
+    frame.insertAdjacentHTML("beforeend", contentHTML());
+  }
+
+  function paint() {
+    const v = V();
+    document.getElementById("vname").textContent = v.name;
+    document.getElementById("vnum").textContent = (vi + 1) + " / " + VARIANTS.length;
+    document.getElementById("vdesc").textContent = v.desc;
+    rrange.value = RAD();
+    rval.textContent = RAD() + "px";
+  }
+  function go(d) {
+    vi = (vi + d + VARIANTS.length) % VARIANTS.length;
+    rOverride = null; // each variant owns a considered radius; start from it
+    paint();
+  }
+
+  rrange.addEventListener("input", () => {
+    rOverride = +rrange.value;
+    rval.textContent = rOverride + "px";
+  });
+
+  document.getElementById("prev").onclick = () => go(-1);
+  document.getElementById("next").onclick = () => go(1);
+  addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft") go(-1);
+    if (e.key === "ArrowRight") go(1);
+  });
+  document.getElementById("vpseg").onclick = (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    vp = b.dataset.vp; frame.dataset.vp = vp;
+    [...e.currentTarget.children].forEach(x => x.classList.toggle("on", x === b));
+    setTimeout(() => { build(); mountContent(); }, 300);
+  };
+
+  const picker = document.getElementById("picker"), grab = document.getElementById("grab");
+  let drag = null;
+  grab.addEventListener("pointerdown", (e) => {
+    const r = picker.getBoundingClientRect();
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    grab.setPointerCapture(e.pointerId);
+  });
+  grab.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    picker.style.left = (e.clientX - drag.dx) + "px";
+    picker.style.top = (e.clientY - drag.dy) + "px";
+    picker.style.right = "auto"; picker.style.bottom = "auto";
+  });
+  grab.addEventListener("pointerup", () => { drag = null; });
+  const showBtn = document.getElementById("show");
+  document.getElementById("hide").onclick = () => { picker.style.display = "none"; showBtn.style.display = "block"; };
+  showBtn.onclick = () => { picker.style.display = "flex"; showBtn.style.display = "none"; };
+
+  addEventListener("resize", build);
+  build();
+  mountContent();
+  paint();
+  raf = requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
