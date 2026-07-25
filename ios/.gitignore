@@ -4,6 +4,7 @@
 # Xcode / SwiftPM build artifacts
 build/
 DerivedData/
+.spm-cache/
 *.xcuserstate
 xcuserdata/
 .swiftpm/

@@ -83,6 +83,9 @@ Swift Testing, in the `HavenTests` target.
 The unit tests are hosted in the app, so launching them starts Clerk, which logs `OSStatus -34018` keychain failures when code signing is off.
 That noise is expected in a test run and does not affect the results; on a signed build the entitlement is present.
 
+CI runs these tests in `.github/workflows/ios.yml`, on any pull request that touches `ios/`.
+A pull request that touches no Swift skips the job, because macOS runners are billed at several times the Linux rate.
+
 What is worth testing here: pure logic. Sky generation, search filtering, the pending queue, overlay merge.
 Springs and haptics are judged by hand on a device, because no assertion captures whether something feels right.
 
