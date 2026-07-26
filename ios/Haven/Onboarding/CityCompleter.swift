@@ -58,18 +58,22 @@ final class CityCompleter: NSObject, ObservableObject, MKLocalSearchCompleterDel
     /// Turns a chosen completion into the structured city the card stores.
     ///
     /// A second round trip, and worth it: the completion is two display strings,
-    /// while Phase 3 filters on a real locality, admin area and country. Returns
-    /// nil if the lookup fails, which the caller degrades to the typed text
-    /// rather than treating as a dead end.
+    /// while Phase 3 filters on a real locality, admin area and country.
+    ///
+    /// Nil means "this is not a city": either the lookup failed, or the place
+    /// has no locality, which is what a county, a bay or a landmark looks like
+    /// from here. That second case is the only thing standing between the
+    /// screen's promise and an iOS 17 device, where `addressFilter` does not
+    /// exist and the digit check lets those through. Falling back to
+    /// `placemark.name` would have quietly stored them as cities.
     func resolve(_ suggestion: CitySuggestion) async -> CityInput? {
         let request = MKLocalSearch.Request(completion: suggestion.completion)
         guard let placemark = try? await MKLocalSearch(request: request).start()
-            .mapItems.first?.placemark
+            .mapItems.first?.placemark,
+            let locality = placemark.locality
         else { return nil }
-        // Falls back to the suggestion's own title when MapKit has no locality,
-        // which is what happens for a region or a country picked on its own.
         return CityInput(
-            name: placemark.locality ?? placemark.name ?? suggestion.title,
+            name: locality,
             admin: placemark.administrativeArea,
             country: placemark.country
         )

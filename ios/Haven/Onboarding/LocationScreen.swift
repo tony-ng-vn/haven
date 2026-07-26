@@ -11,6 +11,15 @@ struct LocationScreen: View {
     /// the person types again, so Continue can never send a structured city that
     /// no longer matches what is in the field.
     @State private var chosen: CityInput?
+    /// Bumped by every selection and every keystroke. A lookup that comes back
+    /// late compares this against the value it started with, so it can tell it
+    /// is answering a question nobody is asking any more. Comparing the field's
+    /// text instead would miss two selections that share a title.
+    @State private var selection = 0
+    /// True while a tapped suggestion is being looked up. Continue is off for
+    /// that moment, or continuing early would store the display string the row
+    /// happened to show instead of the city behind it.
+    @State private var resolving = false
 
     private var trimmed: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -25,6 +34,8 @@ struct LocationScreen: View {
             set: { typed in
                 query = typed
                 chosen = nil
+                resolving = false
+                selection += 1
                 completer.search(typed)
             }
         )
@@ -70,7 +81,7 @@ struct LocationScreen: View {
                 OnboardingActions(
                     failure: model.failure,
                     isSaving: model.isSaving,
-                    canContinue: !trimmed.isEmpty,
+                    canContinue: !trimmed.isEmpty && !resolving,
                     onContinue: commit,
                     onSkip: { model.skip(.location) }
                 )
@@ -79,14 +90,23 @@ struct LocationScreen: View {
     }
 
     private func choose(_ suggestion: CitySuggestion) {
+        selection += 1
+        let mine = selection
         query = suggestion.title
+        chosen = nil
+        resolving = true
         completer.clear()
         Task {
-            let city = await completer.resolve(suggestion) ?? CityInput(name: suggestion.title)
-            // The lookup is a round trip, and the person may have started typing
-            // again while it ran. Applying it then would overwrite their
-            // keystrokes with a city they had already moved on from.
-            guard query == suggestion.title else { return }
+            let city = await completer.resolve(suggestion)
+            // The lookup is a round trip, and the person may have typed again or
+            // tapped another row while it ran. Applying it then would overwrite
+            // a choice they had already moved on from.
+            guard selection == mine else { return }
+            resolving = false
+            // No locality means this was never a city. The field keeps what it
+            // has and Continue sends it as typed text, which is the escape
+            // hatch -- better than a structured value we cannot vouch for.
+            guard let city else { return }
             chosen = city
             // The field shows the city that will be stored, not the row that was
             // tapped. MapKit labels a row "San Francisco, CA" and answers "SF"
