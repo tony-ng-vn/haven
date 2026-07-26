@@ -6,6 +6,7 @@ import {
   mutation,
   query,
   ActionCtx,
+  MutationCtx,
   QueryCtx,
 } from "./_generated/server";
 import { Infer, v } from "convex/values";
@@ -185,6 +186,95 @@ function validateContactHandles(
   });
 }
 
+// The display shape of a shared handle: what renders on the card. In
+// lockstep with handleValueKey below, so handles that dedup alike always
+// render alike.
+function handleDisplayValue(value: string): string {
+  return value.trim().replace(/^@+/, "");
+}
+
+// The identity key behind a handle: the same account shared as "@Mai.Makes"
+// and as "mai.makes" has to resolve to one person. Deliberately naive in v1;
+// per-platform rules can grow here later.
+function handleValueKey(value: string): string {
+  return handleDisplayValue(value).toLowerCase();
+}
+
+// The personHandles shape for one contactHandles entry. Legacy rows can hold
+// an unnormalized platform, so the index row folds it the same way
+// validateContactHandles does rather than trusting what is stored.
+function handleIndexKeys(handle: ContactHandleInput): {
+  platform: string;
+  valueKey: string;
+} {
+  return {
+    platform: handle.platform.trim().toLowerCase(),
+    valueKey: handleValueKey(handle.value),
+  };
+}
+
+async function insertPersonHandles(
+  ctx: MutationCtx,
+  userId: string,
+  personId: Id<"people">,
+  handles: ContactHandleInput[],
+): Promise<void> {
+  for (const handle of handles) {
+    await ctx.db.insert("personHandles", {
+      userId,
+      personId,
+      ...handleIndexKeys(handle),
+    });
+  }
+}
+
+// Bounded by construction: one row per contactHandles entry, and that array
+// is capped at MAX_CONTACT_HANDLES on every write path.
+async function deletePersonHandles(
+  ctx: MutationCtx,
+  personId: Id<"people">,
+): Promise<void> {
+  const rows = await ctx.db
+    .query("personHandles")
+    .withIndex("by_person", (q) => q.eq("personId", personId))
+    .take(MAX_CONTACT_HANDLES);
+  for (const row of rows) {
+    await ctx.db.delete("personHandles", row._id);
+  }
+}
+
+// A re-share must never discard what the user typed, so a new note joins the
+// person's context instead of replacing it. Clamped rather than refused at
+// the cap: the drain replays a queued note long after the sheet closed, so
+// an overflow cannot ask the user and must not strand the capture. The
+// caller is told when the cap cut the note, so a drain never mistakes a
+// clipped save for a complete one.
+function appendContext(
+  existing: string | undefined,
+  note: string | undefined,
+): { context: string | undefined; noteTruncated: boolean } {
+  if (note === undefined) {
+    return { context: existing, noteTruncated: false };
+  }
+  const next =
+    existing === undefined || existing === "" ? note : `${existing}\n${note}`;
+  const context = next.slice(0, MAX_CONTEXT_LENGTH);
+  return { context, noteTruncated: context.length < next.length };
+}
+
+// The shared URL is the only pointer back to the profile -- a LinkedIn slug
+// cannot be rebuilt into one -- so a person without a link keeps it. An
+// existing link is never overwritten: the user chose that one.
+function linkBackfill(
+  person: Doc<"people">,
+  profileUrl: string,
+): { link?: string } {
+  if (profileUrl === "" || (person.link !== undefined && person.link !== "")) {
+    return {};
+  }
+  return { link: profileUrl };
+}
+
 // The preferred platform must point at a handle that exists once the write
 // lands, so callers pass the handle list the row will actually hold.
 function validatePreferredPlatform(
@@ -249,6 +339,9 @@ export const addPerson = mutation({
       }),
       updatedAt: Date.now(),
     });
+    // Same transaction as the array, always: the index is only trustworthy
+    // if it cannot drift from what the card shows.
+    await insertPersonHandles(ctx, userId, personId, contactHandles ?? []);
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
     return personId;
   },
@@ -632,6 +725,12 @@ export const editPerson = mutation({
     fields.searchText = personSearchText({ ...person, ...fields });
 
     await ctx.db.patch("people", args.id, { ...fields, updatedAt: Date.now() });
+    // A replaced array is rewritten wholesale rather than diffed: the list is
+    // capped at 8, so a full rewrite is the same cost and cannot mis-diff.
+    if (fields.contactHandles !== undefined) {
+      await deletePersonHandles(ctx, args.id);
+      await insertPersonHandles(ctx, userId, args.id, fields.contactHandles);
+    }
     await ctx.scheduler.runAfter(0, internal.people.embed, {
       personId: args.id,
     });
@@ -658,8 +757,179 @@ export const deletePerson = mutation({
     if (person.photoStorageId !== undefined) {
       await ctx.storage.delete(person.photoStorageId);
     }
+    // Ghost index rows would resurrect a deleted person in every handle
+    // lookup, so they go with the person.
+    await deletePersonHandles(ctx, args.personId);
     await ctx.db.delete("people", args.personId);
     return null;
+  },
+});
+
+// ------------------------------------------------- shared profile capture
+
+// A profile shared from Instagram, LinkedIn, or X becomes a real person
+// immediately -- there is nothing asynchronous to stage (capture-pipeline
+// plan). Idempotent on (platform, handle) per the repo's creation
+// convention, and the outcome tells the share sheet what to say.
+export const saveSharedProfile = mutation({
+  args: {
+    platform: v.string(),
+    handleValue: v.string(),
+    profileUrl: v.string(),
+    name: v.string(),
+    note: v.optional(v.string()),
+    attachToPersonId: v.optional(v.id("people")),
+  },
+  returns: v.object({
+    status: v.union(
+      v.literal("created"),
+      v.literal("already"),
+      v.literal("attached"),
+    ),
+    personId: v.id("people"),
+    // True when the context cap cut the note: the capture landed, but the
+    // drain should surface the loss instead of reporting a complete save.
+    noteTruncated: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    await checkRateLimit(ctx, userId, "saveSharedProfile", 30, MINUTE_MS);
+
+    // The stored value carries the same shape as its identity key: a share of
+    // "@mai.makes" and one of "mai.makes" must render and search alike, not
+    // just dedup alike. validateContactHandles owns the platform fold and the
+    // blank checks, same as every other handle write path.
+    const [{ platform, value }] = validateContactHandles([
+      { platform: args.platform, value: handleDisplayValue(args.handleValue) },
+    ]);
+    const valueKey = handleValueKey(value);
+    const name = args.name.trim();
+    if (name === "") {
+      throw new Error("Name is required");
+    }
+    const trimmedNote = args.note?.trim();
+    const note =
+      trimmedNote === undefined || trimmedNote === "" ? undefined : trimmedNote;
+    const profileUrl = args.profileUrl.trim();
+
+    const indexed = await ctx.db
+      .query("personHandles")
+      .withIndex("by_user_and_platform_and_valueKey", (q) =>
+        q
+          .eq("userId", userId)
+          .eq("platform", platform)
+          .eq("valueKey", valueKey),
+      )
+      .first();
+    const owner =
+      indexed === null ? null : await ctx.db.get("people", indexed.personId);
+    if (indexed !== null && owner === null) {
+      // Self-heal a row orphaned by a write that bypassed deletePerson,
+      // rather than let it shadow the person this capture is about.
+      await ctx.db.delete("personHandles", indexed._id);
+    }
+    if (owner !== null) {
+      // Handle identity beats the attach target: this account provably
+      // belongs to this person, however stale the caller's mirror is.
+      const fields: Partial<Doc<"people">> = {};
+      const { context, noteTruncated } = appendContext(owner.context, note);
+      if (context !== owner.context) {
+        fields.context = context;
+      }
+      Object.assign(fields, linkBackfill(owner, profileUrl));
+      if (Object.keys(fields).length > 0) {
+        await ctx.db.patch("people", owner._id, {
+          ...fields,
+          searchText: personSearchText({ ...owner, ...fields }),
+          updatedAt: Date.now(),
+        });
+        await ctx.scheduler.runAfter(0, internal.people.embed, {
+          personId: owner._id,
+        });
+      } else {
+        // Nothing changed, but a formula change since the row was written can
+        // leave searchText stale; the re-share is the one moment the row is
+        // in hand to heal it. A heal is not an edit: updatedAt stays put.
+        const searchText = personSearchText(owner);
+        if (searchText !== owner.searchText) {
+          await ctx.db.patch("people", owner._id, { searchText });
+        }
+      }
+      return { status: "already" as const, personId: owner._id, noteTruncated };
+    }
+
+    if (args.attachToPersonId !== undefined) {
+      const target = await ctx.db.get("people", args.attachToPersonId);
+      // A target that is gone or somebody else's falls through to create:
+      // the extension's mirror can be days stale and a capture is never lost.
+      if (target !== null && target.userId === userId) {
+        const handles = target.contactHandles ?? [];
+        // Folded on both sides, like validateContactHandles does: a legacy row
+        // holding "Instagram " is the same platform, and mistaking it for a
+        // second one would throw away the note over an identical handle.
+        const held = handles.find(
+          (handle) => handleIndexKeys(handle).platform === platform,
+        );
+        // A target already holding a different account on this platform means
+        // the mirror was stale. The drain replays this with nobody present to
+        // resolve it, so the capture falls through to create rather than
+        // strand the queued item; the user can merge the twins later.
+        if (held === undefined || handleIndexKeys(held).valueKey === valueKey) {
+          const { context, noteTruncated } = appendContext(
+            target.context,
+            note,
+          );
+          const fields: Partial<Doc<"people">> = {
+            context,
+            ...linkBackfill(target, profileUrl),
+          };
+          if (held === undefined) {
+            fields.contactHandles = validateContactHandles([
+              ...handles,
+              { platform, value },
+            ]);
+          }
+          await ctx.db.patch("people", target._id, {
+            ...fields,
+            searchText: personSearchText({ ...target, ...fields }),
+            updatedAt: Date.now(),
+          });
+          // Inserted even when the array already held this handle: that only
+          // happens for a person written before this index existed.
+          await insertPersonHandles(ctx, userId, target._id, [
+            { platform, value },
+          ]);
+          await ctx.scheduler.runAfter(0, internal.people.embed, {
+            personId: target._id,
+          });
+          return {
+            status: "attached" as const,
+            personId: target._id,
+            noteTruncated,
+          };
+        }
+      }
+    }
+
+    const contactHandles = [{ platform, value }];
+    // Through appendContext even with nothing to append to, so the clamp
+    // policy lives in exactly one place.
+    const { context, noteTruncated } = appendContext(undefined, note);
+    const personId = await ctx.db.insert("people", {
+      userId,
+      name,
+      normalizedName: normalizeName(name),
+      context,
+      link: profileUrl === "" ? undefined : profileUrl,
+      contactHandles,
+      // preferredPlatform stays unset: the share sheet never asks how the
+      // user wants to reach this person.
+      searchText: personSearchText({ name, contactHandles, context }),
+      updatedAt: Date.now(),
+    });
+    await insertPersonHandles(ctx, userId, personId, contactHandles);
+    await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
+    return { status: "created" as const, personId, noteTruncated };
   },
 });
 
@@ -909,6 +1179,53 @@ export const backfillSearchText = internalMutation({
       });
     }
     return missing.length;
+  },
+});
+
+// One-off maintenance: people saved between contactHandles shipping and the
+// personHandles index existing carry the array but no index rows, so a share
+// of a handle they already hold would twin them. Paged rather than a single
+// batch, because an unindexed person is a corrupted identity, not just a
+// missing search hit -- "done" has to mean it. Run with:
+// npx convex run people:backfillPersonHandles '{}'
+// and re-run with '{"cursor": "<cursor>"}' until isDone.
+export const backfillPersonHandles = internalMutation({
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  returns: v.object({
+    patched: v.number(),
+    isDone: v.boolean(),
+    cursor: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const page = await ctx.db.query("people").paginate({
+      numItems: BACKFILL_BATCH_SIZE,
+      cursor: args.cursor ?? null,
+    });
+    // Idempotent: re-running must never double-index a handle. The key
+    // is JSON so a platform containing a separator cannot collide.
+    const indexKey = (row: { platform: string; valueKey: string }) =>
+      JSON.stringify([row.platform, row.valueKey]);
+    let patched = 0;
+    for (const person of page.page) {
+      const handles = person.contactHandles ?? [];
+      if (handles.length === 0) {
+        continue;
+      }
+      const existing = await ctx.db
+        .query("personHandles")
+        .withIndex("by_person", (q) => q.eq("personId", person._id))
+        .take(MAX_CONTACT_HANDLES);
+      const indexed = new Set(existing.map(indexKey));
+      const missing = handles.filter(
+        (handle) => !indexed.has(indexKey(handleIndexKeys(handle))),
+      );
+      if (missing.length === 0) {
+        continue;
+      }
+      await insertPersonHandles(ctx, person.userId, person._id, missing);
+      patched++;
+    }
+    return { patched, isDone: page.isDone, cursor: page.continueCursor };
   },
 });
 

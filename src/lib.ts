@@ -119,6 +119,147 @@ export function deriveProfileUrl(
   return build(encodeURIComponent(cleaned));
 }
 
+// Which platform a shared profile URL belongs to. Only the three the share
+// extension activates on; everything else is not a person link.
+export type SharedPlatform = "instagram" | "linkedin" | "x";
+
+// First path segments that are product surfaces, not people. A share of a
+// reel or a login page must never become a person.
+const RESERVED_PATHS: Record<SharedPlatform, readonly string[]> = {
+  instagram: [
+    "p",
+    "reel",
+    "reels",
+    "stories",
+    "tv",
+    "explore",
+    "accounts",
+    "direct",
+    "about",
+  ],
+  // LinkedIn needs no list: the /in/ prefix below already excludes every
+  // other surface.
+  linkedin: [],
+  x: [
+    "home",
+    "explore",
+    "search",
+    "i",
+    "intent",
+    "hashtag",
+    "messages",
+    "notifications",
+    "settings",
+    "compose",
+    "share",
+  ],
+};
+
+// A specific post under a handle is content someone shared, not the profile;
+// deeper profile tabs (/tagged, /in/<slug>/details) still identify the person.
+const CONTENT_SUBPATHS: Record<SharedPlatform, readonly string[]> = {
+  instagram: ["p", "reel", "tv"],
+  linkedin: [],
+  x: ["status"],
+};
+
+// The registrable domains that serve profiles, not exact hosts: share sheets
+// hand over whichever host the app is on, and LinkedIn gives non-US members a
+// country-prefixed one (vn.linkedin.com) alongside the www./m./mobile.
+// variants.
+const PROFILE_HOSTS: Record<string, SharedPlatform> = {
+  "instagram.com": "instagram",
+  "linkedin.com": "linkedin",
+  "x.com": "x",
+  "twitter.com": "x",
+};
+
+function platformForHost(host: string): SharedPlatform | undefined {
+  for (const [domain, platform] of Object.entries(PROFILE_HOSTS)) {
+    // A suffix match on a dot boundary, so "instagram.com.evil.example" is
+    // still a stranger's host.
+    if (host === domain || host.endsWith(`.${domain}`)) {
+      return platform;
+    }
+  }
+  return undefined;
+}
+
+// Handles arrive percent-encoded in a URL path; a malformed escape is a
+// broken link, not a person.
+function decodeSegment(segment: string): string | null {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
+}
+
+// The share extension's whole parse step: a profile URL in, the platform and
+// handle out, null for anything that is not one person's profile. Pure and
+// offline by design -- the URL is a pointer, never fetched.
+export function parseProfileUrl(
+  raw: string,
+): { platform: SharedPlatform; handle: string } | null {
+  const normalized = normalizeUrl(raw);
+  if (normalized === null) return null;
+  let url: URL;
+  try {
+    url = new URL(normalized);
+  } catch {
+    return null;
+  }
+  const platform = platformForHost(url.hostname);
+  if (platform === undefined) return null;
+
+  const segments = url.pathname.split("/").filter((part) => part !== "");
+  if (platform === "linkedin") {
+    // The mobile-lite site serves the same profile one segment deeper.
+    if (segments[0] === "mwlite") {
+      segments.shift();
+    }
+    // Profiles live only under /in/<slug>; company, posts, pub and feed
+    // paths are not a person we can identify.
+    if (segments[0] !== "in") return null;
+    segments.shift();
+  }
+  const handleSegment = segments[0];
+  if (handleSegment === undefined) return null;
+  const subSegment = segments[1];
+  if (subSegment !== undefined) {
+    // Decoded first, so "%73tatus" cannot smuggle a post past the check.
+    const sub = decodeSegment(subSegment) ?? subSegment;
+    if (CONTENT_SUBPATHS[platform].includes(sub.toLowerCase())) return null;
+  }
+
+  const decoded = decodeSegment(handleSegment);
+  if (decoded === null) return null;
+  // An encoded slash would otherwise fold a second path segment into the
+  // handle, hiding the surface this URL actually points at.
+  if (decoded.includes("/")) return null;
+  const handle = decoded.replace(/^@+/, "");
+  if (handle === "") return null;
+  // Checked after decoding: "%70" is the reserved "p", and a post URL must
+  // never become a person.
+  if (RESERVED_PATHS[platform].includes(handle.toLowerCase())) return null;
+  return { platform, handle };
+}
+
+// LinkedIn slugs carry the person's name plus a disambiguating id suffix
+// ("mai-tran-8a91b2"). Guessing the name from it makes the share sheet's name
+// field a confirmation rather than an empty box; "" when there is no guess.
+export function nameGuessFromSlug(slug: string): string {
+  const segments = slug.trim().split("-").filter((part) => part !== "");
+  // Only the trailing id junk is dropped: digits earlier in a slug are part
+  // of the handle someone actually chose.
+  while (segments.length > 0 && /\d/.test(segments[segments.length - 1])) {
+    segments.pop();
+  }
+  return segments
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 // The text a person's embedding is computed from. Deterministic on purpose:
 // the stored copy doubles as an idempotency key for re-embedding.
 export function buildEmbedText(fields: {

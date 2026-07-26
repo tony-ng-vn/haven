@@ -1157,3 +1157,628 @@ test("editPerson enforces ownership, auth, and the context cap", async () => {
     }),
   ).rejects.toThrow("Context is too long");
 });
+
+// ------------------------------------------------- shared profile capture
+
+// The share sheet's payload for a person the user just met on a platform.
+const sharedProfile = {
+  platform: "Instagram",
+  handleValue: "mai.makes",
+  profileUrl: "https://instagram.com/mai.makes",
+  name: "Mai Tr\u1ea7n",
+};
+
+test("saveSharedProfile creates a person searchable by their handle", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+
+  const result = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    name: "  Mai Tr\u1ea7n  ",
+    note: "met at the ceramics market",
+  });
+  expect(result.status).toBe("created");
+
+  const person = await as.query(api.people.getPerson, { id: result.personId });
+  expect(person?.name).toBe("Mai Tr\u1ea7n");
+  expect(person?.link).toBe("https://instagram.com/mai.makes");
+  expect(person?.contactHandles).toEqual([
+    { platform: "instagram", value: "mai.makes" },
+  ]);
+  expect(person?.context).toBe("met at the ceramics market");
+  // Nothing is preferred until the user says so.
+  expect(person?.preferredPlatform).toBeUndefined();
+
+  const hits = await as.query(api.people.searchDirectory, {
+    keyword: "mai.makes",
+  });
+  expect(hits.map((p) => p.name)).toEqual(["Mai Tr\u1ea7n"]);
+});
+
+test("saveSharedProfile re-shared with a new note appends instead of twinning", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+
+  const first = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    note: "makes ceramics",
+  });
+  vi.advanceTimersByTime(1000);
+  const before = await t.run((ctx) => ctx.db.get("people", first.personId));
+
+  // Same account, typed the way a share sheet actually hands it over.
+  const again = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    handleValue: " @Mai.Makes ",
+    note: "wants a studio in district 3",
+  });
+  expect(again).toEqual({ status: "already", personId: first.personId, noteTruncated: false });
+
+  const people = await as.query(api.people.searchDirectory, {});
+  expect(people).toHaveLength(1);
+
+  const after = await t.run((ctx) => ctx.db.get("people", first.personId));
+  expect(after?.context).toBe(
+    "makes ceramics\nwants a studio in district 3",
+  );
+  expect(after!.updatedAt).toBeGreaterThan(before!.updatedAt);
+
+  // Both notes stay searchable, which is the point of appending.
+  for (const keyword of ["ceramics", "studio"]) {
+    const hits = await as.query(api.people.searchDirectory, { keyword });
+    expect(hits.map((p) => p._id)).toEqual([first.personId]);
+  }
+});
+
+test("saveSharedProfile attaches a second platform to the person the user picked", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const personId = await as.mutation(api.people.addPerson, {
+    name: "Mai Tr\u1ea7n",
+    context: "met at the ceramics market",
+    contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+  });
+
+  const result = await as.mutation(api.people.saveSharedProfile, {
+    platform: "linkedin",
+    handleValue: "mai-tran-8a91b2",
+    profileUrl: "https://www.linkedin.com/in/mai-tran-8a91b2",
+    name: "Mai Tran",
+    note: "leads design at Photon",
+    attachToPersonId: personId,
+  });
+  expect(result).toEqual({ status: "attached", personId, noteTruncated: false });
+
+  const person = await as.query(api.people.getPerson, { id: personId });
+  expect(person?.contactHandles).toEqual([
+    { platform: "instagram", value: "mai.makes" },
+    { platform: "linkedin", value: "mai-tran-8a91b2" },
+  ]);
+  expect(person?.context).toBe(
+    "met at the ceramics market\nleads design at Photon",
+  );
+
+  // The new handle joins the haystack and the identity index at once.
+  const hits = await as.query(api.people.searchDirectory, {
+    keyword: "mai-tran-8a91b2",
+  });
+  expect(hits.map((p) => p._id)).toEqual([personId]);
+  const dedup = await as.mutation(api.people.saveSharedProfile, {
+    platform: "LinkedIn",
+    handleValue: "Mai-Tran-8A91B2",
+    profileUrl: "https://linkedin.com/in/mai-tran-8a91b2",
+    name: "Mai Tran",
+  });
+  expect(dedup).toEqual({ status: "already", personId, noteTruncated: false });
+});
+
+test("saveSharedProfile creates a new person when the attach target holds another handle on that platform", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const personId = await as.mutation(api.people.addPerson, {
+    name: "Mai Tr\u1ea7n",
+    contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+  });
+
+  // The drain replays this with nobody present to resolve the conflict, so
+  // refusing would strand the capture; it lands as its own person instead.
+  const result = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    handleValue: "mai.ceramics",
+    profileUrl: "https://instagram.com/mai.ceramics",
+    attachToPersonId: personId,
+  });
+  expect(result.status).toBe("created");
+  expect(result.personId).not.toBe(personId);
+
+  const target = await as.query(api.people.getPerson, { id: personId });
+  expect(target?.contactHandles).toEqual([
+    { platform: "instagram", value: "mai.makes" },
+  ]);
+  const created = await as.query(api.people.getPerson, {
+    id: result.personId,
+  });
+  expect(created?.contactHandles).toEqual([
+    { platform: "instagram", value: "mai.ceramics" },
+  ]);
+});
+
+test("saveSharedProfile creates a person when the attach target is gone or not the caller's", async () => {
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+
+  // The extension's mirror can be days stale; a capture must never be lost.
+  const deletedId = await me.as.mutation(api.people.addPerson, { name: "Mai" });
+  await me.as.mutation(api.people.deletePerson, { personId: deletedId });
+
+  const fromDeleted = await me.as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    attachToPersonId: deletedId,
+  });
+  expect(fromDeleted.status).toBe("created");
+  expect(fromDeleted.personId).not.toBe(deletedId);
+
+  const theirId = await other.as.mutation(api.people.addPerson, { name: "Rao" });
+  const fromTheirs = await me.as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    handleValue: "mai.ceramics",
+    profileUrl: "https://instagram.com/mai.ceramics",
+    attachToPersonId: theirId,
+  });
+  expect(fromTheirs.status).toBe("created");
+  expect(fromTheirs.personId).not.toBe(theirId);
+  expect(
+    (await other.as.query(api.people.getPerson, { id: theirId }))
+      ?.contactHandles,
+  ).toBeUndefined();
+});
+
+test("saveSharedProfile lets handle identity beat the attach target", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const mai = await as.mutation(api.people.addPerson, {
+    name: "Mai Tr\u1ea7n",
+    contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+  });
+  const binh = await as.mutation(api.people.addPerson, { name: "Binh Le" });
+
+  const result = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    attachToPersonId: binh,
+  });
+  expect(result).toEqual({ status: "already", personId: mai, noteTruncated: false });
+
+  // Binh never gains an account that is provably somebody else's.
+  expect(
+    (await as.query(api.people.getPerson, { id: binh }))?.contactHandles,
+  ).toBeUndefined();
+});
+
+test("saveSharedProfile attaches onto a handle whose stored platform was never normalized", async () => {
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  // Written before this index existed, so nothing folded its platform.
+  const personId = await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "Mai Tr\u1ea7n",
+      normalizedName: "mai tran",
+      contactHandles: [{ platform: "Instagram ", value: "mai.makes" }],
+      updatedAt: Date.now(),
+    }),
+  );
+
+  // Character-for-character the handle already on the row: re-sharing it must
+  // not be mistaken for a second account and cost the user their note.
+  const result = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    note: "met at the ceramics market",
+    attachToPersonId: personId,
+  });
+  expect(result).toEqual({ status: "attached", personId, noteTruncated: false });
+
+  const person = await as.query(api.people.getPerson, { id: personId });
+  expect(person?.context).toBe("met at the ceramics market");
+  expect(person?.contactHandles).toHaveLength(1);
+
+  // A genuinely different account on that platform lands as its own person
+  // rather than failing the queued capture.
+  const second = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    handleValue: "mai.ceramics",
+    profileUrl: "https://instagram.com/mai.ceramics",
+    attachToPersonId: personId,
+  });
+  expect(second.status).toBe("created");
+  expect(second.personId).not.toBe(personId);
+});
+
+test("saveSharedProfile clamps an over-cap note instead of failing the capture", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+
+  // 4000 is the context cap. The drain replays a queued note long after the
+  // sheet closed, so an overflow cannot ask the user; the capture keeps what
+  // fits instead of failing forever.
+  const big = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    note: "z".repeat(4200),
+  });
+  expect(big.status).toBe("created");
+  expect(big.noteTruncated).toBe(true);
+  const bigPerson = await as.query(api.people.getPerson, {
+    id: big.personId,
+  });
+  expect(bigPerson?.context).toHaveLength(4000);
+
+  const first = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    handleValue: "mai.ceramics",
+    profileUrl: "https://instagram.com/mai.ceramics",
+    note: "x".repeat(3900),
+  });
+  const again = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    handleValue: "mai.ceramics",
+    profileUrl: "https://instagram.com/mai.ceramics",
+    note: "y".repeat(300),
+  });
+  expect(again).toEqual({
+    status: "already",
+    personId: first.personId,
+    noteTruncated: true,
+  });
+  const person = await as.query(api.people.getPerson, {
+    id: first.personId,
+  });
+  // The existing context survives whole; the new note keeps what fits.
+  expect(person?.context).toHaveLength(4000);
+  expect(person?.context?.startsWith("x".repeat(10))).toBe(true);
+  expect(person?.context?.endsWith("y")).toBe(true);
+
+  // No room at all: the save still lands, but says the note was cut, so a
+  // drain never mistakes a clipped save for a complete one.
+  const dropped = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    note: "lost words",
+  });
+  expect(dropped).toEqual({
+    status: "already",
+    personId: big.personId,
+    noteTruncated: true,
+  });
+});
+
+test("saveSharedProfile keeps the shared URL on a person that has none", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const personId = await as.mutation(api.people.addPerson, {
+    name: "Mai Tr\u1ea7n",
+  });
+  const linkedin = {
+    platform: "linkedin",
+    handleValue: "mai-tran-8a91b2",
+    profileUrl: "https://www.linkedin.com/in/mai-tran-8a91b2",
+    name: "Mai Tran",
+  };
+
+  const attached = await as.mutation(api.people.saveSharedProfile, {
+    ...linkedin,
+    attachToPersonId: personId,
+  });
+  expect(attached).toEqual({ status: "attached", personId, noteTruncated: false });
+  // Nothing can rebuild a LinkedIn URL from its slug, so dropping it here
+  // makes the captured profile unopenable for good.
+  expect((await as.query(api.people.getPerson, { id: personId }))?.link).toBe(
+    "https://www.linkedin.com/in/mai-tran-8a91b2",
+  );
+
+  // A re-share never overwrites the link the person already has.
+  const again = await as.mutation(api.people.saveSharedProfile, {
+    ...linkedin,
+    profileUrl: "https://linkedin.com/in/mai-tran-8a91b2?utm=share",
+  });
+  expect(again).toEqual({ status: "already", personId, noteTruncated: false });
+  expect((await as.query(api.people.getPerson, { id: personId }))?.link).toBe(
+    "https://www.linkedin.com/in/mai-tran-8a91b2",
+  );
+});
+
+test("saveSharedProfile gives a re-shared person the URL they were saved without", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const personId = await as.mutation(api.people.addPerson, {
+    name: "Mai Tr\u1ea7n",
+    contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+  });
+
+  const result = await as.mutation(api.people.saveSharedProfile, sharedProfile);
+  expect(result).toEqual({ status: "already", personId, noteTruncated: false });
+  expect((await as.query(api.people.getPerson, { id: personId }))?.link).toBe(
+    "https://instagram.com/mai.makes",
+  );
+});
+
+test("saveSharedProfile stores a handle shared with a leading @ in its bare form", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+
+  const result = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    handleValue: "@binh.le",
+    profileUrl: "https://instagram.com/binh.le",
+    name: "Binh Le",
+  });
+
+  // The stored value and the identity key have to be the same shape, or the
+  // card shows "@binh.le" or "binh.le" purely by which share landed first.
+  const person = await as.query(api.people.getPerson, { id: result.personId });
+  expect(person?.contactHandles).toEqual([
+    { platform: "instagram", value: "binh.le" },
+  ]);
+  const hits = await as.query(api.people.searchDirectory, {
+    keyword: "binh.le",
+  });
+  expect(hits.map((p) => p._id)).toEqual([result.personId]);
+});
+
+test("saveSharedProfile keeps the handle index scoped to one user", async () => {
+  const t = convexTest(schema, modules);
+  const me = await asNewUser(t);
+  const other = await asNewUser(t);
+
+  const mine = await me.as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    note: "met at the ceramics market",
+  });
+  // The same account, shared by somebody else: two directories, two people.
+  const theirs = await other.as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    note: "sat next to me on the flight",
+  });
+  expect(mine.status).toBe("created");
+  expect(theirs.status).toBe("created");
+  expect(theirs.personId).not.toBe(mine.personId);
+
+  expect(
+    await me.as.query(api.people.getPerson, { id: theirs.personId }),
+  ).toBe(null);
+  expect(
+    (await me.as.query(api.people.getPerson, { id: mine.personId }))?.context,
+  ).toBe("met at the ceramics market");
+  expect(
+    (await other.as.query(api.people.getPerson, { id: theirs.personId }))
+      ?.context,
+  ).toBe("sat next to me on the flight");
+});
+
+test("saveSharedProfile self-heals an orphaned handle row instead of shadowing the capture", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const first = await as.mutation(api.people.saveSharedProfile, sharedProfile);
+  // A write that bypassed deletePerson leaves the index row behind.
+  await t.run((ctx) => ctx.db.delete("people", first.personId));
+
+  const again = await as.mutation(api.people.saveSharedProfile, sharedProfile);
+  expect(again.status).toBe("created");
+  expect(again.personId).not.toBe(first.personId);
+
+  // The orphan is gone; the handle now indexes only the new person.
+  const rows = await t.run((ctx) =>
+    ctx.db.query("personHandles").collect(),
+  );
+  expect(rows.map((row) => row.personId)).toEqual([again.personId]);
+});
+
+test("saveSharedProfile heals a drifted searchText on a bare re-share", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const created = await as.mutation(
+    api.people.saveSharedProfile,
+    sharedProfile,
+  );
+  // A formula change since the row was written leaves searchText stale; the
+  // re-share is the one moment the row is already in hand to heal it.
+  await t.run((ctx) =>
+    ctx.db.patch("people", created.personId, { searchText: "stale" }),
+  );
+  const before = await t.run((ctx) => ctx.db.get("people", created.personId));
+
+  const again = await as.mutation(api.people.saveSharedProfile, sharedProfile);
+  expect(again).toEqual({ status: "already", personId: created.personId, noteTruncated: false });
+  const person = await t.run((ctx) => ctx.db.get("people", created.personId));
+  expect(person?.searchText).toContain("mai.makes");
+  // A heal is not an edit: recency stays put.
+  expect(person?.updatedAt).toBe(before?.updatedAt);
+});
+
+test("saveSharedProfile rejects blank identity fields", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+
+  // Blanks are programmer errors -- the extension only enqueues parsed
+  // profiles -- so refusing is correct where clamping a note is not.
+  await expect(
+    as.mutation(api.people.saveSharedProfile, { ...sharedProfile, name: " " }),
+  ).rejects.toThrow("Name is required");
+  await expect(
+    as.mutation(api.people.saveSharedProfile, {
+      ...sharedProfile,
+      platform: "  ",
+    }),
+  ).rejects.toThrow("A platform cannot be blank");
+  // "@" alone is a handle only in punctuation.
+  await expect(
+    as.mutation(api.people.saveSharedProfile, {
+      ...sharedProfile,
+      handleValue: " @ ",
+    }),
+  ).rejects.toThrow("A handle cannot be blank");
+});
+
+test("saveSharedProfile rejects an unauthenticated caller", async () => {
+  const t = convexTest(schema, modules);
+  await expect(
+    t.mutation(api.people.saveSharedProfile, sharedProfile),
+  ).rejects.toThrow("Not signed in");
+});
+
+test("saveSharedProfile is rate-limited per caller (wiring check)", async () => {
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  await as.mutation(api.people.saveSharedProfile, sharedProfile);
+
+  const window = await t.run((ctx) =>
+    ctx.db
+      .query("rateLimits")
+      .withIndex("by_user_action", (q) =>
+        q.eq("userId", userId).eq("action", "saveSharedProfile"),
+      )
+      .unique(),
+  );
+  expect(window?.count).toBe(1);
+});
+
+// --------------------------------------------- handle index maintenance
+
+test("addPerson makes its contact handles dedup-visible to saveSharedProfile", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const personId = await as.mutation(api.people.addPerson, {
+    name: "Mai Tr\u1ea7n",
+    contactHandles: [{ platform: " Instagram ", value: "@mai.makes" }],
+  });
+
+  const result = await as.mutation(api.people.saveSharedProfile, sharedProfile);
+  expect(result).toEqual({ status: "already", personId, noteTruncated: false });
+});
+
+test("editPerson rewrites the handle index in both directions", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const personId = await as.mutation(api.people.addPerson, {
+    name: "Mai Tr\u1ea7n",
+    contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+  });
+
+  await as.mutation(api.people.editPerson, {
+    id: personId,
+    contactHandles: [{ platform: "linkedin", value: "mai-tran-8a91b2" }],
+  });
+
+  // The dropped handle belongs to nobody again...
+  const freed = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    name: "Someone Else",
+  });
+  expect(freed.status).toBe("created");
+  expect(freed.personId).not.toBe(personId);
+
+  // ...and the added one dedups from the moment the edit lands.
+  const dedup = await as.mutation(api.people.saveSharedProfile, {
+    platform: "linkedin",
+    handleValue: "mai-tran-8a91b2",
+    profileUrl: "https://linkedin.com/in/mai-tran-8a91b2",
+    name: "Mai Tran",
+  });
+  expect(dedup).toEqual({ status: "already", personId, noteTruncated: false });
+});
+
+test("deletePerson frees the handle for a later share", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const personId = await as.mutation(api.people.addPerson, {
+    name: "Mai Tr\u1ea7n",
+    contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+  });
+
+  await as.mutation(api.people.deletePerson, { personId });
+  expect(
+    await t.run((ctx) => ctx.db.query("personHandles").collect()),
+  ).toHaveLength(0);
+
+  // A ghost row here would resurrect a deleted person in every lookup.
+  const result = await as.mutation(api.people.saveSharedProfile, sharedProfile);
+  expect(result.status).toBe("created");
+});
+
+// Drive the paged backfill the way an operator does: run it, feed the cursor
+// back, stop when it says it is done. Bounded so a broken cursor fails the
+// test instead of hanging it.
+async function drainPersonHandlesBackfill(
+  t: ReturnType<typeof convexTest>,
+): Promise<number> {
+  let cursor: string | null = null;
+  let patched = 0;
+  for (let page = 0; page < 20; page++) {
+    // Annotated because the cursor fed back in would otherwise make the
+    // inferred result type circular.
+    const result: { patched: number; isDone: boolean; cursor: string } =
+      await t.mutation(internal.people.backfillPersonHandles, { cursor });
+    patched += result.patched;
+    if (result.isDone) {
+      return patched;
+    }
+    cursor = result.cursor;
+  }
+  throw new Error("backfillPersonHandles never finished");
+}
+
+test("backfillPersonHandles indexes handles written before the index existed", async () => {
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  const legacyId = await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "Mai Tr\u1ea7n",
+      normalizedName: "mai tran",
+      contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+      updatedAt: Date.now(),
+    }),
+  );
+  // A person with no handles is nothing to backfill.
+  await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "Binh Le",
+      normalizedName: "binh le",
+      updatedAt: Date.now(),
+    }),
+  );
+
+  expect(await drainPersonHandlesBackfill(t)).toBe(1);
+  const shared = await as.mutation(api.people.saveSharedProfile, sharedProfile);
+  expect(shared).toEqual({ status: "already", personId: legacyId, noteTruncated: false });
+
+  // Idempotent: a second run has nothing left to index.
+  expect(await drainPersonHandlesBackfill(t)).toBe(0);
+  expect(
+    await t.run((ctx) => ctx.db.query("personHandles").collect()),
+  ).toHaveLength(1);
+});
+
+test("backfillPersonHandles pages past the first batch", async () => {
+  const t = convexTest(schema, modules);
+  const { userId } = await asNewUser(t);
+  // One more than BACKFILL_BATCH_SIZE: a single un-cursored scan would report
+  // "done" while the tail stays unindexed, and unindexed people get twinned
+  // the first time their handle is shared.
+  const total = 501;
+  await t.run(async (ctx) => {
+    for (let i = 0; i < total; i++) {
+      await ctx.db.insert("people", {
+        userId,
+        name: `Person ${i}`,
+        normalizedName: `person ${i}`,
+        contactHandles: [{ platform: "instagram", value: `handle${i}` }],
+        updatedAt: Date.now(),
+      });
+    }
+  });
+
+  expect(await drainPersonHandlesBackfill(t)).toBe(total);
+  expect(
+    await t.run((ctx) => ctx.db.query("personHandles").collect()),
+  ).toHaveLength(total);
+});

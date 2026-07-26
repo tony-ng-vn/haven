@@ -15,9 +15,11 @@ import {
   isJoinHash,
   isValidEmail,
   DEFAULT_ADMIN_EMAILS,
+  nameGuessFromSlug,
   normalizeEmail,
   parseAdminEmails,
   normalizeUrl,
+  parseProfileUrl,
   resolveView,
   triageCountLabel,
 } from "./lib";
@@ -451,5 +453,247 @@ describe("composeAtlasField", () => {
     const recent = [p("a")];
     const out = composeAtlasField(recent, [p("z")], [p("z"), p("m"), p("a")]);
     expect(out.map((x) => x._id)).toEqual(["a", "z", "m"]);
+  });
+});
+
+describe("parseProfileUrl", () => {
+  test("parses the three shared platforms from a plain profile URL", () => {
+    expect(parseProfileUrl("https://instagram.com/mai.makes")).toEqual({
+      platform: "instagram",
+      handle: "mai.makes",
+    });
+    expect(parseProfileUrl("https://www.linkedin.com/in/mai-tran-8a91b2")).toEqual(
+      { platform: "linkedin", handle: "mai-tran-8a91b2" },
+    );
+    expect(parseProfileUrl("https://x.com/mai_makes")).toEqual({
+      platform: "x",
+      handle: "mai_makes",
+    });
+  });
+
+  test("twitter.com is the same platform as x.com", () => {
+    expect(parseProfileUrl("https://twitter.com/mai_makes")).toEqual({
+      platform: "x",
+      handle: "mai_makes",
+    });
+  });
+
+  test("tolerates the shapes share sheets actually hand over", () => {
+    // www./m./mobile. subdomains, uppercase host, trailing slash.
+    expect(parseProfileUrl("https://www.instagram.com/mai.makes/")).toEqual({
+      platform: "instagram",
+      handle: "mai.makes",
+    });
+    expect(parseProfileUrl("https://m.instagram.com/mai.makes")).toEqual({
+      platform: "instagram",
+      handle: "mai.makes",
+    });
+    expect(parseProfileUrl("https://mobile.twitter.com/mai_makes")).toEqual({
+      platform: "x",
+      handle: "mai_makes",
+    });
+    expect(parseProfileUrl("HTTPS://WWW.Instagram.COM/MaiMakes")).toEqual({
+      platform: "instagram",
+      handle: "MaiMakes",
+    });
+    // http and a missing scheme are both accepted.
+    expect(parseProfileUrl("http://x.com/mai_makes")).toEqual({
+      platform: "x",
+      handle: "mai_makes",
+    });
+    expect(parseProfileUrl("  instagram.com/mai.makes  ")).toEqual({
+      platform: "instagram",
+      handle: "mai.makes",
+    });
+  });
+
+  test("LinkedIn's country and lite hosts are the same profile", () => {
+    // LinkedIn serves country-prefixed hosts to non-US members, and the app
+    // shares whichever one the member is on.
+    for (const host of ["vn", "uk", "de"]) {
+      expect(
+        parseProfileUrl(`https://${host}.linkedin.com/in/mai-tran-8a91b2`),
+      ).toEqual({ platform: "linkedin", handle: "mai-tran-8a91b2" });
+    }
+    expect(
+      parseProfileUrl("https://www.linkedin.com/mwlite/in/mai-tran-8a91b2"),
+    ).toEqual({ platform: "linkedin", handle: "mai-tran-8a91b2" });
+  });
+
+  test("strips tracking query strings and fragments", () => {
+    expect(
+      parseProfileUrl("https://instagram.com/mai.makes/?igsh=abc123&utm=share"),
+    ).toEqual({ platform: "instagram", handle: "mai.makes" });
+    expect(
+      parseProfileUrl("https://www.linkedin.com/in/mai-tran-8a91b2/#profile"),
+    ).toEqual({ platform: "linkedin", handle: "mai-tran-8a91b2" });
+  });
+
+  test("keeps the handle's original case and drops a leading @", () => {
+    expect(parseProfileUrl("https://x.com/@MaiMakes")).toEqual({
+      platform: "x",
+      handle: "MaiMakes",
+    });
+  });
+
+  test("a post under the handle is content, not the profile", () => {
+    // A shared tweet or Instagram post must not silently capture its author;
+    // profile tabs like /tagged stay a person (pinned below).
+    expect(parseProfileUrl("https://x.com/mai_makes/status/17999")).toBe(null);
+    expect(parseProfileUrl("https://x.com/mai_makes/%73tatus/17999")).toBe(
+      null,
+    );
+    expect(parseProfileUrl("https://instagram.com/mai.makes/p/Cxyz123")).toBe(
+      null,
+    );
+    expect(
+      parseProfileUrl("https://instagram.com/mai.makes/reel/Cxyz123/"),
+    ).toBe(null);
+  });
+
+  test("reserved Instagram paths are content, not people", () => {
+    for (const path of [
+      "p/Cxyz123",
+      "reel/Cxyz123",
+      "reels/Cxyz123",
+      "stories/mai.makes/123",
+      "tv/Cxyz123",
+      "explore/tags/hanoi",
+      "accounts/login",
+      "direct/inbox",
+      "about",
+    ]) {
+      expect(parseProfileUrl(`https://instagram.com/${path}`)).toBe(null);
+    }
+  });
+
+  test("reserved X paths are content, not people", () => {
+    for (const path of [
+      "i/flow/login",
+      "home",
+      "explore",
+      "search?q=hanoi",
+      "intent/follow",
+      "hashtag/hanoi",
+      "messages",
+      "notifications",
+      "settings/account",
+      "compose/tweet",
+      "share",
+    ]) {
+      expect(parseProfileUrl(`https://x.com/${path}`)).toBe(null);
+    }
+  });
+
+  test("reserved segments match whole and case-insensitively", () => {
+    expect(parseProfileUrl("https://instagram.com/REEL/Cxyz123")).toBe(null);
+    expect(parseProfileUrl("https://x.com/I/flow/login")).toBe(null);
+    // A handle that merely starts with a reserved word is still a person.
+    expect(parseProfileUrl("https://x.com/ihateflying")).toEqual({
+      platform: "x",
+      handle: "ihateflying",
+    });
+    expect(parseProfileUrl("https://instagram.com/pho.reels")).toEqual({
+      platform: "instagram",
+      handle: "pho.reels",
+    });
+  });
+
+  test("a percent-encoded reserved segment is still not a person", () => {
+    expect(parseProfileUrl("https://instagram.com/%70/Cxyz123")).toBe(null);
+    expect(parseProfileUrl("https://x.com/%69/flow/login")).toBe(null);
+    // An encoded slash must not smuggle a second path segment into a handle.
+    expect(parseProfileUrl("https://instagram.com/mai%2Fmakes")).toBe(null);
+  });
+
+  test("a deeper profile sub-path still identifies the person", () => {
+    expect(
+      parseProfileUrl(
+        "https://www.linkedin.com/in/mai-tran-8a91b2/details/experience/",
+      ),
+    ).toEqual({ platform: "linkedin", handle: "mai-tran-8a91b2" });
+    expect(parseProfileUrl("https://instagram.com/mai.makes/tagged/")).toEqual({
+      platform: "instagram",
+      handle: "mai.makes",
+    });
+  });
+
+  test("a handle that is nothing but @ is empty, not a person", () => {
+    expect(parseProfileUrl("https://x.com/@")).toBe(null);
+  });
+
+  test("LinkedIn is /in/<slug> only", () => {
+    expect(parseProfileUrl("https://www.linkedin.com/company/convex")).toBe(
+      null,
+    );
+    expect(parseProfileUrl("https://www.linkedin.com/posts/mai-tran-abc")).toBe(
+      null,
+    );
+    expect(parseProfileUrl("https://www.linkedin.com/pub/mai-tran")).toBe(null);
+    expect(parseProfileUrl("https://www.linkedin.com/feed/")).toBe(null);
+    expect(parseProfileUrl("https://www.linkedin.com/jobs/view/123")).toBe(null);
+    expect(parseProfileUrl("https://www.linkedin.com/in/")).toBe(null);
+  });
+
+  test("percent-decodes the slug, and refuses malformed encoding without throwing", () => {
+    expect(
+      parseProfileUrl("https://www.linkedin.com/in/nguy%E1%BB%85n-mai"),
+    ).toEqual({ platform: "linkedin", handle: "nguy\u1ec5n-mai" });
+    expect(parseProfileUrl("https://www.linkedin.com/in/%E0%A4%A")).toBe(null);
+    expect(parseProfileUrl("https://instagram.com/%E0%A4%A")).toBe(null);
+  });
+
+  test("anything that is not one of the three profile shapes is null", () => {
+    expect(parseProfileUrl("https://facebook.com/mai")).toBe(null);
+    expect(parseProfileUrl("https://instagram.com.evil.example/mai")).toBe(null);
+    expect(parseProfileUrl("https://instagram.com/")).toBe(null);
+    expect(parseProfileUrl("https://x.com")).toBe(null);
+    expect(parseProfileUrl("met at the conference")).toBe(null);
+    expect(parseProfileUrl("")).toBe(null);
+    expect(parseProfileUrl("   ")).toBe(null);
+    expect(parseProfileUrl("ftp://instagram.com/mai.makes")).toBe(null);
+  });
+
+  test("round-trips the URLs deriveProfileUrl builds", () => {
+    for (const handle of ["mai.makes", "ada_l", "caf\u00e9"]) {
+      for (const platform of ["instagram", "x"] as const) {
+        const url = deriveProfileUrl(platform, handle);
+        expect(url).not.toBe(null);
+        expect(parseProfileUrl(url as string)).toEqual({ platform, handle });
+      }
+    }
+  });
+});
+
+describe("nameGuessFromSlug", () => {
+  test("drops the trailing id junk and title-cases what is left", () => {
+    expect(nameGuessFromSlug("mai-tran-8a91b2")).toBe("Mai Tran");
+    expect(nameGuessFromSlug("john-doe")).toBe("John Doe");
+  });
+
+  test("only trailing digit segments are junk", () => {
+    // A leading segment with digits is part of the name someone chose.
+    expect(nameGuessFromSlug("m3-tran-8a91b2")).toBe("M3 Tran");
+  });
+
+  test("keeps accents from a percent-decoded slug", () => {
+    expect(nameGuessFromSlug("nguy\u1ec5n-mai-8a91b2")).toBe(
+      "Nguy\u1ec5n Mai",
+    );
+    expect(nameGuessFromSlug("\u0111\u1ee9c-anh")).toBe(
+      "\u0110\u1ee9c Anh",
+    );
+  });
+
+  test("nothing to guess yields an empty string", () => {
+    expect(nameGuessFromSlug("8a91b2")).toBe("");
+    expect(nameGuessFromSlug("8a91b2-7c4d")).toBe("");
+    expect(nameGuessFromSlug("")).toBe("");
+    expect(nameGuessFromSlug("   ")).toBe("");
+    expect(nameGuessFromSlug("---")).toBe("");
+  });
+
+  test("empty segments from doubled or trailing hyphens do not leak spaces", () => {
+    expect(nameGuessFromSlug("mai--tran-")).toBe("Mai Tran");
   });
 });

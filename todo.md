@@ -29,12 +29,20 @@ Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
   Still open for `loveAlarm` and `sharedNotes`, and for the web UI itself.
   `profiles.username` is settled by question 5 (reused as the one handle).
 - [ ] Housekeeping: pull `main` into the working checkout, then remove the leftover `.worktrees/feat-ios-foundations` worktree and its branch so there is one copy.
+- [ ] Known flake, do not weaken the guard: "embed gives up after 3 total attempts" in `convex/people.test.ts` fails intermittently only under heavy CPU contention (a convex-test scheduler race can start the same scheduled job twice; the app code is correctly bounded).
+  Green in CI.
+  Fix belongs upstream in convex-test or by serializing that file, not by loosening the assertion.
 
 ## MVP backlog (in order)
 
 - [~] Phase 2: Directory + manual save + contact detail + notes editor. Local pending queue so capture never fails offline.
   - [x] Convex backend: paged directory (`listPeople`), manual save with photo, handles, and structured attributes (`addPerson`), partial edit (`editPerson`), delete with blob cleanup.
+  - [x] Convex backend for share capture (capture-pipeline plan milestone 1): `personHandles` identity index, `saveSharedProfile` with created/already/attached outcomes, profile URL parsers with the slug name guess, and the paged `backfillPersonHandles` migration (run after deploy, re-run with the cursor until `isDone`).
+  - [ ] iOS share extension, App Group queue and mirror, pin-onboarding walkthrough (capture-pipeline plan milestones 2-4).
   - [ ] iOS screens and the local pending queue.
+  - [ ] Settle capture-plan open question 4 soon - it is load-bearing now: people from screenshot captures and meet exchanges carry only the legacy `platform`/`handle` scalars and get no `personHandles` rows, so sharing the same profile later twins them.
+    Decide the legacy-to-`contactHandles` backfill before the iOS share extension ships.
+    Adversarial review adds two requirements for that work: every direct `people` insert path (screenshot acceptance included) must maintain `personHandles` in the same transaction, and existing duplicate `(userId, platform, valueKey)` owners must be reconciled before the capture lookup can move from `.first()` to `.unique()`.
 - [~] Phase 3: Search. Filter chips (company / city / role) plus keyword over notes. See the search contract in `mvp-design.md`.
   - [x] Convex backend: `searchDirectory` (keyword + chips, accent-folded) and `directoryFacets` (chip values). Run `npx convex run people:backfillSearchText` once after deploy so pre-existing people join the keyword index.
   - [ ] iOS search screen wiring.
