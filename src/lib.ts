@@ -213,20 +213,19 @@ export function parseProfileUrl(
   if (platform === undefined) return null;
 
   const segments = url.pathname.split("/").filter((part) => part !== "");
-  // LinkedIn's mobile-lite site serves the same profile one segment deeper.
-  if (platform === "linkedin" && segments[0] === "mwlite") {
+  if (platform === "linkedin") {
+    // The mobile-lite site serves the same profile one segment deeper.
+    if (segments[0] === "mwlite") {
+      segments.shift();
+    }
+    // Profiles live only under /in/<slug>; company, posts, pub and feed
+    // paths are not a person we can identify.
+    if (segments[0] !== "in") return null;
     segments.shift();
   }
-  // LinkedIn profiles live only under /in/<slug>; company, posts, pub and
-  // feed paths are not a person we can identify.
-  const handleSegment =
-    platform === "linkedin"
-      ? segments[0] === "in"
-        ? segments[1]
-        : undefined
-      : segments[0];
+  const handleSegment = segments[0];
   if (handleSegment === undefined) return null;
-  const subSegment = segments[platform === "linkedin" ? 2 : 1];
+  const subSegment = segments[1];
   if (subSegment !== undefined) {
     // Decoded first, so "%73tatus" cannot smuggle a post past the check.
     const sub = decodeSegment(subSegment) ?? subSegment;
