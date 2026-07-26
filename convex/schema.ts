@@ -86,6 +86,19 @@ export default defineSchema({
       dimensions: 1536,
       filterFields: ["userId"],
     }),
+  // The identity index behind people.contactHandles: Convex indexes scalar
+  // fields only, so "which person has this Instagram handle?" is unanswerable
+  // from the array itself. Every write that touches contactHandles maintains
+  // these rows in the same transaction, or the two drift -- see people.ts.
+  // valueKey is the handle trimmed, stripped of leading "@", and lowercased.
+  personHandles: defineTable({
+    userId: v.string(),
+    personId: v.id("people"),
+    platform: v.string(),
+    valueKey: v.string(),
+  })
+    .index("by_user_platform_value", ["userId", "platform", "valueKey"])
+    .index("by_person", ["personId"]),
   // A future mutual-link flow should create one row only after both Haven users
   // have explicitly connected. Each side binds the relationship to their own
   // private person row; the shared-note API uses this as its access gate.
