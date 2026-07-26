@@ -11,6 +11,10 @@ struct HavenField: View {
     var keyboard: UIKeyboardType = .default
     var capitalization: TextInputAutocapitalization = .sentences
     var submitLabel: SubmitLabel = .continue
+    /// Takes focus as soon as it appears. For a field that appeared *because*
+    /// someone asked to type -- a panel opening under a row they tapped -- not
+    /// focusing costs a second tap for nothing.
+    var autofocus = false
     var onSubmit: () -> Void = {}
 
     @FocusState private var focused: Bool
@@ -47,6 +51,13 @@ struct HavenField: View {
             }
             .havenAnimation(HavenMotion.press, value: focused)
             .accessibilityLabel(label)
+            .task {
+                guard autofocus else { return }
+                // A beat, because focus does not take on the pass that puts the
+                // field on screen: it is not in the responder chain yet.
+                try? await Task.sleep(for: .milliseconds(60))
+                focused = true
+            }
     }
 }
 

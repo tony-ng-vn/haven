@@ -48,7 +48,12 @@ struct ContactScreen: View {
                 .padding(.bottom, 5)
             ForEach(ContactPlatform.typeable, id: \.id) { row($0) }
             if let entry {
-                panel(entry).padding(.top, 14)
+                panel(entry)
+                    .padding(.top, 14)
+                    // A new panel is a new field, so switching rows focuses the
+                    // one that just opened rather than leaving the old one's
+                    // keyboard up over a field nobody asked for.
+                    .id(entry)
             }
             if let connectFailure {
                 Text(connectFailure)
@@ -98,6 +103,7 @@ struct ContactScreen: View {
                 text: typing,
                 keyboard: entry.keyboard,
                 capitalization: .never,
+                autofocus: true,
                 onSubmit: commit
             )
             if let chosen, chosen.platform == entry.platform {
@@ -279,7 +285,7 @@ private struct ContactPlatform {
 ///
 /// One at a time: two open panels would be two questions, and this screen asks
 /// one.
-private enum ContactEntry: Equatable {
+private enum ContactEntry: Hashable {
     case confirmLinkedIn(connectedAs: String)
     case pasteInstagram
     case typePhone
