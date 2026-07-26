@@ -42,6 +42,7 @@ Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
   - [ ] iOS screens and the local pending queue.
   - [ ] Settle capture-plan open question 4 soon - it is load-bearing now: people from screenshot captures and meet exchanges carry only the legacy `platform`/`handle` scalars and get no `personHandles` rows, so sharing the same profile later twins them.
     Decide the legacy-to-`contactHandles` backfill before the iOS share extension ships.
+    Adversarial review adds two requirements for that work: every direct `people` insert path (screenshot acceptance included) must maintain `personHandles` in the same transaction, and existing duplicate `(userId, platform, valueKey)` owners must be reconciled before the capture lookup can move from `.first()` to `.unique()`.
 - [~] Phase 3: Search. Filter chips (company / city / role) plus keyword over notes. See the search contract in `mvp-design.md`.
   - [x] Convex backend: `searchDirectory` (keyword + chips, accent-folded) and `directoryFacets` (chip values). Run `npx convex run people:backfillSearchText` once after deploy so pre-existing people join the keyword index.
   - [ ] iOS search screen wiring.
