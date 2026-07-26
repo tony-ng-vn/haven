@@ -14,7 +14,10 @@ extension Task where Failure == Error {
         await withTaskGroup(of: Success?.self) { group in
             group.addTask { try? await self.value }
             group.addTask {
-                try? await Task.sleep(for: deadline)
+                // Spelled out, because inside an extension on `Task` a bare
+                // `Task.sleep` means `Self.sleep`, and `sleep` lives only on
+                // `Task<Never, Never>`.
+                try? await Task<Never, Never>.sleep(for: deadline)
                 return nil
             }
             let first = await group.next() ?? nil
