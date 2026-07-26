@@ -186,11 +186,18 @@ function validateContactHandles(
   });
 }
 
+// The display shape of a shared handle: what renders on the card. In
+// lockstep with handleValueKey below, so handles that dedup alike always
+// render alike.
+function handleDisplayValue(value: string): string {
+  return value.trim().replace(/^@+/, "");
+}
+
 // The identity key behind a handle: the same account shared as "@Mai.Makes"
 // and as "mai.makes" has to resolve to one person. Deliberately naive in v1;
 // per-platform rules can grow here later.
 function handleValueKey(value: string): string {
-  return value.trim().replace(/^@+/, "").toLowerCase();
+  return handleDisplayValue(value).toLowerCase();
 }
 
 // The personHandles shape for one contactHandles entry. Legacy rows can hold
@@ -255,7 +262,7 @@ function appendContext(
 // The shared URL is the only pointer back to the profile -- a LinkedIn slug
 // cannot be rebuilt into one -- so a person without a link keeps it. An
 // existing link is never overwritten: the user chose that one.
-function linkFields(
+function linkBackfill(
   person: Doc<"people">,
   profileUrl: string,
 ): { link?: string } {
@@ -782,29 +789,21 @@ export const saveSharedProfile = mutation({
     const userId = await requireUser(ctx);
     await checkRateLimit(ctx, userId, "saveSharedProfile", 30, MINUTE_MS);
 
-    const platform = args.platform.trim().toLowerCase();
-    if (platform === "") {
-      throw new Error("A platform cannot be blank");
-    }
     // The stored value carries the same shape as its identity key: a share of
     // "@mai.makes" and one of "mai.makes" must render and search alike, not
-    // just dedup alike.
-    const value = args.handleValue.trim().replace(/^@+/, "");
+    // just dedup alike. validateContactHandles owns the platform fold and the
+    // blank checks, same as every other handle write path.
+    const [{ platform, value }] = validateContactHandles([
+      { platform: args.platform, value: handleDisplayValue(args.handleValue) },
+    ]);
     const valueKey = handleValueKey(value);
-    if (valueKey === "") {
-      throw new Error("A handle cannot be blank");
-    }
     const name = args.name.trim();
     if (name === "") {
       throw new Error("Name is required");
     }
     const trimmedNote = args.note?.trim();
-    // Clamped for the same reason appendContext clamps: a queued capture has
-    // nobody left to ask to shorten the note.
     const note =
-      trimmedNote === undefined || trimmedNote === ""
-        ? undefined
-        : trimmedNote.slice(0, MAX_CONTEXT_LENGTH);
+      trimmedNote === undefined || trimmedNote === "" ? undefined : trimmedNote;
     const profileUrl = args.profileUrl.trim();
 
     const indexed = await ctx.db
@@ -831,7 +830,7 @@ export const saveSharedProfile = mutation({
       if (context !== owner.context) {
         fields.context = context;
       }
-      Object.assign(fields, linkFields(owner, profileUrl));
+      Object.assign(fields, linkBackfill(owner, profileUrl));
       if (Object.keys(fields).length > 0) {
         await ctx.db.patch("people", owner._id, {
           ...fields,
@@ -872,7 +871,7 @@ export const saveSharedProfile = mutation({
         if (held === undefined || handleIndexKeys(held).valueKey === valueKey) {
           const fields: Partial<Doc<"people">> = {
             context: appendContext(target.context, note),
-            ...linkFields(target, profileUrl),
+            ...linkBackfill(target, profileUrl),
           };
           if (held === undefined) {
             fields.contactHandles = validateContactHandles([
@@ -899,16 +898,19 @@ export const saveSharedProfile = mutation({
     }
 
     const contactHandles = [{ platform, value }];
+    // Through appendContext even with nothing to append to, so the clamp
+    // policy lives in exactly one place.
+    const context = appendContext(undefined, note);
     const personId = await ctx.db.insert("people", {
       userId,
       name,
       normalizedName: normalizeName(name),
-      context: note,
+      context,
       link: profileUrl === "" ? undefined : profileUrl,
       contactHandles,
       // preferredPlatform stays unset: the share sheet never asks how the
       // user wants to reach this person.
-      searchText: personSearchText({ name, contactHandles, context: note }),
+      searchText: personSearchText({ name, contactHandles, context }),
       updatedAt: Date.now(),
     });
     await insertPersonHandles(ctx, userId, personId, contactHandles);
@@ -1185,6 +1187,10 @@ export const backfillPersonHandles = internalMutation({
       numItems: BACKFILL_BATCH_SIZE,
       cursor: args.cursor ?? null,
     });
+    // Idempotent: re-running must never double-index a handle. The key
+    // is JSON so a platform containing a separator cannot collide.
+    const indexKey = (row: { platform: string; valueKey: string }) =>
+      JSON.stringify([row.platform, row.valueKey]);
     let patched = 0;
     for (const person of page.page) {
       const handles = person.contactHandles ?? [];
@@ -1195,10 +1201,6 @@ export const backfillPersonHandles = internalMutation({
         .query("personHandles")
         .withIndex("by_person", (q) => q.eq("personId", person._id))
         .take(MAX_CONTACT_HANDLES);
-      // Idempotent: re-running must never double-index a handle. The key
-      // is JSON so a platform containing a separator cannot collide.
-      const indexKey = (row: { platform: string; valueKey: string }) =>
-        JSON.stringify([row.platform, row.valueKey]);
       const indexed = new Set(existing.map(indexKey));
       const missing = handles.filter(
         (handle) => !indexed.has(indexKey(handleIndexKeys(handle))),
