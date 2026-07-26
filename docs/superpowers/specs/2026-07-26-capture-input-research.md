@@ -81,10 +81,13 @@ Once the context is stored, Haven holds the answer, and optional reveal-after-re
 
 ## Capture surfaces, ranked (iOS specifics verified against Apple docs)
 
-**1. Share extension (build early).**
+**1. Share extension (build first).**
 All three platforms share a profile URL through the system sheet (LinkedIn documents it; Instagram and X verified by observation - confirm payloads with a TRUEPREDICATE dev build).
-Zero permissions, works on every target iOS version, receives a clean URL instead of pixels to OCR, and the same extension accepts screenshots shared from Photos.
+Zero permissions, works on every target iOS version, receives a clean URL instead of pixels to OCR, and the same extension accepts screenshots shared from Photos - so it doubles as manual screenshot import before the photo-library permission is ever requested.
 This also closes the LinkedIn slug gap the platform research flagged: the shared URL carries the vanity slug the screenshot never shows.
+Onboarding must teach pinning, Rodeo-style: there is no API to pin or reorder a share extension, and Haven starts buried at the end of the app row, so onboarding should open a real share sheet on a sample profile and walk the user through More > Edit > Favorites, ending with one practice capture.
+Two design rules: the shared URL is a perfect pointer but an empty card (platform + handle, no name or headline), and the fix is the mini-sheet asking for the name plus an optional note - never a server-side fetch of the profile page, which is the scraping no-build from the enrichment section.
+The URL path and the screenshot path dedupe into one person by platform + handle, per the repo's idempotent-creation convention (return `{ status: "created" | "already" }` so the sheet can say "you've met before").
 
 **2. Screenshot catch-up ingestion (the upload-step killer).**
 iOS 16+ persistent change history (PHPersistentChangeToken + fetchPersistentChanges) tells Haven, on next open, exactly which assets appeared since last open; combine with the Screenshots smart album subtype and run the existing extraction pipeline on candidates.
@@ -155,8 +158,8 @@ Four layers, replacing the single deferred session:
 **Build-order suggestion for Phase 2** (the backend for save/search shipped in PR #78; the capture pipeline and captures table already exist from the web era):
 
 1. Manual add + notes editor + offline pending queue (already the Phase 2 plan) - with the voice one-liner button included from day one, since audio-first capture is the single biggest friction cut.
-2. Screenshot catch-up ingestion feeding the existing extraction pipeline, plus the per-event triage batch (this is the roadmap "swipe review queue" pulled forward with an evidence-backed schedule).
-3. Share extension.
+2. Share extension, in the same slice: it is a small artifact, costs zero permissions, captures at the moment directly from the platform apps, and covers manual screenshot import before the photo-permission fight - the extension writes to the App Group container offline and the main app drains the queue, so it inherits "capture never fails" for free.
+3. Screenshot catch-up ingestion feeding the existing extraction pipeline, plus the per-event triage batch (this is the roadmap "swipe review queue" pulled forward with an evidence-backed schedule); by this point it is automating a path the share extension already proved.
 4. Event mode + evening/morning notification.
 5. Spaced reviews, JournalingSuggestions garnish, enrichment card - in whatever order dogfooding demands.
 
