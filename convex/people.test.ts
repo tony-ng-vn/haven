@@ -1536,6 +1536,24 @@ test("saveSharedProfile keeps the handle index scoped to one user", async () => 
   ).toBe("sat next to me on the flight");
 });
 
+test("saveSharedProfile self-heals an orphaned handle row instead of shadowing the capture", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const first = await as.mutation(api.people.saveSharedProfile, sharedProfile);
+  // A write that bypassed deletePerson leaves the index row behind.
+  await t.run((ctx) => ctx.db.delete("people", first.personId));
+
+  const again = await as.mutation(api.people.saveSharedProfile, sharedProfile);
+  expect(again.status).toBe("created");
+  expect(again.personId).not.toBe(first.personId);
+
+  // The orphan is gone; the handle now indexes only the new person.
+  const rows = await t.run((ctx) =>
+    ctx.db.query("personHandles").collect(),
+  );
+  expect(rows.map((row) => row.personId)).toEqual([again.personId]);
+});
+
 test("saveSharedProfile heals a drifted searchText on a bare re-share", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
