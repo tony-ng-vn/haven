@@ -34,6 +34,9 @@ struct LocationScreen: View {
         HavenScreen(
             sky: model.sky,
             litMajors: model.litMajors,
+            // The suggestion list grows as you type. Centred, that would push
+            // the field up out from under your finger on every keystroke.
+            contentAlignment: .top,
             header: {
                 VStack(alignment: .leading, spacing: 18) {
                     OnboardingStepper(step: .location)

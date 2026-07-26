@@ -20,6 +20,9 @@ struct ContactScreen: View {
         HavenScreen(
             sky: model.sky,
             litMajors: model.litMajors,
+            // A panel opens under the rows. Centred, opening it would shift
+            // every row the person was just reading.
+            contentAlignment: .top,
             header: {
                 VStack(alignment: .leading, spacing: 18) {
                     OnboardingStepper(step: .contact)

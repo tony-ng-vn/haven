@@ -102,6 +102,7 @@ Everything in `Haven/Design` is milestone 2 of `../phase1-build-plan.md`, and ev
 - `SkyView` renders a `Sky` from `SkyGenerator`. It draws the sky at rest and deliberately knows nothing about ignition order or the card reveal.
 - `StarSlot` fixes which figure star each profile field owns. Do not make it dynamic; the edit screen's unlit stars are only legible because a field's star never moves.
 - `HavenScreen`, `HavenField`, `PrimaryButton`, `GhostButton` and `HavenRow` are the shared controls.
+- `HavenScreen`'s `contentAlignment` is not cosmetic. Content that never changes height is centred; content that grows, such as a suggestion list or a panel that opens, is top-aligned, or answering the question moves the field out from under the person's finger. The figure follows: it takes the gap above centred content and the gap below top-aligned content, and disappears when neither is big enough to read as a figure.
 
 Every surface also has SwiftUI previews covering the default size, an accessibility text size, and the Reduce Motion path.
 SwiftUI's own `accessibilityReduceMotion` is read-only, so the previews flip it with `havenReduceMotion()` instead.
