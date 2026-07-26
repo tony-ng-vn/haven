@@ -157,6 +157,34 @@ struct OnboardingTests {
         #expect(blankAdmin.keys.sorted() == ["country", "name"])
     }
 
+    // The skip store is what decides whether someone is asked a question a
+    // second time, so its round trip through UserDefaults is worth an assertion
+    // rather than a hope. Each case uses its own user id, because the store is
+    // shared with whatever else has run.
+    @Test("a skip survives the app being killed")
+    func skipsRoundTrip() {
+        let userId = "user_skips_round_trip"
+        #expect(OnboardingSkips.load(userId: userId).isEmpty)
+
+        OnboardingSkips.save([.location, .contact], userId: userId)
+
+        #expect(OnboardingSkips.load(userId: userId) == [.location, .contact])
+    }
+
+    // Two accounts on one phone is the case this guards: inheriting the last
+    // person's skips would walk a new arrival straight past questions nobody
+    // ever asked them.
+    @Test("skips do not carry across accounts")
+    func skipsAreKeyedByUser() {
+        let mine = "user_skips_mine"
+        let theirs = "user_skips_theirs"
+
+        OnboardingSkips.save([.location], userId: mine)
+
+        #expect(OnboardingSkips.load(userId: theirs).isEmpty)
+        #expect(OnboardingSkips.load(userId: mine) == [.location])
+    }
+
     // Fields answered out of order must not skip the ones still owed. Company
     // and role are never asked in onboarding, so they cannot end it either.
     @Test("a field answered later does not skip an earlier question")

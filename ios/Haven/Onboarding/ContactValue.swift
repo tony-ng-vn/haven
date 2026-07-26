@@ -10,9 +10,17 @@ enum ContactValue {
     /// out of it rather than demanded on its own. Nil when nothing usable is
     /// left, which is what keeps Continue disabled.
     static func instagramHandle(from raw: String) -> String? {
-        let handle = handle(in: raw, after: "instagram.com/")
+        let handle = handle(in: raw, after: ["instagram.com/"])
         guard !handle.isEmpty, handle.count <= 30 else { return nil }
         guard handle.allSatisfy(Self.instagramCharacters.contains) else { return nil }
+        return handle
+    }
+
+    /// The same for X, which still answers to both of its addresses.
+    static func xHandle(from raw: String) -> String? {
+        let handle = handle(in: raw, after: ["x.com/", "twitter.com/"])
+        guard !handle.isEmpty, handle.count <= 15 else { return nil }
+        guard handle.allSatisfy(Self.xCharacters.contains) else { return nil }
         return handle
     }
 
@@ -22,7 +30,7 @@ enum ContactValue {
     /// person supplies, while that one guesses before they have supplied
     /// anything.
     static func linkedInHandle(from raw: String) -> String? {
-        let handle = handle(in: raw, after: "linkedin.com/in/")
+        let handle = handle(in: raw, after: ["linkedin.com/in/"])
         guard !handle.isEmpty, handle.count <= 100 else { return nil }
         guard handle.allSatisfy(Self.linkedInCharacters.contains) else { return nil }
         return handle
@@ -58,12 +66,18 @@ enum ContactValue {
         partialFormatter.formatPartial(raw)
     }
 
-    /// Everything up to the first separator, with any address in front of it and
-    /// any leading `@` removed.
-    private static func handle(in raw: String, after host: String) -> String {
+    /// Everything up to the first separator, with any of the platform's
+    /// addresses in front of it and any leading `@` removed.
+    ///
+    /// The hosts are tried against the whole string before anything is cut, so a
+    /// platform with two addresses still finds the second one. Cutting first
+    /// would leave "https:" and match neither.
+    private static func handle(in raw: String, after hosts: [String]) -> String {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let address = value.range(of: host, options: .caseInsensitive) {
+        for host in hosts {
+            guard let address = value.range(of: host, options: .caseInsensitive) else { continue }
             value = String(value[address.upperBound...])
+            break
         }
         value = String(value.prefix { $0 != "/" && $0 != "?" && $0 != "#" })
         return value.trimmingCharacters(in: CharacterSet(charactersIn: "@"))
@@ -71,6 +85,9 @@ enum ContactValue {
 
     private static let instagramCharacters = Set(
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._"
+    )
+    private static let xCharacters = Set(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
     )
     private static let linkedInCharacters = Set(
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"

@@ -178,6 +178,11 @@ final class OnboardingModel: ObservableObject {
 
     private let userId: String
     private var skipped: Set<OnboardingStep> = []
+    /// True from the moment a write starts until the next question is on screen.
+    /// Deliberately longer-lived than `isSaving`, which only drives the button's
+    /// spinner: the question stays up through the star ignition, and a second
+    /// tap in that window would fire the same write twice.
+    private var committing = false
     private var cancellable: AnyCancellable?
 
     /// - Parameter userId: the Clerk user id. It is the seed for the whole
@@ -240,14 +245,16 @@ final class OnboardingModel: ObservableObject {
     /// the card has nowhere to say "asked and declined"; the unlit star on My
     /// Card is the whole nudge, and it comes from the missing field itself.
     func skip(_ step: OnboardingStep) {
-        guard !isSaving else { return }
+        guard !committing else { return }
         skipped.insert(step)
         OnboardingSkips.save(skipped, userId: userId)
         self.step = OnboardingStep.first(unansweredIn: card, skipped: skipped)
     }
 
     private func save(_ fields: [String: ConvexEncodable?]) async {
-        guard !isSaving else { return }
+        guard !committing else { return }
+        committing = true
+        defer { committing = false }
         failure = nil
         isSaving = true
         var saved: MyCard?

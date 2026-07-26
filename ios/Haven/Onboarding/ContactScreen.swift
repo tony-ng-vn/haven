@@ -4,9 +4,10 @@ import SwiftUI
 /// Onboarding question 3. Skippable, and the one most worth answering: a card
 /// nobody can act on is a card that does nothing.
 ///
-/// Every social row starts the same way, by authorizing. What comes back differs
-/// per platform, so the flow degrades in steps and each step only appears after
-/// the one above it falls short. No row ever advertises a paste field.
+/// Every connectable row starts the same way, by authorizing. What comes back
+/// differs per platform, so the flow degrades in steps and each step only
+/// appears after the one above it falls short. No row ever advertises a paste
+/// field, and no row ever dead-ends.
 struct ContactScreen: View {
     @ObservedObject var model: OnboardingModel
 
@@ -33,7 +34,15 @@ struct ContactScreen: View {
                 }
             },
             content: { rows },
-            actions: { actions }
+            actions: {
+                OnboardingActions(
+                    failure: model.failure ?? connectFailure,
+                    isSaving: model.isSaving,
+                    canContinue: chosen != nil && connecting == nil,
+                    onContinue: commit,
+                    onSkip: { model.skip(.contact) }
+                )
+            }
         )
     }
 
@@ -55,12 +64,6 @@ struct ContactScreen: View {
                     // keyboard up over a field nobody asked for.
                     .id(entry)
             }
-            if let connectFailure {
-                Text(connectFailure)
-                    .havenBody()
-                    .padding(.top, 12)
-                    .transition(.opacity)
-            }
         }
         .havenAnimation(HavenMotion.screen, value: entry)
     }
@@ -69,7 +72,7 @@ struct ContactScreen: View {
         let value = chosen?.platform == platform.id ? chosen?.value : nil
         return HavenRow(
             title: platform.title,
-            detail: value.map { platform.prefix + $0 },
+            detail: value.map { platform.handlePrefix + $0 },
             accessibilityText: spoken(platform, value),
             action: { choose(platform) }
         ) {
@@ -86,7 +89,7 @@ struct ContactScreen: View {
     private func spoken(_ platform: ContactPlatform, _ value: String?) -> String {
         if connecting == platform.id { return "\(platform.title), connecting" }
         guard let value else { return "\(platform.title), \(platform.call)" }
-        return "\(platform.title), \(platform.prefix)\(value), primary"
+        return "\(platform.title), \(platform.handlePrefix)\(value), primary"
     }
 
     // MARK: - The extra step, when there is one
@@ -109,7 +112,7 @@ struct ContactScreen: View {
             if let chosen, chosen.platform == entry.platform {
                 // A live preview of what the card will carry, so a paste that
                 // was reduced to a handle is visibly the right handle.
-                Text(entry.prefix + chosen.value).havenSecondary()
+                Text(entry.addressPrefix + chosen.value).havenSecondary()
             }
         }
     }
@@ -121,48 +124,15 @@ struct ContactScreen: View {
             get: { entryText },
             set: { typed in
                 guard let entry else { return }
-                switch entry {
-                case .typePhone:
-                    // Formatted while the number grows and left alone while it
-                    // shrinks: re-adding a space someone just deleted makes
-                    // backspace look broken.
-                    entryText = typed.count > entryText.count
-                        ? ContactValue.formattingPhone(typed)
-                        : typed
-                    chosen = ContactValue.phoneNumber(from: entryText).map {
-                        ChosenContact(platform: .phone, value: $0, verified: false)
-                    }
-                case .pasteInstagram:
-                    entryText = typed
-                    chosen = ContactValue.instagramHandle(from: typed).map {
-                        ChosenContact(platform: .instagram, value: $0, verified: false)
-                    }
-                case .confirmLinkedIn:
-                    entryText = typed
-                    chosen = ContactValue.linkedInHandle(from: typed).map {
-                        ChosenContact(platform: .linkedin, value: $0, verified: false)
-                    }
-                }
+                // A phone number is formatted while it grows and left alone
+                // while it shrinks: re-adding a space someone just deleted
+                // makes backspace look broken.
+                entryText = entry == .typePhone && typed.count > entryText.count
+                    ? ContactValue.formattingPhone(typed)
+                    : typed
+                chosen = entry.parse(entryText)
             }
         )
-    }
-
-    // MARK: - Actions
-
-    private var actions: some View {
-        VStack(spacing: 8) {
-            if let failure = model.failure {
-                Text(failure)
-                    .havenBody()
-                    .multilineTextAlignment(.center)
-                    .transition(.opacity)
-            }
-            PrimaryButton(title: "Continue", isLoading: model.isSaving, action: commit)
-                .disabled(chosen == nil || connecting != nil)
-            GhostButton(title: "Skip for now") { model.skip(.contact) }
-                .disabled(model.isSaving || connecting != nil)
-        }
-        .havenAnimation(HavenMotion.screen, value: model.failure)
     }
 
     // MARK: - Behaviour
@@ -179,7 +149,7 @@ struct ContactScreen: View {
             chosen = nil
             entryText = ""
             entry = panel
-        case .authorize(let provider):
+        case .authorize(let provider, _, _):
             Task { await connect(platform, provider: provider) }
         }
     }
@@ -199,28 +169,24 @@ struct ContactScreen: View {
     }
 
     private func finish(_ platform: ContactPlatform, _ account: ConnectedAccount) {
-        // The best case: the handle came back with the token, so the value is
-        // proven and nothing else is asked.
-        if let username = account.username, !username.isEmpty {
+        guard case .authorize(_, let provesItsHandle, let fallback) = platform.method else { return }
+
+        // Whether a username in the payload IS the handle is a fact about the
+        // platform, not about whether one happened to arrive. LinkedIn's
+        // payload can carry a username that is not the profile address, and
+        // taking it would store an unproven handle as verified and skip the
+        // panel that exists to check it.
+        if provesItsHandle, let username = account.username, !username.isEmpty {
             chosen = ChosenContact(platform: platform.id, value: username, verified: true)
             entry = nil
             return
         }
 
-        guard platform.id == .linkedin else {
-            connectFailure = "\(platform.title) did not send a handle. Try another way."
-            return
-        }
-        // Connected and verified, but the address is not in the payload. Our
-        // best guess goes in prefilled, so this reads as a confirmation rather
-        // than another question.
-        let name = account.fullName.isEmpty ? (model.card?.name ?? "") : account.fullName
-        let slug = ContactValue.linkedInSlug(from: name)
-        entryText = slug
-        entry = .confirmLinkedIn(connectedAs: name.isEmpty ? "you" : name)
-        chosen = slug.isEmpty
-            ? nil
-            : ChosenContact(platform: .linkedin, value: slug, verified: false)
+        let name = account.fullName.isEmpty ? (model.card?.name ?? "you") : account.fullName
+        let panel = fallback(name)
+        entryText = panel.guess(from: name)
+        entry = panel
+        chosen = panel.parse(entryText)
     }
 
     private func commit() {
@@ -233,8 +199,14 @@ struct ContactScreen: View {
 
 /// How a row gets its value.
 private enum ContactMethod {
-    /// Authorize, and take whatever the provider sends back.
-    case authorize(OAuthProvider)
+    /// Authorize.
+    ///
+    /// `provesItsHandle` says whether a username in the payload may be trusted
+    /// as the handle. `fallback` is where the row lands when no trusted handle
+    /// comes back, and every connectable row has one: a platform that will not
+    /// tell us who you are there is a reason to ask, never a dead end. It is
+    /// given the person's name, which is all a first guess has to work with.
+    case authorize(OAuthProvider, provesItsHandle: Bool, fallback: (String) -> ContactEntry)
     /// Supplied by hand, because there is nothing to authorize against.
     case typed(ContactEntry)
 }
@@ -246,19 +218,31 @@ private struct ContactPlatform {
     /// What the row invites you to do while it is empty.
     let call: String
     let method: ContactMethod
-    /// Shown in front of the value, so a row reads as an address rather than a
-    /// fragment.
-    let prefix: String
+    /// Shown in front of the value on the row, so it reads as a handle rather
+    /// than a fragment. The panel's live preview uses the fuller
+    /// `ContactEntry.addressPrefix` instead.
+    let handlePrefix: String
 
     static let x = ContactPlatform(
         id: .x, title: "X", call: "Connect",
-        method: .authorize(.x), prefix: "@"
+        // X sends the username with the token, so the value is proven. That
+        // read sits behind paid API tiers, so the day it stops arriving the row
+        // degrades to a paste rather than dead-ending.
+        method: .authorize(.x, provesItsHandle: true, fallback: { _ in .pasteX }),
+        handlePrefix: "@"
     )
     // The OIDC provider, not the legacy one: Clerk's `oauth_linkedin` is
     // retired and only `oauth_linkedin_oidc` is issued to new instances.
     static let linkedin = ContactPlatform(
         id: .linkedin, title: "LinkedIn", call: "Connect",
-        method: .authorize(.linkedinOidc), prefix: "linkedin.com/in/"
+        // LinkedIn proves the person and never sends the profile address, so a
+        // username in its payload is not the handle and is never taken for one.
+        method: .authorize(
+            .linkedinOidc,
+            provesItsHandle: false,
+            fallback: { .confirmLinkedIn(connectedAs: $0) }
+        ),
+        handlePrefix: "linkedin.com/in/"
     )
     // Typed rather than authorized, because there is nothing to authorize
     // against: Instagram's personal-account API shut down in December 2024 and
@@ -267,11 +251,11 @@ private struct ContactPlatform {
     // for everybody and land here anyway, one wasted round trip later.
     static let instagram = ContactPlatform(
         id: .instagram, title: "Instagram", call: "Add",
-        method: .typed(.pasteInstagram), prefix: "@"
+        method: .typed(.pasteInstagram), handlePrefix: "@"
     )
     static let phone = ContactPlatform(
         id: .phone, title: "Phone", call: "Add",
-        method: .typed(.typePhone), prefix: ""
+        method: .typed(.typePhone), handlePrefix: ""
     )
 
     /// The rows that authorize, and the rows that do not. The split is the
@@ -287,25 +271,58 @@ private struct ContactPlatform {
 /// one.
 private enum ContactEntry: Hashable {
     case confirmLinkedIn(connectedAs: String)
+    case pasteX
     case pasteInstagram
     case typePhone
 
     var platform: MyCard.Platform {
         switch self {
         case .confirmLinkedIn: return .linkedin
+        case .pasteX: return .x
         case .pasteInstagram: return .instagram
         case .typePhone: return .phone
         }
     }
 
-    /// Nil where the field speaks for itself. Phone needs no explanation;
-    /// the other two are explaining a platform's limit, not ours.
+    /// What the panel makes of what is in its field, or nil while there is
+    /// nothing usable yet, which is what keeps Continue disabled.
+    ///
+    /// Never `verified`: a value that had to be typed or confirmed was, by
+    /// definition, not proven by the platform.
+    func parse(_ typed: String) -> ChosenContact? {
+        let value: String?
+        switch self {
+        case .confirmLinkedIn: value = ContactValue.linkedInHandle(from: typed)
+        case .pasteX: value = ContactValue.xHandle(from: typed)
+        case .pasteInstagram: value = ContactValue.instagramHandle(from: typed)
+        case .typePhone: value = ContactValue.phoneNumber(from: typed)
+        }
+        return value.map { ChosenContact(platform: platform, value: $0, verified: false) }
+    }
+
+    /// What the field starts with. Only LinkedIn has anything to guess from: a
+    /// slug built out of the name it just proved, which the panel exists to have
+    /// corrected. Wrong is fine; empty is worse.
+    func guess(from name: String) -> String {
+        switch self {
+        case .confirmLinkedIn: return ContactValue.linkedInSlug(from: name)
+        case .pasteX, .pasteInstagram, .typePhone: return ""
+        }
+    }
+
+    /// Nil where the field speaks for itself. Phone needs no explanation; the
+    /// others are explaining a platform's limit, not ours.
     var note: String? {
         switch self {
         case .confirmLinkedIn(let name):
             return """
                 Connected as \(name). LinkedIn verifies you but never sends your \
                 profile address, so check this is right.
+                """
+        case .pasteX:
+            return """
+                X only shares usernames with apps on paid API tiers, so paste \
+                your link and we will pull the handle out of it.
                 """
         case .pasteInstagram:
             return """
@@ -320,6 +337,7 @@ private enum ContactEntry: Hashable {
     var label: String {
         switch self {
         case .confirmLinkedIn: return "Your LinkedIn address"
+        case .pasteX: return "Your X link"
         case .pasteInstagram: return "Your Instagram link"
         case .typePhone: return "Your phone number"
         }
@@ -328,14 +346,17 @@ private enum ContactEntry: Hashable {
     var placeholder: String {
         switch self {
         case .confirmLinkedIn: return "linkedin.com/in/handle"
+        case .pasteX: return "Paste your X link"
         case .pasteInstagram: return "Paste your Instagram link"
         case .typePhone: return "Phone number"
         }
     }
 
-    var prefix: String {
+    /// The address the card will carry, shown live under the field.
+    var addressPrefix: String {
         switch self {
         case .confirmLinkedIn: return "linkedin.com/in/"
+        case .pasteX: return "x.com/"
         case .pasteInstagram: return "instagram.com/"
         case .typePhone: return ""
         }
@@ -344,7 +365,7 @@ private enum ContactEntry: Hashable {
     var keyboard: UIKeyboardType {
         switch self {
         case .typePhone: return .phonePad
-        case .confirmLinkedIn, .pasteInstagram: return .URL
+        case .confirmLinkedIn, .pasteX, .pasteInstagram: return .URL
         }
     }
 }
@@ -370,4 +391,9 @@ private func previewModel() -> OnboardingModel {
 #Preview("Contact, accessibility XXXL") {
     ContactScreen(model: previewModel())
         .environment(\.dynamicTypeSize, .accessibility3)
+}
+
+#Preview("Contact, Reduce Motion") {
+    ContactScreen(model: previewModel())
+        .havenReduceMotion()
 }

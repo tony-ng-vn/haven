@@ -53,6 +53,7 @@ struct LocationScreen: View {
                         placeholder: "Start typing a city",
                         text: typing,
                         capitalization: .words,
+                        autofocus: true,
                         onSubmit: commit
                     )
                     .padding(.bottom, 8)
@@ -66,19 +67,13 @@ struct LocationScreen: View {
                 }
             },
             actions: {
-                VStack(spacing: 8) {
-                    if let failure = model.failure {
-                        Text(failure)
-                            .havenBody()
-                            .multilineTextAlignment(.center)
-                            .transition(.opacity)
-                    }
-                    PrimaryButton(title: "Continue", isLoading: model.isSaving, action: commit)
-                        .disabled(trimmed.isEmpty)
-                    GhostButton(title: "Skip for now") { model.skip(.location) }
-                        .disabled(model.isSaving)
-                }
-                .havenAnimation(HavenMotion.screen, value: model.failure)
+                OnboardingActions(
+                    failure: model.failure,
+                    isSaving: model.isSaving,
+                    canContinue: !trimmed.isEmpty,
+                    onContinue: commit,
+                    onSkip: { model.skip(.location) }
+                )
             }
         )
     }
@@ -88,6 +83,10 @@ struct LocationScreen: View {
         completer.clear()
         Task {
             let city = await completer.resolve(suggestion) ?? CityInput(name: suggestion.title)
+            // The lookup is a round trip, and the person may have started typing
+            // again while it ran. Applying it then would overwrite their
+            // keystrokes with a city they had already moved on from.
+            guard query == suggestion.title else { return }
             chosen = city
             // The field shows the city that will be stored, not the row that was
             // tapped. MapKit labels a row "San Francisco, CA" and answers "SF"
@@ -124,4 +123,14 @@ struct LocationScreen: View {
         )
     )
     .environment(\.dynamicTypeSize, .accessibility3)
+}
+
+#Preview("Location, Reduce Motion") {
+    LocationScreen(
+        model: OnboardingModel(
+            previewUserId: "user_2abcDEF123",
+            card: MyCard(username: "tony", name: "Tony Nguyen")
+        )
+    )
+    .havenReduceMotion()
 }

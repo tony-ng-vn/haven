@@ -42,6 +42,34 @@ struct ContactValueTests {
         #expect(ContactValue.instagramHandle(from: String(repeating: "a", count: 31)) == nil)
     }
 
+    // X still answers to both of its addresses, and a link copied years ago is
+    // still the link someone has.
+    @Test("an X handle survives either of X's addresses")
+    func xFromLinks() {
+        let expected = "tonybuilds"
+        let inputs = [
+            "tonybuilds",
+            "@tonybuilds",
+            "x.com/tonybuilds",
+            "https://x.com/tonybuilds",
+            "https://twitter.com/tonybuilds/",
+            "https://x.com/tonybuilds?s=21",
+        ]
+        for input in inputs {
+            #expect(ContactValue.xHandle(from: input) == expected, "\(input)")
+        }
+    }
+
+    @Test("X keeps the characters it allows and rejects the rest")
+    func xCharacters() {
+        #expect(ContactValue.xHandle(from: "tony_builds1") == "tony_builds1")
+        #expect(ContactValue.xHandle(from: "") == nil)
+        #expect(ContactValue.xHandle(from: "tony.builds") == nil)
+        #expect(ContactValue.xHandle(from: "tony builds") == nil)
+        // X caps handles at 15, so anything longer is not one.
+        #expect(ContactValue.xHandle(from: String(repeating: "a", count: 16)) == nil)
+    }
+
     @Test("a LinkedIn address is reduced to the part that identifies the profile")
     func linkedInFromLinks() {
         let expected = "tony-nguyen"
