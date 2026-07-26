@@ -536,6 +536,21 @@ describe("parseProfileUrl", () => {
     });
   });
 
+  test("a post under the handle is content, not the profile", () => {
+    // A shared tweet or Instagram post must not silently capture its author;
+    // profile tabs like /tagged stay a person (pinned below).
+    expect(parseProfileUrl("https://x.com/mai_makes/status/17999")).toBe(null);
+    expect(parseProfileUrl("https://x.com/mai_makes/%73tatus/17999")).toBe(
+      null,
+    );
+    expect(parseProfileUrl("https://instagram.com/mai.makes/p/Cxyz123")).toBe(
+      null,
+    );
+    expect(
+      parseProfileUrl("https://instagram.com/mai.makes/reel/Cxyz123/"),
+    ).toBe(null);
+  });
+
   test("reserved Instagram paths are content, not people", () => {
     for (const path of [
       "p/Cxyz123",

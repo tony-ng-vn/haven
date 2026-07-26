@@ -155,6 +155,14 @@ const RESERVED_PATHS: Record<SharedPlatform, readonly string[]> = {
   ],
 };
 
+// A specific post under a handle is content someone shared, not the profile;
+// deeper profile tabs (/tagged, /in/<slug>/details) still identify the person.
+const CONTENT_SUBPATHS: Record<SharedPlatform, readonly string[]> = {
+  instagram: ["p", "reel", "tv"],
+  linkedin: [],
+  x: ["status"],
+};
+
 // The registrable domains that serve profiles, not exact hosts: share sheets
 // hand over whichever host the app is on, and LinkedIn gives non-US members a
 // country-prefixed one (vn.linkedin.com) alongside the www./m./mobile.
@@ -218,6 +226,12 @@ export function parseProfileUrl(
         : undefined
       : segments[0];
   if (handleSegment === undefined) return null;
+  const subSegment = segments[platform === "linkedin" ? 2 : 1];
+  if (subSegment !== undefined) {
+    // Decoded first, so "%73tatus" cannot smuggle a post past the check.
+    const sub = decodeSegment(subSegment) ?? subSegment;
+    if (CONTENT_SUBPATHS[platform].includes(sub.toLowerCase())) return null;
+  }
 
   const decoded = decodeSegment(handleSegment);
   if (decoded === null) return null;
