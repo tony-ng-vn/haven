@@ -1212,7 +1212,7 @@ test("saveSharedProfile re-shared with a new note appends instead of twinning", 
     handleValue: " @Mai.Makes ",
     note: "wants a studio in district 3",
   });
-  expect(again).toEqual({ status: "already", personId: first.personId });
+  expect(again).toEqual({ status: "already", personId: first.personId, noteTruncated: false });
 
   const people = await as.query(api.people.searchDirectory, {});
   expect(people).toHaveLength(1);
@@ -1247,7 +1247,7 @@ test("saveSharedProfile attaches a second platform to the person the user picked
     note: "leads design at Photon",
     attachToPersonId: personId,
   });
-  expect(result).toEqual({ status: "attached", personId });
+  expect(result).toEqual({ status: "attached", personId, noteTruncated: false });
 
   const person = await as.query(api.people.getPerson, { id: personId });
   expect(person?.contactHandles).toEqual([
@@ -1269,7 +1269,7 @@ test("saveSharedProfile attaches a second platform to the person the user picked
     profileUrl: "https://linkedin.com/in/mai-tran-8a91b2",
     name: "Mai Tran",
   });
-  expect(dedup).toEqual({ status: "already", personId });
+  expect(dedup).toEqual({ status: "already", personId, noteTruncated: false });
 });
 
 test("saveSharedProfile creates a new person when the attach target holds another handle on that platform", async () => {
@@ -1347,7 +1347,7 @@ test("saveSharedProfile lets handle identity beat the attach target", async () =
     ...sharedProfile,
     attachToPersonId: binh,
   });
-  expect(result).toEqual({ status: "already", personId: mai });
+  expect(result).toEqual({ status: "already", personId: mai, noteTruncated: false });
 
   // Binh never gains an account that is provably somebody else's.
   expect(
@@ -1376,7 +1376,7 @@ test("saveSharedProfile attaches onto a handle whose stored platform was never n
     note: "met at the ceramics market",
     attachToPersonId: personId,
   });
-  expect(result).toEqual({ status: "attached", personId });
+  expect(result).toEqual({ status: "attached", personId, noteTruncated: false });
 
   const person = await as.query(api.people.getPerson, { id: personId });
   expect(person?.context).toBe("met at the ceramics market");
@@ -1406,6 +1406,7 @@ test("saveSharedProfile clamps an over-cap note instead of failing the capture",
     note: "z".repeat(4200),
   });
   expect(big.status).toBe("created");
+  expect(big.noteTruncated).toBe(true);
   const bigPerson = await as.query(api.people.getPerson, {
     id: big.personId,
   });
@@ -1423,7 +1424,11 @@ test("saveSharedProfile clamps an over-cap note instead of failing the capture",
     profileUrl: "https://instagram.com/mai.ceramics",
     note: "y".repeat(300),
   });
-  expect(again).toEqual({ status: "already", personId: first.personId });
+  expect(again).toEqual({
+    status: "already",
+    personId: first.personId,
+    noteTruncated: true,
+  });
   const person = await as.query(api.people.getPerson, {
     id: first.personId,
   });
@@ -1431,6 +1436,18 @@ test("saveSharedProfile clamps an over-cap note instead of failing the capture",
   expect(person?.context).toHaveLength(4000);
   expect(person?.context?.startsWith("x".repeat(10))).toBe(true);
   expect(person?.context?.endsWith("y")).toBe(true);
+
+  // No room at all: the save still lands, but says the note was cut, so a
+  // drain never mistakes a clipped save for a complete one.
+  const dropped = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    note: "lost words",
+  });
+  expect(dropped).toEqual({
+    status: "already",
+    personId: big.personId,
+    noteTruncated: true,
+  });
 });
 
 test("saveSharedProfile keeps the shared URL on a person that has none", async () => {
@@ -1450,7 +1467,7 @@ test("saveSharedProfile keeps the shared URL on a person that has none", async (
     ...linkedin,
     attachToPersonId: personId,
   });
-  expect(attached).toEqual({ status: "attached", personId });
+  expect(attached).toEqual({ status: "attached", personId, noteTruncated: false });
   // Nothing can rebuild a LinkedIn URL from its slug, so dropping it here
   // makes the captured profile unopenable for good.
   expect((await as.query(api.people.getPerson, { id: personId }))?.link).toBe(
@@ -1462,7 +1479,7 @@ test("saveSharedProfile keeps the shared URL on a person that has none", async (
     ...linkedin,
     profileUrl: "https://linkedin.com/in/mai-tran-8a91b2?utm=share",
   });
-  expect(again).toEqual({ status: "already", personId });
+  expect(again).toEqual({ status: "already", personId, noteTruncated: false });
   expect((await as.query(api.people.getPerson, { id: personId }))?.link).toBe(
     "https://www.linkedin.com/in/mai-tran-8a91b2",
   );
@@ -1477,7 +1494,7 @@ test("saveSharedProfile gives a re-shared person the URL they were saved without
   });
 
   const result = await as.mutation(api.people.saveSharedProfile, sharedProfile);
-  expect(result).toEqual({ status: "already", personId });
+  expect(result).toEqual({ status: "already", personId, noteTruncated: false });
   expect((await as.query(api.people.getPerson, { id: personId }))?.link).toBe(
     "https://instagram.com/mai.makes",
   );
@@ -1569,7 +1586,7 @@ test("saveSharedProfile heals a drifted searchText on a bare re-share", async ()
   const before = await t.run((ctx) => ctx.db.get("people", created.personId));
 
   const again = await as.mutation(api.people.saveSharedProfile, sharedProfile);
-  expect(again).toEqual({ status: "already", personId: created.personId });
+  expect(again).toEqual({ status: "already", personId: created.personId, noteTruncated: false });
   const person = await t.run((ctx) => ctx.db.get("people", created.personId));
   expect(person?.searchText).toContain("mai.makes");
   // A heal is not an edit: recency stays put.
@@ -1634,7 +1651,7 @@ test("addPerson makes its contact handles dedup-visible to saveSharedProfile", a
   });
 
   const result = await as.mutation(api.people.saveSharedProfile, sharedProfile);
-  expect(result).toEqual({ status: "already", personId });
+  expect(result).toEqual({ status: "already", personId, noteTruncated: false });
 });
 
 test("editPerson rewrites the handle index in both directions", async () => {
@@ -1665,7 +1682,7 @@ test("editPerson rewrites the handle index in both directions", async () => {
     profileUrl: "https://linkedin.com/in/mai-tran-8a91b2",
     name: "Mai Tran",
   });
-  expect(dedup).toEqual({ status: "already", personId });
+  expect(dedup).toEqual({ status: "already", personId, noteTruncated: false });
 });
 
 test("deletePerson frees the handle for a later share", async () => {
@@ -1732,7 +1749,7 @@ test("backfillPersonHandles indexes handles written before the index existed", a
 
   expect(await drainPersonHandlesBackfill(t)).toBe(1);
   const shared = await as.mutation(api.people.saveSharedProfile, sharedProfile);
-  expect(shared).toEqual({ status: "already", personId: legacyId });
+  expect(shared).toEqual({ status: "already", personId: legacyId, noteTruncated: false });
 
   // Idempotent: a second run has nothing left to index.
   expect(await drainPersonHandlesBackfill(t)).toBe(0);

@@ -246,17 +246,20 @@ async function deletePersonHandles(
 // A re-share must never discard what the user typed, so a new note joins the
 // person's context instead of replacing it. Clamped rather than refused at
 // the cap: the drain replays a queued note long after the sheet closed, so
-// an overflow cannot ask the user and must not strand the capture.
+// an overflow cannot ask the user and must not strand the capture. The
+// caller is told when the cap cut the note, so a drain never mistakes a
+// clipped save for a complete one.
 function appendContext(
   existing: string | undefined,
   note: string | undefined,
-): string | undefined {
+): { context: string | undefined; noteTruncated: boolean } {
   if (note === undefined) {
-    return existing;
+    return { context: existing, noteTruncated: false };
   }
   const next =
     existing === undefined || existing === "" ? note : `${existing}\n${note}`;
-  return next.slice(0, MAX_CONTEXT_LENGTH);
+  const context = next.slice(0, MAX_CONTEXT_LENGTH);
+  return { context, noteTruncated: context.length < next.length };
 }
 
 // The shared URL is the only pointer back to the profile -- a LinkedIn slug
@@ -784,6 +787,9 @@ export const saveSharedProfile = mutation({
       v.literal("attached"),
     ),
     personId: v.id("people"),
+    // True when the context cap cut the note: the capture landed, but the
+    // drain should surface the loss instead of reporting a complete save.
+    noteTruncated: v.boolean(),
   }),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
@@ -826,7 +832,7 @@ export const saveSharedProfile = mutation({
       // Handle identity beats the attach target: this account provably
       // belongs to this person, however stale the caller's mirror is.
       const fields: Partial<Doc<"people">> = {};
-      const context = appendContext(owner.context, note);
+      const { context, noteTruncated } = appendContext(owner.context, note);
       if (context !== owner.context) {
         fields.context = context;
       }
@@ -849,7 +855,7 @@ export const saveSharedProfile = mutation({
           await ctx.db.patch("people", owner._id, { searchText });
         }
       }
-      return { status: "already" as const, personId: owner._id };
+      return { status: "already" as const, personId: owner._id, noteTruncated };
     }
 
     if (args.attachToPersonId !== undefined) {
@@ -869,8 +875,12 @@ export const saveSharedProfile = mutation({
         // resolve it, so the capture falls through to create rather than
         // strand the queued item; the user can merge the twins later.
         if (held === undefined || handleIndexKeys(held).valueKey === valueKey) {
+          const { context, noteTruncated } = appendContext(
+            target.context,
+            note,
+          );
           const fields: Partial<Doc<"people">> = {
-            context: appendContext(target.context, note),
+            context,
             ...linkBackfill(target, profileUrl),
           };
           if (held === undefined) {
@@ -892,7 +902,11 @@ export const saveSharedProfile = mutation({
           await ctx.scheduler.runAfter(0, internal.people.embed, {
             personId: target._id,
           });
-          return { status: "attached" as const, personId: target._id };
+          return {
+            status: "attached" as const,
+            personId: target._id,
+            noteTruncated,
+          };
         }
       }
     }
@@ -900,7 +914,7 @@ export const saveSharedProfile = mutation({
     const contactHandles = [{ platform, value }];
     // Through appendContext even with nothing to append to, so the clamp
     // policy lives in exactly one place.
-    const context = appendContext(undefined, note);
+    const { context, noteTruncated } = appendContext(undefined, note);
     const personId = await ctx.db.insert("people", {
       userId,
       name,
@@ -915,7 +929,7 @@ export const saveSharedProfile = mutation({
     });
     await insertPersonHandles(ctx, userId, personId, contactHandles);
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
-    return { status: "created" as const, personId };
+    return { status: "created" as const, personId, noteTruncated };
   },
 });
 

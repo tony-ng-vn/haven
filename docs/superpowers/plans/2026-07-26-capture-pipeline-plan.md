@@ -119,7 +119,7 @@ All additive; nothing existing changes shape.
   - The stored handle value has its leading `@` stripped so display and identity key share one shape.
   - Attaching a character-identical handle is an append-note no-op rather than an error.
   - An attach target already holding a different handle on that platform falls back to `created`: the drain replays the capture with nobody present to resolve the conflict, so refusing would strand it.
-  - An over-cap note is clamped to what fits rather than refused, for the same reason; the existing context always survives whole.
+  - An over-cap note is clamped to what fits rather than refused, for the same reason; the existing context always survives whole, and the return carries `noteTruncated` so the drain surfaces what was cut instead of reporting a complete save.
   - A bare re-share recomputes `searchText` even when nothing else changed, healing rows written under an older formula.
   - LinkedIn country hosts (`vn.`/`uk.`/`de.`) and `/mwlite/in/` profile paths are accepted; a percent-encoded slash inside a handle segment is rejected.
   - A post URL under a handle (`x.com/<handle>/status/<id>`, `instagram.com/<user>/p/<code>`) is content, not the profile; deeper profile tabs (`/tagged`, `/in/<slug>/details`) still identify the person.
