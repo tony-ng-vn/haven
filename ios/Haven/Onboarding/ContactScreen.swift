@@ -40,7 +40,8 @@ struct ContactScreen: View {
                     isSaving: model.isSaving,
                     canContinue: chosen != nil && connecting == nil,
                     onContinue: commit,
-                    onSkip: { model.skip(.contact) }
+                    onSkip: { model.skip(.contact) },
+                    canSkip: connecting == nil
                 )
             }
         )
@@ -164,12 +165,16 @@ struct ContactScreen: View {
         } catch ContactConnectError.cancelled {
             // Nothing to report: backing out of the provider's page is a choice.
         } catch {
-            connectFailure = "\(platform.title) did not connect. Try again, or use another way."
+            // Not a dead end. A platform that will not tell us who you are there
+            // is a reason to ask you instead, and it is the same panel the
+            // no-handle case opens.
+            connectFailure = "\(platform.title) did not connect. Fill it in here instead."
+            degrade(platform, to: model.card?.name ?? "you")
         }
     }
 
     private func finish(_ platform: ContactPlatform, _ account: ConnectedAccount) {
-        guard case .authorize(_, let provesItsHandle, let fallback) = platform.method else { return }
+        guard case .authorize(_, let provesItsHandle, _) = platform.method else { return }
 
         // Whether a username in the payload IS the handle is a fact about the
         // platform, not about whether one happened to arrive. LinkedIn's
@@ -181,8 +186,14 @@ struct ContactScreen: View {
             entry = nil
             return
         }
+        degrade(platform, to: account.fullName.isEmpty ? (model.card?.name ?? "you") : account.fullName)
+    }
 
-        let name = account.fullName.isEmpty ? (model.card?.name ?? "you") : account.fullName
+    /// Opens the platform's panel, prefilled with whatever a first guess can be
+    /// made from. The one landing for both a payload without a handle and an
+    /// authorization that never got there.
+    private func degrade(_ platform: ContactPlatform, to name: String) {
+        guard case .authorize(_, _, let fallback) = platform.method else { return }
         let panel = fallback(name)
         entryText = panel.guess(from: name)
         entry = panel

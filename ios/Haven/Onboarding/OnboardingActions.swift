@@ -13,6 +13,10 @@ struct OnboardingActions: View {
     let onContinue: () -> Void
     /// Nil on the one question that has to be answered.
     var onSkip: (() -> Void)?
+    /// Off while something is in flight that would land after the skip. Passing
+    /// on a question while a browser round trip is still running would leave the
+    /// answer arriving on a screen nobody is looking at.
+    var canSkip = true
 
     var body: some View {
         VStack(spacing: 8) {
@@ -26,7 +30,7 @@ struct OnboardingActions: View {
                 .disabled(!canContinue)
             if let onSkip {
                 GhostButton(title: "Skip for now", action: onSkip)
-                    .disabled(isSaving)
+                    .disabled(isSaving || !canSkip)
             }
         }
         .havenAnimation(HavenMotion.screen, value: failure)
