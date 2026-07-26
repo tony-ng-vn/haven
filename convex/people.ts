@@ -857,35 +857,36 @@ export const saveSharedProfile = mutation({
         const held = handles.find(
           (handle) => handleIndexKeys(handle).platform === platform,
         );
-        if (held !== undefined && handleIndexKeys(held).valueKey !== valueKey) {
-          // Ambiguous identity is refused; the sheet sends the user to the
-          // person editor instead of guessing which account is current.
-          throw new Error("Keep one handle per platform");
-        }
-        const fields: Partial<Doc<"people">> = {
-          context: appendContext(target.context, note),
-          ...linkFields(target, profileUrl),
-        };
-        if (held === undefined) {
-          fields.contactHandles = validateContactHandles([
-            ...handles,
+        // A target already holding a different account on this platform means
+        // the mirror was stale. The drain replays this with nobody present to
+        // resolve it, so the capture falls through to create rather than
+        // strand the queued item; the user can merge the twins later.
+        if (held === undefined || handleIndexKeys(held).valueKey === valueKey) {
+          const fields: Partial<Doc<"people">> = {
+            context: appendContext(target.context, note),
+            ...linkFields(target, profileUrl),
+          };
+          if (held === undefined) {
+            fields.contactHandles = validateContactHandles([
+              ...handles,
+              { platform, value },
+            ]);
+          }
+          await ctx.db.patch("people", target._id, {
+            ...fields,
+            searchText: personSearchText({ ...target, ...fields }),
+            updatedAt: Date.now(),
+          });
+          // Inserted even when the array already held this handle: that only
+          // happens for a person written before this index existed.
+          await insertPersonHandles(ctx, userId, target._id, [
             { platform, value },
           ]);
+          await ctx.scheduler.runAfter(0, internal.people.embed, {
+            personId: target._id,
+          });
+          return { status: "attached" as const, personId: target._id };
         }
-        await ctx.db.patch("people", target._id, {
-          ...fields,
-          searchText: personSearchText({ ...target, ...fields }),
-          updatedAt: Date.now(),
-        });
-        // Inserted even when the array already held this handle: that only
-        // happens for a person written before this index existed.
-        await insertPersonHandles(ctx, userId, target._id, [
-          { platform, value },
-        ]);
-        await ctx.scheduler.runAfter(0, internal.people.embed, {
-          personId: target._id,
-        });
-        return { status: "attached" as const, personId: target._id };
       }
     }
 

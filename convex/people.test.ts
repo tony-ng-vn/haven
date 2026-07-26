@@ -1272,7 +1272,7 @@ test("saveSharedProfile attaches a second platform to the person the user picked
   expect(dedup).toEqual({ status: "already", personId });
 });
 
-test("saveSharedProfile refuses to attach a second handle on a platform the person already has", async () => {
+test("saveSharedProfile creates a new person when the attach target holds another handle on that platform", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   const personId = await as.mutation(api.people.addPerson, {
@@ -1280,18 +1280,26 @@ test("saveSharedProfile refuses to attach a second handle on a platform the pers
     contactHandles: [{ platform: "instagram", value: "mai.makes" }],
   });
 
-  await expect(
-    as.mutation(api.people.saveSharedProfile, {
-      ...sharedProfile,
-      handleValue: "mai.ceramics",
-      profileUrl: "https://instagram.com/mai.ceramics",
-      attachToPersonId: personId,
-    }),
-  ).rejects.toThrow("Keep one handle per platform");
+  // The drain replays this with nobody present to resolve the conflict, so
+  // refusing would strand the capture; it lands as its own person instead.
+  const result = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    handleValue: "mai.ceramics",
+    profileUrl: "https://instagram.com/mai.ceramics",
+    attachToPersonId: personId,
+  });
+  expect(result.status).toBe("created");
+  expect(result.personId).not.toBe(personId);
 
-  const person = await as.query(api.people.getPerson, { id: personId });
-  expect(person?.contactHandles).toEqual([
+  const target = await as.query(api.people.getPerson, { id: personId });
+  expect(target?.contactHandles).toEqual([
     { platform: "instagram", value: "mai.makes" },
+  ]);
+  const created = await as.query(api.people.getPerson, {
+    id: result.personId,
+  });
+  expect(created?.contactHandles).toEqual([
+    { platform: "instagram", value: "mai.ceramics" },
   ]);
 });
 
@@ -1374,15 +1382,16 @@ test("saveSharedProfile attaches onto a handle whose stored platform was never n
   expect(person?.context).toBe("met at the ceramics market");
   expect(person?.contactHandles).toHaveLength(1);
 
-  // A genuinely different account on that platform is still refused.
-  await expect(
-    as.mutation(api.people.saveSharedProfile, {
-      ...sharedProfile,
-      handleValue: "mai.ceramics",
-      profileUrl: "https://instagram.com/mai.ceramics",
-      attachToPersonId: personId,
-    }),
-  ).rejects.toThrow("Keep one handle per platform");
+  // A genuinely different account on that platform lands as its own person
+  // rather than failing the queued capture.
+  const second = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    handleValue: "mai.ceramics",
+    profileUrl: "https://instagram.com/mai.ceramics",
+    attachToPersonId: personId,
+  });
+  expect(second.status).toBe("created");
+  expect(second.personId).not.toBe(personId);
 });
 
 test("saveSharedProfile keeps the shared URL on a person that has none", async () => {
