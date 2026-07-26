@@ -809,7 +809,7 @@ export const saveSharedProfile = mutation({
 
     const indexed = await ctx.db
       .query("personHandles")
-      .withIndex("by_user_platform_value", (q) =>
+      .withIndex("by_user_and_platform_and_valueKey", (q) =>
         q
           .eq("userId", userId)
           .eq("platform", platform)

@@ -97,7 +97,7 @@ export default defineSchema({
     platform: v.string(),
     valueKey: v.string(),
   })
-    .index("by_user_platform_value", ["userId", "platform", "valueKey"])
+    .index("by_user_and_platform_and_valueKey", ["userId", "platform", "valueKey"])
     .index("by_person", ["personId"]),
   // A future mutual-link flow should create one row only after both Haven users
   // have explicitly connected. Each side binds the relationship to their own

@@ -46,7 +46,7 @@ The fix is a small lookup table written in the same mutation as the array, so th
 
 ```
 personHandles: { userId, personId, platform, valueKey }
-  .index("by_user_platform_value", ["userId", "platform", "valueKey"])
+  .index("by_user_and_platform_and_valueKey", ["userId", "platform", "valueKey"])
   .index("by_person", ["personId"])
 ```
 
