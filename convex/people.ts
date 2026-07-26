@@ -841,6 +841,14 @@ export const saveSharedProfile = mutation({
         await ctx.scheduler.runAfter(0, internal.people.embed, {
           personId: owner._id,
         });
+      } else {
+        // Nothing changed, but a formula change since the row was written can
+        // leave searchText stale; the re-share is the one moment the row is
+        // in hand to heal it. A heal is not an edit: updatedAt stays put.
+        const searchText = personSearchText(owner);
+        if (searchText !== owner.searchText) {
+          await ctx.db.patch("people", owner._id, { searchText });
+        }
       }
       return { status: "already" as const, personId: owner._id };
     }

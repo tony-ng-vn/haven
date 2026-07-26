@@ -1536,6 +1536,28 @@ test("saveSharedProfile keeps the handle index scoped to one user", async () => 
   ).toBe("sat next to me on the flight");
 });
 
+test("saveSharedProfile heals a drifted searchText on a bare re-share", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const created = await as.mutation(
+    api.people.saveSharedProfile,
+    sharedProfile,
+  );
+  // A formula change since the row was written leaves searchText stale; the
+  // re-share is the one moment the row is already in hand to heal it.
+  await t.run((ctx) =>
+    ctx.db.patch("people", created.personId, { searchText: "stale" }),
+  );
+  const before = await t.run((ctx) => ctx.db.get("people", created.personId));
+
+  const again = await as.mutation(api.people.saveSharedProfile, sharedProfile);
+  expect(again).toEqual({ status: "already", personId: created.personId });
+  const person = await t.run((ctx) => ctx.db.get("people", created.personId));
+  expect(person?.searchText).toContain("mai.makes");
+  // A heal is not an edit: recency stays put.
+  expect(person?.updatedAt).toBe(before?.updatedAt);
+});
+
 test("saveSharedProfile rejects blank identity fields", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
