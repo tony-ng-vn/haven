@@ -237,7 +237,9 @@ async function deletePersonHandles(
 }
 
 // A re-share must never discard what the user typed, so a new note joins the
-// person's context instead of replacing it.
+// person's context instead of replacing it. Clamped rather than refused at
+// the cap: the drain replays a queued note long after the sheet closed, so
+// an overflow cannot ask the user and must not strand the capture.
 function appendContext(
   existing: string | undefined,
   note: string | undefined,
@@ -247,10 +249,7 @@ function appendContext(
   }
   const next =
     existing === undefined || existing === "" ? note : `${existing}\n${note}`;
-  if (next.length > MAX_CONTEXT_LENGTH) {
-    throw new Error(CONTEXT_TOO_LONG_ERROR);
-  }
-  return next;
+  return next.slice(0, MAX_CONTEXT_LENGTH);
 }
 
 // The shared URL is the only pointer back to the profile -- a LinkedIn slug
@@ -800,11 +799,12 @@ export const saveSharedProfile = mutation({
       throw new Error("Name is required");
     }
     const trimmedNote = args.note?.trim();
+    // Clamped for the same reason appendContext clamps: a queued capture has
+    // nobody left to ask to shorten the note.
     const note =
-      trimmedNote === undefined || trimmedNote === "" ? undefined : trimmedNote;
-    if (note !== undefined && note.length > MAX_CONTEXT_LENGTH) {
-      throw new Error(CONTEXT_TOO_LONG_ERROR);
-    }
+      trimmedNote === undefined || trimmedNote === ""
+        ? undefined
+        : trimmedNote.slice(0, MAX_CONTEXT_LENGTH);
     const profileUrl = args.profileUrl.trim();
 
     const indexed = await ctx.db

@@ -1394,6 +1394,45 @@ test("saveSharedProfile attaches onto a handle whose stored platform was never n
   expect(second.personId).not.toBe(personId);
 });
 
+test("saveSharedProfile clamps an over-cap note instead of failing the capture", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+
+  // 4000 is the context cap. The drain replays a queued note long after the
+  // sheet closed, so an overflow cannot ask the user; the capture keeps what
+  // fits instead of failing forever.
+  const big = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    note: "z".repeat(4200),
+  });
+  expect(big.status).toBe("created");
+  const bigPerson = await as.query(api.people.getPerson, {
+    id: big.personId,
+  });
+  expect(bigPerson?.context).toHaveLength(4000);
+
+  const first = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    handleValue: "mai.ceramics",
+    profileUrl: "https://instagram.com/mai.ceramics",
+    note: "x".repeat(3900),
+  });
+  const again = await as.mutation(api.people.saveSharedProfile, {
+    ...sharedProfile,
+    handleValue: "mai.ceramics",
+    profileUrl: "https://instagram.com/mai.ceramics",
+    note: "y".repeat(300),
+  });
+  expect(again).toEqual({ status: "already", personId: first.personId });
+  const person = await as.query(api.people.getPerson, {
+    id: first.personId,
+  });
+  // The existing context survives whole; the new note keeps what fits.
+  expect(person?.context).toHaveLength(4000);
+  expect(person?.context?.startsWith("x".repeat(10))).toBe(true);
+  expect(person?.context?.endsWith("y")).toBe(true);
+});
+
 test("saveSharedProfile keeps the shared URL on a person that has none", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
@@ -1497,10 +1536,12 @@ test("saveSharedProfile keeps the handle index scoped to one user", async () => 
   ).toBe("sat next to me on the flight");
 });
 
-test("saveSharedProfile rejects blank fields and an over-long appended note", async () => {
+test("saveSharedProfile rejects blank identity fields", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
 
+  // Blanks are programmer errors -- the extension only enqueues parsed
+  // profiles -- so refusing is correct where clamping a note is not.
   await expect(
     as.mutation(api.people.saveSharedProfile, { ...sharedProfile, name: " " }),
   ).rejects.toThrow("Name is required");
@@ -1517,23 +1558,6 @@ test("saveSharedProfile rejects blank fields and an over-long appended note", as
       handleValue: " @ ",
     }),
   ).rejects.toThrow("A handle cannot be blank");
-  await expect(
-    as.mutation(api.people.saveSharedProfile, {
-      ...sharedProfile,
-      note: "x".repeat(4001),
-    }),
-  ).rejects.toThrow("Context is too long");
-
-  const saved = await as.mutation(api.people.saveSharedProfile, {
-    ...sharedProfile,
-    note: "x".repeat(4000),
-  });
-  // The append is capped on the combined length, not the typed one.
-  await expect(
-    as.mutation(api.people.saveSharedProfile, { ...sharedProfile, note: "y" }),
-  ).rejects.toThrow("Context is too long");
-  const person = await t.run((ctx) => ctx.db.get("people", saved.personId));
-  expect(person?.context).toHaveLength(4000);
 });
 
 test("saveSharedProfile rejects an unauthenticated caller", async () => {
