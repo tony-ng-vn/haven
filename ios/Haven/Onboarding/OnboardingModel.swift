@@ -257,20 +257,26 @@ final class OnboardingModel: ObservableObject {
         defer { committing = false }
         failure = nil
         isSaving = true
-        var saved: MyCard?
-        do {
-            let value: MyCard = try await convex.mutation(
-                "profiles:updateMyProfile",
-                with: fields
-            )
-            saved = value
-        } catch {
-            failure = "That did not save. Check your connection and try again."
+        let write = Task { () throws -> MyCard in
+            try await convex.mutation("profiles:updateMyProfile", with: fields)
         }
+        // Bounded for the same reason the read is: a write with no network sits
+        // in the client's reconnect loop instead of failing, and a Continue
+        // button that spins forever is worse than one that says what happened.
+        // The wait is what ends, not the write -- if it lands late, the next
+        // attempt overwrites it with the same values.
+        let saved = await write.value(within: .seconds(Self.networkDeadline))
         isSaving = false
-        guard let saved else { return }
+        guard let saved else {
+            failure = "That did not save. Check your connection and try again."
+            return
+        }
         await commit(saved)
     }
+
+    /// Long enough for a slow connection, short enough that a dead one does not
+    /// hold the screen.
+    private static let networkDeadline: TimeInterval = 12
 
     private func loadCard() {
         cancellable = convex
@@ -280,9 +286,18 @@ final class OnboardingModel: ObservableObject {
             // subscription would just add a second, later source that can move
             // someone off the question they are in the middle of answering.
             .first()
+            // The Convex client reconnects rather than failing, so a read with
+            // no network does not error -- it waits. Nothing else would ever end
+            // that wait, and an onboarding that opens on a spinner forever is
+            // the one outcome with no way out of it.
+            .timeout(.seconds(Self.networkDeadline), scheduler: DispatchQueue.main)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] completion in
-                if case .failure = completion { self?.load = .unreachable }
+            .sink { [weak self] _ in
+                // Any ending counts, not just a failure: a timeout finishes the
+                // stream without a value, so still being in `.loading` here is
+                // what "we never heard back" looks like.
+                guard let self, self.load == .loading else { return }
+                self.load = .unreachable
             } receiveValue: { [weak self] card in
                 guard let self else { return }
                 self.card = card
