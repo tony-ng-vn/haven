@@ -29,9 +29,13 @@ packages:
     exactVersion: "0.1.0"
   # Phone numbers are only worth collecting if they are real ones, and knowing
   # whether +84 90 000 0000 is real means carrying libphonenumber's rules.
+  #
+  # This is the PhoneNumberKit org's repository and the 5.x line, not
+  # marmelroy's 4.x: ClerkKitUI already depends on exactly that, and asking for
+  # any other one makes the dependency graph unsolvable.
   PhoneNumberKit:
-    url: https://github.com/marmelroy/PhoneNumberKit.git
-    from: "4.0.0"
+    url: https://github.com/PhoneNumberKit/PhoneNumberKit
+    from: "5.0.0"
 targets:
   Haven:
     type: application
