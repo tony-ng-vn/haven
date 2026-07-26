@@ -27,6 +27,11 @@ packages:
   ClerkConvex:
     url: https://github.com/clerk/clerk-convex-swift
     exactVersion: "0.1.0"
+  # Phone numbers are only worth collecting if they are real ones, and knowing
+  # whether +84 90 000 0000 is real means carrying libphonenumber's rules.
+  PhoneNumberKit:
+    url: https://github.com/marmelroy/PhoneNumberKit.git
+    from: "4.0.0"
 targets:
   Haven:
     type: application
@@ -42,6 +47,8 @@ targets:
         product: ClerkKitUI
       - package: ClerkConvex
         product: ClerkConvex
+      - package: PhoneNumberKit
+        product: PhoneNumberKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.inhavens.haven
