@@ -118,8 +118,15 @@ Compiling and passing tests says nothing about whether something looks right, so
 - A commit publishes the new card first and the next question a beat later, so the star the person just lit is actually on screen before the next question replaces it.
 - Skipping is remembered on the device, not on the card. The server has no field for "asked and declined", and adding one would make a skipped city indistinguishable from one nobody has got round to asking for. The store is keyed by user, so a second account on the same phone starts clean.
 - `CityCompleter` wraps `MKLocalSearchCompleter` for the typeahead and resolves the chosen completion with `MKLocalSearch`, because a completion is two display strings while the card stores a real locality, admin area and country. A city MapKit does not know is still accepted as typed text; being unknown to MapKit is not a reason to be told to skip the question.
+- Every social row on the contact question starts the same way, by authorizing, and no row ever advertises a paste field. What comes back differs per platform, so the flow degrades in steps and each step only appears once the one above it falls short: X sends the username and nothing else is asked, LinkedIn proves the person but never sends the profile address so its slug is a guess to confirm, and Instagram has no personal-account API so a personal account degrades to pasting a link. `ContactValue` holds those rules and is where they are tested.
+- `ContactConnector` links an external account with `createExternalAccount` followed by `reauthorize`. That pairing is the SDK's own: the first call makes a pending account carrying the provider's authorization URL, and the second opens it in a browser and waits. This answers the milestone 4 spike in `../phase1-build-plan.md` -- the iOS surface is complete and the hosted-web fallback is not needed.
 
-Built so far: screen 0 (welcome), screen 1 (name), screen 2 (location). Contact and the card reveal are next; until they exist, a person through the first two falls through to the Phase 0 probe.
+Built so far: screens 0 to 3 (welcome, name, location, contact). The card reveal is next; until it exists, a person through the questions falls through to the Phase 0 probe.
+
+Not yet built, and named here so it is a decision rather than a gap:
+
+- The profile photo import. Every successful authorization returns an avatar URL, which `ConnectedAccount` carries, but nothing downloads it into Convex storage yet. That needs an upload URL on `profiles` alongside the one `captures` already has.
+- Brand glyphs on the contact rows. The rows are text only; the marks are third-party trademarks with their own usage rules, and picking them is its own piece of work.
 
 ## Architecture notes
 

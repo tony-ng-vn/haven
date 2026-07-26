@@ -35,9 +35,11 @@ struct OnboardingFlow: View {
             NameScreen(model: model)
         } else if model.step == .location {
             LocationScreen(model: model)
+        } else if model.step == .contact {
+            ContactScreen(model: model)
         } else {
-            // Question 3 and the card reveal are next. Until they land, a person
-            // who is through the first two goes on to what there is.
+            // The card reveal is next. Until it lands, a person who is through
+            // the questions goes on to what there is.
             ProfileProbeView()
         }
     }
