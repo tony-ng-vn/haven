@@ -56,7 +56,7 @@ It is also exactly what the Phase 4 connect flow will need to answer "is this pe
 
 Rules that keep the index honest:
 
-- **Every write path that touches `contactHandles` maintains `personHandles` in the same transaction**: `addPerson` inserts rows, `editPerson` diffs the replaced array (delete removed rows, insert added ones), and `deletePerson` deletes the person's rows. Missing the delete paths would leave ghost handles that resurrect deleted people in lookups.
+- **Every write path that touches `contactHandles` maintains `personHandles` in the same transaction**: `addPerson` inserts rows, `editPerson` rewrites the person's rows wholesale on array replace (delete all, reinsert from the new array - the simplest correct move under the 8-handle cap), and `deletePerson` deletes the person's rows. Missing the delete paths would leave ghost handles that resurrect deleted people in lookups.
 - **Handle identity beats user choice.** If a save arrives with `attachToPersonId` but the `(platform, valueKey)` already belongs to some person, the mutation returns `{ status: "already" }` with that existing person - it never attaches the same account to a second person. The sheet surfaces this as "you already know them".
 - **No global uniqueness constraint is imposed on the legacy mutations.** `editPerson` can technically write a handle that exists on another person (free-form platforms make strict uniqueness debatable); the lookup uses `.first()` on the index and tolerates it. Tightening this later is cheap; breaking shipped mutations now is not.
 
@@ -105,12 +105,14 @@ Instagram / LinkedIn / X          Photos
 
 All additive; nothing existing changes shape.
 
-- **`personHandles` table** plus the two indexes above, maintained by `addPerson`, `editPerson` (diff on array replace), `deletePerson` (row cleanup), and the new save below, always in the same transaction as the array.
+- **`personHandles` table** plus the two indexes above, maintained by `addPerson`, `editPerson` (full rewrite on array replace), `deletePerson` (row cleanup), and the new save below, always in the same transaction as the array.
 - **`saveSharedProfile` mutation**: takes `{ platform, handleValue, profileUrl, name, note?, attachToPersonId? }`.
   Dedups on `(userId, platform, valueKey)` and returns `{ status: "created" | "already" | "attached", personId }` with the reconciliation semantics above (handle identity beats attach; notes append on "already"; deleted attach target falls back to create).
   Recomputes `searchText` on every outcome - including attach, since a new handle joins the keyword haystack.
 - **Slug and handle parsing** as pure functions in `src/lib.ts` (where `deriveProfileUrl` and the other URL helpers already live), unit-tested without Convex: `parseProfileUrl(url)` -> `{ platform, handle }`, and `nameGuessFromSlug(slug)` -> `"Mai Tran"` for `mai-tran-8a91b2`.
-  LinkedIn slugs usually carry the person's name, which is what makes the sheet's name field prefill useful rather than empty; the guess is ASCII-only by construction (slugs strip diacritics), so the user restores the accented spelling from the plain-ASCII guess when confirming - one more reason the name field is a confirmation, not automation.
+  LinkedIn slugs usually carry the person's name, which is what makes the sheet's name field prefill useful rather than empty; LinkedIn percent-encodes accented slugs and the parser decodes them, so a Vietnamese slug keeps its accents in the guess; the name field stays a confirmation rather than automation because slugs also carry id junk and abbreviations.
+- **`backfillPersonHandles` internal mutation**, cursor-paged (`{ patched, isDone, cursor }`): people saved since `contactHandles` shipped have arrays but no index rows, and an unindexed person is a corrupted identity, so "done" must actually mean done. Operator procedure: `npx convex run people:backfillPersonHandles '{}'`, then re-run with the returned cursor until `isDone`.
+- **Shipped semantics beyond the letter of this plan** (each pinned by a test): `saveSharedProfile` backfills `link` from the shared URL on the "already"/"attached" paths when the person has none and never overwrites an existing link; the stored handle value has its leading `@` stripped so display and identity key share one shape; attaching a character-identical handle is an append-note no-op rather than an error; LinkedIn country hosts (`vn.`/`uk.`/`de.`) and `/mwlite/in/` profile paths are accepted; a percent-encoded slash inside a handle segment is rejected.
 - **Drain is one mutation call per queued item, not a batch.** Queues are small (a handful of captures per event), and a batch mutation is all-or-nothing in Convex unless each item runs as a caught subtransaction - complexity with no payoff at this scale. If batching ever matters, Convex 1.41 subtransactions (`ctx.runMutation` with caught per-item rollback) are the upgrade path.
 - **Orphan-sweep note**: nothing new here; screenshots drain through the existing `captures` path and its blob handling, and no new storage-id field is introduced by this plan.
 
@@ -123,7 +125,7 @@ All additive; nothing existing changes shape.
 
 ## Milestones
 
-1. **Backend**: `personHandles`, `saveSharedProfile`, URL/slug parsing, batch drain. Done when vitest and the convex tsc check are green and a shared URL round-trips into a searchable person.
+1. **Backend**: `personHandles`, `saveSharedProfile`, URL/slug parsing, and the paged `backfillPersonHandles` migration (draining the queue is a client-side loop per the decision above, so there is no drain function to build). Done when vitest and the convex tsc check are green and a shared URL round-trips into a searchable person.
 2. **Share extension, happy path**: share a profile from each of the three apps, saves offline, drains into Convex; name prefill wherever the payload allows it (LinkedIn slugs at minimum - the other two depend on the payload check in open question 1). Done when a capture made in airplane mode appears in the directory after the app is opened online.
 3. **Existing-person path**: mirror, "add to existing", idempotent re-share. Done when sharing the same profile twice creates one person, and a second platform lands on the person the user picked.
 4. **Onboarding walkthrough**: the pin guide plus practice capture. Done when a fresh install ends with Haven pinned in the user's share sheet and one real person saved.
