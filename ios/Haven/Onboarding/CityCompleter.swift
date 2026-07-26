@@ -30,6 +30,14 @@ final class CityCompleter: NSObject, ObservableObject, MKLocalSearchCompleterDel
         // Places, not businesses. Without this a search for a city comes back
         // full of the coffee shops inside it.
         completer.resultTypes = .address
+        if #available(iOS 18.0, *) {
+            // Cities, and only cities. Without it "San Francisco" also offers
+            // San Francisco County, San Francisco Bay and a postal code, none
+            // of which is an answer to "where are you based". Counties are
+            // subAdministrativeArea and bays are not address components at all,
+            // so including locality alone drops both.
+            completer.addressFilter = MKAddressFilter(including: [.locality])
+        }
     }
 
     func search(_ text: String) {
@@ -68,17 +76,24 @@ final class CityCompleter: NSObject, ObservableObject, MKLocalSearchCompleterDel
     }
 
     func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        // MapKit can offer the same place twice, so the list is deduplicated on
+        // the way in: two identical rows read as a bug, and identical ids would
+        // break the list's identity besides.
+        var seen: Set<String> = []
         suggestions = completer.results
             .filter(Self.looksLikeAPlace)
-            .prefix(Self.maximumSuggestions)
-            .map {
-                CitySuggestion(
-                    id: "\($0.title)|\($0.subtitle)",
-                    title: $0.title,
-                    subtitle: $0.subtitle,
-                    completion: $0
+            .compactMap { result in
+                let id = "\(result.title)|\(result.subtitle)"
+                guard seen.insert(id).inserted else { return nil }
+                return CitySuggestion(
+                    id: id,
+                    title: result.title,
+                    subtitle: result.subtitle,
+                    completion: result
                 )
             }
+            .prefix(Self.maximumSuggestions)
+            .map { $0 }
     }
 
     func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
@@ -88,12 +103,13 @@ final class CityCompleter: NSObject, ObservableObject, MKLocalSearchCompleterDel
         suggestions = []
     }
 
-    /// Keeps street addresses out of a screen that promises never to ask for
-    /// one. A house number or a postcode puts a digit in the title, and no city
-    /// name does.
+    /// The iOS 17 stand-in for `addressFilter`, which does not exist there. A
+    /// house number or a postcode puts a digit in the title and no city name
+    /// does, so this keeps street addresses out; it cannot tell a county from a
+    /// city, which is the part only the real filter gets right.
     ///
-    /// A heuristic, not a filter: iOS 18's `MKAddressFilter` is the real answer
-    /// and should replace this once the deployment target passes 17.
+    /// Delete this, and the `#available` above it, if the deployment target ever
+    /// moves past 17.
     private static func looksLikeAPlace(_ completion: MKLocalSearchCompletion) -> Bool {
         !completion.title.contains(where: \.isNumber)
     }

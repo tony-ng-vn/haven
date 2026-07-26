@@ -87,8 +87,14 @@ struct LocationScreen: View {
         query = suggestion.title
         completer.clear()
         Task {
-            let resolved = await completer.resolve(suggestion)
-            chosen = resolved ?? CityInput(name: suggestion.title)
+            let city = await completer.resolve(suggestion) ?? CityInput(name: suggestion.title)
+            chosen = city
+            // The field shows the city that will be stored, not the row that was
+            // tapped. MapKit labels a row "San Francisco, CA" and answers "SF"
+            // with the same place, and the card carries neither of those --
+            // it carries the locality, which is what makes two spellings of one
+            // city the same city.
+            query = city.name
         }
     }
 
