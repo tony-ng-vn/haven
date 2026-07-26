@@ -50,9 +50,15 @@ personHandles: { userId, personId, platform, valueKey }
   .index("by_person", ["personId"])
 ```
 
-`valueKey` is the normalized handle (trimmed, lowercased, `@` stripped).
+`valueKey` is the normalized handle (trimmed, lowercased, `@` stripped); normalization is deliberately naive in v1 and can grow per-platform rules later.
 The array stays the display shape on the card; this table is the identity index behind it.
 It is also exactly what the Phase 4 connect flow will need to answer "is this person already someone I know?".
+
+Rules that keep the index honest:
+
+- **Every write path that touches `contactHandles` maintains `personHandles` in the same transaction**: `addPerson` inserts rows, `editPerson` diffs the replaced array (delete removed rows, insert added ones), and `deletePerson` deletes the person's rows. Missing the delete paths would leave ghost handles that resurrect deleted people in lookups.
+- **Handle identity beats user choice.** If a save arrives with `attachToPersonId` but the `(platform, valueKey)` already belongs to some person, the mutation returns `{ status: "already" }` with that existing person - it never attaches the same account to a second person. The sheet surfaces this as "you already know them".
+- **No global uniqueness constraint is imposed on the legacy mutations.** `editPerson` can technically write a handle that exists on another person (free-form platforms make strict uniqueness debatable); the lookup uses `.first()` on the index and tolerates it. Tightening this later is cheap; breaking shipped mutations now is not.
 
 ### 3. The share extension is offline-only: it writes to an App Group queue and reads a local mirror
 
@@ -62,7 +68,11 @@ Why not call Convex directly from the extension: app extensions have much tighte
 
 The non-obvious requirement: because the sheet offers "add to an existing person", the extension needs to *read* the directory, not just write to it.
 So the main app maintains a small local mirror in the App Group container (person id, name, normalized name, handles) that the extension reads.
-The mirror is a cache, never the source of truth; a queued capture referencing a person id is reconciled server-side when it drains.
+The mirror is a cache, never the source of truth, and it can be stale by days if the app has not been opened - which is why the drain defines explicit reconciliation semantics instead of trusting the mirror:
+
+- `attachToPersonId` points at a person deleted since the mirror was written -> create a new person from the captured data instead of failing; the capture is never lost.
+- The handle already exists on some person (a re-share, or a race between queue items) -> `{ status: "already" }` with that person, and **any note the user typed is appended to that person's context** (newline-separated, respecting the length cap) rather than discarded. A re-share never throws away typed input.
+- Screenshots in the queue: the extension copies the image file into the App Group container and does not upload it - the main app's drain uploads the blob (`generateUploadUrl` + PUT) and calls the existing `createCapture`, so the screenshot path inherits the extraction pipeline and its blob handling unchanged, and the extension stays genuinely network-free.
 
 ## Architecture
 
@@ -95,15 +105,14 @@ Instagram / LinkedIn / X          Photos
 
 All additive; nothing existing changes shape.
 
-- **`personHandles` table** plus the two indexes above, written by every path that touches `contactHandles` (`addPerson`, `editPerson`, and the new save below) so the index and the array are always written in one transaction.
+- **`personHandles` table** plus the two indexes above, maintained by `addPerson`, `editPerson` (diff on array replace), `deletePerson` (row cleanup), and the new save below, always in the same transaction as the array.
 - **`saveSharedProfile` mutation**: takes `{ platform, handleValue, profileUrl, name, note?, attachToPersonId? }`.
-  Dedups on `(userId, platform, valueKey)` and returns `{ status, personId }`.
-  With `attachToPersonId` it adds the handle to that person instead of creating one.
-  Writes `searchText` like every other path, so the person is findable by keyword the moment they land.
+  Dedups on `(userId, platform, valueKey)` and returns `{ status: "created" | "already" | "attached", personId }` with the reconciliation semantics above (handle identity beats attach; notes append on "already"; deleted attach target falls back to create).
+  Recomputes `searchText` on every outcome - including attach, since a new handle joins the keyword haystack.
 - **Slug and handle parsing** as pure functions in `src/lib.ts` (where `deriveProfileUrl` and the other URL helpers already live), unit-tested without Convex: `parseProfileUrl(url)` -> `{ platform, handle }`, and `nameGuessFromSlug(slug)` -> `"Mai Tran"` for `mai-tran-8a91b2`.
-  LinkedIn slugs usually carry the person's name, which is what makes the sheet's name field prefill useful rather than empty.
-- **Batch drain mutation** so the main app can flush several queued captures in one round trip, each returning its own status.
-- **Orphan-sweep note**: nothing new here yet; screenshots shared into Haven reuse the existing `captures` path and its blob handling.
+  LinkedIn slugs usually carry the person's name, which is what makes the sheet's name field prefill useful rather than empty; the guess is ASCII-only by construction (slugs strip diacritics), so the user restores the accented spelling from the plain-ASCII guess when confirming - one more reason the name field is a confirmation, not automation.
+- **Drain is one mutation call per queued item, not a batch.** Queues are small (a handful of captures per event), and a batch mutation is all-or-nothing in Convex unless each item runs as a caught subtransaction - complexity with no payoff at this scale. If batching ever matters, Convex 1.41 subtransactions (`ctx.runMutation` with caught per-item rollback) are the upgrade path.
+- **Orphan-sweep note**: nothing new here; screenshots drain through the existing `captures` path and its blob handling, and no new storage-id field is introduced by this plan.
 
 ## iOS work
 
@@ -115,7 +124,7 @@ All additive; nothing existing changes shape.
 ## Milestones
 
 1. **Backend**: `personHandles`, `saveSharedProfile`, URL/slug parsing, batch drain. Done when vitest and the convex tsc check are green and a shared URL round-trips into a searchable person.
-2. **Share extension, happy path**: share a profile from each of the three apps, name prefilled, saves offline, drains into Convex. Done when a capture made in airplane mode appears in the directory after the app is opened online.
+2. **Share extension, happy path**: share a profile from each of the three apps, saves offline, drains into Convex; name prefill wherever the payload allows it (LinkedIn slugs at minimum - the other two depend on the payload check in open question 1). Done when a capture made in airplane mode appears in the directory after the app is opened online.
 3. **Existing-person path**: mirror, "add to existing", idempotent re-share. Done when sharing the same profile twice creates one person, and a second platform lands on the person the user picked.
 4. **Onboarding walkthrough**: the pin guide plus practice capture. Done when a fresh install ends with Haven pinned in the user's share sheet and one real person saved.
 5. **Enrichment, user-initiated** (later): confirm card on a person, grounded web search only, never fetching the shared profile URL.
