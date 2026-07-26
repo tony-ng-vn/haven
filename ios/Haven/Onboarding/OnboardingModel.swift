@@ -79,6 +79,23 @@ extension CityInput {
     }
 }
 
+/// The one way to be reached that onboarding asks for.
+///
+/// `verified` means the value itself was proven, not merely that an
+/// authorization happened: X hands back the username, so it is verified, while
+/// LinkedIn only proves the person and leaves the address hand-confirmed.
+struct ChosenContact: Equatable {
+    var platform: MyCard.Platform
+    var value: String
+    var verified: Bool
+}
+
+extension ChosenContact {
+    var convexArgument: [String: ConvexEncodable?] {
+        ["platform": platform.rawValue, "value": value, "verified": verified]
+    }
+}
+
 /// The three onboarding questions, in order.
 enum OnboardingStep: Int, CaseIterable {
     case name
@@ -206,6 +223,17 @@ final class OnboardingModel: ObservableObject {
     func saveCity(_ city: CityInput) async {
         guard !city.name.isEmpty else { return }
         await save(["city": city.convexArgument])
+    }
+
+    /// Commits the one way to be reached and lights the third star.
+    ///
+    /// The handle list is sent whole because that is the shape the mutation
+    /// takes, and onboarding collects exactly one. More ways to be reached are
+    /// added later, on the card.
+    func saveContact(_ contact: ChosenContact) async {
+        guard !contact.value.isEmpty else { return }
+        let handles: [ConvexEncodable?] = [contact.convexArgument]
+        await save(["handles": handles, "primaryPlatform": contact.platform.rawValue])
     }
 
     /// Passes on a question. Recorded on the device rather than sent, because
