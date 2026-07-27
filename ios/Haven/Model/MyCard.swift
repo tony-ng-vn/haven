@@ -7,6 +7,10 @@ struct MyCard: Decodable, Equatable {
     let username: String
     var name: String?
     var photoStorageId: String?
+    /// Where the photo actually is. The server resolves it, because a storage
+    /// id is not something a client can fetch. Absent on a card built in a test
+    /// or a preview, which is the same as having no photo.
+    var photoUrl: String?
     var city: City?
     var handles: [Handle]?
     var primaryPlatform: Platform?
@@ -91,6 +95,13 @@ extension MyCard.City {
 }
 
 extension MyCard {
+    /// The photo, ready to hand to a loader. Nil covers both "no photo" and a
+    /// url the server sent that does not parse, because the card shows the same
+    /// thing either way.
+    var photoURL: URL? {
+        photoUrl.flatMap(URL.init(string:))
+    }
+
     /// Which figure stars this card has earned. The slot mapping is fixed in
     /// `StarSlot`, so a field always lights the same star.
     var filledSlots: Set<StarSlot> {

@@ -53,6 +53,37 @@ struct MyCardTests {
         #expect(try decode("null") == nil)
     }
 
+    // A storage id is not something the app can fetch, so the server resolves
+    // it. Without this the photo uploads, the row says it is there, and the
+    // card face never changes.
+    @Test("a photo arrives as a url the app can fetch")
+    func decodesPhotoURL() throws {
+        let card = try #require(
+            try decode(
+                """
+                {
+                  "username": "maya",
+                  "name": "Maya Chen",
+                  "photoStorageId": "kg700xyz",
+                  "photoUrl": "https://example.convex.cloud/api/storage/kg700xyz"
+                }
+                """
+            )
+        )
+
+        #expect(card.photoURL == URL(string: "https://example.convex.cloud/api/storage/kg700xyz"))
+    }
+
+    // Null, not absent: the app has to tell "no photo" from "not loaded yet".
+    @Test("no photo decodes as no url")
+    func decodesMissingPhotoURL() throws {
+        let card = try #require(
+            try decode(#"{ "username": "maya", "photoUrl": null }"#)
+        )
+
+        #expect(card.photoURL == nil)
+    }
+
     @Test("each field lights its own fixed star")
     func filledSlots() {
         #expect(MyCard(username: "maya").filledSlots.isEmpty)
