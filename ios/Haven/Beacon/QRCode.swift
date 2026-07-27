@@ -50,7 +50,9 @@ enum QRCode {
 /// someone is but cannot construct their profile link in the general case, and
 /// a handle is content on the destination rather than the destination itself.
 enum BeaconAddress {
-    static let host = "inhavens.com"
+    /// Read from Config, not written here, so the address a code carries always
+    /// names the site reading the database this build talks to.
+    static var host: String { Config.cardHost }
 
     /// What the code encodes. The scheme is in the QR and not on the screen,
     /// because a camera needs it and a reader does not.
