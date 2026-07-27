@@ -23,6 +23,11 @@ import { checkRateLimit } from "./rateLimit";
 import { normalizeName, personSearchText } from "./nameSearch";
 import { cityInputValidator } from "./profileFields";
 import { contactHandleValidator } from "./peopleFields";
+import {
+  handleDisplayValue,
+  handleIndexKeys,
+  handleValueKey,
+} from "./handleKeys";
 import { requireImageBlob } from "./imageBlobs";
 
 // Bound every list read so the query stays scalable as the table grows.
@@ -184,33 +189,6 @@ function validateContactHandles(
     seen.add(platform);
     return { platform, value };
   });
-}
-
-// The display shape of a shared handle: what renders on the card. In
-// lockstep with handleValueKey below, so handles that dedup alike always
-// render alike.
-function handleDisplayValue(value: string): string {
-  return value.trim().replace(/^@+/, "");
-}
-
-// The identity key behind a handle: the same account shared as "@Mai.Makes"
-// and as "mai.makes" has to resolve to one person. Deliberately naive in v1;
-// per-platform rules can grow here later.
-function handleValueKey(value: string): string {
-  return handleDisplayValue(value).toLowerCase();
-}
-
-// The personHandles shape for one contactHandles entry. Legacy rows can hold
-// an unnormalized platform, so the index row folds it the same way
-// validateContactHandles does rather than trusting what is stored.
-function handleIndexKeys(handle: ContactHandleInput): {
-  platform: string;
-  valueKey: string;
-} {
-  return {
-    platform: handle.platform.trim().toLowerCase(),
-    valueKey: handleValueKey(handle.value),
-  };
 }
 
 async function insertPersonHandles(
