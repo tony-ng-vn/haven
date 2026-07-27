@@ -22,9 +22,8 @@ Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
   - [x] 6. Directory and Search shells, widget promo card, Lock Screen explainer.
   - [x] 7. Beacon screen with real QR and handle claim (flagged off until the web card page exists).
     The QR is dark-on-light rather than inverted: an inverted code reads on an iPhone and not reliably elsewhere, and being scanned by a stranger's phone is the screen's whole job. Still unverified against a non-Apple scanner.
-  - [ ] 8. Lock Screen widget and deep link.
-    Nothing renders it yet, so the widget promo card and the Lock Screen explainer both point at a widget that does not exist.
-  - [ ] 9. Public web card page at `inhavens.com/<handle>` (web repo, parallel track after milestone 3).
+  - [x] 8. Lock Screen widget and deep link. `HavenWidget` target ships with the app.
+  - [x] 9. Public web card page at `inhavens.com/<handle>` (`src/CardPage.tsx`), which is what unblocked the beacon flag.
   - [~] Answer the six open questions in the build plan. None block milestone 1. Question 5 is answered and implemented (2026-07-25): reuse `username` as the one handle, with `claimHandle` alongside `setUsername`. The handle UX question is due before milestone 4.
   - [x] Confirmed `ios/` builds green from a clean checkout, and added the `HavenTests` target. Run `xcodegen generate` in `ios/` first: the `.xcodeproj` is git-ignored and generated from `project.yml`, so a stale local copy can look broken when nothing is wrong.
 - [~] Decide the fate of the orphaned web product surface.
@@ -36,6 +35,7 @@ Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
 ## MVP backlog (in order)
 
 - [~] Phase 2: Directory + manual save + contact detail + notes editor. Local pending queue so capture never fails offline.
+  This is now the critical path, not just the next item: iOS calls only `listPeople`, `searchDirectory`, and `directoryFacets`, so the app cannot create a person or write a note at all. Until it can, waves A and B have nothing to retrieve.
   - [x] Convex backend: paged directory (`listPeople`), manual save with photo, handles, and structured attributes (`addPerson`), partial edit (`editPerson`), delete with blob cleanup.
   - [x] Convex backend for share capture (capture-pipeline plan milestone 1): `personHandles` identity index, `saveSharedProfile` with created/already/attached outcomes, profile URL parsers with the slug name guess, and the paged `backfillPersonHandles` migration (run after deploy, re-run with the cursor until `isDone`).
   - [ ] iOS share extension, App Group queue and mirror, pin-onboarding walkthrough (capture-pipeline plan milestones 2-4).
@@ -47,6 +47,11 @@ Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
   - [x] Convex backend: `searchDirectory` (keyword + chips, accent-folded) and `directoryFacets` (chip values). Run `npx convex run people:backfillSearchText` once after deploy so pre-existing people join the keyword index.
   - [x] iOS search screen wiring.
     Keyword covers name, company, role, city, handles, and the "where we met" context. It will reach further once Phase 2's notes editor gives it more to index.
+  - [x] Network intelligence wave A: `memories` table, one vector per note line, per-memory embeddings, and `semanticSearch` returning the line that matched as `evidence`. Plan: `docs/superpowers/plans/2026-07-27-network-intelligence-plan.md`.
+    Migration run against `brilliant-puma-925` on 2026-07-27: 0 patched, 0 skipped. Correct and empty -- no person has a note yet, because the only note field in the product is the web triage screen and it is skippable.
+  - [x] Network intelligence wave B: `people.ask` over the whole network in one call, direct matches plus bridges with their reasoning, one clarifying question instead of a guess, and a checked-in eval set (`src/askFixtures.ts`, `scripts/eval-ask.ts`).
+  - [ ] Nothing calls `people.ask` yet, and nothing renders `evidence`. iOS search reads `searchDirectory`, which returns neither. Blocked behind Phase 2's notes editor by choice: a question box over a network with no notes has nothing to answer from.
+  - [ ] Run `scripts/eval-ask.ts` against a live key for a real recall number, and measure cost per ask. Both deliberately outside CI.
 - [ ] Phase 4: Connect. Mutual auto-connect between two Haven users.
 - [ ] Phase 5: Polish pass. Haptics, transitions, gesture physics across the app.
 - [ ] Phase 6: Distribution. TestFlight to the waitlist cohort, then App Store.
@@ -70,7 +75,6 @@ UI and feel questions go through SwiftUI previews in Xcode, not the web-oriented
 ## Roadmap (post-MVP, parked)
 
 - [ ] App Clip connect-back: a non-user joins the connection in the moment with one Sign-in-with-Apple tap, no install wall.
-- [ ] Semantic / natural-language search over memories (Convex vector search).
 - [ ] Swipe review queue + voice capture (the upgrade of Refine).
 - [ ] LinkedIn enrichment: paste a profile link, scrape it into searchable data.
 - [ ] Calendar smart-matching: pre-fill "met at X" from connection time + calendar.
