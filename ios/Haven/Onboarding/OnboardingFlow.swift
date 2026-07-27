@@ -6,7 +6,10 @@ import SwiftUI
 struct OnboardingFlow: View {
     @StateObject private var model: OnboardingModel
 
+    private let userId: String
+
     init(userId: String) {
+        self.userId = userId
         _model = StateObject(wrappedValue: OnboardingModel(userId: userId))
     }
 
@@ -41,7 +44,7 @@ struct OnboardingFlow: View {
             // The card reveal belongs here and is milestone 1, judged on a
             // device. Until it lands, a person through the questions goes
             // straight on to the app.
-            HavenTabs()
+            HavenTabs(userId: userId)
         }
     }
 }
