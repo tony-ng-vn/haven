@@ -32,8 +32,13 @@ struct SkyLayout {
     /// leave the bottom third of the band empty and push stars out past it.
     /// Whichever of the width or that band runs out first wins, which is what
     /// keeps the figure inside the space it was given.
+    /// How far down the source the figure actually reaches. `placeMajors` never
+    /// puts a star below this, so it, and not the full height, is what a band
+    /// has to fit.
+    static let figureExtent = 0.62
+
     init(band: CGRect, source: CGSize = CGSize(width: SkyGenerator.width, height: SkyGenerator.height)) {
-        let extent = source.height * 0.62
+        let extent = source.height * Self.figureExtent
         guard source.width > 0, extent > 0, band.width > 0, band.height > 0 else {
             scale = 0
             offset = .zero
