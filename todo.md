@@ -10,17 +10,20 @@ Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
 - [~] Phase 1: Onboarding, card, and the two home screens. Full spec and milestone definitions of done in `phase1-build-plan.md`.
   - [x] Design settled: interactive prototype at `design/onboarding-prototype.html`, decisions ratified in the build plan.
   - [ ] 1. Hero spike: card reveal against hardcoded data, full quality bar. Done when it feels right on a physical device.
-  - [~] 2. Design system: color and type tokens, shared controls, screen skeleton, dust layer, sky renderer ported from `src/sky.ts` with fixed star slots.
+  - [x] 2. Design system: color and type tokens, shared controls, screen skeleton, dust layer, sky renderer ported from `src/sky.ts` with fixed star slots.
     - [x] Sky generator ported to Swift, asserted against vectors dumped from the TypeScript so the app and the future web card page cannot drift apart.
-    - [ ] SwiftUI renderer for it, plus the fixed star-slot mapping (name 0, city 1, contact 2, photo 3, company 4, role 5).
-    - [ ] Colour and type tokens, Field, PrimaryButton, GhostButton, Row, screen skeleton, dust layer.
+    - [x] SwiftUI renderer for it, plus the fixed star-slot mapping (name 0, city 1, contact 2, photo 3, company 4, role 5).
+    - [x] Colour and type tokens, Field, PrimaryButton, GhostButton, Row, screen skeleton, dust layer.
   - [x] 3. Convex schema and functions, test-first, including `claimHandle`.
     Already on main (`updateMyProfile`, `claimHandle` with the suggestion ladder, public `getByHandle`); this checkbox had gone stale.
-  - [ ] 4. Onboarding wired end to end, all four contact paths, with resume and retry.
-  - [ ] 5. My Card / edit with unlit-star states, handle management, photo add.
-  - [ ] 6. Directory and Search shells, widget promo card, Lock Screen explainer.
-  - [ ] 7. Beacon screen with real QR and handle claim (flagged off until the web card page exists).
+  - [x] 4. Onboarding wired end to end, all four contact paths, with resume and retry.
+  - [x] 5. My Card / edit with unlit-star states, handle management, photo add.
+    Photo upload and account deletion still need a signed-in session to exercise; the unsigned simulator cannot.
+  - [x] 6. Directory and Search shells, widget promo card, Lock Screen explainer.
+  - [x] 7. Beacon screen with real QR and handle claim (flagged off until the web card page exists).
+    The QR is dark-on-light rather than inverted: an inverted code reads on an iPhone and not reliably elsewhere, and being scanned by a stranger's phone is the screen's whole job. Still unverified against a non-Apple scanner.
   - [ ] 8. Lock Screen widget and deep link.
+    Nothing renders it yet, so the widget promo card and the Lock Screen explainer both point at a widget that does not exist.
   - [ ] 9. Public web card page at `inhavens.com/<handle>` (web repo, parallel track after milestone 3).
   - [~] Answer the six open questions in the build plan. None block milestone 1. Question 5 is answered and implemented (2026-07-25): reuse `username` as the one handle, with `claimHandle` alongside `setUsername`. The handle UX question is due before milestone 4.
   - [x] Confirmed `ios/` builds green from a clean checkout, and added the `HavenTests` target. Run `xcodegen generate` in `ios/` first: the `.xcodeproj` is git-ignored and generated from `project.yml`, so a stale local copy can look broken when nothing is wrong.
@@ -28,7 +31,7 @@ Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
   Decided 2026-07-25 for `people` and `captures`: promoted, not parked -- `people` is the iOS directory table, extended in place (single-player contacts are standalone owned rows).
   Still open for `loveAlarm` and `sharedNotes`, and for the web UI itself.
   `profiles.username` is settled by question 5 (reused as the one handle).
-- [ ] Housekeeping: pull `main` into the working checkout, then remove the leftover `.worktrees/feat-ios-foundations` worktree and its branch so there is one copy.
+- [x] Housekeeping: pull `main` into the working checkout, then remove the leftover `.worktrees/feat-ios-foundations` worktree and its branch so there is one copy.
 
 ## MVP backlog (in order)
 
@@ -42,7 +45,8 @@ Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
     Adversarial review adds two requirements for that work: every direct `people` insert path (screenshot acceptance included) must maintain `personHandles` in the same transaction, and existing duplicate `(userId, platform, valueKey)` owners must be reconciled before the capture lookup can move from `.first()` to `.unique()`.
 - [~] Phase 3: Search. Filter chips (company / city / role) plus keyword over notes. See the search contract in `mvp-design.md`.
   - [x] Convex backend: `searchDirectory` (keyword + chips, accent-folded) and `directoryFacets` (chip values). Run `npx convex run people:backfillSearchText` once after deploy so pre-existing people join the keyword index.
-  - [ ] iOS search screen wiring.
+  - [x] iOS search screen wiring.
+    Keyword covers name, company, role, city, handles, and the "where we met" context. It will reach further once Phase 2's notes editor gives it more to index.
 - [ ] Phase 4: Connect. Mutual auto-connect between two Haven users.
 - [ ] Phase 5: Polish pass. Haptics, transitions, gesture physics across the app.
 - [ ] Phase 6: Distribution. TestFlight to the waitlist cohort, then App Store.
