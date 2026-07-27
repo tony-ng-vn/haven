@@ -4,10 +4,11 @@
 <dict>
 	<!--
 	  Partial plist: everything else is generated from build settings
-	  (GENERATE_INFOPLIST_FILE merges this file in). This exists for one key
-	  that has no INFOPLIST_KEY_* build-setting form: the launch screen's
-	  background colour. It points at the LaunchBackground colour set, which
-	  is HavenColor.night, so launch paints the exact colour the first frame
+	  (GENERATE_INFOPLIST_FILE merges this file in). This exists for the keys
+	  that have no INFOPLIST_KEY_* build-setting form: the launch screen's
+	  background colour, and the url scheme below.
+	  The launch colour points at the LaunchBackground colour set, which is
+	  HavenColor.night, so launch paints the exact colour the first frame
 	  starts on and the handoff is invisible.
 	-->
 	<key>UILaunchScreen</key>
@@ -15,5 +16,22 @@
 		<key>UIColorName</key>
 		<string>LaunchBackground</string>
 	</dict>
+	<!--
+	  The scheme the Lock Screen widget opens. Declared here or iOS has no
+	  reason to route haven:// to this app, and the widget's tap does nothing
+	  at all. The one url behind it is defined in HavenDeepLink, which both
+	  the app and the widget target compile.
+	-->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.inhavens.haven</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>haven</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
