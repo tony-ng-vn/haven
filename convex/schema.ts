@@ -4,6 +4,7 @@ import {
   cityInputValidator,
   cityValidator,
   handleValidator,
+  onboardingValidator,
   platformValidator,
 } from "./profileFields";
 import { contactHandleValidator } from "./peopleFields";
@@ -97,7 +98,11 @@ export default defineSchema({
     platform: v.string(),
     valueKey: v.string(),
   })
-    .index("by_user_and_platform_and_valueKey", ["userId", "platform", "valueKey"])
+    .index("by_user_and_platform_and_valueKey", [
+      "userId",
+      "platform",
+      "valueKey",
+    ])
     .index("by_person", ["personId"]),
   // A future mutual-link flow should create one row only after both Haven users
   // have explicitly connected. Each side binds the relationship to their own
@@ -184,6 +189,12 @@ export default defineSchema({
     // Edit-only fields; never asked during onboarding, filtered on in Phase 3.
     company: v.optional(v.string()),
     role: v.optional(v.string()),
+    // What happened to each onboarding question. Separate from the fields
+    // above because a skip is not a fact about the card: a declined city and
+    // a city nobody was asked for leave the same empty field, and only this
+    // tells them apart. Optional, so every row written before it existed
+    // stays valid.
+    onboarding: v.optional(onboardingValidator),
   })
     .index("by_user", ["userId"])
     .index("by_username", ["username"])

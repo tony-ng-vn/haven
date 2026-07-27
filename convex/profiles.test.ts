@@ -357,6 +357,91 @@ test("generateUploadUrl is rate limited per user", async () => {
   ).resolves.toBeTruthy();
 });
 
+// A skip is the one thing the card cannot record: a declined city and a city
+// nobody has been asked for leave the same empty field. The device remembered
+// it until now, which loses the answer on reinstall and lies on a second
+// phone, so the server keeps it.
+test("recordOnboardingStep remembers what happened to each question", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  await me.as.mutation(api.profiles.recordOnboardingStep, {
+    step: "name",
+    state: "answered",
+  });
+  await me.as.mutation(api.profiles.recordOnboardingStep, {
+    step: "location",
+    state: "skipped",
+  });
+
+  const card = await me.as.query(api.profiles.getMyCard, {});
+  expect(card?.onboarding).toMatchObject({
+    name: "answered",
+    location: "skipped",
+  });
+  // Contact is untouched, not pending: a question nobody has reached yet is
+  // absent, so the client can tell "not asked" from "asked and declined".
+  expect(card?.onboarding?.contact).toBeUndefined();
+  expect(card?.onboarding?.completedAt).toBeUndefined();
+});
+
+test("recordOnboardingStep stamps completedAt once every question is decided", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  for (const step of ["name", "location", "contact"] as const) {
+    await me.as.mutation(api.profiles.recordOnboardingStep, {
+      step,
+      // Reaching the end by skipping is still reaching the end.
+      state: step === "name" ? "answered" : "skipped",
+    });
+  }
+
+  const first = (await me.as.query(api.profiles.getMyCard, {}))?.onboarding
+    ?.completedAt;
+  expect(typeof first).toBe("number");
+
+  // Answering a question later must not restamp it: completedAt is when this
+  // person got through onboarding, not when they last edited a field.
+  await me.as.mutation(api.profiles.recordOnboardingStep, {
+    step: "contact",
+    state: "answered",
+  });
+  const card = await me.as.query(api.profiles.getMyCard, {});
+  expect(card?.onboarding?.completedAt).toBe(first);
+  expect(card?.onboarding?.contact).toBe("answered");
+});
+
+// Name is the one required answer -- the card has nothing to show without it
+// and the beacon address is minted from it -- so nothing offers to skip it and
+// the server does not accept a skip either.
+test("recordOnboardingStep refuses to record the name question as skipped", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  await expect(
+    me.as.mutation(api.profiles.recordOnboardingStep, {
+      step: "name",
+      state: "skipped",
+    }),
+  ).rejects.toThrow("name");
+});
+
+test("recordOnboardingStep needs a card to record against", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  await expect(
+    me.as.mutation(api.profiles.recordOnboardingStep, {
+      step: "location",
+      state: "skipped",
+    }),
+  ).rejects.toThrow("Enter your name first");
+});
+
 // App Review 5.1.1: an account someone made in the app has to be deletable
 // from the app. Everything the caller owns goes, and nothing anyone else owns.
 test("deleteMyAccount removes the caller's profile and everything they own", async () => {
@@ -475,6 +560,12 @@ test("profile functions reject unauthenticated callers", async () => {
   await expect(t.mutation(api.profiles.deleteMyAccount, {})).rejects.toThrow(
     "Not signed in",
   );
+  await expect(
+    t.mutation(api.profiles.recordOnboardingStep, {
+      step: "location",
+      state: "skipped",
+    }),
+  ).rejects.toThrow("Not signed in");
   await expect(t.query(api.profiles.getMyCard, {})).rejects.toThrow(
     "Not signed in",
   );

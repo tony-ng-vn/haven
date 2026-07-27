@@ -35,6 +35,34 @@ export const publicHandleValidator = v.object({
   verified: v.boolean(),
 });
 
+// The three onboarding questions, in the order they are asked.
+export const onboardingStepValidator = v.union(
+  v.literal("name"),
+  v.literal("location"),
+  v.literal("contact"),
+);
+
+// What happened to one question. "asked and declined" is a fact the card
+// itself cannot carry: a skipped city and a city nobody got round to asking
+// for leave the same empty field, which is exactly why this record exists
+// rather than the client inferring progress from the card.
+export const onboardingStateValidator = v.union(
+  v.literal("answered"),
+  v.literal("skipped"),
+);
+
+// Progress through onboarding, per question. Every member is optional: a
+// question nobody has reached yet is absent rather than pending, so a row
+// written before this field existed is already valid.
+export const onboardingValidator = v.object({
+  name: v.optional(onboardingStateValidator),
+  location: v.optional(onboardingStateValidator),
+  contact: v.optional(onboardingStateValidator),
+  // Stamped once every question has been decided, however it was decided.
+  // Reaching the end by skipping is still reaching the end.
+  completedAt: v.optional(v.number()),
+});
+
 // What the client sends: admin (state or region) and country are optional
 // because the city picker accepts a raw typed city when the completer
 // returns nothing.

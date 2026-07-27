@@ -16,6 +16,9 @@ import {
   cityInputValidator,
   cityValidator,
   handleValidator,
+  onboardingStateValidator,
+  onboardingStepValidator,
+  onboardingValidator,
   platformValidator,
   publicHandleValidator,
 } from "./profileFields";
@@ -48,6 +51,7 @@ const myCardValidator = v.object({
   primaryPlatform: v.optional(platformValidator),
   company: v.optional(v.string()),
   role: v.optional(v.string()),
+  onboarding: v.optional(onboardingValidator),
 });
 
 const publicProfileValidator = v.object({
@@ -214,6 +218,7 @@ function toMyCard(profile: Doc<"profiles">) {
     primaryPlatform: profile.primaryPlatform,
     company: profile.company,
     role: profile.role,
+    onboarding: profile.onboarding,
   };
 }
 
@@ -344,6 +349,50 @@ export const generateUploadUrl = mutation({
     return await ctx.storage.generateUploadUrl();
   },
 });
+
+// Records what happened to one onboarding question.
+//
+// The client kept this on the device, which loses the answer on reinstall and
+// says nothing on a second phone. The card cannot carry it either: a declined
+// city and a city nobody has been asked for leave the same empty field. So it
+// is its own record, and the device store becomes a cache of it.
+export const recordOnboardingStep = mutation({
+  args: {
+    step: onboardingStepValidator,
+    state: onboardingStateValidator,
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    await checkRateLimit(ctx, userId, "recordOnboardingStep", 60, MINUTE_MS);
+    // Name is the one required answer -- the card has nothing to show without
+    // it, and the beacon address is minted from it -- so nothing offers to
+    // skip it and a client that tries is refused rather than believed.
+    if (args.step === "name" && args.state === "skipped") {
+      throw new Error("The name question cannot be skipped");
+    }
+    const profile = await getProfileByUser(ctx, userId);
+    if (profile === null) {
+      throw new Error("Enter your name first");
+    }
+
+    const onboarding = { ...profile.onboarding, [args.step]: args.state };
+    const decided = ONBOARDING_STEPS.every(
+      (step) => onboarding[step] !== undefined,
+    );
+    // Stamped once, on the transition. This is when someone got through
+    // onboarding, not when they last edited a field, so a later answer to an
+    // already-decided question leaves it alone.
+    if (decided && onboarding.completedAt === undefined) {
+      onboarding.completedAt = Date.now();
+    }
+
+    await ctx.db.patch("profiles", profile._id, { onboarding });
+    return null;
+  },
+});
+
+const ONBOARDING_STEPS = ["name", "location", "contact"] as const;
 
 // How many rows of one table a single purge transaction removes. Deliberately
 // well under Convex's per-transaction ceiling: the purge reschedules itself
