@@ -1166,6 +1166,12 @@ export const backfillSearchText = internalMutation({
   },
 });
 
+// Idempotency key for the maintenance functions below: re-running one must
+// never double-index a handle. JSON so a platform containing a separator
+// cannot collide with another pair.
+const handleIndexKey = (row: { platform: string; valueKey: string }) =>
+  JSON.stringify([row.platform, row.valueKey]);
+
 // One-off maintenance: people saved between contactHandles shipping and the
 // personHandles index existing carry the array but no index rows, so a share
 // of a handle they already hold would twin them. Paged rather than a single
@@ -1185,10 +1191,6 @@ export const backfillPersonHandles = internalMutation({
       numItems: BACKFILL_BATCH_SIZE,
       cursor: args.cursor ?? null,
     });
-    // Idempotent: re-running must never double-index a handle. The key
-    // is JSON so a platform containing a separator cannot collide.
-    const indexKey = (row: { platform: string; valueKey: string }) =>
-      JSON.stringify([row.platform, row.valueKey]);
     let patched = 0;
     for (const person of page.page) {
       const handles = person.contactHandles ?? [];
@@ -1199,9 +1201,9 @@ export const backfillPersonHandles = internalMutation({
         .query("personHandles")
         .withIndex("by_person", (q) => q.eq("personId", person._id))
         .take(MAX_CONTACT_HANDLES);
-      const indexed = new Set(existing.map(indexKey));
+      const indexed = new Set(existing.map(handleIndexKey));
       const missing = handles.filter(
-        (handle) => !indexed.has(indexKey(handleIndexKeys(handle))),
+        (handle) => !indexed.has(handleIndexKey(handleIndexKeys(handle))),
       );
       if (missing.length === 0) {
         continue;
@@ -1210,6 +1212,197 @@ export const backfillPersonHandles = internalMutation({
       patched++;
     }
     return { patched, isDone: page.isDone, cursor: page.continueCursor };
+  },
+});
+
+// One-off maintenance: the screenshot and meet-exchange paths wrote people
+// with only the legacy platform/handle scalars, so those accounts were
+// invisible to every handle lookup and a later share twinned the person.
+// This folds those scalars into contactHandles and the personHandles index.
+// Paged for the same reason backfillPersonHandles is: an unindexed person is
+// a corrupted identity, so "done" has to mean it. Run with:
+// npx convex run people:backfillLegacyHandles '{}'
+// and re-run with '{"cursor": "<cursor>"}' until isDone.
+//
+// Deliberately conservative on two counts. A person whose array already
+// holds that platform is skipped and counted, never overwritten: which of
+// two disagreeing accounts is current is a product decision, not a
+// migration's. And neither updatedAt nor searchText is touched, because a
+// migration is not an edit -- recency ordering stays where the user left it,
+// and the legacy handle is already in the keyword haystack.
+export const backfillLegacyHandles = internalMutation({
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  returns: v.object({
+    patched: v.number(),
+    skipped: v.number(),
+    isDone: v.boolean(),
+    cursor: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const page = await ctx.db.query("people").paginate({
+      numItems: BACKFILL_BATCH_SIZE,
+      cursor: args.cursor ?? null,
+    });
+    let patched = 0;
+    let skipped = 0;
+    for (const person of page.page) {
+      if (person.platform === undefined || person.handle === undefined) {
+        continue;
+      }
+      const legacy = {
+        platform: person.platform,
+        value: handleDisplayValue(person.handle),
+      };
+      const keys = handleIndexKeys(legacy);
+      // A platform with no handle, or a handle of punctuation alone, names
+      // no account: there is nothing to index and nothing to report.
+      if (keys.platform === "" || keys.valueKey === "") {
+        continue;
+      }
+      const handles = person.contactHandles ?? [];
+      if (
+        handles.length >= MAX_CONTACT_HANDLES ||
+        handles.some(
+          (handle) => handleIndexKeys(handle).platform === keys.platform,
+        )
+      ) {
+        skipped++;
+        continue;
+      }
+      // Same idempotency rule as backfillPersonHandles: an index row that
+      // already exists is never doubled, however the two got out of step.
+      const existing = await ctx.db
+        .query("personHandles")
+        .withIndex("by_person", (q) => q.eq("personId", person._id))
+        .take(MAX_CONTACT_HANDLES);
+      const indexed = new Set(existing.map(handleIndexKey));
+      await ctx.db.patch("people", person._id, {
+        contactHandles: [
+          ...handles,
+          { platform: keys.platform, value: legacy.value },
+        ],
+      });
+      if (!indexed.has(handleIndexKey(keys))) {
+        await insertPersonHandles(ctx, person.userId, person._id, [legacy]);
+      }
+      patched++;
+    }
+    return {
+      patched,
+      skipped,
+      isDone: page.isDone,
+      cursor: page.continueCursor,
+    };
+  },
+});
+
+// How many index rows one report page scans, and how many owners of a single
+// account it will name. A handle owned by more people than the cap is already
+// a five-alarm finding; the cap only stops one pathological group from
+// unbounding the read.
+const DUPLICATE_SCAN_PAGE_SIZE = 500;
+const MAX_HANDLE_OWNERS = 64;
+
+// Report only, never a merge: which of two people holding one account is the
+// real one is a product decision, and a migration that guessed would delete
+// somebody's memory of a person. This exists so the wave C reconciliation is
+// decided on real numbers -- and only a report of zero duplicates lets
+// saveSharedProfile's lookup move from .first() to .unique(). Run with:
+// npx convex run people:reportDuplicateHandleOwners '{}'
+// and re-run with '{"cursor": "<cursor>"}' until isDone.
+export const reportDuplicateHandleOwners = internalQuery({
+  // pageSize is for tests, which prove the page-boundary rule below with a
+  // tiny page.
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    pageSize: v.optional(v.number()),
+  },
+  returns: v.object({
+    duplicates: v.array(
+      v.object({
+        userId: v.string(),
+        platform: v.string(),
+        valueKey: v.string(),
+        personIds: v.array(v.id("people")),
+      }),
+    ),
+    scanned: v.number(),
+    isDone: v.boolean(),
+    cursor: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    // Paged over the identity index rather than the table's creation order,
+    // so every row of one (userId, platform, valueKey) is adjacent and a
+    // page's interior groups are complete as read.
+    const page = await ctx.db
+      .query("personHandles")
+      .withIndex("by_user_and_platform_and_valueKey")
+      .paginate({
+        numItems: args.pageSize ?? DUPLICATE_SCAN_PAGE_SIZE,
+        cursor: args.cursor ?? null,
+      });
+
+    const groups = new Map<string, Array<Doc<"personHandles">>>();
+    for (const row of page.page) {
+      const key = JSON.stringify([row.userId, row.platform, row.valueKey]);
+      const rows = groups.get(key);
+      if (rows === undefined) {
+        groups.set(key, [row]);
+      } else {
+        rows.push(row);
+      }
+    }
+    const keys = [...groups.keys()];
+    const pageRowIds = new Set(page.page.map((row) => row._id));
+    const duplicates: Array<{
+      userId: string;
+      platform: string;
+      valueKey: string;
+      personIds: Array<Id<"people">>;
+    }> = [];
+    for (const [position, key] of keys.entries()) {
+      const inPage = groups.get(key) ?? [];
+      const sample = inPage[0];
+      // Only the first and last group of a page can continue outside it, so
+      // only those two need the index consulted. Two extra reads per page
+      // buy an exact report; grouping page-locally would miss a split group
+      // entirely and report zero duplicates where there are some.
+      const rows =
+        position === 0 || position === keys.length - 1
+          ? await ctx.db
+              .query("personHandles")
+              .withIndex("by_user_and_platform_and_valueKey", (q) =>
+                q
+                  .eq("userId", sample.userId)
+                  .eq("platform", sample.platform)
+                  .eq("valueKey", sample.valueKey),
+              )
+              .take(MAX_HANDLE_OWNERS)
+          : inPage;
+      // The page holding a group's first row owns reporting it, so a split
+      // group is counted once rather than once per page it touches.
+      if (!pageRowIds.has(rows[0]._id)) {
+        continue;
+      }
+      // By person, not by row: one person can hold two index rows for their
+      // own account (saveSharedProfile's attach path inserts unconditionally),
+      // and that is drift to heal, not two people to reconcile.
+      const personIds = [...new Set(rows.map((row) => row.personId))];
+      if (personIds.length > 1) {
+        duplicates.push({
+          userId: sample.userId,
+          platform: sample.platform,
+          valueKey: sample.valueKey,
+          personIds,
+        });
+      }
+    }
+    return {
+      duplicates,
+      scanned: page.page.length,
+      isDone: page.isDone,
+      cursor: page.continueCursor,
+    };
   },
 });
 

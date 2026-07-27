@@ -1121,6 +1121,172 @@ test("sweepOrphanedUploads makes progress past a wall of referenced blobs", asyn
   expect(await t.run((ctx) => ctx.storage.getUrl(wall1))).not.toBeNull();
 });
 
+// ------------------------------------------- identity index on acceptance
+
+// Both accept paths insert a person directly, bypassing addPerson, so they
+// own the personHandles invariant themselves: without it, re-sharing the same
+// account later twins the person.
+async function handleRows(t: ReturnType<typeof convexTest>) {
+  return await t.run((ctx) => ctx.db.query("personHandles").take(20));
+}
+
+test("acceptCapture indexes the extracted handle so a later share finds the same person", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const personId = await as.mutation(api.captures.acceptCapture, { captureId });
+
+  const person = await t.run((ctx) => ctx.db.get("people", personId));
+  // The display array keeps the legacy scalars company; neither replaces
+  // the other while the legacy pair is still read by the embed text.
+  expect(person?.contactHandles).toEqual([{ platform: "x", value: "ada_l" }]);
+  expect(person?.platform).toBe("x");
+  expect(await handleRows(t)).toMatchObject([
+    { userId, personId, platform: "x", valueKey: "ada_l" },
+  ]);
+
+  const shared = await as.mutation(api.people.saveSharedProfile, {
+    platform: "x",
+    handleValue: "ada_l",
+    profileUrl: "https://x.com/ada_l",
+    name: "Ada Lovelace",
+  });
+  expect(shared).toEqual({
+    status: "already",
+    personId,
+    noteTruncated: false,
+  });
+});
+
+test("an extracted handle folds to one identity however the model cased it", async () => {
+  stubOpenAI({
+    extraction: { ...EXTRACTION, platform: " X ", handle: "@Ada_L" },
+  });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const personId = await as.mutation(api.captures.acceptCapture, { captureId });
+
+  const person = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(person?.contactHandles).toEqual([{ platform: "x", value: "Ada_L" }]);
+  expect(await handleRows(t)).toMatchObject([
+    { platform: "x", valueKey: "ada_l" },
+  ]);
+  const shared = await as.mutation(api.people.saveSharedProfile, {
+    platform: "x",
+    handleValue: "ada_l",
+    profileUrl: "https://x.com/ada_l",
+    name: "Ada Lovelace",
+  });
+  expect(shared.personId).toBe(personId);
+});
+
+test("a capture with no visible handle stays name-only", async () => {
+  // Honest, not a bug: a screenshot that shows no handle names a person and
+  // nothing more. An invented index row would be a fabricated identity.
+  stubOpenAI({ extraction: { ...EXTRACTION, handle: "  " } });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const personId = await as.mutation(api.captures.acceptCapture, { captureId });
+
+  const person = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(person?.contactHandles).toBeUndefined();
+  expect(await handleRows(t)).toHaveLength(0);
+});
+
+test("acceptManualCapture indexes a typed handle in the same transaction", async () => {
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const personId = await as.mutation(api.captures.acceptManualCapture, {
+    captureId,
+    name: "Mai Tran",
+    contactHandle: { platform: " Instagram ", value: "@Mai.Makes" },
+  });
+
+  const person = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(person?.contactHandles).toEqual([
+    { platform: "instagram", value: "Mai.Makes" },
+  ]);
+  expect(await handleRows(t)).toMatchObject([
+    { userId, personId, platform: "instagram", valueKey: "mai.makes" },
+  ]);
+
+  const shared = await as.mutation(api.people.saveSharedProfile, {
+    platform: "instagram",
+    handleValue: "mai.makes",
+    profileUrl: "https://instagram.com/mai.makes",
+    name: "Mai Tran",
+  });
+  expect(shared.status).toBe("already");
+  expect(shared.personId).toBe(personId);
+});
+
+test("a manually named capture without a handle stays name-only", async () => {
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const personId = await as.mutation(api.captures.acceptManualCapture, {
+    captureId,
+    name: "Mai Tran",
+  });
+
+  const person = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(person?.contactHandles).toBeUndefined();
+  expect(await handleRows(t)).toHaveLength(0);
+});
+
+test("acceptManualCapture refuses a blank typed handle", async () => {
+  // The human is present here, unlike on the extraction path: a blank field
+  // is a client bug worth surfacing, not something to silently drop.
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  await expect(
+    as.mutation(api.captures.acceptManualCapture, {
+      captureId,
+      name: "Mai Tran",
+      contactHandle: { platform: "instagram", value: " @ " },
+    }),
+  ).rejects.toThrow("A handle cannot be blank");
+  await expect(
+    as.mutation(api.captures.acceptManualCapture, {
+      captureId,
+      name: "Mai Tran",
+      contactHandle: { platform: "  ", value: "mai.makes" },
+    }),
+  ).rejects.toThrow("A platform cannot be blank");
+});
+
 test("sweepOrphanedUploads resets its watermark after an exhausted pass", async () => {
   const t = convexTest(schema, modules);
   const first = await seedScreenshot(t);
