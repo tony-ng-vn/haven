@@ -1,4 +1,10 @@
-import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
+import {
+  internalMutation,
+  mutation,
+  query,
+  MutationCtx,
+  QueryCtx,
+} from "./_generated/server";
 import { Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
@@ -10,17 +16,19 @@ import {
   cityInputValidator,
   cityValidator,
   handleValidator,
+  onboardingStateValidator,
+  onboardingStepValidator,
+  onboardingValidator,
   platformValidator,
   publicHandleValidator,
 } from "./profileFields";
-import { handleDisplayValue } from "./handleKeys";
+import { handleDisplayValue, handleIndexKeys } from "./handleKeys";
 
 const MINUTE_MS = 60_000;
 
 const USERNAME_MAX_LENGTH = 24;
 const USERNAME_PATTERN = /^[a-z0-9_]{3,24}$/;
-const USERNAME_HELP =
-  "Use 3-24 lowercase letters, numbers, or underscores";
+const USERNAME_HELP = "Use 3-24 lowercase letters, numbers, or underscores";
 
 const myProfileValidator = v.object({
   _id: v.id("profiles"),
@@ -43,6 +51,7 @@ const myCardValidator = v.object({
   primaryPlatform: v.optional(platformValidator),
   company: v.optional(v.string()),
   role: v.optional(v.string()),
+  onboarding: v.optional(onboardingValidator),
 });
 
 const publicProfileValidator = v.object({
@@ -158,15 +167,16 @@ function handleCandidates(name: string): string[] {
   // A name with no Latin characters at all still deserves an address, so fall
   // back to a generic base instead of failing the claim.
   const first = parts[0] ?? "haven";
-  const base =
-    parts.length > 1 ? `${first}_${parts[parts.length - 1]}` : first;
+  const base = parts.length > 1 ? `${first}_${parts[parts.length - 1]}` : first;
   const ladder = [first, base];
   for (let n = 2; n < 2 + HANDLE_SUFFIX_TRIES; n++) {
     const suffix = String(n);
     ladder.push(base.slice(0, USERNAME_MAX_LENGTH - suffix.length) + suffix);
   }
   return [
-    ...new Set(ladder.map((candidate) => candidate.slice(0, USERNAME_MAX_LENGTH))),
+    ...new Set(
+      ladder.map((candidate) => candidate.slice(0, USERNAME_MAX_LENGTH)),
+    ),
   ].filter((candidate) => USERNAME_PATTERN.test(candidate));
 }
 
@@ -208,6 +218,7 @@ function toMyCard(profile: Doc<"profiles">) {
     primaryPlatform: profile.primaryPlatform,
     company: profile.company,
     role: profile.role,
+    onboarding: profile.onboarding,
   };
 }
 
@@ -274,6 +285,11 @@ async function ensureMeetPerson(args: {
 
   const displayName = `@${args.contactUsername}`;
   const meetContext = "Met in person through Haven Meet.";
+  // A Haven username is a handle like any other, so the person gets one in
+  // contactHandles and a matching index row. Without them a person met in
+  // person is invisible to every handle lookup, and re-sharing their profile
+  // later would create a second row for the same human.
+  const havenHandle = { platform: "haven", value: args.contactUsername };
   const personId = await args.ctx.db.insert("people", {
     userId: args.ownerUserId,
     name: displayName,
@@ -286,9 +302,17 @@ async function ensureMeetPerson(args: {
     }),
     context: meetContext,
     updatedAt: args.now,
+    // The legacy scalars stay: the web meet UI reads them, and the index is
+    // an addition rather than a replacement.
     platform: "Haven",
     handle: args.contactUsername,
+    contactHandles: [havenHandle],
     havenContactUserId: args.contactUserId,
+  });
+  await args.ctx.db.insert("personHandles", {
+    userId: args.ownerUserId,
+    personId,
+    ...handleIndexKeys(havenHandle),
   });
   await args.ctx.scheduler.runAfter(0, internal.people.embed, { personId });
   return personId;
@@ -314,6 +338,220 @@ export const getMyProfile = query({
     };
   },
 });
+
+// Where a profile photo is uploaded before it is attached.
+//
+// Its own function rather than a shared one with captures: the two are
+// different spends with different limits, and a single URL minter would make
+// a photo import and a screenshot capture compete for one budget.
+//
+// Rate limited because a URL is a write into storage. The orphan sweep
+// reclaims blobs nobody references, but a sweep is a cleanup, not a cap.
+export const generateUploadUrl = mutation({
+  args: {},
+  returns: v.string(),
+  handler: async (ctx) => {
+    const userId = await requireUser(ctx);
+    await checkRateLimit(
+      ctx,
+      userId,
+      "profiles:generateUploadUrl",
+      10,
+      MINUTE_MS,
+    );
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+// Records what happened to one onboarding question.
+//
+// The client kept this on the device, which loses the answer on reinstall and
+// says nothing on a second phone. The card cannot carry it either: a declined
+// city and a city nobody has been asked for leave the same empty field. So it
+// is its own record, and the device store becomes a cache of it.
+export const recordOnboardingStep = mutation({
+  args: {
+    step: onboardingStepValidator,
+    state: onboardingStateValidator,
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    await checkRateLimit(ctx, userId, "recordOnboardingStep", 60, MINUTE_MS);
+    // Name is the one required answer -- the card has nothing to show without
+    // it, and the beacon address is minted from it -- so nothing offers to
+    // skip it and a client that tries is refused rather than believed.
+    if (args.step === "name" && args.state === "skipped") {
+      throw new Error("The name question cannot be skipped");
+    }
+    const profile = await getProfileByUser(ctx, userId);
+    if (profile === null) {
+      throw new Error("Enter your name first");
+    }
+
+    const onboarding = { ...profile.onboarding, [args.step]: args.state };
+    const decided = ONBOARDING_STEPS.every(
+      (step) => onboarding[step] !== undefined,
+    );
+    // Stamped once, on the transition. This is when someone got through
+    // onboarding, not when they last edited a field, so a later answer to an
+    // already-decided question leaves it alone.
+    if (decided && onboarding.completedAt === undefined) {
+      onboarding.completedAt = Date.now();
+    }
+
+    await ctx.db.patch("profiles", profile._id, { onboarding });
+    return null;
+  },
+});
+
+const ONBOARDING_STEPS = ["name", "location", "contact"] as const;
+
+// How many rows of one table a single purge transaction removes. Deliberately
+// well under Convex's per-transaction ceiling: the purge reschedules itself
+// while any table is still full, so the bound costs a few more transactions
+// and buys an account that deletes however much the person accumulated.
+const PURGE_PAGE = 200;
+
+// Deletes the caller's account: the profile row first, so the address stops
+// resolving the moment this returns, then everything they own.
+//
+// Idempotent on purpose. There is no row to "not find" -- a second tap, or a
+// tap by someone who never finished onboarding, is the same request and gets
+// the same answer, per the repo's creation convention read backwards.
+//
+// Other people's rows about the caller are not touched. A person someone else
+// saved is their private note, and account deletion is not a right to reach
+// into somebody else's directory.
+export const deleteMyAccount = mutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const userId = await requireUser(ctx);
+    const profile = await getProfileByUser(ctx, userId);
+    if (profile !== null) {
+      if (profile.photoStorageId !== undefined) {
+        await ctx.storage.delete(profile.photoStorageId);
+      }
+      await ctx.db.delete("profiles", profile._id);
+    }
+    await purgeOwnedRows(ctx, userId);
+    return null;
+  },
+});
+
+// The continuation of a purge that did not fit in one transaction.
+//
+// Guarded on the profile row being absent: if the person signed back in and
+// started a new card while this was queued, the rows it would delete are the
+// new account's, and finishing the old purge would empty a directory nobody
+// asked to empty.
+export const purgeAccountData = internalMutation({
+  args: { userId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if ((await getProfileByUser(ctx, args.userId)) !== null) {
+      return null;
+    }
+    await purgeOwnedRows(ctx, args.userId);
+    return null;
+  },
+});
+
+// One page across every table the user owns rows in, rescheduling itself if
+// any table still has more. Blobs go with their rows: a file nobody can reach
+// is still a file we are storing about someone who asked to be forgotten.
+async function purgeOwnedRows(ctx: MutationCtx, userId: string): Promise<void> {
+  let more = false;
+
+  const people = await ctx.db
+    .query("people")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .take(PURGE_PAGE);
+  for (const person of people) {
+    if (person.screenshotId !== undefined) {
+      await ctx.storage.delete(person.screenshotId);
+    }
+    if (person.photoStorageId !== undefined) {
+      await ctx.storage.delete(person.photoStorageId);
+    }
+    const handles = await ctx.db
+      .query("personHandles")
+      .withIndex("by_person", (q) => q.eq("personId", person._id))
+      .collect();
+    for (const handle of handles) {
+      await ctx.db.delete("personHandles", handle._id);
+    }
+    await ctx.db.delete("people", person._id);
+  }
+  more ||= people.length === PURGE_PAGE;
+
+  const captures = await ctx.db
+    .query("captures")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .take(PURGE_PAGE);
+  for (const capture of captures) {
+    await ctx.storage.delete(capture.screenshotId);
+    await ctx.db.delete("captures", capture._id);
+  }
+  more ||= captures.length === PURGE_PAGE;
+
+  // Both sides of a connection, and the shared note that hangs off it. A note
+  // written together stops being reachable when one side leaves, so leaving
+  // the row behind would keep the other person's half of a conversation
+  // pointing at nothing.
+  for (const side of ["A", "B"] as const) {
+    const connections = await ctx.db
+      .query("connections")
+      .withIndex(
+        side === "A" ? "by_userAId_and_personAId" : "by_userBId_and_personBId",
+        (q) =>
+          side === "A" ? q.eq("userAId", userId) : q.eq("userBId", userId),
+      )
+      .take(PURGE_PAGE);
+    for (const connection of connections) {
+      const notes = await ctx.db
+        .query("sharedNotes")
+        .withIndex("by_connectionId", (q) =>
+          q.eq("connectionId", connection._id),
+        )
+        .collect();
+      for (const note of notes) {
+        await ctx.db.delete("sharedNotes", note._id);
+      }
+      await ctx.db.delete("connections", connection._id);
+    }
+    more ||= connections.length === PURGE_PAGE;
+  }
+
+  // Ephemeral by design and expiring anyway, but a presence row keyed to a
+  // deleted account still names them in a room until it does.
+  const presence = await ctx.db
+    .query("loveAlarmPresence")
+    .withIndex("by_userId_and_expiresAt", (q) => q.eq("userId", userId))
+    .take(PURGE_PAGE);
+  for (const row of presence) {
+    await ctx.db.delete("loveAlarmPresence", row._id);
+  }
+  more ||= presence.length === PURGE_PAGE;
+
+  // Last, because every delete above ran under a limiter that keys off this
+  // table: clearing it first would let the purge lift the caller's own caps.
+  const limits = await ctx.db
+    .query("rateLimits")
+    .withIndex("by_user_action", (q) => q.eq("userId", userId))
+    .take(PURGE_PAGE);
+  for (const limit of limits) {
+    await ctx.db.delete("rateLimits", limit._id);
+  }
+  more ||= limits.length === PURGE_PAGE;
+
+  if (more) {
+    await ctx.scheduler.runAfter(0, internal.profiles.purgeAccountData, {
+      userId,
+    });
+  }
+}
 
 // The caller's whole card. Onboarding resumes at the first unanswered question,
 // and the client works that out from this, not from a local counter: a counter
@@ -417,7 +655,9 @@ export const updateMyProfile = mutation({
     }
     if (args.company !== undefined) {
       fields.company =
-        args.company === null ? undefined : requireText("Company", args.company);
+        args.company === null
+          ? undefined
+          : requireText("Company", args.company);
     }
     if (args.role !== undefined) {
       fields.role =

@@ -323,12 +323,249 @@ test("setUsername enforces uniqueness across users", async () => {
   ).rejects.toThrow("That username is already taken");
 });
 
+// The photo import and the My Card photo add both upload before they know
+// which profile field the blob will land in, so the URL is its own function
+// rather than a side effect of updateMyProfile.
+test("generateUploadUrl hands a signed-in caller a URL", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  const url = await me.as.mutation(api.profiles.generateUploadUrl, {});
+
+  expect(typeof url).toBe("string");
+  expect(url.length).toBeGreaterThan(0);
+});
+
+// An upload URL writes a blob to storage, so it is a spend, and the sweep
+// that reclaims unreferenced blobs is not a reason to let one caller open the
+// tap. The cap matches captures' own createCapture burst limit.
+test("generateUploadUrl is rate limited per user", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  const other = asNewUser(t);
+
+  for (let i = 0; i < 10; i++) {
+    await me.as.mutation(api.profiles.generateUploadUrl, {});
+  }
+
+  await expect(
+    me.as.mutation(api.profiles.generateUploadUrl, {}),
+  ).rejects.toThrow("Too many");
+  // One user's burst must not spend another user's budget.
+  await expect(
+    other.as.mutation(api.profiles.generateUploadUrl, {}),
+  ).resolves.toBeTruthy();
+});
+
+// A skip is the one thing the card cannot record: a declined city and a city
+// nobody has been asked for leave the same empty field. The device remembered
+// it until now, which loses the answer on reinstall and lies on a second
+// phone, so the server keeps it.
+test("recordOnboardingStep remembers what happened to each question", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  await me.as.mutation(api.profiles.recordOnboardingStep, {
+    step: "name",
+    state: "answered",
+  });
+  await me.as.mutation(api.profiles.recordOnboardingStep, {
+    step: "location",
+    state: "skipped",
+  });
+
+  const card = await me.as.query(api.profiles.getMyCard, {});
+  expect(card?.onboarding).toMatchObject({
+    name: "answered",
+    location: "skipped",
+  });
+  // Contact is untouched, not pending: a question nobody has reached yet is
+  // absent, so the client can tell "not asked" from "asked and declined".
+  expect(card?.onboarding?.contact).toBeUndefined();
+  expect(card?.onboarding?.completedAt).toBeUndefined();
+});
+
+test("recordOnboardingStep stamps completedAt once every question is decided", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  for (const step of ["name", "location", "contact"] as const) {
+    await me.as.mutation(api.profiles.recordOnboardingStep, {
+      step,
+      // Reaching the end by skipping is still reaching the end.
+      state: step === "name" ? "answered" : "skipped",
+    });
+  }
+
+  const first = (await me.as.query(api.profiles.getMyCard, {}))?.onboarding
+    ?.completedAt;
+  expect(typeof first).toBe("number");
+
+  // Answering a question later must not restamp it: completedAt is when this
+  // person got through onboarding, not when they last edited a field.
+  await me.as.mutation(api.profiles.recordOnboardingStep, {
+    step: "contact",
+    state: "answered",
+  });
+  const card = await me.as.query(api.profiles.getMyCard, {});
+  expect(card?.onboarding?.completedAt).toBe(first);
+  expect(card?.onboarding?.contact).toBe("answered");
+});
+
+// Name is the one required answer -- the card has nothing to show without it
+// and the beacon address is minted from it -- so nothing offers to skip it and
+// the server does not accept a skip either.
+test("recordOnboardingStep refuses to record the name question as skipped", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  await expect(
+    me.as.mutation(api.profiles.recordOnboardingStep, {
+      step: "name",
+      state: "skipped",
+    }),
+  ).rejects.toThrow("name");
+});
+
+test("recordOnboardingStep needs a card to record against", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  await expect(
+    me.as.mutation(api.profiles.recordOnboardingStep, {
+      step: "location",
+      state: "skipped",
+    }),
+  ).rejects.toThrow("Enter your name first");
+});
+
+// App Review 5.1.1: an account someone made in the app has to be deletable
+// from the app. Everything the caller owns goes, and nothing anyone else owns.
+test("deleteMyAccount removes the caller's profile and everything they own", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  const photoStorageId = await seedPhoto(t);
+  const captureBlob = await seedPhoto(t);
+
+  await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+    photoStorageId,
+    handles: [{ platform: "x", value: "mayachen", verified: true }],
+  });
+  await me.as.mutation(api.people.addPerson, {
+    name: "Ada Lovelace",
+    contactHandles: [{ platform: "x", value: "ada" }],
+    context: "Met at a conference.",
+  });
+  const captureId = await t.run((ctx) =>
+    ctx.db.insert("captures", {
+      userId: me.userId,
+      screenshotId: captureBlob,
+      status: "ready" as const,
+    }),
+  );
+
+  await me.as.mutation(api.profiles.deleteMyAccount, {});
+
+  expect(await storedProfile(t, me.userId)).toBeNull();
+  await t.run(async (ctx) => {
+    expect(
+      await ctx.db
+        .query("people")
+        .withIndex("by_user", (q) => q.eq("userId", me.userId))
+        .collect(),
+    ).toEqual([]);
+    expect(
+      await ctx.db
+        .query("personHandles")
+        .withIndex("by_user_and_platform_and_valueKey", (q) =>
+          q.eq("userId", me.userId),
+        )
+        .collect(),
+    ).toEqual([]);
+    expect(await ctx.db.get("captures", captureId)).toBeNull();
+    expect(
+      await ctx.db
+        .query("rateLimits")
+        .withIndex("by_user_action", (q) => q.eq("userId", me.userId))
+        .collect(),
+    ).toEqual([]);
+    // The blobs go with the rows. A file nobody can reach is still a file
+    // we are storing about someone who asked to be forgotten.
+    expect(await ctx.db.system.get(photoStorageId)).toBeNull();
+    expect(await ctx.db.system.get(captureBlob)).toBeNull();
+  });
+});
+
+test("deleteMyAccount leaves other people's rows alone", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  const other = asNewUser(t);
+
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+  await other.as.mutation(api.profiles.updateMyProfile, {
+    name: "Ada Lovelace",
+  });
+  await other.as.mutation(api.people.addPerson, {
+    name: "Maya Chen",
+    contactHandles: [{ platform: "x", value: "mayachen" }],
+    context: "Met through Haven.",
+  });
+
+  await me.as.mutation(api.profiles.deleteMyAccount, {});
+
+  expect(await storedProfile(t, other.userId)).not.toBeNull();
+  // Someone else's private note about me is their row, not mine, so deleting
+  // my account must not reach into their directory.
+  await t.run(async (ctx) => {
+    expect(
+      await ctx.db
+        .query("people")
+        .withIndex("by_user", (q) => q.eq("userId", other.userId))
+        .collect(),
+    ).toHaveLength(1);
+  });
+});
+
+// The row is gone the moment the mutation returns, so a second tap is not an
+// error and a half-finished purge is not a dead end.
+test("deleteMyAccount is safe to call twice and with no profile row", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  await expect(
+    me.as.mutation(api.profiles.deleteMyAccount, {}),
+  ).resolves.toBeNull();
+
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+  await me.as.mutation(api.profiles.deleteMyAccount, {});
+  await expect(
+    me.as.mutation(api.profiles.deleteMyAccount, {}),
+  ).resolves.toBeNull();
+  expect(await storedProfile(t, me.userId)).toBeNull();
+});
+
 test("profile functions reject unauthenticated callers", async () => {
   const t = convexTest(schema, modules);
 
   await expect(t.query(api.profiles.getMyProfile, {})).rejects.toThrow(
     "Not signed in",
   );
+  await expect(t.mutation(api.profiles.generateUploadUrl, {})).rejects.toThrow(
+    "Not signed in",
+  );
+  await expect(t.mutation(api.profiles.deleteMyAccount, {})).rejects.toThrow(
+    "Not signed in",
+  );
+  await expect(
+    t.mutation(api.profiles.recordOnboardingStep, {
+      step: "location",
+      state: "skipped",
+    }),
+  ).rejects.toThrow("Not signed in");
   await expect(t.query(api.profiles.getMyCard, {})).rejects.toThrow(
     "Not signed in",
   );
@@ -434,6 +671,76 @@ test("a meetExchange person is findable by keyword search", async () => {
     keyword: "bob",
   });
   expect(hits.map((p) => p.name)).toEqual(["@bob"]);
+});
+
+// One of the three insert paths that used to write people invisible to the
+// identity index. A person met through Haven has to be findable by handle like
+// anyone else, or re-sharing their profile later twins them.
+test("a meetExchange person carries the handle index", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+
+  const { personId } = await alice.as.mutation(api.profiles.meetExchange, {
+    username: "bob",
+  });
+
+  await t.run(async (ctx) => {
+    const person = await ctx.db.get("people", personId);
+    expect(person?.contactHandles).toEqual([
+      { platform: "haven", value: "bob" },
+    ]);
+    // The legacy scalars stay: the web meet UI still reads them, and this
+    // adds the index rather than replacing what was there.
+    expect(person?.platform).toBe("Haven");
+    expect(person?.handle).toBe("bob");
+
+    const rows = await ctx.db
+      .query("personHandles")
+      .withIndex("by_user_and_platform_and_valueKey", (q) =>
+        q
+          .eq("userId", alice.userId)
+          .eq("platform", "haven")
+          .eq("valueKey", handleValueKey("bob")),
+      )
+      .collect();
+    expect(rows.map((row) => row.personId)).toEqual([personId]);
+
+    // Both sides get a row, so the person Bob gets for Alice is indexed too.
+    const bobsRows = await ctx.db
+      .query("personHandles")
+      .withIndex("by_user_and_platform_and_valueKey", (q) =>
+        q.eq("userId", bob.userId),
+      )
+      .collect();
+    expect(bobsRows).toHaveLength(1);
+    expect(bobsRows[0].valueKey).toBe(handleValueKey("alice"));
+  });
+});
+
+// The index row is inserted next to the person, so a repeat confirmation must
+// not stack a second one on the same person.
+test("a repeated meetExchange does not duplicate the index row", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+
+  await alice.as.mutation(api.profiles.meetExchange, { username: "bob" });
+  await alice.as.mutation(api.profiles.meetExchange, { username: "bob" });
+
+  await t.run(async (ctx) => {
+    const rows = await ctx.db
+      .query("personHandles")
+      .withIndex("by_user_and_platform_and_valueKey", (q) =>
+        q.eq("userId", alice.userId),
+      )
+      .collect();
+    expect(rows).toHaveLength(1);
+  });
 });
 
 test("meetExchange is idempotent for repeated in-person confirmations", async () => {
@@ -564,7 +871,9 @@ test("claimHandle and setUsername write the same handle field", async () => {
 
   await other.as.mutation(api.profiles.claimHandle, { handle: "maya_c" });
   expect(
-    await legacy.as.query(api.profiles.lookupByUsername, { username: "maya_c" }),
+    await legacy.as.query(api.profiles.lookupByUsername, {
+      username: "maya_c",
+    }),
   ).toEqual({ username: "maya_c" });
 });
 
@@ -623,8 +932,12 @@ test("getByHandle returns null for an unknown, unclaimable, or nameless handle",
   await legacy.as.mutation(api.profiles.setUsername, { username: "maya" });
 
   // A legacy setUsername-only row has no card to show.
-  expect(await t.query(api.profiles.getByHandle, { handle: "maya" })).toBeNull();
-  expect(await t.query(api.profiles.getByHandle, { handle: "nobody" })).toBeNull();
+  expect(
+    await t.query(api.profiles.getByHandle, { handle: "maya" }),
+  ).toBeNull();
+  expect(
+    await t.query(api.profiles.getByHandle, { handle: "nobody" }),
+  ).toBeNull();
   expect(
     await t.query(api.profiles.getByHandle, { handle: "not a handle!" }),
   ).toBeNull();
