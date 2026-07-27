@@ -38,9 +38,10 @@ struct OnboardingFlow: View {
         } else if model.step == .contact {
             ContactScreen(model: model)
         } else {
-            // The card reveal is next. Until it lands, a person who is through
-            // the questions goes on to what there is.
-            ProfileProbeView()
+            // The card reveal belongs here and is milestone 1, judged on a
+            // device. Until it lands, a person through the questions goes
+            // straight on to the app.
+            HavenTabs()
         }
     }
 }
