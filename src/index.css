@@ -1575,6 +1575,14 @@ textarea.field {
   transform: scale(0.92);
 }
 
+/* The inline add form under the search field reuses the meet sheet's input
+   idioms; it only needs its own breathing room and width. */
+.atlas-add-form {
+  margin-top: 10px;
+  width: 100%;
+  text-align: left;
+}
+
 .atlas-add {
   display: inline-flex;
   align-items: center;
