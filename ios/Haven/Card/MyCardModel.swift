@@ -1,3 +1,4 @@
+import ClerkKit
 import Combine
 import ConvexMobile
 import SwiftUI
@@ -85,13 +86,26 @@ final class MyCardModel: ObservableObject {
         }
     }
 
-    /// Deletes the account. Returns true once the row is gone, so the caller
-    /// can sign out rather than sit on a screen with nothing behind it.
+    /// Deletes the account: the data first, then the identity that owned it.
+    /// Returns true once both are gone, so the caller can sign out rather than
+    /// sit on a screen with nothing behind it.
+    ///
+    /// Both halves, because App Store guideline 5.1.1(v) asks for the account
+    /// itself and not only its contents. Purging the rows and signing out left
+    /// a Clerk user behind that nobody could see and nobody had asked to keep.
+    ///
+    /// The order is the part worth protecting. The purge needs a signed-in
+    /// token, so deleting the identity first would strand every row it was
+    /// meant to remove with no way left to reach them. This way the only bad
+    /// case is an identity with nothing behind it, and retrying fixes it:
+    /// `deleteMyAccount` is idempotent by design, so the second attempt's
+    /// purge is a no-op and the deletion gets another go.
     func deleteAccount() async -> Bool {
         isSaving = true
         failure = nil
         let work = Task { () throws -> Bool in
             let _: String? = try await convex.mutation("profiles:deleteMyAccount")
+            _ = try await Clerk.shared.user?.delete()
             return true
         }
         let done = await work.value(within: .seconds(HavenNetwork.deadline)) ?? false

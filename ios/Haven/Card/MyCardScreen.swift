@@ -61,7 +61,10 @@ struct MyCardScreen: View {
             }
             Button("Keep it", role: .cancel) {}
         } message: {
-            Text("Your card, everyone you have saved, and everything attached to them. This cannot be undone.")
+            // Says "your Haven account" now that the sign-in goes with it: the
+            // old copy described the data only, and someone who read it as
+            // "my login survives this" would have read it correctly.
+            Text("Your card, everyone you have saved, and your Haven account itself. This cannot be undone.")
         }
     }
 
