@@ -12,10 +12,12 @@ import { DriftSky } from "./DriftSky";
 import {
   isClerkFlowHash,
   handleFromPath,
+  legalDocFromPath,
   resolveView,
   type PersonSnapshot,
 } from "./lib";
 import { CardPage } from "./CardPage";
+import { LegalPage } from "./LegalPage";
 
 function ChevronLeft() {
   return (
@@ -275,6 +277,10 @@ export default function App() {
   if (view === "card") {
     // Non-null whenever resolveView says card, by the same check.
     return <CardPage handle={handleFromPath(pathname)!} />;
+  }
+  if (view === "legal") {
+    // Non-null whenever resolveView says legal, by the same check.
+    return <LegalPage doc={legalDocFromPath(pathname)!} />;
   }
   if (view === "home") return <Home />;
   if (view === "signin") return <SignIn />;

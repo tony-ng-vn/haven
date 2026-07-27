@@ -424,7 +424,7 @@ export function bootMode(input: {
 // session resolves straight to Home (via the splash) without ever seeing the
 // waitlist. The "#/join" route stays public even though it matches the generic
 // Clerk-flow shape.
-export type View = "home" | "signin" | "splash" | "waitlist" | "card";
+export type View = "home" | "signin" | "splash" | "waitlist" | "card" | "legal";
 
 /// The handle a path names, or null when the path is not somebody's card.
 ///
@@ -436,6 +436,19 @@ export function handleFromPath(pathname: string): string | null {
   if (segments.length !== 1) return null;
   const handle = segments[0].toLowerCase();
   return isClaimableHandle(handle) ? handle : null;
+}
+
+/// Which legal document a path names, or null when it names none.
+export type LegalDoc = "privacy" | "terms";
+
+/// The two documents the App Store asks for before it will take a submission.
+/// Both words are already held back in handleNames, so no card can sit on
+/// either path -- these two routes and that reserved list are one decision.
+export function legalDocFromPath(pathname: string): LegalDoc | null {
+  const segments = pathname.split("/").filter((segment) => segment !== "");
+  if (segments.length !== 1) return null;
+  const name = segments[0].toLowerCase();
+  return name === "privacy" || name === "terms" ? name : null;
 }
 
 export function resolveView(input: {
@@ -450,6 +463,10 @@ export function resolveView(input: {
   // until after would sit them on a splash while Clerk boots, and would send a
   // signed-in visitor to their own home instead of the card they opened.
   if (handleFromPath(input.pathname ?? "/") !== null) return "card";
+  // Same reasoning, and one more: App Review opens the privacy url from App
+  // Store Connect signed out, and anything other than the policy reads as a
+  // broken link.
+  if (legalDocFromPath(input.pathname ?? "/") !== null) return "legal";
   if (input.isAuthenticated) return "home";
   if (!isJoinHash(input.hash) && isClerkFlowHash(input.hash)) return "signin";
   if (input.isLoading && bootMode(input) === "splash") return "splash";
