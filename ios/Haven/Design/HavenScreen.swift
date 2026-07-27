@@ -15,6 +15,19 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
     @ViewBuilder var content: Content
     @ViewBuilder var actions: Actions
 
+    /// Stars that were already lit when this screen appeared, or have finished
+    /// coming on. Drawn at full brightness with nothing left to animate.
+    @State private var settledMajors: Set<Int> = []
+    /// Stars coming on right now. There is normally one: a question commits one
+    /// field.
+    @State private var ignitingMajors: Set<Int> = []
+    /// How far through that the igniting stars are. One animatable value drives
+    /// all of them, because SwiftUI interpolates a Double and would not
+    /// interpolate an array of them.
+    @State private var ignition: Double = 0
+
+    @HavenReduceMotion private var reduceMotion
+
     @State private var contentAreaHeight: CGFloat = 0
     @State private var headerBottom: CGFloat = 0
     @State private var contentTop: CGFloat = 0
@@ -66,7 +79,11 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
                 // drawing the figure over the question is the one thing that
                 // reads as a mistake.
                 if let sky, let figureBand {
-                    SkyView(sky: sky, litMajors: litMajors, figureBand: figureBand)
+                    SkyView(
+                        sky: sky,
+                        majorIntensities: intensities(for: sky),
+                        figureBand: figureBand
+                    )
                 }
             }
             .ignoresSafeArea()
@@ -152,8 +169,51 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
         .onPreferenceChange(ScreenWidthKey.self) { value in
             screenWidth = value
         }
+        // A star that is already lit when the screen appears has nothing to
+        // announce. Igniting it would tell someone who resumed a session that
+        // they just earned a field they filled in last week.
+        .onAppear { settledMajors = litMajors ?? [] }
+        .task(id: litMajors) { await ignite() }
     }
 
+    /// How bright each figure star is drawn right now.
+    private func intensities(for sky: Sky) -> [Double] {
+        (0..<sky.majors.count).map { index in
+            if settledMajors.contains(index) { return 1 }
+            return ignitingMajors.contains(index) ? ignition : 0
+        }
+    }
+
+    /// Brings newly lit stars up over the ignition duration.
+    ///
+    /// The commit that lights a star is the one moment onboarding celebrates,
+    /// and it is worth the time it takes: the model holds the next question
+    /// back for exactly this long so the star is on screen before the screen
+    /// changes.
+    private func ignite() async {
+        let lit = litMajors ?? []
+        let newly = lit.subtracting(settledMajors)
+        guard !newly.isEmpty else {
+            // A star going out is not an ignition, it is a correction, and it
+            // arrives without ceremony.
+            settledMajors = lit
+            return
+        }
+        guard !reduceMotion else {
+            settledMajors = lit
+            return
+        }
+
+        ignitingMajors = newly
+        ignition = 0
+        withAnimation(HavenMotion.starIgnition) { ignition = 1 }
+        try? await Task.sleep(for: .seconds(HavenMotion.starIgnitionDuration))
+        // Cancelled means the screen went away mid-ignition, and the state
+        // below belongs to a screen nobody is looking at.
+        guard !Task.isCancelled else { return }
+        settledMajors = lit
+        ignitingMajors = []
+    }
 }
 
 /// The screen shown while Haven is working out what to show. Night and a
