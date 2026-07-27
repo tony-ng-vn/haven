@@ -32,6 +32,47 @@ struct MyCard: Decodable, Equatable {
     }
 }
 
+extension MyCard.Platform {
+    /// What sits in front of a stored value to make the address it points at.
+    ///
+    /// Phone has none, because a number is not an address. The onboarding
+    /// contact screen keeps its own copy of these: it is parsing what someone
+    /// pasted, which is a different job from showing what was stored.
+    var addressPrefix: String {
+        switch self {
+        case .instagram: return "instagram.com/"
+        case .x: return "x.com/"
+        case .linkedin: return "linkedin.com/in/"
+        case .phone: return ""
+        }
+    }
+
+    /// The stored value as a card shows it.
+    ///
+    /// Instagram and X are read as handles, so they take the `@` their own
+    /// products put in front of one. A LinkedIn slug means nothing on its own,
+    /// so it shows as the address instead. A phone number is already itself.
+    func display(_ value: String) -> String {
+        switch self {
+        case .instagram, .x: return "@\(value)"
+        case .linkedin: return addressPrefix + value
+        case .phone: return value
+        }
+    }
+}
+
+extension MyCard.City {
+    /// The city as one line: "Austin, TX, United States", or just the parts
+    /// there are. A blank part is dropped rather than shown as a stray comma --
+    /// MapKit hands back an empty admin area for countries that have no states.
+    var line: String {
+        [name, admin, country]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+    }
+}
+
 extension MyCard {
     /// Which figure stars this card has earned. The slot mapping is fixed in
     /// `StarSlot`, so a field always lights the same star.
@@ -44,5 +85,20 @@ extension MyCard {
         if company?.isEmpty == false { slots.insert(.company) }
         if role?.isEmpty == false { slots.insert(.role) }
         return slots
+    }
+
+    /// The one way to be reached that a card leads with.
+    ///
+    /// `primaryPlatform` is the choice the person made. A card that carries
+    /// handles but no choice still falls back to the first one, because a card
+    /// showing no way to reach someone who gave one is worse than a card
+    /// picking for them.
+    var primaryHandle: Handle? {
+        guard let handles else { return nil }
+        if let primaryPlatform,
+           let chosen = handles.first(where: { $0.platform == primaryPlatform }) {
+            return chosen
+        }
+        return handles.first
     }
 }

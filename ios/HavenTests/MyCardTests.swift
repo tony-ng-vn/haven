@@ -87,3 +87,67 @@ struct MyCardTests {
         #expect(MyCard(username: "maya", handles: []).filledSlots.isEmpty)
     }
 }
+
+// MARK: - Display
+
+@Suite("Card display")
+struct MyCardDisplayTests {
+    @Test("a handle shows the way its own platform writes it")
+    func handleDisplay() {
+        #expect(MyCard.Platform.x.display("mayachen") == "@mayachen")
+        #expect(MyCard.Platform.instagram.display("mayachen") == "@mayachen")
+        #expect(MyCard.Platform.linkedin.display("maya-chen") == "linkedin.com/in/maya-chen")
+        #expect(MyCard.Platform.phone.display("+84 90 000 0000") == "+84 90 000 0000")
+    }
+
+    // The prefixes are what a link to the person is built from, so a wrong one
+    // is a link to the wrong place rather than a cosmetic slip.
+    @Test("every platform knows what its addresses start with")
+    func addressPrefixes() {
+        #expect(MyCard.Platform.x.addressPrefix == "x.com/")
+        #expect(MyCard.Platform.instagram.addressPrefix == "instagram.com/")
+        #expect(MyCard.Platform.linkedin.addressPrefix == "linkedin.com/in/")
+        #expect(MyCard.Platform.phone.addressPrefix.isEmpty)
+    }
+
+    @Test("a city line shows the parts it has and nothing else")
+    func cityLine() {
+        #expect(MyCard.City(name: "Ho Chi Minh City").line == "Ho Chi Minh City")
+        #expect(
+            MyCard.City(name: "Austin", admin: "TX", country: "United States").line
+                == "Austin, TX, United States"
+        )
+        #expect(
+            MyCard.City(name: "Ho Chi Minh City", country: "Vietnam").line
+                == "Ho Chi Minh City, Vietnam"
+        )
+        // A country with no states comes back from MapKit with a blank admin
+        // area, which as a raw join would render as a stray comma.
+        #expect(
+            MyCard.City(name: "Singapore", admin: "", country: "Singapore").line
+                == "Singapore, Singapore"
+        )
+    }
+
+    @Test("the card leads with the handle the person chose")
+    func primaryHandle() {
+        let x = MyCard.Handle(platform: .x, value: "mayachen", verified: true)
+        let phone = MyCard.Handle(platform: .phone, value: "+84900000000", verified: false)
+
+        var card = MyCard(username: "maya", handles: [phone, x], primaryPlatform: .x)
+        #expect(card.primaryHandle == x)
+
+        // No choice recorded yet: the only handle there is still beats none.
+        card.primaryPlatform = nil
+        #expect(card.primaryHandle == phone)
+
+        // A choice whose handle is gone must not silently show nothing either.
+        card.handles = [phone]
+        card.primaryPlatform = .x
+        #expect(card.primaryHandle == phone)
+
+        card.handles = []
+        #expect(card.primaryHandle == nil)
+        #expect(MyCard(username: "maya").primaryHandle == nil)
+    }
+}
