@@ -23,11 +23,11 @@ import {
   publicHandleValidator,
 } from "./profileFields";
 import { handleDisplayValue, handleIndexKeys } from "./handleKeys";
+import { HANDLE_PATTERN, isReservedHandle } from "./handleNames";
 
 const MINUTE_MS = 60_000;
 
 const USERNAME_MAX_LENGTH = 24;
-const USERNAME_PATTERN = /^[a-z0-9_]{3,24}$/;
 const USERNAME_HELP = "Use 3-24 lowercase letters, numbers, or underscores";
 
 const myProfileValidator = v.object({
@@ -98,7 +98,7 @@ function normalizeUsername(raw: string): string {
 
 function validateUsername(raw: string): string {
   const username = normalizeUsername(raw);
-  if (!USERNAME_PATTERN.test(username)) {
+  if (!HANDLE_PATTERN.test(username)) {
     throw new Error(USERNAME_HELP);
   }
   return username;
@@ -157,7 +157,7 @@ const HANDLE_SUFFIX_TRIES = 10;
 const HANDLE_SUGGESTIONS = 3;
 
 // Address ladder for a name: bare first name, then first_last, then a short
-// numeric suffix. Underscore rather than hyphen because USERNAME_PATTERN --
+// numeric suffix. Underscore rather than hyphen because HANDLE_PATTERN --
 // shared with the legacy setUsername path -- allows only a-z, 0-9 and "_".
 function handleCandidates(name: string): string[] {
   const parts = normalizeName(name)
@@ -165,8 +165,10 @@ function handleCandidates(name: string): string[] {
     .map((part) => part.replace(/[^a-z0-9]/g, ""))
     .filter((part) => part !== "");
   // A name with no Latin characters at all still deserves an address, so fall
-  // back to a generic base instead of failing the claim.
-  const first = parts[0] ?? "haven";
+  // back to a generic base instead of failing the claim. Not "haven": the
+  // brand is reserved so nobody can pose as it, and a fallback nobody can
+  // claim is not a fallback.
+  const first = parts[0] ?? "star";
   const base = parts.length > 1 ? `${first}_${parts[parts.length - 1]}` : first;
   const ladder = [first, base];
   for (let n = 2; n < 2 + HANDLE_SUFFIX_TRIES; n++) {
@@ -177,7 +179,7 @@ function handleCandidates(name: string): string[] {
     ...new Set(
       ladder.map((candidate) => candidate.slice(0, USERNAME_MAX_LENGTH)),
     ),
-  ].filter((candidate) => USERNAME_PATTERN.test(candidate));
+  ].filter((candidate) => HANDLE_PATTERN.test(candidate));
 }
 
 async function freeCandidates(
@@ -187,6 +189,9 @@ async function freeCandidates(
 ): Promise<string[]> {
   const free: string[] = [];
   for (const candidate of handleCandidates(name)) {
+    if (isReservedHandle(candidate)) {
+      continue;
+    }
     if ((await getProfileByUsername(ctx, candidate)) === null) {
       free.push(candidate);
       if (free.length === limit) {
@@ -573,6 +578,9 @@ export const setUsername = mutation({
     const userId = await requireUser(ctx);
     await checkRateLimit(ctx, userId, "setUsername", 10, MINUTE_MS);
     const username = validateUsername(args.username);
+    if (isReservedHandle(username)) {
+      throw new Error(`"${username}" is not available`);
+    }
     const taken = await ctx.db
       .query("profiles")
       .withIndex("by_username", (q) => q.eq("username", username))
@@ -731,7 +739,10 @@ export const claimHandle = mutation({
     // Check and claim in the same mutation: Convex serializes the two writes,
     // so a race ends with one "claimed" and one "taken", never a duplicate.
     const holder = await getProfileByUsername(ctx, handle);
-    if (holder !== null && holder.userId !== userId) {
+    // A name the site needs for itself reads as taken rather than as an error.
+    // It is unavailable, which is the same answer as a name someone else
+    // holds, and it deserves the same way forward.
+    if (isReservedHandle(handle) || (holder !== null && holder.userId !== userId)) {
       // Suggestions come from the caller's own name, and only unheld rungs
       // qualify -- which also drops the handle they already own.
       const suggestions =
@@ -765,7 +776,7 @@ export const getByHandle = query({
   returns: v.union(v.null(), publicCardValidator),
   handler: async (ctx, args) => {
     const handle = normalizeUsername(args.handle);
-    if (!USERNAME_PATTERN.test(handle)) {
+    if (!HANDLE_PATTERN.test(handle)) {
       return null;
     }
     const profile = await getProfileByUsername(ctx, handle);
@@ -782,7 +793,7 @@ export const lookupByUsername = query({
   handler: async (ctx, args) => {
     await requireUser(ctx);
     const username = normalizeUsername(args.username);
-    if (!USERNAME_PATTERN.test(username)) {
+    if (!HANDLE_PATTERN.test(username)) {
       return null;
     }
     const profile = await ctx.db

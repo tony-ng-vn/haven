@@ -20,6 +20,7 @@ import {
   parseAdminEmails,
   normalizeUrl,
   parseProfileUrl,
+  handleFromPath,
   resolveView,
   triageCountLabel,
 } from "./lib";
@@ -695,5 +696,76 @@ describe("nameGuessFromSlug", () => {
 
   test("empty segments from doubled or trailing hyphens do not leak spaces", () => {
     expect(nameGuessFromSlug("mai--tran-")).toBe("Mai Tran");
+  });
+});
+
+describe("handleFromPath", () => {
+  test("a single well-formed segment is a handle", () => {
+    expect(handleFromPath("/maya")).toBe("maya");
+    expect(handleFromPath("/mai_nguyen")).toBe("mai_nguyen");
+    // A trailing slash is the same url to a person, so it is the same to us.
+    expect(handleFromPath("/maya/")).toBe("maya");
+  });
+
+  test("the site's own root is not a handle", () => {
+    expect(handleFromPath("/")).toBe(null);
+    expect(handleFromPath("")).toBe(null);
+  });
+
+  // A card sits at the root, so it competes with every other top-level path.
+  test("a name the site needs for itself is not a handle", () => {
+    expect(handleFromPath("/privacy")).toBe(null);
+    expect(handleFromPath("/terms")).toBe(null);
+  });
+
+  test("anything a handle could not be is not a handle", () => {
+    expect(handleFromPath("/og.png")).toBe(null);
+    expect(handleFromPath("/assets/index-abc.js")).toBe(null);
+    expect(handleFromPath("/maya/notes")).toBe(null);
+    // Too short, and too long.
+    expect(handleFromPath("/ab")).toBe(null);
+    expect(handleFromPath(`/${"a".repeat(25)}`)).toBe(null);
+  });
+});
+
+describe("resolveView with a card path", () => {
+  const base = {
+    isAuthenticated: false,
+    isLoading: false,
+    hash: "",
+    hasSessionHint: false,
+  };
+
+  // The stranger scanning a QR is the whole point of the page, and they arrive
+  // signed out. Deciding the card from the path has to happen before the auth
+  // checks, or a signed-out visitor waits behind Clerk on a splash and a
+  // signed-in one is bounced to their own home.
+  test("a card path wins over every auth state", () => {
+    expect(resolveView({ ...base, pathname: "/maya" })).toBe("card");
+    expect(
+      resolveView({ ...base, pathname: "/maya", isLoading: true }),
+    ).toBe("card");
+    expect(
+      resolveView({ ...base, pathname: "/maya", isAuthenticated: true }),
+    ).toBe("card");
+    expect(
+      resolveView({
+        ...base,
+        pathname: "/maya",
+        isLoading: true,
+        hasSessionHint: true,
+      }),
+    ).toBe("card");
+  });
+
+  test("every other path routes exactly as it did before", () => {
+    expect(resolveView({ ...base, pathname: "/" })).toBe("waitlist");
+    expect(resolveView({ ...base, pathname: "/privacy" })).toBe("waitlist");
+    expect(
+      resolveView({ ...base, pathname: "/", isAuthenticated: true }),
+    ).toBe("home");
+    expect(
+      resolveView({ ...base, pathname: "/", hash: "#/sign-in" }),
+    ).toBe("signin");
   });
 });

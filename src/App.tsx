@@ -11,9 +11,11 @@ import { Waitlist } from "./Waitlist";
 import { DriftSky } from "./DriftSky";
 import {
   isClerkFlowHash,
+  handleFromPath,
   resolveView,
   type PersonSnapshot,
 } from "./lib";
+import { CardPage } from "./CardPage";
 
 function ChevronLeft() {
   return (
@@ -259,7 +261,21 @@ export default function App() {
     writeSessionHint(isAuthenticated);
   }, [isLoading, isAuthenticated]);
 
-  const view = resolveView({ isAuthenticated, isLoading, hash, hasSessionHint });
+  // Read once, unlike the hash: nothing in the app navigates between paths, so
+  // a card url only ever arrives as a fresh load.
+  const [pathname] = useState(() => window.location.pathname);
+
+  const view = resolveView({
+    isAuthenticated,
+    isLoading,
+    hash,
+    hasSessionHint,
+    pathname,
+  });
+  if (view === "card") {
+    // Non-null whenever resolveView says card, by the same check.
+    return <CardPage handle={handleFromPath(pathname)!} />;
+  }
   if (view === "home") return <Home />;
   if (view === "signin") return <SignIn />;
   if (view === "splash") return <Splash />;
