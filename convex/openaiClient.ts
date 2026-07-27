@@ -1,6 +1,7 @@
-// Plain helpers for the two OpenAI endpoints Haven uses. Not registered
-// Convex functions; call these only from actions (they do network IO).
-// fetch is available in the default Convex runtime, so no "use node".
+// Plain helpers for the two model endpoints Haven uses (OpenAI-compatible;
+// extraction can run on another provider, see extractionConfig). Not
+// registered Convex functions; call these only from actions (they do network
+// IO). fetch is available in the default Convex runtime, so no "use node".
 
 export type ExtractedProfile = {
   platform: string;
@@ -62,32 +63,71 @@ const EXTRACTION_PROMPT = [
   "set is_profile to false.",
 ].join(" ");
 
-function apiKey(): string {
-  const key = process.env.OPENAI_API_KEY;
-  if (key === undefined || key === "") {
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (value === undefined || value === "") {
     throw new Error(
-      "OPENAI_API_KEY is not set on the Convex deployment. Run: npx convex env set OPENAI_API_KEY <key>",
+      `${name} is not set on the Convex deployment. Run: npx convex env set ${name} <value>`,
     );
   }
-  return key;
+  return value;
 }
 
-// Any OpenAI-compatible provider (e.g. interfaze.ai) works by pointing this
-// at its base URL; the request/response shape is unchanged.
-const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com";
+type Provider = { label: string; baseUrl: string; key: string };
 
-async function callOpenAI(path: string, body: unknown): Promise<unknown> {
-  const response = await fetch(`${baseUrl}/v1/${path}`, {
+function openaiProvider(): Provider {
+  return {
+    label: "OpenAI",
+    baseUrl: process.env.OPENAI_BASE_URL ?? "https://api.openai.com",
+    key: requireEnv("OPENAI_API_KEY"),
+  };
+}
+
+// Extraction is provider-swappable via EXTRACTION_BASE_URL / _API_KEY /
+// _MODEL (any OpenAI-compatible API; we point it at interfaze.ai to spend
+// credit there). Embeddings deliberately are not: the vector index stores
+// 1536-dim text-embedding-3-small vectors, so moving them is a re-embed
+// migration, not an env change.
+function extractionConfig(): { provider: Provider; model: string } {
+  const baseUrl = process.env.EXTRACTION_BASE_URL;
+  const model = process.env.EXTRACTION_MODEL;
+  if (baseUrl === undefined || baseUrl === "") {
+    return {
+      provider: openaiProvider(),
+      model: model === undefined || model === "" ? "gpt-4o-mini" : model,
+    };
+  }
+  // A custom base URL must bring its own key and model: falling back would
+  // hand the OpenAI bearer to a third-party host, or send that host a model
+  // name it does not serve.
+  return {
+    provider: {
+      label: "Extraction provider",
+      baseUrl,
+      key: requireEnv("EXTRACTION_API_KEY"),
+    },
+    model: requireEnv("EXTRACTION_MODEL"),
+  };
+}
+
+async function callProvider(
+  provider: Provider,
+  path: string,
+  body: unknown,
+): Promise<unknown> {
+  const response = await fetch(`${provider.baseUrl}/v1/${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey()}`,
+      Authorization: `Bearer ${provider.key}`,
     },
     body: JSON.stringify(body),
   });
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(`OpenAI ${path} failed (${response.status}): ${detail}`);
+    throw new Error(
+      `${provider.label} ${path} failed (${response.status}): ${detail}`,
+    );
   }
   return await response.json();
 }
@@ -95,8 +135,9 @@ async function callOpenAI(path: string, body: unknown): Promise<unknown> {
 export async function extractProfile(
   imageUrl: string,
 ): Promise<ExtractedProfile> {
-  const result = (await callOpenAI("chat/completions", {
-    model: "gpt-4o-mini",
+  const { provider, model } = extractionConfig();
+  const result = (await callProvider(provider, "chat/completions", {
+    model,
     messages: [
       {
         role: "user",
@@ -120,7 +161,7 @@ export async function extractProfile(
 
   const message = result.choices?.[0]?.message;
   if (message === undefined || typeof message.content !== "string") {
-    throw new Error(message?.refusal ?? "OpenAI returned no extraction");
+    throw new Error(message?.refusal ?? `${provider.label} returned no extraction`);
   }
   const parsed = JSON.parse(message.content) as {
     is_profile: boolean;
@@ -149,7 +190,7 @@ export async function extractProfile(
 }
 
 export async function embedText(text: string): Promise<number[]> {
-  const result = (await callOpenAI("embeddings", {
+  const result = (await callProvider(openaiProvider(), "embeddings", {
     model: "text-embedding-3-small",
     input: text,
   })) as { data?: Array<{ embedding?: number[] }> };
