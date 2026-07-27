@@ -91,18 +91,21 @@ struct MyCardScreen: View {
 
     private func loaded(_ card: MyCard) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Handed a definite height, because HavenCard fills whatever space
-            // it is given and this one is inside a scroll view.
-            //
-            // Bounding it puts an edge back around the sky, which is the one
-            // thing the card was built to avoid, so the mask lets all four
-            // sides dissolve instead of stopping. A sky that ends in a line
-            // reads as a panel somebody forgot to style; one that fades reads
-            // as a sky you are seeing part of.
-            HavenCard(card: card, sky: sky(for: card), majorIntensities: intensities(for: card))
-                .frame(height: MyCardMetrics.cardHeight)
-                .mask(MyCardMetrics.edgeFade)
-                .padding(.bottom, 8)
+            // The card is an object here, not a bleed. It has a real edge now,
+            // so the four-sided fade that used to dissolve it into the night is
+            // gone: a sky that stops at a lit rim is a card, and only a sky
+            // that stops at nothing needed hiding.
+            CardObject {
+                HavenCard(
+                    card: card,
+                    sky: sky(for: card),
+                    majorIntensities: intensities(for: card),
+                    nebulaDamping: MyCardMetrics.cardNebulaDamping
+                )
+            }
+            .padding(.horizontal, MyCardMetrics.cardInset)
+            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity)
 
             if let failure = model.failure {
                 Text(failure)
@@ -229,42 +232,16 @@ struct MyCardScreen: View {
 }
 
 enum MyCardMetrics {
-    /// The figure's band plus room for the name block under it. Fixed, because
-    /// the card is the header of a scrolling screen rather than the screen.
-    static let cardHeight: CGFloat = CardMetrics.figureBandHeight + 140
+    /// How far the card object is held off the sides of the screen. Its height
+    /// follows from its aspect, so this is the only size the screen chooses.
+    static let cardInset: CGFloat = 44
 
-    /// Dissolves all four edges of the card into the night.
-    ///
-    /// Two gradients multiplied, because one alone leaves the other pair of
-    /// sides cut square. The bottom gets the longest fade: it is the edge that
-    /// meets the rows, and the sky has to be gone by the time the first one
-    /// starts. Full bleed would be the other answer, but `HavenScreen` puts its
-    /// content inside a scroll view that clips, so there is no reaching past
-    /// the margin from in here.
-    static var edgeFade: some View {
-        LinearGradient(
-            stops: [
-                .init(color: .clear, location: 0),
-                .init(color: .black, location: 0.06),
-                .init(color: .black, location: 0.82),
-                .init(color: .clear, location: 1),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .mask(
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0),
-                    .init(color: .black, location: 0.08),
-                    .init(color: .black, location: 0.92),
-                    .init(color: .clear, location: 1),
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        )
-    }
+    /// A card crops far less of each nebula's core than a full screen, so it
+    /// can carry more of the wash than the full-screen 0.4. Not much more: at
+    /// 0.85 a person whose hues land on green and teal gets a card washed in
+    /// colours the dusk palette does not contain, which is the exact failure
+    /// the full-screen damping exists to prevent.
+    static let cardNebulaDamping: Double = 0.5
 }
 
 // MARK: - Previews

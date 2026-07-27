@@ -23,28 +23,49 @@ struct SkyView: View {
     /// question is the one thing that reads as a mistake.
     let figureBand: CGRect?
 
+    /// How far the generator's nebula alphas are pulled back. The alphas were
+    /// authored against a 384-wide space, so a full phone screen crops deep
+    /// into each nebula's core and needs them held back; a card-sized card
+    /// crops far less and can carry more.
+    var nebulaDamping: Double = SkyView.fullScreenNebulaDamping
+
+    /// What a full-screen sky uses.
+    static let fullScreenNebulaDamping: Double = 0.4
+
     @HavenReduceMotion private var reduceMotion
 
     /// The figure part way lit. Intensities are a plain input: animating them
     /// is the caller's job, and a Reduce Motion caller passes final values with
     /// no animation, as everywhere else.
-    init(sky: Sky, majorIntensities: [Double], figureBand: CGRect? = nil) {
+    init(
+        sky: Sky,
+        majorIntensities: [Double],
+        figureBand: CGRect? = nil,
+        nebulaDamping: Double = SkyView.fullScreenNebulaDamping
+    ) {
         self.sky = sky
         self.majorIntensities = majorIntensities
         self.figureBand = figureBand
+        self.nebulaDamping = nebulaDamping
     }
 
     /// The figure at rest, where a star is either lit or a faint dot. Use
     /// `StarSlot.litMajorIndices` to derive the set from filled fields; the
     /// default is the complete figure, which is what the card and the beacon
     /// show.
-    init(sky: Sky, litMajors: Set<Int>? = nil, figureBand: CGRect? = nil) {
+    init(
+        sky: Sky,
+        litMajors: Set<Int>? = nil,
+        figureBand: CGRect? = nil,
+        nebulaDamping: Double = SkyView.fullScreenNebulaDamping
+    ) {
         let count = sky.majors.count
         self.init(
             sky: sky,
             majorIntensities: litMajors.map { FigureIntensity.from(litMajors: $0, majorCount: count) }
                 ?? FigureIntensity.complete(majorCount: count),
-            figureBand: figureBand
+            figureBand: figureBand,
+            nebulaDamping: nebulaDamping
         )
     }
 
@@ -54,7 +75,7 @@ struct SkyView: View {
             // The nebulae stay full bleed whatever the figure does. They are
             // the ground, not the person, and cropping them to a band would
             // leave the rest of the screen flat.
-            SkyBackdrop(sky: sky)
+            SkyBackdrop(sky: sky, nebulaDamping: nebulaDamping)
             ShimmerField(sky: sky, figureBand: figureBand)
             AnimatedSky(
                 sky: sky,
@@ -74,9 +95,7 @@ struct SkyView: View {
 private struct SkyBackdrop: View {
     let sky: Sky
 
-    /// How far the generator's nebula alphas are pulled back for a full-screen
-    /// phone. See the note where it is applied.
-    private static let nebulaDamping: Double = 0.4
+    let nebulaDamping: Double
 
     var body: some View {
         Canvas(rendersAsynchronously: true) { context, size in
@@ -89,7 +108,7 @@ private struct SkyBackdrop: View {
                 // middle, and the middle of a radial gradient is its core --
                 // undamped, a person whose hues land on green and teal gets a
                 // screen washed in colours the dusk palette does not contain.
-                let alpha = nebula.alpha * Self.nebulaDamping
+                let alpha = nebula.alpha * nebulaDamping
                 context.drawLayer { layer in
                     // Radial gradients are circular, so the ellipse is drawn in a
                     // scaled space instead of being stretched afterwards.
