@@ -118,8 +118,8 @@ function PrivacyBody() {
         <li>
           <strong>An AI provider</strong> receives the text of your notes and of
           the profiles you save, so that Haven can make them searchable by
-          meaning and answer questions you ask about your own network. That text
-          is not used to train anybody's models.
+          meaning and answer questions you ask about your own network. We only
+          use providers whose terms keep that text out of model training.
         </li>
         <li>
           <strong>Vercel</strong> serves the website.
@@ -162,7 +162,8 @@ function PrivacyBody() {
         In the app, open My Card and choose "Delete your account". That removes
         your card, every person you have saved, every note attached to them,
         your photos and screenshots, and the sign-in itself. It cannot be
-        undone, and we do not keep a copy.
+        undone. Routine backups taken before you deleted expire on their own
+        schedule, and nothing is kept beyond them.
       </p>
       <p>
         One thing survives, and it is not yours: if another Haven user saved you
