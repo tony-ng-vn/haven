@@ -323,10 +323,47 @@ test("setUsername enforces uniqueness across users", async () => {
   ).rejects.toThrow("That username is already taken");
 });
 
+// The photo import and the My Card photo add both upload before they know
+// which profile field the blob will land in, so the URL is its own function
+// rather than a side effect of updateMyProfile.
+test("generateUploadUrl hands a signed-in caller a URL", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  const url = await me.as.mutation(api.profiles.generateUploadUrl, {});
+
+  expect(typeof url).toBe("string");
+  expect(url.length).toBeGreaterThan(0);
+});
+
+// An upload URL writes a blob to storage, so it is a spend, and the sweep
+// that reclaims unreferenced blobs is not a reason to let one caller open the
+// tap. The cap matches captures' own createCapture burst limit.
+test("generateUploadUrl is rate limited per user", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  const other = asNewUser(t);
+
+  for (let i = 0; i < 10; i++) {
+    await me.as.mutation(api.profiles.generateUploadUrl, {});
+  }
+
+  await expect(
+    me.as.mutation(api.profiles.generateUploadUrl, {}),
+  ).rejects.toThrow("Too many");
+  // One user's burst must not spend another user's budget.
+  await expect(
+    other.as.mutation(api.profiles.generateUploadUrl, {}),
+  ).resolves.toBeTruthy();
+});
+
 test("profile functions reject unauthenticated callers", async () => {
   const t = convexTest(schema, modules);
 
   await expect(t.query(api.profiles.getMyProfile, {})).rejects.toThrow(
+    "Not signed in",
+  );
+  await expect(t.mutation(api.profiles.generateUploadUrl, {})).rejects.toThrow(
     "Not signed in",
   );
   await expect(t.query(api.profiles.getMyCard, {})).rejects.toThrow(
@@ -564,7 +601,9 @@ test("claimHandle and setUsername write the same handle field", async () => {
 
   await other.as.mutation(api.profiles.claimHandle, { handle: "maya_c" });
   expect(
-    await legacy.as.query(api.profiles.lookupByUsername, { username: "maya_c" }),
+    await legacy.as.query(api.profiles.lookupByUsername, {
+      username: "maya_c",
+    }),
   ).toEqual({ username: "maya_c" });
 });
 
@@ -623,8 +662,12 @@ test("getByHandle returns null for an unknown, unclaimable, or nameless handle",
   await legacy.as.mutation(api.profiles.setUsername, { username: "maya" });
 
   // A legacy setUsername-only row has no card to show.
-  expect(await t.query(api.profiles.getByHandle, { handle: "maya" })).toBeNull();
-  expect(await t.query(api.profiles.getByHandle, { handle: "nobody" })).toBeNull();
+  expect(
+    await t.query(api.profiles.getByHandle, { handle: "maya" }),
+  ).toBeNull();
+  expect(
+    await t.query(api.profiles.getByHandle, { handle: "nobody" }),
+  ).toBeNull();
   expect(
     await t.query(api.profiles.getByHandle, { handle: "not a handle!" }),
   ).toBeNull();

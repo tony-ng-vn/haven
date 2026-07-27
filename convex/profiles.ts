@@ -19,8 +19,7 @@ const MINUTE_MS = 60_000;
 
 const USERNAME_MAX_LENGTH = 24;
 const USERNAME_PATTERN = /^[a-z0-9_]{3,24}$/;
-const USERNAME_HELP =
-  "Use 3-24 lowercase letters, numbers, or underscores";
+const USERNAME_HELP = "Use 3-24 lowercase letters, numbers, or underscores";
 
 const myProfileValidator = v.object({
   _id: v.id("profiles"),
@@ -158,15 +157,16 @@ function handleCandidates(name: string): string[] {
   // A name with no Latin characters at all still deserves an address, so fall
   // back to a generic base instead of failing the claim.
   const first = parts[0] ?? "haven";
-  const base =
-    parts.length > 1 ? `${first}_${parts[parts.length - 1]}` : first;
+  const base = parts.length > 1 ? `${first}_${parts[parts.length - 1]}` : first;
   const ladder = [first, base];
   for (let n = 2; n < 2 + HANDLE_SUFFIX_TRIES; n++) {
     const suffix = String(n);
     ladder.push(base.slice(0, USERNAME_MAX_LENGTH - suffix.length) + suffix);
   }
   return [
-    ...new Set(ladder.map((candidate) => candidate.slice(0, USERNAME_MAX_LENGTH))),
+    ...new Set(
+      ladder.map((candidate) => candidate.slice(0, USERNAME_MAX_LENGTH)),
+    ),
   ].filter((candidate) => USERNAME_PATTERN.test(candidate));
 }
 
@@ -315,6 +315,30 @@ export const getMyProfile = query({
   },
 });
 
+// Where a profile photo is uploaded before it is attached.
+//
+// Its own function rather than a shared one with captures: the two are
+// different spends with different limits, and a single URL minter would make
+// a photo import and a screenshot capture compete for one budget.
+//
+// Rate limited because a URL is a write into storage. The orphan sweep
+// reclaims blobs nobody references, but a sweep is a cleanup, not a cap.
+export const generateUploadUrl = mutation({
+  args: {},
+  returns: v.string(),
+  handler: async (ctx) => {
+    const userId = await requireUser(ctx);
+    await checkRateLimit(
+      ctx,
+      userId,
+      "profiles:generateUploadUrl",
+      10,
+      MINUTE_MS,
+    );
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
 // The caller's whole card. Onboarding resumes at the first unanswered question,
 // and the client works that out from this, not from a local counter: a counter
 // is lost on reinstall and lies after an edit on another device.
@@ -417,7 +441,9 @@ export const updateMyProfile = mutation({
     }
     if (args.company !== undefined) {
       fields.company =
-        args.company === null ? undefined : requireText("Company", args.company);
+        args.company === null
+          ? undefined
+          : requireText("Company", args.company);
     }
     if (args.role !== undefined) {
       fields.role =
