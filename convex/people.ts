@@ -16,8 +16,8 @@ import {
 } from "convex/server";
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
-import { buildEmbedText } from "../src/lib";
-import { embedText } from "./openaiClient";
+import { buildDossier, buildEmbedText } from "../src/lib";
+import { askNetwork, embedText } from "./openaiClient";
 import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
 import { normalizeName, personSearchText } from "./nameSearch";
@@ -48,6 +48,7 @@ const SEMANTIC_RESULT_LIMIT = 8;
 const MEMORY_CANDIDATE_LIMIT = 64;
 
 const MINUTE_MS = 60_000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
 
 // Keeps a single wildly long paste from bloating a document or dominating
 // its own embedding.
@@ -1226,6 +1227,310 @@ export const semanticSearch = action({
       const person = byId.get(personId);
       return person === undefined ? [] : [{ ...person, score, evidence }];
     });
+  },
+});
+
+// -------------------------------------------------------------------- ask
+
+// How many people one ask loads by recency before the query itself has to
+// choose. A personal network is hundreds of people (architecture stance), so
+// this is a ceiling, not the expected size.
+const ASK_NETWORK_LIMIT = 200;
+
+// The most recent lines per person. A person with a hundred memories would
+// otherwise crowd out everyone else in the prompt.
+const ASK_MEMORIES_PER_PERSON = 12;
+
+// Prompt budget for the network listing, in characters. Roughly 4 characters
+// a token, so this is about 30k prompt tokens -- comfortably inside a single
+// call and, at the plan's measured rates, a few cents an ask.
+const MAX_DOSSIER_CHARS = 120_000;
+
+// Matches beyond this are noise: the answer to "who do I know who does X" is
+// a handful of people, not a page of them.
+const MAX_ASK_MATCHES = 10;
+
+// Bounds on what the client may send. Rejected rather than truncated: a
+// client sending more than this is a bug or an abuse, and quietly trimming
+// would hide both while still spending on the call.
+const MAX_ASK_TEXT_LENGTH = 2000;
+const MAX_ASK_HISTORY_TURNS = 20;
+const ASK_TOO_LONG_ERROR = "Keep each message under 2000 characters";
+
+const askTurnValidator = v.object({
+  role: v.union(v.literal("user"), v.literal("assistant")),
+  text: v.string(),
+});
+
+// What one person looks like to the ask prompt. Not personValidator: the
+// model needs memory lines and platform names, and has no use for photo urls
+// or storage ids.
+const askPersonValidator = v.object({
+  _id: v.id("people"),
+  name: v.string(),
+  headline: v.optional(v.string()),
+  bio: v.optional(v.string()),
+  role: v.optional(v.string()),
+  company: v.optional(v.string()),
+  cityName: v.optional(v.string()),
+  platforms: v.array(v.string()),
+  memories: v.array(v.object({ text: v.string(), createdAt: v.number() })),
+});
+
+type AskPerson = Infer<typeof askPersonValidator>;
+
+export const listNetworkForAsk = internalQuery({
+  args: {
+    userId: v.string(),
+    // Given by the narrowing path, which has already chosen who is worth
+    // sending. Absent means "the most recently touched people".
+    personIds: v.optional(v.array(v.id("people"))),
+  },
+  returns: v.array(askPersonValidator),
+  handler: async (ctx, args) => {
+    let people: Array<Doc<"people">>;
+    if (args.personIds === undefined) {
+      people = await ctx.db
+        .query("people")
+        .withIndex("by_user_and_updatedAt", (q) => q.eq("userId", args.userId))
+        .order("desc")
+        .take(ASK_NETWORK_LIMIT);
+    } else {
+      people = [];
+      for (const id of args.personIds.slice(0, ASK_NETWORK_LIMIT)) {
+        const person = await ctx.db.get("people", id);
+        // The ids come from a userId-filtered vector search, so this can only
+        // fail for a person deleted mid-ask -- but ownership is not a thing to
+        // take on trust in the one place the whole card gets read out loud.
+        if (person !== null && person.userId === args.userId) {
+          people.push(person);
+        }
+      }
+    }
+
+    const network: AskPerson[] = [];
+    for (const person of people) {
+      const recent = await ctx.db
+        .query("memories")
+        .withIndex("by_person", (q) => q.eq("personId", person._id))
+        .order("desc")
+        .take(ASK_MEMORIES_PER_PERSON);
+      // The legacy platform scalar counts too: a person captured before
+      // contactHandles existed is still reachable on that platform.
+      const platforms = [
+        ...new Set(
+          [
+            person.platform,
+            ...(person.contactHandles ?? []).map((handle) => handle.platform),
+          ].filter(
+            (part): part is string => part !== undefined && part.trim() !== "",
+          ),
+        ),
+      ];
+      network.push({
+        _id: person._id,
+        name: person.name,
+        headline: person.headline,
+        bio: person.bio,
+        role: person.role,
+        company: person.company,
+        cityName: person.city?.name,
+        platforms,
+        // Oldest first, so the lines read as the timeline the user wrote.
+        memories: recent
+          .reverse()
+          .map((memory) => ({ text: memory.text, createdAt: memory.createdAt })),
+      });
+    }
+    return network;
+  },
+});
+
+// Ranked personIds for a query, best first. Deliberately without the
+// MIN_SEMANTIC_SCORE floor semanticSearch applies: this picks WHICH dossiers
+// to send, and a weakly-matching person is still a better use of the budget
+// than one chosen by recency alone.
+async function rankPeopleForAsk(
+  ctx: ActionCtx,
+  userId: string,
+  query: string,
+): Promise<Array<Id<"people">>> {
+  const vector = await embedText(query);
+  const [personHits, memoryHits] = await Promise.all([
+    ctx.vectorSearch("people", "by_embedding", {
+      vector,
+      limit: ASK_NETWORK_LIMIT,
+      filter: (q) => q.eq("userId", userId),
+    }),
+    ctx.vectorSearch("memories", "by_embedding", {
+      vector,
+      limit: ASK_NETWORK_LIMIT,
+      filter: (q) => q.eq("userId", userId),
+    }),
+  ]);
+  const best = new Map<Id<"people">, number>();
+  const keepBest = (personId: Id<"people">, score: number) => {
+    if (score > (best.get(personId) ?? -1)) {
+      best.set(personId, score);
+    }
+  };
+  for (const hit of personHits) {
+    keepBest(hit._id, hit._score);
+  }
+  if (memoryHits.length > 0) {
+    const scores = new Map(memoryHits.map((hit) => [hit._id, hit._score]));
+    const owners: Array<{
+      _id: Id<"memories">;
+      personId: Id<"people">;
+      text: string;
+    }> = await ctx.runQuery(internal.memories.fetchMemoryOwners, {
+      ids: memoryHits.map((hit) => hit._id),
+    });
+    for (const owner of owners) {
+      keepBest(owner.personId, scores.get(owner._id) ?? 0);
+    }
+  }
+  return [...best.entries()]
+    .sort(([, a], [, b]) => b - a)
+    .map(([personId]) => personId);
+}
+
+// Dossiers in order until the prompt budget runs out. refs[i] is who
+// "#(i + 1)" means, so a ref the model answers with always names a person it
+// was actually shown. A short return means people were left out.
+function packDossiers(network: AskPerson[]): {
+  refs: Array<Id<"people">>;
+  dossiers: string[];
+} {
+  const refs: Array<Id<"people">> = [];
+  const dossiers: string[] = [];
+  let used = 0;
+  for (const person of network) {
+    const text = buildDossier(refs.length + 1, person);
+    // The first person always goes in, however long: an ask over a network
+    // of one must not come back empty because that one person is chatty.
+    if (used + text.length > MAX_DOSSIER_CHARS && refs.length > 0) {
+      break;
+    }
+    refs.push(person._id);
+    dossiers.push(text);
+    used += text.length + 2;
+  }
+  return { refs, dossiers };
+}
+
+// "Do I know anyone with database experience" over the whole network in one
+// model call. Bridging is prompt-level, not infrastructure: a personal
+// network is small enough to reason about whole, so there is no graph to
+// build (architecture stance). The client holds the conversation; this call
+// keeps no session state.
+export const ask = action({
+  args: {
+    query: v.string(),
+    // Prior turns, oldest first. The client owns them, so a refinement is
+    // just another call with more context rather than a server-side session.
+    history: v.optional(v.array(askTurnValidator)),
+  },
+  returns: v.object({
+    matches: v.array(
+      v.object({
+        personId: v.id("people"),
+        kind: v.union(v.literal("direct"), v.literal("bridge")),
+        why: v.string(),
+      }),
+    ),
+    // Set instead of guessing when the request is too vague to answer.
+    clarifyingQuestion: v.union(v.null(), v.string()),
+  }),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    // Two windows, both before any work: an ask costs roughly a hundred times
+    // what a semantic search does, so the burst limit alone would not bound
+    // a day's spend.
+    await ctx.runMutation(internal.people.enforceRateLimit, {
+      userId,
+      action: "ask:minute",
+      max: 10,
+      windowMs: MINUTE_MS,
+    });
+    await ctx.runMutation(internal.people.enforceRateLimit, {
+      userId,
+      action: "ask:day",
+      max: 100,
+      windowMs: DAY_MS,
+    });
+
+    const query = args.query.trim();
+    if (query === "") {
+      throw new Error("Ask a question first");
+    }
+    const history = args.history ?? [];
+    if (history.length > MAX_ASK_HISTORY_TURNS) {
+      throw new Error("This conversation is too long -- start a new one");
+    }
+    if (
+      query.length > MAX_ASK_TEXT_LENGTH ||
+      history.some((turn) => turn.text.length > MAX_ASK_TEXT_LENGTH)
+    ) {
+      throw new Error(ASK_TOO_LONG_ERROR);
+    }
+
+    let network: AskPerson[] = await ctx.runQuery(
+      internal.people.listNetworkForAsk,
+      { userId },
+    );
+    let packed = packDossiers(network);
+    // A network that hit the load cap, or one the budget had to cut short,
+    // has its candidates chosen by the question instead of by recency.
+    // Embedding retrieval earns its keep here and nowhere else in this flow.
+    if (
+      network.length === ASK_NETWORK_LIMIT ||
+      packed.refs.length < network.length
+    ) {
+      const ranked = await rankPeopleForAsk(ctx, userId, query);
+      if (ranked.length > 0) {
+        network = await ctx.runQuery(internal.people.listNetworkForAsk, {
+          userId,
+          personIds: ranked,
+        });
+        packed = packDossiers(network);
+      }
+    }
+
+    const { refs, dossiers } = packed;
+    if (refs.length === 0) {
+      // Nobody saved yet: an empty prompt cannot answer anything, and paying
+      // a model to say so is waste.
+      return { matches: [], clarifyingQuestion: null };
+    }
+
+    const answer = await askNetwork(query, dossiers.join("\n\n"), history);
+    const seen = new Set<number>();
+    const matches: Array<{
+      personId: Id<"people">;
+      kind: "direct" | "bridge";
+      why: string;
+    }> = [];
+    for (const match of answer.matches) {
+      const personId = refs[match.ref - 1];
+      // A ref nobody was shown, a repeat, or a kind outside the schema all
+      // mean the model went off contract. Drop the match rather than answer
+      // with a person the user never saved.
+      if (
+        personId === undefined ||
+        seen.has(match.ref) ||
+        (match.kind !== "direct" && match.kind !== "bridge") ||
+        typeof match.why !== "string"
+      ) {
+        continue;
+      }
+      seen.add(match.ref);
+      matches.push({ personId, kind: match.kind, why: match.why });
+      if (matches.length === MAX_ASK_MATCHES) {
+        break;
+      }
+    }
+    return { matches, clarifyingQuestion: answer.clarifyingQuestion ?? null };
   },
 });
 

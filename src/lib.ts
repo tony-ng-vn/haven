@@ -296,6 +296,54 @@ export function buildEmbedText(fields: {
     .join("\n");
 }
 
+// One person as the model reads them in an ask. Deliberately terse: the whole
+// network goes in one prompt, so every label costs tokens on every row.
+//
+// The ref, not the Convex id, is what the model answers with. Ids are ~32
+// characters each and a model that mangles one produces a match pointing at
+// nobody; a small integer is cheap to send and cheap to validate on the way
+// back.
+export function buildDossier(
+  ref: number,
+  person: {
+    name: string;
+    headline?: string;
+    bio?: string;
+    role?: string;
+    company?: string;
+    cityName?: string;
+    platforms?: string[];
+    memories?: Array<{ text: string; createdAt: number }>;
+  },
+): string {
+  const role = person.role?.trim() ?? "";
+  const company = person.company?.trim() ?? "";
+  const workLine =
+    role !== "" && company !== "" ? `${role} at ${company}` : role + company;
+  const heading = [
+    `#${ref} ${person.name}`,
+    workLine,
+    person.cityName,
+    person.platforms?.join(", "),
+  ]
+    .filter((part): part is string => part !== undefined && part.trim() !== "")
+    .join(" | ");
+  const lines = [heading];
+  if (person.headline !== undefined && person.headline.trim() !== "") {
+    lines.push(person.headline);
+  }
+  if (person.bio !== undefined && person.bio.trim() !== "") {
+    lines.push(person.bio);
+  }
+  for (const memory of person.memories ?? []) {
+    // Dated because "who did I meet last month" is a memory query, and an
+    // undated note cannot answer it.
+    const day = new Date(memory.createdAt).toISOString().slice(0, 10);
+    lines.push(`- ${day}: ${memory.text}`);
+  }
+  return lines.join("\n");
+}
+
 // Manual triage: the human is the OCR. Join a first and last name into one
 // display name -- trim both, collapse runs of inner whitespace, single space
 // between. "" when nothing real was typed, which is also the can-save gate.
