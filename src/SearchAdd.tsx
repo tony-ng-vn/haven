@@ -137,6 +137,13 @@ export function SearchAdd({
   const meetExchange = useMutation(api.profiles.meetExchange);
   const semanticSearch = useAction(api.people.semanticSearch);
   const [adding, setAdding] = useState(false);
+  // Manual add needs identity and a story (backend-required), so the one-tap
+  // add expands into a small form before anything is saved.
+  const [addOpen, setAddOpen] = useState(false);
+  const [addPlatform, setAddPlatform] = useState("");
+  const [addHandle, setAddHandle] = useState("");
+  const [addNote, setAddNote] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
   const [semantic, setSemantic] = useState<SemanticResults>([]);
   const [meetOpen, setMeetOpen] = useState(false);
   const [usernameDraft, setUsernameDraft] = useState("");
@@ -273,10 +280,30 @@ export function SearchAdd({
 
   async function handleAdd() {
     if (adding || trimmed === "") return;
+    const platform = addPlatform.trim();
+    const handle = addHandle.trim();
+    const note = addNote.trim();
+    if (platform === "" || handle === "" || note === "") {
+      setAddError("Platform, handle, and a note are all required");
+      return;
+    }
     setAdding(true);
+    setAddError(null);
     try {
-      const id = await addPerson({ name: trimmed });
+      const id = await addPerson({
+        name: trimmed,
+        contactHandles: [{ platform, value: handle }],
+        context: note,
+      });
       onOpen({ _id: id, name: trimmed, _creationTime: Date.now() });
+      setAddOpen(false);
+      setAddPlatform("");
+      setAddHandle("");
+      setAddNote("");
+    } catch (error) {
+      setAddError(
+        error instanceof Error ? error.message : "Could not save this person",
+      );
     } finally {
       setAdding(false);
     }
@@ -346,7 +373,12 @@ export function SearchAdd({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (showAdd) void handleAdd();
+    if (!showAdd) return;
+    if (addOpen) {
+      void handleAdd();
+    } else {
+      setAddOpen(true);
+    }
   }
 
   return (
@@ -419,15 +451,72 @@ export function SearchAdd({
           )}
         </div>
 
-        {showAdd && (
-          <button
-            type="submit"
-            className="atlas-add"
-            disabled={adding}
-          >
-            {adding && <span className="spinner" aria-hidden="true" />}
+        {showAdd && !addOpen && (
+          <button type="submit" className="atlas-add">
             {`Add "${trimmed}" to your sky`}
           </button>
+        )}
+
+        {showAdd && addOpen && (
+          <div className="meet-stack atlas-add-form">
+            <label className="meet-label" htmlFor="add-platform">
+              Where you know them
+            </label>
+            <div className="meet-input-row">
+              <input
+                id="add-platform"
+                className="meet-input"
+                value={addPlatform}
+                onChange={(e) => setAddPlatform(e.target.value)}
+                autoCapitalize="none"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="instagram"
+              />
+            </div>
+            <label className="meet-label" htmlFor="add-handle">
+              Their handle there
+            </label>
+            <div className="meet-input-row">
+              <span className="meet-at">@</span>
+              <input
+                id="add-handle"
+                className="meet-input"
+                value={addHandle}
+                onChange={(e) => setAddHandle(e.target.value)}
+                autoCapitalize="none"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="mai.makes"
+              />
+            </div>
+            <label className="meet-label" htmlFor="add-note">
+              How you met
+            </label>
+            <div className="meet-input-row">
+              <input
+                id="add-note"
+                className="meet-input"
+                value={addNote}
+                onChange={(e) => setAddNote(e.target.value)}
+                autoComplete="off"
+                placeholder="ceramics market, makes teapots"
+              />
+            </div>
+            {addError !== null && (
+              <p className="meet-error" role="alert">
+                {addError}
+              </p>
+            )}
+            <button
+              type="submit"
+              className="atlas-add meet-primary"
+              disabled={adding}
+            >
+              {adding && <span className="spinner" aria-hidden="true" />}
+              {`Add "${trimmed}" to your sky`}
+            </button>
+          </div>
         )}
       </div>
       )}

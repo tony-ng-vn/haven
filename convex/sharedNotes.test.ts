@@ -14,15 +14,24 @@ function asNewUser(t: ReturnType<typeof convexTest>) {
   return { userId, as: t.withIdentity({ subject, issuer }) };
 }
 
+// addPerson requires a handle and a note; these tests care about neither, so
+// they spread this minimal valid payload first.
+const manualAdd = {
+  contactHandles: [{ platform: "phone", value: "unlisted" }],
+  context: "met before this test",
+};
+
 test("connected users share one pair-scoped note", async () => {
   const t = convexTest(schema, modules);
   const ada = asNewUser(t);
   const ben = asNewUser(t);
   const adaPersonId = await ada.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Ben",
     context: "Private reminder",
   });
   const benPersonId = await ben.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Ada",
     context: "Ben's private reminder",
   });
@@ -66,10 +75,12 @@ test("shared notes do not change either user's private context", async () => {
   const ada = asNewUser(t);
   const ben = asNewUser(t);
   const adaPersonId = await ada.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Ben",
     context: "Private to Ada",
   });
   const benPersonId = await ben.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Ada",
     context: "Private to Ben",
   });
@@ -100,6 +111,7 @@ test("unconnected people cannot read or write shared notes", async () => {
   const t = convexTest(schema, modules);
   const ada = asNewUser(t);
   const adaPersonId = await ada.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Ben",
   });
 
@@ -119,6 +131,7 @@ test("shared note writes reject another user's person row", async () => {
   const ada = asNewUser(t);
   const ben = asNewUser(t);
   const benPersonId = await ben.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Ada",
   });
 
@@ -135,9 +148,11 @@ test("shared note updates are length-capped", async () => {
   const ada = asNewUser(t);
   const ben = asNewUser(t);
   const adaPersonId = await ada.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Ben",
   });
   const benPersonId = await ben.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Ada",
   });
   await t.run((ctx) =>

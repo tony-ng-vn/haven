@@ -79,11 +79,19 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+// addPerson requires identity and a story (a handle and a note) so a manual
+// add stays searchable and referenceable later. Tests not exercising that
+// rule spread this minimal valid payload first and override what they test.
+const manualAdd = {
+  contactHandles: [{ platform: "phone", value: "unlisted" }],
+  context: "met before this test",
+};
+
 test("addPerson creates a person owned by the caller with a timestamp", async () => {
   const t = convexTest(schema, modules);
   const { userId, as } = await asNewUser(t);
 
-  const id = await as.mutation(api.people.addPerson, { name: "Maya Chen" });
+  const id = await as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya Chen" });
 
   const person = await t.run((ctx) => ctx.db.get("people", id));
   expect(person?.name).toBe("Maya Chen");
@@ -95,14 +103,45 @@ test("addPerson rejects a blank name", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   await expect(
-    as.mutation(api.people.addPerson, { name: "   " }),
+    as.mutation(api.people.addPerson, { ...manualAdd, name: "   " }),
   ).rejects.toThrow("Name is required");
+});
+
+test("addPerson requires a contact handle and a note", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  await expect(
+    as.mutation(api.people.addPerson, {
+      ...manualAdd,
+      name: "Maya",
+      contactHandles: [],
+    }),
+  ).rejects.toThrow("A contact handle is required");
+  await expect(
+    as.mutation(api.people.addPerson, {
+      name: "Maya",
+      context: manualAdd.context,
+    }),
+  ).rejects.toThrow("A contact handle is required");
+  await expect(
+    as.mutation(api.people.addPerson, {
+      ...manualAdd,
+      name: "Maya",
+      context: "   ",
+    }),
+  ).rejects.toThrow("A note is required");
+  await expect(
+    as.mutation(api.people.addPerson, {
+      name: "Maya",
+      contactHandles: manualAdd.contactHandles,
+    }),
+  ).rejects.toThrow("A note is required");
 });
 
 test("addPerson rejects an unauthenticated caller", async () => {
   const t = convexTest(schema, modules);
   await expect(
-    t.mutation(api.people.addPerson, { name: "Maya" }),
+    t.mutation(api.people.addPerson, { ...manualAdd, name: "Maya" }),
   ).rejects.toThrow("Not signed in");
 });
 
@@ -111,9 +150,9 @@ test("searchPeople matches the caller's people by name and excludes others", asy
   const me = await asNewUser(t);
   const other = await asNewUser(t);
 
-  await me.as.mutation(api.people.addPerson, { name: "Maya Chen" });
-  await me.as.mutation(api.people.addPerson, { name: "Felix Ng" });
-  await other.as.mutation(api.people.addPerson, { name: "Maya Rao" });
+  await me.as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya Chen" });
+  await me.as.mutation(api.people.addPerson, { ...manualAdd, name: "Felix Ng" });
+  await other.as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya Rao" });
 
   const results = await me.as.query(api.people.searchPeople, { query: "Maya" });
   expect(results.map((p) => p.name)).toEqual(["Maya Chen"]);
@@ -123,10 +162,10 @@ test("searchPeople with an empty query returns only the caller's recent people",
   const t = convexTest(schema, modules);
   const me = await asNewUser(t);
   const other = await asNewUser(t);
-  await me.as.mutation(api.people.addPerson, { name: "Maya Chen" });
-  await me.as.mutation(api.people.addPerson, { name: "Felix Ng" });
+  await me.as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya Chen" });
+  await me.as.mutation(api.people.addPerson, { ...manualAdd, name: "Felix Ng" });
   // Another user's person must never appear in my empty-query results.
-  await other.as.mutation(api.people.addPerson, { name: "Rao" });
+  await other.as.mutation(api.people.addPerson, { ...manualAdd, name: "Rao" });
 
   const results = await me.as.query(api.people.searchPeople, { query: "  " });
   expect(results.map((p) => p.name).sort()).toEqual(["Felix Ng", "Maya Chen"]);
@@ -137,8 +176,9 @@ test("getPerson returns the caller's person and null for another user's", async 
   const me = await asNewUser(t);
   const other = await asNewUser(t);
 
-  const myId = await me.as.mutation(api.people.addPerson, { name: "Maya" });
+  const myId = await me.as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya" });
   const otherId = await other.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Rao",
   });
 
@@ -151,7 +191,7 @@ test("getPerson returns the caller's person and null for another user's", async 
 test("updatePerson saves link and context and bumps updatedAt", async () => {
   const t = convexTest(schema, modules);
   const me = await asNewUser(t);
-  const id = await me.as.mutation(api.people.addPerson, { name: "Maya" });
+  const id = await me.as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya" });
   const before = await t.run((ctx) => ctx.db.get(id));
 
   // Advance the clock so the new updatedAt is provably later, not just
@@ -175,6 +215,7 @@ test("updatePerson rejects updating another user's person", async () => {
   const me = await asNewUser(t);
   const other = await asNewUser(t);
   const otherId = await other.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Rao",
   });
 
@@ -186,7 +227,7 @@ test("updatePerson rejects updating another user's person", async () => {
 test("updatePerson with omitted fields clears them (undefined unsets)", async () => {
   const t = convexTest(schema, modules);
   const me = await asNewUser(t);
-  const id = await me.as.mutation(api.people.addPerson, { name: "Maya" });
+  const id = await me.as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya" });
   await me.as.mutation(api.people.updatePerson, {
     id,
     link: "https://example.com",
@@ -205,9 +246,9 @@ test("updatePerson with omitted fields clears them (undefined unsets)", async ()
 test("people functions reject an unauthenticated caller", async () => {
   const t = convexTest(schema, modules);
   const me = await asNewUser(t);
-  const id = await me.as.mutation(api.people.addPerson, { name: "Maya" });
+  const id = await me.as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya" });
 
-  await expect(t.mutation(api.people.addPerson, { name: "x" })).rejects.toThrow(
+  await expect(t.mutation(api.people.addPerson, { ...manualAdd, name: "x" })).rejects.toThrow(
     "Not signed in",
   );
   await expect(t.query(api.people.searchPeople, { query: "" })).rejects.toThrow(
@@ -231,7 +272,7 @@ test("searchPeople and getPerson never leak embedding, embeddedText, or userId",
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
 
-  const id = await as.mutation(api.people.addPerson, { name: "Maya Chen" });
+  const id = await as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya Chen" });
   // Run the scheduled embed so the person actually has embedding fields set
   // -- the leak this test guards against can only happen once they exist.
   await t.finishAllScheduledFunctions(vi.runAllTimers);
@@ -280,6 +321,7 @@ test("deletePerson rejects deleting another user's person", async () => {
   const me = await asNewUser(t);
   const other = await asNewUser(t);
   const otherId = await other.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Rao",
   });
 
@@ -294,7 +336,7 @@ test("deletePerson rejects deleting another user's person", async () => {
 test("addPerson is rate-limited per caller (wiring check)", async () => {
   const t = convexTest(schema, modules);
   const { userId, as } = await asNewUser(t);
-  await as.mutation(api.people.addPerson, { name: "Maya" });
+  await as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya" });
 
   const window = await t.run((ctx) =>
     ctx.db
@@ -312,22 +354,22 @@ test("addPerson throttles a burst past its per-minute limit", async () => {
   const { as } = await asNewUser(t);
 
   for (let i = 0; i < 30; i++) {
-    await as.mutation(api.people.addPerson, { name: `Person ${i}` });
+    await as.mutation(api.people.addPerson, { ...manualAdd, name: `Person ${i}` });
   }
   await expect(
-    as.mutation(api.people.addPerson, { name: "One too many" }),
+    as.mutation(api.people.addPerson, { ...manualAdd, name: "One too many" }),
   ).rejects.toThrow("Too many requests -- please wait a moment");
 
   vi.setSystemTime(Date.now() + 60_000);
   await expect(
-    as.mutation(api.people.addPerson, { name: "A new window" }),
+    as.mutation(api.people.addPerson, { ...manualAdd, name: "A new window" }),
   ).resolves.toBeTypeOf("string");
 });
 
 test("updatePerson is rate-limited per caller (wiring check)", async () => {
   const t = convexTest(schema, modules);
   const { userId, as } = await asNewUser(t);
-  const id = await as.mutation(api.people.addPerson, { name: "Maya" });
+  const id = await as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya" });
   await as.mutation(api.people.updatePerson, { id, context: "x" });
 
   const window = await t.run((ctx) =>
@@ -367,7 +409,7 @@ describe("normalizeName", () => {
 test("searchPeople finds an accented name via an unaccented query", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
-  await as.mutation(api.people.addPerson, { name: "Nguy\u1ec5n V\u0103n D\u0169ng" });
+  await as.mutation(api.people.addPerson, { ...manualAdd, name: "Nguy\u1ec5n V\u0103n D\u0169ng" });
 
   const results = await as.query(api.people.searchPeople, { query: "dung" });
   expect(results.map((p) => p.name)).toEqual(["Nguy\u1ec5n V\u0103n D\u0169ng"]);
@@ -376,7 +418,7 @@ test("searchPeople finds an accented name via an unaccented query", async () => 
 test("searchPeople finds an unaccented name via an accented query", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
-  await as.mutation(api.people.addPerson, { name: "Dung" });
+  await as.mutation(api.people.addPerson, { ...manualAdd, name: "Dung" });
 
   const results = await as.query(api.people.searchPeople, {
     query: "D\u0169ng",
@@ -387,7 +429,7 @@ test("searchPeople finds an unaccented name via an accented query", async () => 
 test("searchPeople finds the D-stroke name via a plain-D query", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
-  await as.mutation(api.people.addPerson, { name: "\u0110un \u0110un" });
+  await as.mutation(api.people.addPerson, { ...manualAdd, name: "\u0110un \u0110un" });
 
   const results = await as.query(api.people.searchPeople, { query: "dun" });
   expect(results.map((p) => p.name)).toEqual(["\u0110un \u0110un"]);
@@ -397,8 +439,8 @@ test("searchPeople keeps user isolation on the normalized-name index", async () 
   const t = convexTest(schema, modules);
   const me = await asNewUser(t);
   const other = await asNewUser(t);
-  await me.as.mutation(api.people.addPerson, { name: "D\u0169ng" });
-  await other.as.mutation(api.people.addPerson, { name: "D\u0169ng Two" });
+  await me.as.mutation(api.people.addPerson, { ...manualAdd, name: "D\u0169ng" });
+  await other.as.mutation(api.people.addPerson, { ...manualAdd, name: "D\u0169ng Two" });
 
   const results = await me.as.query(api.people.searchPeople, { query: "dung" });
   expect(results.map((p) => p.name)).toEqual(["D\u0169ng"]);
@@ -407,7 +449,7 @@ test("searchPeople keeps user isolation on the normalized-name index", async () 
 test("searchPeople with a query that normalizes to empty falls back to recent people", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
-  await as.mutation(api.people.addPerson, { name: "Maya Chen" });
+  await as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya Chen" });
 
   // A combining mark alone (U+0301, acute accent) normalizes to "".
   const results = await as.query(api.people.searchPeople, {
@@ -488,6 +530,7 @@ test("addPerson rejects context over 4000 characters", async () => {
   const { as } = await asNewUser(t);
   await expect(
     as.mutation(api.people.addPerson, {
+      ...manualAdd,
       name: "Maya",
       context: "x".repeat(4001),
     }),
@@ -498,6 +541,7 @@ test("addPerson accepts context at exactly 4000 characters", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   const id = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Maya",
     context: "x".repeat(4000),
   });
@@ -508,7 +552,7 @@ test("addPerson accepts context at exactly 4000 characters", async () => {
 test("updatePerson rejects context over 4000 characters", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
-  const id = await as.mutation(api.people.addPerson, { name: "Maya" });
+  const id = await as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya" });
   await expect(
     as.mutation(api.people.updatePerson, {
       id,
@@ -555,7 +599,7 @@ test("embed retries after a failure and succeeds on the next attempt", async () 
 
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
-  const id = await as.mutation(api.people.addPerson, { name: "Maya Chen" });
+  const id = await as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya Chen" });
 
   await t.finishAllScheduledFunctions(vi.runAllTimers);
 
@@ -572,7 +616,7 @@ test("embed gives up after 3 total attempts without throwing", async () => {
 
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
-  const id = await as.mutation(api.people.addPerson, { name: "Maya Chen" });
+  const id = await as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya Chen" });
 
   await expect(
     t.finishAllScheduledFunctions(vi.runAllTimers),
@@ -593,6 +637,7 @@ test("addPerson stores city, company, and role and returns them from getPerson",
   const { as } = await asNewUser(t);
 
   const id = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Mai Tran",
     company: " LinkedIn ",
     role: "Design Engineer",
@@ -619,10 +664,10 @@ test("addPerson rejects blank structured attributes", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   await expect(
-    as.mutation(api.people.addPerson, { name: "Mai", company: "  " }),
+    as.mutation(api.people.addPerson, { ...manualAdd, name: "Mai", company: "  " }),
   ).rejects.toThrow("Company cannot be blank");
   await expect(
-    as.mutation(api.people.addPerson, { name: "Mai", city: { name: " " } }),
+    as.mutation(api.people.addPerson, { ...manualAdd, name: "Mai", city: { name: " " } }),
   ).rejects.toThrow("City cannot be blank");
 });
 
@@ -633,6 +678,7 @@ test("addPerson stores contact handles and a preferred platform", async () => {
   const { as } = await asNewUser(t);
 
   const id = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Mai Tran",
     // Free-form platforms on purpose: a saved person can carry any way to
     // reach them, not just the four platforms of your own card.
@@ -659,6 +705,7 @@ test("addPerson rejects bad handle lists", async () => {
   // normalized platform, which is also what the preferred pointer matches.
   await expect(
     as.mutation(api.people.addPerson, {
+      ...manualAdd,
       name: "Mai",
       contactHandles: [
         { platform: "Instagram", value: "a" },
@@ -669,6 +716,7 @@ test("addPerson rejects bad handle lists", async () => {
 
   await expect(
     as.mutation(api.people.addPerson, {
+      ...manualAdd,
       name: "Mai",
       contactHandles: [{ platform: "instagram", value: "a" }],
       preferredPlatform: "telegram",
@@ -677,6 +725,7 @@ test("addPerson rejects bad handle lists", async () => {
 
   await expect(
     as.mutation(api.people.addPerson, {
+      ...manualAdd,
       name: "Mai",
       contactHandles: Array.from({ length: 9 }, (_, i) => ({
         platform: `platform${i}`,
@@ -708,6 +757,7 @@ test("addPerson stores a photo and getPerson returns a photo url", async () => {
   const photoStorageId = await seedPhoto(t);
 
   const id = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Mai",
     photoStorageId,
   });
@@ -715,7 +765,7 @@ test("addPerson stores a photo and getPerson returns a photo url", async () => {
   expect(person?.photoUrl).toEqual(expect.any(String));
 
   // A person without a photo answers null, so the client never guesses.
-  const bareId = await as.mutation(api.people.addPerson, { name: "Vy" });
+  const bareId = await as.mutation(api.people.addPerson, { ...manualAdd, name: "Vy" });
   const bare = await as.query(api.people.getPerson, { id: bareId });
   expect(bare?.photoUrl).toBeNull();
 });
@@ -726,7 +776,7 @@ test("addPerson rejects a non-image photo without writing a person", async () =>
   const blobId = await seedPhoto(t, "text/plain");
 
   await expect(
-    as.mutation(api.people.addPerson, { name: "Mai", photoStorageId: blobId }),
+    as.mutation(api.people.addPerson, { ...manualAdd, name: "Mai", photoStorageId: blobId }),
   ).rejects.toThrow("Please choose an image under 10 MB");
 
   // The throw rolled the person insert back. The stray blob is the orphan
@@ -742,6 +792,7 @@ test("editPerson patches provided fields, clears on null, leaves the rest", asyn
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   const id = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Mai Tran",
     context: "met at the coffee meetup",
     company: "LinkedIn",
@@ -774,7 +825,7 @@ test("editPerson patches provided fields, clears on null, leaves the rest", asyn
 test("editPerson renames a person and search finds the new name", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
-  const id = await as.mutation(api.people.addPerson, { name: "Maya Chen" });
+  const id = await as.mutation(api.people.addPerson, { ...manualAdd, name: "Maya Chen" });
 
   await as.mutation(api.people.editPerson, {
     id,
@@ -791,7 +842,7 @@ test("editPerson renames a person and search finds the new name", async () => {
 test("editPerson rejects a blank name and never clears it", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
-  const id = await as.mutation(api.people.addPerson, { name: "Mai" });
+  const id = await as.mutation(api.people.addPerson, { ...manualAdd, name: "Mai" });
   await expect(
     as.mutation(api.people.editPerson, { id, name: "  " }),
   ).rejects.toThrow("Name is required");
@@ -801,6 +852,7 @@ test("editPerson keeps the preferred pointer consistent with the handles", async
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   const id = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Mai",
     contactHandles: [
       { platform: "instagram", value: "mai.makes" },
@@ -834,6 +886,7 @@ test("editPerson swaps the photo and deletes the replaced blob", async () => {
   const { as } = await asNewUser(t);
   const firstPhoto = await seedPhoto(t);
   const id = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Mai",
     photoStorageId: firstPhoto,
   });
@@ -865,6 +918,7 @@ test("deletePerson also removes the photo blob", async () => {
   const { as } = await asNewUser(t);
   const photoStorageId = await seedPhoto(t);
   const id = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Mai",
     photoStorageId,
   });
@@ -883,12 +937,12 @@ test("listPeople pages the caller's directory, most recently touched first", asy
   const me = await asNewUser(t);
   const other = await asNewUser(t);
 
-  const a = await me.as.mutation(api.people.addPerson, { name: "An" });
+  const a = await me.as.mutation(api.people.addPerson, { ...manualAdd, name: "An" });
   vi.advanceTimersByTime(1000);
-  await me.as.mutation(api.people.addPerson, { name: "Binh" });
+  await me.as.mutation(api.people.addPerson, { ...manualAdd, name: "Binh" });
   vi.advanceTimersByTime(1000);
-  await me.as.mutation(api.people.addPerson, { name: "Chi" });
-  await other.as.mutation(api.people.addPerson, { name: "Rao" });
+  await me.as.mutation(api.people.addPerson, { ...manualAdd, name: "Chi" });
+  await other.as.mutation(api.people.addPerson, { ...manualAdd, name: "Rao" });
 
   // Editing An bumps them to the top: recency means last touched, not first
   // created, which is what keeps the screen useful after months of use.
@@ -922,17 +976,20 @@ test("searchDirectory finds people by note keywords, scoped to the caller", asyn
   const other = await asNewUser(t);
 
   await me.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "An Vo",
     context: "wore a Spain shirt, works on the research team, talked soccer",
     company: "Amazon",
   });
   await me.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Binh Le",
     context: "recruiter, met at the rooftop mixer",
     company: "LinkedIn",
   });
   // Same keyword in another user's note must never surface here.
   await other.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Rao",
     context: "planning a Spain trip",
   });
@@ -948,11 +1005,13 @@ test("searchDirectory combines a keyword with chip filters", async () => {
   const { as } = await asNewUser(t);
 
   await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "An Vo",
     context: "talked soccer at the meetup",
     company: "Amazon",
   });
   await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Binh Le",
     context: "talked soccer over coffee",
     company: "LinkedIn",
@@ -981,11 +1040,13 @@ test("searchDirectory filters by chips alone, accent-insensitively", async () =>
   const { as } = await asNewUser(t);
 
   await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "An Vo",
     company: "LinkedIn",
     city: { name: "San Francisco" },
   });
   await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Binh Le",
     company: "LinkedIn",
     role: "Recruiter",
@@ -1018,9 +1079,9 @@ test("searchDirectory filters by chips alone, accent-insensitively", async () =>
 test("searchDirectory with no keyword and no chips returns recent people", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
-  await as.mutation(api.people.addPerson, { name: "An" });
+  await as.mutation(api.people.addPerson, { ...manualAdd, name: "An" });
   vi.advanceTimersByTime(1000);
-  await as.mutation(api.people.addPerson, { name: "Binh" });
+  await as.mutation(api.people.addPerson, { ...manualAdd, name: "Binh" });
 
   const hits = await as.query(api.people.searchDirectory, {});
   expect(hits.map((p) => p.name)).toEqual(["Binh", "An"]);
@@ -1030,6 +1091,7 @@ test("searchDirectory keyword also matches names and card text", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Nguy\u1ec5n V\u0103n D\u0169ng",
     company: "Photon",
   });
@@ -1082,23 +1144,26 @@ test("directoryFacets lists the caller's chip values with counts", async () => {
   const other = await asNewUser(t);
 
   await me.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "A",
     company: "LinkedIn",
     city: { name: "S\u00e0i G\u00f2n" },
   });
   vi.advanceTimersByTime(1000);
   await me.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "B",
     company: "linkedin",
     role: "Recruiter",
   });
   vi.advanceTimersByTime(1000);
   await me.as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "C",
     company: "Amazon",
     city: { name: "Sai Gon" },
   });
-  await other.as.mutation(api.people.addPerson, { name: "D", company: "Photon" });
+  await other.as.mutation(api.people.addPerson, { ...manualAdd, name: "D", company: "Photon" });
 
   const facets = await me.as.query(api.people.directoryFacets, {});
 
@@ -1117,6 +1182,7 @@ test("searchDirectory reflects edits immediately", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   const id = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "An",
     context: "met at the soccer game",
   });
@@ -1140,7 +1206,7 @@ test("editPerson enforces ownership, auth, and the context cap", async () => {
   const t = convexTest(schema, modules);
   const me = await asNewUser(t);
   const other = await asNewUser(t);
-  const otherId = await other.as.mutation(api.people.addPerson, { name: "Rao" });
+  const otherId = await other.as.mutation(api.people.addPerson, { ...manualAdd, name: "Rao" });
 
   await expect(
     me.as.mutation(api.people.editPerson, { id: otherId, context: "x" }),
@@ -1149,7 +1215,7 @@ test("editPerson enforces ownership, auth, and the context cap", async () => {
     t.mutation(api.people.editPerson, { id: otherId, context: "x" }),
   ).rejects.toThrow("Not signed in");
 
-  const myId = await me.as.mutation(api.people.addPerson, { name: "Mai" });
+  const myId = await me.as.mutation(api.people.addPerson, { ...manualAdd, name: "Mai" });
   await expect(
     me.as.mutation(api.people.editPerson, {
       id: myId,
@@ -1234,6 +1300,7 @@ test("saveSharedProfile attaches a second platform to the person the user picked
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   const personId = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Mai Tr\u1ea7n",
     context: "met at the ceramics market",
     contactHandles: [{ platform: "instagram", value: "mai.makes" }],
@@ -1276,6 +1343,7 @@ test("saveSharedProfile creates a new person when the attach target holds anothe
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   const personId = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Mai Tr\u1ea7n",
     contactHandles: [{ platform: "instagram", value: "mai.makes" }],
   });
@@ -1309,7 +1377,7 @@ test("saveSharedProfile creates a person when the attach target is gone or not t
   const other = await asNewUser(t);
 
   // The extension's mirror can be days stale; a capture must never be lost.
-  const deletedId = await me.as.mutation(api.people.addPerson, { name: "Mai" });
+  const deletedId = await me.as.mutation(api.people.addPerson, { ...manualAdd, name: "Mai" });
   await me.as.mutation(api.people.deletePerson, { personId: deletedId });
 
   const fromDeleted = await me.as.mutation(api.people.saveSharedProfile, {
@@ -1319,7 +1387,7 @@ test("saveSharedProfile creates a person when the attach target is gone or not t
   expect(fromDeleted.status).toBe("created");
   expect(fromDeleted.personId).not.toBe(deletedId);
 
-  const theirId = await other.as.mutation(api.people.addPerson, { name: "Rao" });
+  const theirId = await other.as.mutation(api.people.addPerson, { ...manualAdd, name: "Rao" });
   const fromTheirs = await me.as.mutation(api.people.saveSharedProfile, {
     ...sharedProfile,
     handleValue: "mai.ceramics",
@@ -1328,20 +1396,22 @@ test("saveSharedProfile creates a person when the attach target is gone or not t
   });
   expect(fromTheirs.status).toBe("created");
   expect(fromTheirs.personId).not.toBe(theirId);
+  // The other user's person gained nothing from the capture.
   expect(
     (await other.as.query(api.people.getPerson, { id: theirId }))
       ?.contactHandles,
-  ).toBeUndefined();
+  ).toEqual(manualAdd.contactHandles);
 });
 
 test("saveSharedProfile lets handle identity beat the attach target", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   const mai = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Mai Tr\u1ea7n",
     contactHandles: [{ platform: "instagram", value: "mai.makes" }],
   });
-  const binh = await as.mutation(api.people.addPerson, { name: "Binh Le" });
+  const binh = await as.mutation(api.people.addPerson, { ...manualAdd, name: "Binh Le" });
 
   const result = await as.mutation(api.people.saveSharedProfile, {
     ...sharedProfile,
@@ -1352,7 +1422,7 @@ test("saveSharedProfile lets handle identity beat the attach target", async () =
   // Binh never gains an account that is provably somebody else's.
   expect(
     (await as.query(api.people.getPerson, { id: binh }))?.contactHandles,
-  ).toBeUndefined();
+  ).toEqual(manualAdd.contactHandles);
 });
 
 test("saveSharedProfile attaches onto a handle whose stored platform was never normalized", async () => {
@@ -1454,6 +1524,7 @@ test("saveSharedProfile keeps the shared URL on a person that has none", async (
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   const personId = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Mai Tr\u1ea7n",
   });
   const linkedin = {
@@ -1489,6 +1560,7 @@ test("saveSharedProfile gives a re-shared person the URL they were saved without
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   const personId = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Mai Tr\u1ea7n",
     contactHandles: [{ platform: "instagram", value: "mai.makes" }],
   });
@@ -1646,6 +1718,7 @@ test("addPerson makes its contact handles dedup-visible to saveSharedProfile", a
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   const personId = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Mai Tr\u1ea7n",
     contactHandles: [{ platform: " Instagram ", value: "@mai.makes" }],
   });
@@ -1658,6 +1731,7 @@ test("editPerson rewrites the handle index in both directions", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   const personId = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Mai Tr\u1ea7n",
     contactHandles: [{ platform: "instagram", value: "mai.makes" }],
   });
@@ -1689,6 +1763,7 @@ test("deletePerson frees the handle for a later share", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   const personId = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
     name: "Mai Tr\u1ea7n",
     contactHandles: [{ platform: "instagram", value: "mai.makes" }],
   });

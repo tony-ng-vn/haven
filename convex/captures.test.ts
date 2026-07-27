@@ -351,7 +351,7 @@ test("updatePerson refreshes the embedding from the new context", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
 
-  const personId = await as.mutation(api.people.addPerson, { name: "Maya" });
+  const personId = await as.mutation(api.people.addPerson, { name: "Maya", contactHandles: [{ platform: "phone", value: "unlisted" }], context: "met before this test" });
   await as.mutation(api.people.updatePerson, {
     id: personId,
     context: "Runs the observatory",
@@ -1043,6 +1043,8 @@ test("sweepOrphanedUploads never deletes a blob referenced by a person photo", a
   await as.mutation(api.people.addPerson, {
     name: "Ada Lovelace",
     photoStorageId: photoId,
+    contactHandles: [{ platform: "phone", value: "unlisted" }],
+    context: "met before this test",
   });
 
   vi.setSystemTime(Date.now() + 61 * 60_000);

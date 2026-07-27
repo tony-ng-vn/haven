@@ -305,20 +305,26 @@ export const addPerson = mutation({
     if (name === "") {
       throw new Error("Name is required");
     }
-    if (args.context !== undefined && args.context.length > MAX_CONTEXT_LENGTH) {
+    // Identity and a story are what make a manual add searchable and
+    // referenceable later, so a handle and a note are required here; the
+    // capture paths stay lenient because they run without the user present.
+    const contactHandles = validateContactHandles(args.contactHandles ?? []);
+    if (contactHandles.length === 0) {
+      throw new Error("A contact handle is required");
+    }
+    if (args.context === undefined || args.context.trim() === "") {
+      throw new Error("A note is required");
+    }
+    if (args.context.length > MAX_CONTEXT_LENGTH) {
       throw new Error(CONTEXT_TOO_LONG_ERROR);
     }
     if (args.photoStorageId !== undefined) {
       await requireImageBlob(ctx, args.photoStorageId, PHOTO_ERROR);
     }
-    const contactHandles =
-      args.contactHandles === undefined
-        ? undefined
-        : validateContactHandles(args.contactHandles);
     const preferredPlatform =
       args.preferredPlatform === undefined
         ? undefined
-        : validatePreferredPlatform(args.preferredPlatform, contactHandles ?? []);
+        : validatePreferredPlatform(args.preferredPlatform, contactHandles);
     const attributes = structuredAttributeFields(args);
     const personId = await ctx.db.insert("people", {
       userId,
@@ -341,7 +347,7 @@ export const addPerson = mutation({
     });
     // Same transaction as the array, always: the index is only trustworthy
     // if it cannot drift from what the card shows.
-    await insertPersonHandles(ctx, userId, personId, contactHandles ?? []);
+    await insertPersonHandles(ctx, userId, personId, contactHandles);
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
     return personId;
   },
