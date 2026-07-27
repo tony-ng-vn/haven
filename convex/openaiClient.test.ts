@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { embedText, extractProfile } from "./openaiClient";
+import { askNetwork, embedText, extractProfile } from "./openaiClient";
 
 type SeenRequest = { url: string; auth: string | undefined; model: string };
 
@@ -15,6 +15,8 @@ function stubProviders(): SeenRequest[] {
       const body = JSON.parse(String(init?.body)) as { model: string };
       seen.push({ url, auth: headers.Authorization, model: body.model });
       if (url.includes("/chat/completions")) {
+        // Both chat callers read choices[0].message.content, and each parses
+        // only the fields its own schema declares, so one reply serves both.
         return Response.json({
           choices: [
             {
@@ -26,6 +28,8 @@ function stubProviders(): SeenRequest[] {
                   handle: null,
                   headline: null,
                   bio: null,
+                  matches: [],
+                  clarifying_question: null,
                 }),
               },
             },
@@ -152,6 +156,52 @@ test("EXTRACTION_MODEL alone swaps the model but stays on OpenAI", async () => {
       url: "https://api.openai.com/v1/chat/completions",
       auth: "Bearer sk-openai",
       model: "gpt-5-mini",
+    },
+  ]);
+});
+
+// ------------------------------------------------------------------- ask
+
+test("ask defaults to OpenAI and moves independently of extraction", async () => {
+  vi.stubEnv("OPENAI_API_KEY", "sk-openai");
+  vi.stubEnv("EXTRACTION_BASE_URL", "https://api.interfaze.ai");
+  vi.stubEnv("EXTRACTION_API_KEY", "ifz-key");
+  vi.stubEnv("EXTRACTION_MODEL", "interfaze-beta");
+  const seen = stubProviders();
+
+  await askNetwork("who knows databases", "#1 Ada Lovelace", []);
+
+  // Reading a screenshot and reasoning over a network are different jobs, so
+  // pointing extraction at another host must not drag ask along with it.
+  expect(seen).toEqual([
+    {
+      url: "https://api.openai.com/v1/chat/completions",
+      auth: "Bearer sk-openai",
+      model: "gpt-4o-mini",
+    },
+  ]);
+});
+
+test("ASK_* env moves ask and brings its own key and model", async () => {
+  vi.stubEnv("OPENAI_API_KEY", "sk-openai");
+  vi.stubEnv("ASK_BASE_URL", "https://api.interfaze.ai");
+  const seen = stubProviders();
+
+  // The OpenAI bearer must never be handed to a third-party host.
+  await expect(askNetwork("q", "#1 Ada", [])).rejects.toThrow("ASK_API_KEY");
+  vi.stubEnv("ASK_API_KEY", "ifz-key");
+  // A provider swap without a model would send it a model it may not serve.
+  await expect(askNetwork("q", "#1 Ada", [])).rejects.toThrow("ASK_MODEL");
+  expect(seen).toEqual([]);
+
+  vi.stubEnv("ASK_MODEL", "interfaze-beta");
+  await askNetwork("q", "#1 Ada", []);
+
+  expect(seen).toEqual([
+    {
+      url: "https://api.interfaze.ai/v1/chat/completions",
+      auth: "Bearer ifz-key",
+      model: "interfaze-beta",
     },
   ]);
 });

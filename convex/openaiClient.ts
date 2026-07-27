@@ -83,31 +83,42 @@ function openaiProvider(): Provider {
   };
 }
 
-// Extraction is provider-swappable via EXTRACTION_BASE_URL / _API_KEY /
-// _MODEL (any OpenAI-compatible API; we point it at interfaze.ai to spend
-// credit there). Embeddings deliberately are not: the vector index stores
-// 1536-dim text-embedding-3-small vectors, so moving them is a re-embed
-// migration, not an env change.
-function extractionConfig(): { provider: Provider; model: string } {
-  const baseUrl = process.env.EXTRACTION_BASE_URL;
-  const model = process.env.EXTRACTION_MODEL;
+// The two chat-completions callers are provider-swappable via
+// <PREFIX>_BASE_URL / _API_KEY / _MODEL (any OpenAI-compatible API; we point
+// extraction at interfaze.ai to spend credit there). Embeddings deliberately
+// are not: the vector index stores 1536-dim text-embedding-3-small vectors,
+// so moving them is a re-embed migration, not an env change.
+function chatConfig(
+  prefix: string,
+  label: string,
+  defaultModel: string,
+): { provider: Provider; model: string } {
+  const baseUrl = process.env[`${prefix}_BASE_URL`];
+  const model = process.env[`${prefix}_MODEL`];
   if (baseUrl === undefined || baseUrl === "") {
     return {
       provider: openaiProvider(),
-      model: model === undefined || model === "" ? "gpt-4o-mini" : model,
+      model: model === undefined || model === "" ? defaultModel : model,
     };
   }
   // A custom base URL must bring its own key and model: falling back would
   // hand the OpenAI bearer to a third-party host, or send that host a model
   // name it does not serve.
   return {
-    provider: {
-      label: "Extraction provider",
-      baseUrl,
-      key: requireEnv("EXTRACTION_API_KEY"),
-    },
-    model: requireEnv("EXTRACTION_MODEL"),
+    provider: { baseUrl, label, key: requireEnv(`${prefix}_API_KEY`) },
+    model: requireEnv(`${prefix}_MODEL`),
   };
+}
+
+function extractionConfig() {
+  return chatConfig("EXTRACTION", "Extraction provider", "gpt-4o-mini");
+}
+
+// Separate from extraction on purpose: reading one screenshot and reasoning
+// over a whole network are different jobs, and the cheap vision model that
+// suits the first is not automatically the right one for the second.
+function askConfig() {
+  return chatConfig("ASK", "Ask provider", "gpt-4o-mini");
 }
 
 async function callProvider(
@@ -191,6 +202,108 @@ export async function extractProfile(
     handle: clean(parsed.handle),
     headline: clean(parsed.headline),
     bio: clean(parsed.bio),
+  };
+}
+
+// ------------------------------------------------------------------- ask
+
+export type AskTurn = { role: "user" | "assistant"; text: string };
+
+export type AskAnswer = {
+  matches: Array<{ ref: number; kind: "direct" | "bridge"; why: string }>;
+  clarifyingQuestion?: string;
+};
+
+const ASK_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["matches", "clarifying_question"],
+  properties: {
+    matches: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["ref", "kind", "why"],
+        properties: {
+          ref: {
+            type: "integer",
+            description: "The #number of the person from the network listing.",
+          },
+          kind: {
+            type: "string",
+            enum: ["direct", "bridge"],
+            description:
+              "direct if this person matches the need themselves; bridge if they are a likely route to someone who does.",
+          },
+          why: {
+            type: "string",
+            description:
+              "One sentence, in the user's own terms, citing what is written about this person.",
+          },
+        },
+      },
+    },
+    clarifying_question: {
+      type: ["string", "null"],
+      description:
+        "One question to ask instead of guessing, or null when the network can be answered as asked.",
+    },
+  },
+} as const;
+
+const ASK_PROMPT = [
+  "You are searching one person's private notes about people they know.",
+  "Each entry below is one person: a #number, their details, and dated lines the user wrote about them.",
+  "Answer only from these entries. Never invent a person, a fact, or a #number.",
+  "",
+  "Return a match as 'direct' when the person themselves fits the need.",
+  "Return 'bridge' when nobody fits directly but this person is a plausible route to someone who does",
+  "(for example: they work at a startup accelerator, so they likely know founders).",
+  "A bridge must never be dressed up as a direct match, and its 'why' must say what the route is.",
+  "",
+  "If the request is too vague to answer without guessing, return no matches and ask exactly one",
+  "clarifying question. Otherwise leave clarifying_question null.",
+  "Order matches best first, and leave matches empty rather than padding it with weak ones.",
+].join("\n");
+
+// The whole network in one call, which is what keeps this cheap: a personal
+// network is hundreds of people, so there is no retrieval infrastructure to
+// build, only a prompt to fit.
+export async function askNetwork(
+  query: string,
+  dossiers: string,
+  history: AskTurn[],
+): Promise<AskAnswer> {
+  const { provider, model } = askConfig();
+  const result = (await callProvider(provider, "chat/completions", {
+    model,
+    messages: [
+      { role: "system", content: ASK_PROMPT },
+      { role: "user", content: `The network:\n\n${dossiers}` },
+      ...history.map((turn) => ({ role: turn.role, content: turn.text })),
+      { role: "user", content: query },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: { name: "network_answer", strict: true, schema: ASK_SCHEMA },
+    },
+  })) as {
+    choices?: Array<{ message?: { content?: string; refusal?: string } }>;
+  };
+
+  const message = result.choices?.[0]?.message;
+  if (message === undefined || typeof message.content !== "string") {
+    throw new Error(message?.refusal ?? `${provider.label} returned no answer`);
+  }
+  const parsed = JSON.parse(message.content) as {
+    matches: Array<{ ref: number; kind: "direct" | "bridge"; why: string }>;
+    clarifying_question: string | null;
+  };
+  const clarifying = parsed.clarifying_question?.trim() ?? "";
+  return {
+    matches: parsed.matches ?? [],
+    clarifyingQuestion: clarifying === "" ? undefined : clarifying,
   };
 }
 

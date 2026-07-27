@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   bootMode,
+  buildDossier,
   buildEmbedText,
   CAPTURE_QUEUE_CAP,
   composeAtlasField,
@@ -780,5 +781,52 @@ describe("resolveView with a card path", () => {
     expect(
       resolveView({ ...base, pathname: "/", hash: "#/sign-in" }),
     ).toBe("signin");
+  });
+});
+
+describe("buildDossier", () => {
+  test("puts the card on one heading line and the notes underneath", () => {
+    expect(
+      buildDossier(3, {
+        name: "Ada Lovelace",
+        role: "Compiler engineer",
+        company: "Analytical Engines",
+        cityName: "Sai Gon",
+        platforms: ["x", "instagram"],
+        headline: "Building symbolic math tools",
+        bio: "Works on compilers and their proofs.",
+        memories: [
+          { text: "met at the Founder Inc dinner", createdAt: 1_750_000_000_000 },
+          { text: "works on an infinite-context database", createdAt: 1_752_000_000_000 },
+        ],
+      }),
+    ).toBe(
+      [
+        "#3 Ada Lovelace | Compiler engineer at Analytical Engines | Sai Gon | x, instagram",
+        "Building symbolic math tools",
+        "Works on compilers and their proofs.",
+        "- 2025-06-15: met at the Founder Inc dinner",
+        "- 2025-07-08: works on an infinite-context database",
+      ].join("\n"),
+    );
+  });
+
+  test("a person with only a name still gets a usable heading", () => {
+    // The prompt refers to people by ref, so a bare row must never collapse
+    // into a line the model cannot point at.
+    expect(buildDossier(1, { name: "Ada Lovelace" })).toBe("#1 Ada Lovelace");
+  });
+
+  test("drops empty parts rather than leaving separators behind", () => {
+    expect(
+      buildDossier(2, {
+        name: "Ada",
+        company: "Analytical Engines",
+        cityName: "  ",
+        headline: "",
+        platforms: [],
+        memories: [],
+      }),
+    ).toBe("#2 Ada | Analytical Engines");
   });
 });
