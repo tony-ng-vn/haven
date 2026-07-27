@@ -1,17 +1,27 @@
 /// Switches for work that is finished in the app but not finished everywhere
 /// else. Not a settings surface: nothing here is a person's choice.
-///
-/// Compiled into the widget target too, so one switch governs every way into a
-/// feature rather than the app and the Lock Screen disagreeing about it.
 enum FeatureFlags {
-    /// The beacon screen, the shell's entry point to it, and the Lock Screen
+    /// The beacon screen, the People toolbar's way into it, and the Lock Screen
     /// widget that opens it.
     ///
-    /// Stays false until the public web card page at `inhavens.com/<handle>`
-    /// exists. The beacon's QR resolves there, and a code that lands on a 404
-    /// is worse than no code at all.
+    /// Follows the build rather than being set by hand, because the thing that
+    /// decides it is `Config.convexDeploymentUrl` and the two must not be able
+    /// to disagree. A beacon is only worth showing when the app and the card
+    /// page read the same database:
     ///
-    /// Flip it locally to work on any of the three. `BeaconTests` asserts it is
-    /// false so that a local flip cannot travel to main by accident.
+    /// - debug writes to the dev deployment, which nothing on the web reads, so
+    ///   a code made there resolves to nobody. Off.
+    /// - release writes to the deployment inhavens.com reads, so a scan lands
+    ///   on the right card. On.
+    ///
+    /// The page itself now exists, which is what changed here. It was false
+    /// everywhere while `inhavens.com/<handle>` was a 404.
+    ///
+    /// `BeaconTests` asserts this against the deployment, so moving one without
+    /// the other fails rather than shipping a code that goes nowhere.
+    #if DEBUG
     static let beaconEnabled = false
+    #else
+    static let beaconEnabled = true
+    #endif
 }

@@ -77,10 +77,24 @@ struct BeaconTests {
         #expect(maya != ada)
     }
 
-    // The whole point of the flag: the beacon leads to a web page that does not
-    // exist yet, and a code that lands on a 404 is worse than no code.
-    @Test("the beacon stays behind its flag")
-    func flaggedOff() {
+    /// The invariant the flag actually encodes: a beacon is only shown where the
+    /// app and the card page read the same database.
+    ///
+    /// Tests build in debug, so what can be asserted here is the development
+    /// half -- dev deployment, nothing on the web reading it, beacon off. The
+    /// release half is the mirror of it and is not reachable from a test run,
+    /// which is why both live behind one `#if` in the source rather than being
+    /// two values somebody keeps in step by hand.
+    @Test("the beacon is only on where the app and the card page agree")
+    func flagFollowsTheDeployment() {
+        #expect(Config.convexDeploymentUrl.contains("brilliant-puma-925"))
         #expect(FeatureFlags.beaconEnabled == false)
+    }
+
+    /// A code carries whatever host Config names, so the two cannot drift into
+    /// pointing a scan at a database the app never wrote to.
+    @Test("the address a code carries is the configured card host")
+    func addressFollowsTheConfiguredHost() {
+        #expect(BeaconAddress.url(for: "maya") == "https://\(Config.cardHost)/maya")
     }
 }
