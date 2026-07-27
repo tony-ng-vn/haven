@@ -6,7 +6,7 @@
 	  Partial plist: everything else is generated from build settings
 	  (GENERATE_INFOPLIST_FILE merges this file in). This exists for the keys
 	  that have no INFOPLIST_KEY_* build-setting form: the launch screen's
-	  background colour, and the url scheme below.
+	  background colour, the url scheme, and the export-compliance answer.
 	  The launch colour points at the LaunchBackground colour set, which is
 	  HavenColor.night, so launch paints the exact colour the first frame
 	  starts on and the handoff is invisible.
@@ -33,5 +33,16 @@
 			</array>
 		</dict>
 	</array>
+	<!--
+	  The export-compliance answer, given once here instead of by hand on every
+	  upload. False is the truthful answer, not a shortcut: the only encryption
+	  Haven uses is HTTPS to Convex and Clerk plus the SHA256 nonce Sign in with
+	  Apple requires, and both are exempt under category 5 part 2.
+
+	  Revisit this if Haven ever ships its own cryptography, which is a real
+	  possibility the day connect tokens or end-to-end shared notes land.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
