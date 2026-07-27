@@ -56,10 +56,6 @@ final class DirectoryModel: ObservableObject {
     /// directory holds, so the count it drives is usually the whole truth.
     private static let pageSize = 50
 
-    /// Long enough for a slow connection, short enough that a dead one does not
-    /// hold the screen. The same bound onboarding's card read uses.
-    private static let networkDeadline: TimeInterval = 12
-
     init() {
         subscribe()
     }
@@ -100,26 +96,16 @@ final class DirectoryModel: ObservableObject {
             "numItems": Self.pageSize,
             "cursor": nil,
         ]
-        cancellable = convex
-            .subscribe(
-                to: "people:listPeople",
-                with: ["paginationOpts": options],
-                yielding: DirectoryPage.self
-            )
-            // The Convex client reconnects rather than failing, so a read with
-            // no network does not error, it waits. Nothing else would end that
-            // wait.
-            .timeout(.seconds(Self.networkDeadline), scheduler: DispatchQueue.main)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                // Any ending counts, not just a failure: a timeout finishes the
-                // stream without a value, so still being in `.loading` here is
-                // what "we never heard back" looks like.
-                guard let self, self.load == .loading else { return }
-                self.load = .unreachable
-            } receiveValue: { [weak self] page in
-                self?.load = .ready(page)
-            }
+        cancellable = HavenNetwork.subscribe(
+            to: "people:listPeople",
+            with: ["paginationOpts": options],
+            yielding: DirectoryPage.self
+        ) { [weak self] page in
+            self?.load = .ready(page)
+        } onSilence: { [weak self] in
+            guard let self, self.load == .loading else { return }
+            self.load = .unreachable
+        }
     }
 }
 

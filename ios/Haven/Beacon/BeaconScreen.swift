@@ -176,8 +176,6 @@ final class BeaconModel: ObservableObject {
 
     private var cancellable: AnyCancellable?
 
-    private static let networkDeadline: TimeInterval = 12
-
     init() {
         subscribe()
     }
@@ -192,19 +190,18 @@ final class BeaconModel: ObservableObject {
     }
 
     private func subscribe() {
-        cancellable = convex
-            .subscribe(to: "profiles:getMyCard", yielding: MyCard?.self)
-            .timeout(.seconds(Self.networkDeadline), scheduler: DispatchQueue.main)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self, self.load == .loading else { return }
-                self.load = .unreachable
-            } receiveValue: { [weak self] card in
-                // No card is not an empty beacon: the handle is minted when the
-                // card is created, so a person with no card has not finished
-                // onboarding and cannot be here.
-                self?.load = card.map { .ready($0) } ?? .unreachable
-            }
+        cancellable = HavenNetwork.subscribe(
+            to: "profiles:getMyCard",
+            yielding: MyCard?.self
+        ) { [weak self] card in
+            // No card is not an empty beacon: the handle is minted when the
+            // card is created, so a person with no card has not finished
+            // onboarding and cannot be here.
+            self?.load = card.map { .ready($0) } ?? .unreachable
+        } onSilence: { [weak self] in
+            guard let self, self.load == .loading else { return }
+            self.load = .unreachable
+        }
     }
 }
 

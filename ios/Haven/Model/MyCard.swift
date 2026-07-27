@@ -32,12 +32,27 @@ struct MyCard: Decodable, Equatable {
     }
 }
 
+extension MyCard.Platform: Identifiable {
+    public var id: String { rawValue }
+
+    /// What the platform is called in the interface.
+    ///
+    /// Text rather than a mark: the brand glyphs are third-party trademarks
+    /// with their own usage rules, and picking them is its own piece of work.
+    var label: String {
+        switch self {
+        case .instagram: return "Instagram"
+        case .x: return "X"
+        case .linkedin: return "LinkedIn"
+        case .phone: return "Phone"
+        }
+    }
+}
+
 extension MyCard.Platform {
     /// What sits in front of a stored value to make the address it points at.
     ///
-    /// Phone has none, because a number is not an address. The onboarding
-    /// contact screen keeps its own copy of these: it is parsing what someone
-    /// pasted, which is a different job from showing what was stored.
+    /// Phone has none, because a number is not an address.
     var addressPrefix: String {
         switch self {
         case .instagram: return "instagram.com/"

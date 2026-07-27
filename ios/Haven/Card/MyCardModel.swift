@@ -22,10 +22,6 @@ final class MyCardModel: ObservableObject {
 
     private var cancellable: AnyCancellable?
 
-    /// Long enough for a slow connection, short enough that a dead one does not
-    /// hold the screen. The same bound the rest of the app uses.
-    private static let networkDeadline: TimeInterval = 12
-
     init() {
         subscribe()
     }
@@ -45,22 +41,20 @@ final class MyCardModel: ObservableObject {
     }
 
     private func subscribe() {
-        cancellable = convex
-            .subscribe(to: "profiles:getMyCard", yielding: MyCard?.self)
-            // Live, unlike onboarding's read: this screen is where a card
-            // changes, and an edit made on another device should land here
-            // rather than wait for a relaunch.
-            .timeout(.seconds(Self.networkDeadline), scheduler: DispatchQueue.main)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self, self.load == .loading else { return }
-                self.load = .unreachable
-            } receiveValue: { [weak self] card in
-                guard let self else { return }
-                // A card that came back empty here means the row is gone, which
-                // is what deleting an account looks like from this screen.
-                self.load = card.map { .ready($0) } ?? .unreachable
-            }
+        // Live, unlike onboarding's read: this screen is where a card changes,
+        // and an edit made on another device should land here rather than wait
+        // for a relaunch.
+        cancellable = HavenNetwork.subscribe(
+            to: "profiles:getMyCard",
+            yielding: MyCard?.self
+        ) { [weak self] card in
+            // A card that came back empty here means the row is gone, which is
+            // what deleting an account looks like from this screen.
+            self?.load = card.map { .ready($0) } ?? .unreachable
+        } onSilence: { [weak self] in
+            guard let self, self.load == .loading else { return }
+            self.load = .unreachable
+        }
     }
 
     // MARK: - Writes
@@ -100,7 +94,7 @@ final class MyCardModel: ObservableObject {
             let _: String? = try await convex.mutation("profiles:deleteMyAccount")
             return true
         }
-        let done = await work.value(within: .seconds(Self.networkDeadline)) ?? false
+        let done = await work.value(within: .seconds(HavenNetwork.deadline)) ?? false
         isSaving = false
         if !done {
             failure = "That did not go through. Check your connection and try again."
@@ -115,7 +109,7 @@ final class MyCardModel: ObservableObject {
         isSaving = true
         failure = nil
         let work = Task { try await body() }
-        let saved = await work.value(within: .seconds(Self.networkDeadline))
+        let saved = await work.value(within: .seconds(HavenNetwork.deadline))
         isSaving = false
         guard let saved else {
             failure = "That did not save. Check your connection and try again."
