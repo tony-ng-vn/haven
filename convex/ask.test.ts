@@ -353,6 +353,28 @@ test("ask is rate-limited per minute and per day", async () => {
   expect(windows.map((w) => w.action).sort()).toEqual(["ask:day", "ask:minute"]);
 });
 
+test("every person's lines survive a network wider than one memory query", async () => {
+  const t = newHarness();
+  const { userId, as } = await asNewUser(t);
+  // Past the chunk size, so the memory load spans more than one query and a
+  // person can only lose their lines to a bug in how the chunks are stitched.
+  for (let i = 0; i < 30; i++) {
+    await seedPerson(t, userId, {
+      name: `Person ${i}`,
+      note: `note for person ${i}`,
+      updatedAt: 100 - i,
+    });
+  }
+  const provider = stubProvider({ matches: [], clarifying_question: null });
+
+  await as.action(api.people.ask, { query: "anyone" });
+
+  const prompt = provider.lastPrompt();
+  for (let i = 0; i < 30; i++) {
+    expect(prompt).toContain(`note for person ${i}`);
+  }
+});
+
 // ------------------------------------------------------- the narrowing path
 
 test("a network too large for one prompt is chosen by the question", async () => {

@@ -1241,6 +1241,10 @@ const ASK_NETWORK_LIMIT = 200;
 // otherwise crowd out everyone else in the prompt.
 const ASK_MEMORIES_PER_PERSON = 12;
 
+// How many people's memory lines one query reads. See listAskMemories: the
+// embedding on every row, not the text, is what makes this need a bound.
+const ASK_MEMORY_CHUNK = 25;
+
 // Prompt budget for the network listing, in characters. Roughly 4 characters
 // a token, so this is about 30k prompt tokens -- comfortably inside a single
 // call and, at the plan's measured rates, a few cents an ask.
@@ -1262,10 +1266,10 @@ const askTurnValidator = v.object({
   text: v.string(),
 });
 
-// What one person looks like to the ask prompt. Not personValidator: the
-// model needs memory lines and platform names, and has no use for photo urls
-// or storage ids.
-const askPersonValidator = v.object({
+// What one person's card looks like to the ask prompt. Not personValidator:
+// the model needs platform names, and has no use for photo urls or storage
+// ids. The lines come from listAskMemories, which has to be its own query.
+const askCardValidator = v.object({
   _id: v.id("people"),
   name: v.string(),
   headline: v.optional(v.string()),
@@ -1274,10 +1278,11 @@ const askPersonValidator = v.object({
   company: v.optional(v.string()),
   cityName: v.optional(v.string()),
   platforms: v.array(v.string()),
-  memories: v.array(v.object({ text: v.string(), createdAt: v.number() })),
 });
 
-type AskPerson = Infer<typeof askPersonValidator>;
+type AskPerson = Infer<typeof askCardValidator> & {
+  memories: Array<{ text: string; createdAt: number }>;
+};
 
 export const listNetworkForAsk = internalQuery({
   args: {
@@ -1286,7 +1291,7 @@ export const listNetworkForAsk = internalQuery({
     // sending. Absent means "the most recently touched people".
     personIds: v.optional(v.array(v.id("people"))),
   },
-  returns: v.array(askPersonValidator),
+  returns: v.array(askCardValidator),
   handler: async (ctx, args) => {
     let people: Array<Doc<"people">>;
     if (args.personIds === undefined) {
@@ -1307,17 +1312,17 @@ export const listNetworkForAsk = internalQuery({
         }
       }
     }
-
-    const network: AskPerson[] = [];
-    for (const person of people) {
-      const recent = await ctx.db
-        .query("memories")
-        .withIndex("by_person", (q) => q.eq("personId", person._id))
-        .order("desc")
-        .take(ASK_MEMORIES_PER_PERSON);
+    return people.map((person) => ({
+      _id: person._id,
+      name: person.name,
+      headline: person.headline,
+      bio: person.bio,
+      role: person.role,
+      company: person.company,
+      cityName: person.city?.name,
       // The legacy platform scalar counts too: a person captured before
       // contactHandles existed is still reachable on that platform.
-      const platforms = [
+      platforms: [
         ...new Set(
           [
             person.platform,
@@ -1326,25 +1331,85 @@ export const listNetworkForAsk = internalQuery({
             (part): part is string => part !== undefined && part.trim() !== "",
           ),
         ),
-      ];
-      network.push({
-        _id: person._id,
-        name: person.name,
-        headline: person.headline,
-        bio: person.bio,
-        role: person.role,
-        company: person.company,
-        cityName: person.city?.name,
-        platforms,
-        // Oldest first, so the lines read as the timeline the user wrote.
-        memories: recent
-          .reverse()
-          .map((memory) => ({ text: memory.text, createdAt: memory.createdAt })),
-      });
-    }
-    return network;
+      ],
+    }));
   },
 });
+
+// Memory lines for a handful of people at a time. Separate from the query
+// above, and chunked by its caller, for one hard reason: a memory row carries
+// a 1536-float embedding, about 12 KB, and Convex bounds a single query at
+// 8 MiB of reads. The whole network's lines in one transaction is tens of
+// megabytes and simply fails, however small the text itself is.
+export const listAskMemories = internalQuery({
+  args: { userId: v.string(), personIds: v.array(v.id("people")) },
+  returns: v.array(
+    v.object({
+      personId: v.id("people"),
+      text: v.string(),
+      createdAt: v.number(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const rows: Array<{
+      personId: Id<"people">;
+      text: string;
+      createdAt: number;
+    }> = [];
+    for (const personId of args.personIds.slice(0, ASK_MEMORY_CHUNK)) {
+      const recent = await ctx.db
+        .query("memories")
+        .withIndex("by_person", (q) => q.eq("personId", personId))
+        .order("desc")
+        .take(ASK_MEMORIES_PER_PERSON);
+      // Oldest first, so the lines read as the timeline the user wrote.
+      for (const memory of recent.reverse()) {
+        if (memory.userId !== args.userId) {
+          continue;
+        }
+        rows.push({
+          personId,
+          text: memory.text,
+          createdAt: memory.createdAt,
+        });
+      }
+    }
+    return rows;
+  },
+});
+
+// The people plus their lines, across as many bounded queries as it takes.
+async function loadNetworkForAsk(
+  ctx: ActionCtx,
+  userId: string,
+  personIds?: Array<Id<"people">>,
+): Promise<AskPerson[]> {
+  const cards: Array<Infer<typeof askCardValidator>> = await ctx.runQuery(
+    internal.people.listNetworkForAsk,
+    { userId, personIds },
+  );
+  const network: AskPerson[] = cards.map((card) => ({ ...card, memories: [] }));
+  const byId = new Map(network.map((person) => [person._id, person]));
+  for (let start = 0; start < network.length; start += ASK_MEMORY_CHUNK) {
+    const chunk = network
+      .slice(start, start + ASK_MEMORY_CHUNK)
+      .map((person) => person._id);
+    const rows: Array<{
+      personId: Id<"people">;
+      text: string;
+      createdAt: number;
+    }> = await ctx.runQuery(internal.people.listAskMemories, {
+      userId,
+      personIds: chunk,
+    });
+    for (const row of rows) {
+      byId
+        .get(row.personId)
+        ?.memories.push({ text: row.text, createdAt: row.createdAt });
+    }
+  }
+  return network;
+}
 
 // Ranked personIds for a query, best first. Deliberately without the
 // MIN_SEMANTIC_SCORE floor semanticSearch applies: this picks WHICH dossiers
@@ -1475,10 +1540,7 @@ export const ask = action({
       throw new Error(ASK_TOO_LONG_ERROR);
     }
 
-    let network: AskPerson[] = await ctx.runQuery(
-      internal.people.listNetworkForAsk,
-      { userId },
-    );
+    let network = await loadNetworkForAsk(ctx, userId);
     let packed = packDossiers(network);
     // A network that hit the load cap, or one the budget had to cut short,
     // has its candidates chosen by the question instead of by recency.
@@ -1489,10 +1551,7 @@ export const ask = action({
     ) {
       const ranked = await rankPeopleForAsk(ctx, userId, query);
       if (ranked.length > 0) {
-        network = await ctx.runQuery(internal.people.listNetworkForAsk, {
-          userId,
-          personIds: ranked,
-        });
+        network = await loadNetworkForAsk(ctx, userId, ranked);
         packed = packDossiers(network);
       }
     }
