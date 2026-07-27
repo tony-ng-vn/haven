@@ -143,7 +143,12 @@ export async function extractProfile(
         role: "user",
         content: [
           { type: "text", text: EXTRACTION_PROMPT },
-          { type: "image_url", image_url: { url: imageUrl, detail: "high" } },
+          // "low", not "high": measured against four real profile
+          // screenshots, high detail bought no extra accuracy -- same name,
+          // same handle, decoy handles in the bio rejected either way -- and
+          // cost about twice as much, because it sends the model into a long
+          // reasoning pass rather than because the image costs more to read.
+          { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
         ],
       },
     ],

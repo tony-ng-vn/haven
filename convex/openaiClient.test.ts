@@ -64,6 +64,35 @@ test("extraction and embeddings default to OpenAI", async () => {
   ]);
 });
 
+// Measured against Interfaze on 2026-07-27 with four real profile
+// screenshots: "high" sent the model into a long reasoning pass (up to 17k
+// completion tokens for a six-field answer, ~$0.07 a capture) and "low"
+// returned the same fields for roughly half that. Handle accuracy was
+// identical on the two screenshots that carried one, decoy handles in the
+// bio included. Pinned here because the saving is invisible in the response
+// and a future edit could restore it without anything failing.
+test("extraction asks for the cheap image detail", async () => {
+  vi.stubEnv("OPENAI_API_KEY", "sk-openai");
+  let detail: string | undefined;
+  vi.stubGlobal("fetch", async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as {
+      messages: Array<{ content: Array<{ image_url?: { detail?: string } }> }>;
+    };
+    detail = body.messages[0].content.find((part) => part.image_url !== undefined)
+      ?.image_url?.detail;
+    return Response.json({
+      choices: [{ message: { content: JSON.stringify({
+        is_profile: true, platform: "x", name: "Ada Lovelace",
+        handle: null, headline: null, bio: null,
+      }) } }],
+    });
+  });
+
+  await extractProfile("https://img.example/shot.png");
+
+  expect(detail).toBe("low");
+});
+
 test("EXTRACTION_* env moves extraction while embeddings stay on OpenAI", async () => {
   vi.stubEnv("OPENAI_API_KEY", "sk-openai");
   vi.stubEnv("EXTRACTION_BASE_URL", "https://api.interfaze.ai");
