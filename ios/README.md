@@ -102,6 +102,7 @@ Everything in `Haven/Design` is milestone 2 of `../phase1-build-plan.md`, and ev
 - `SkyView` renders a `Sky` from `SkyGenerator`. It draws the sky at rest and deliberately knows nothing about ignition order or the card reveal.
 - `StarSlot` fixes which figure star each profile field owns. Do not make it dynamic; the edit screen's unlit stars are only legible because a field's star never moves.
 - `HavenScreen`, `HavenField`, `PrimaryButton`, `GhostButton` and `HavenRow` are the shared controls.
+- `HavenScreen`'s `contentAlignment` is not cosmetic. Content that never changes height is centred; content that grows, such as a suggestion list or a panel that opens, is top-aligned, or answering the question moves the field out from under the person's finger. The figure follows: it takes the gap above centred content and the gap below top-aligned content, and disappears when neither is big enough to read as a figure.
 
 Every surface also has SwiftUI previews covering the default size, an accessibility text size, and the Reduce Motion path.
 SwiftUI's own `accessibilityReduceMotion` is read-only, so the previews flip it with `havenReduceMotion()` instead.
@@ -116,8 +117,23 @@ Compiling and passing tests says nothing about whether something looks right, so
 - `OnboardingModel` decides which question is on screen from the card that `profiles:getMyCard` returns, never from a counter. A counter is lost on reinstall and lies after an edit made on another device.
 - The constellation is seeded from the Clerk user id. Names collide and change, and the profile row does not exist yet on the first question, where the figure is already on screen.
 - A commit publishes the new card first and the next question a beat later, so the star the person just lit is actually on screen before the next question replaces it.
+- Skipping is remembered on the device, not on the card. The server has no field for "asked and declined", and adding one would make a skipped city indistinguishable from one nobody has got round to asking for. The store is keyed by user, so a second account on the same phone starts clean.
+- `CityCompleter` wraps `MKLocalSearchCompleter` for the typeahead and resolves the chosen completion with `MKLocalSearch`, because a completion is two display strings while the card stores a real locality, admin area and country. A city MapKit does not know is still accepted as typed text; being unknown to MapKit is not a reason to be told to skip the question.
+- The contact question's two groups are a fact about the platforms, not a layout choice. X and LinkedIn authorize; Instagram and phone are supplied by hand.
+- Whether a username in an authorization payload *is* the handle is a property of the platform, never a guess from whether one happened to arrive. X sends it, so it is stored `verified`. LinkedIn's payload can carry a username that is not the profile address, so it is never taken for one and the confirm panel always opens. Getting that backwards would store an unproven handle as proven.
+- Every connectable row has somewhere to land when no trusted handle comes back. A platform that will not tell us who you are there is a reason to ask, never a dead end, so X degrades to a paste exactly as Instagram does.
+- `ContactValue` holds the per-platform parsing and is where it is tested; `ContactEntry.parse` is the one place a typed or confirmed value becomes a contact, and it is never `verified`, because a value that had to be typed was by definition not proven by the platform.
+- Instagram sits in the typed group because there is nothing to authorize against. Its personal-account API shut down in December 2024 and the replacement covers Creator and Business accounts only, so Clerk offers no Instagram connection at all. `phase1-build-plan.md` has it attempting first and degrading; that was written before the connection turned out not to exist, and attempting would fail for everybody and land in the same paste field one round trip later. The copy still names Instagram's limit rather than implying it is ours.
+- `ContactConnector` links an external account with `createExternalAccount` followed by `reauthorize`. That pairing is the SDK's own: the first call makes a pending account carrying the provider's authorization URL, and the second opens it in a browser and waits. This answers the milestone 4 spike in `../phase1-build-plan.md` -- the iOS surface is complete and the hosted-web fallback is not needed.
+- Linking is not a fresh act every time it is asked for, so `connect` reloads the user and reuses what Clerk already holds: a verified account short-circuits with no browser trip, a half-linked one gets a fresh authorization rather than a second account, and only a clean slate creates one. In Clerk an external account is also a future sign-in connection, which is why creating duplicates is both wrong and refused. Turning off "Enable for sign-up and sign-in" on the dashboard connection is what keeps a linked handle from quietly becoming a way into the account.
+- Nothing on this screen dead-ends. An authorization that fails opens the same panel the no-handle case opens, and Skip is held while a round trip is out, or the answer would land on a screen nobody is looking at.
 
-Built so far: screen 0 (welcome) and screen 1 (name). Location, contact and the card reveal are next; until they exist, a person who has answered the name falls through to the Phase 0 probe.
+Built so far: screens 0 to 3 (welcome, name, location, contact). The card reveal is next; until it exists, a person through the questions falls through to the Phase 0 probe.
+
+Not yet built, and named here so it is a decision rather than a gap:
+
+- The profile photo import. Every successful authorization returns an avatar URL, which `ConnectedAccount` carries, but nothing downloads it into Convex storage yet. That needs an upload URL on `profiles` alongside the one `captures` already has.
+- Brand glyphs on the contact rows. The rows are text only; the marks are third-party trademarks with their own usage rules, and picking them is its own piece of work.
 
 ## Architecture notes
 

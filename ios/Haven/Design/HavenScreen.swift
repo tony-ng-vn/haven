@@ -10,6 +10,7 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
     var sky: Sky?
     var litMajors: Set<Int>?
     var ambient: HavenAmbient = .dust
+    var contentAlignment: HavenContentAlignment = .center
     @ViewBuilder var header: Header
     @ViewBuilder var content: Content
     @ViewBuilder var actions: Actions
@@ -17,18 +18,28 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
     @State private var contentAreaHeight: CGFloat = 0
     @State private var headerBottom: CGFloat = 0
     @State private var contentTop: CGFloat = 0
+    @State private var contentBottom: CGFloat = 0
+    @State private var actionsTop: CGFloat = 0
 
-    /// The gap between the header and the content, which is where the figure
-    /// goes. Nil when there is no figure to place or no gap worth using.
+    /// The free space the figure is allowed to use, or nil when there is no
+    /// figure to place and no gap worth using.
     ///
     /// A question and the figure both want the top of the screen, and the
-    /// question wins -- so the figure takes the space that is actually free.
-    /// The band is measured rather than assumed, because how much room is left
-    /// depends on the screen, the text length and the Dynamic Type size.
+    /// question wins -- so the figure takes whatever room is actually left,
+    /// which is above centred content and below top-aligned content. Measured
+    /// rather than assumed, because how much room is left depends on the screen,
+    /// the text length, the Dynamic Type size, and on these screens how much the
+    /// content has grown.
     private var figureBand: CGRect? {
-        guard sky != nil, headerBottom > 0, contentTop > headerBottom else { return nil }
-        let top = headerBottom + FigureBand.inset
-        let height = contentTop - top - FigureBand.inset
+        guard sky != nil else { return nil }
+        let gap: (from: CGFloat, to: CGFloat)
+        switch contentAlignment {
+        case .center: gap = (headerBottom, contentTop)
+        case .top: gap = (contentBottom, actionsTop)
+        }
+        guard gap.from > 0, gap.to > gap.from else { return nil }
+        let top = gap.from + FigureBand.inset
+        let height = gap.to - top - FigureBand.inset
         guard height >= FigureBand.minimum else { return nil }
         return CGRect(x: 0, y: top, width: screenWidth, height: height)
     }
@@ -48,7 +59,13 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
                 case .dust: DustLayer()
                 case .welcome: WelcomeSky()
                 }
-                if let sky {
+                // Both conditions, and the second is not redundant. `SkyView`
+                // reads a nil band as "use the whole view", which is what the
+                // card and the beacon want because they have no header to
+                // cover. Here nil means the opposite -- there is no room -- and
+                // drawing the figure over the question is the one thing that
+                // reads as a mistake.
+                if let sky, let figureBand {
                     SkyView(sky: sky, litMajors: litMajors, figureBand: figureBand)
                 }
             }
@@ -68,18 +85,22 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
 
                 ScrollView {
                     content
-                        // Measured before the centring frame, so this is where
-                        // the content visually starts rather than where its
-                        // scroll area does.
+                        // Measured before the alignment frame, so these are
+                        // where the content visually starts and ends rather
+                        // than where its scroll area does.
                         .background {
                             GeometryReader { geo in
-                                Color.clear.preference(
-                                    key: ContentTopKey.self,
-                                    value: geo.frame(in: .named(FigureBand.space)).minY
-                                )
+                                let frame = geo.frame(in: .named(FigureBand.space))
+                                Color.clear
+                                    .preference(key: ContentTopKey.self, value: frame.minY)
+                                    .preference(key: ContentBottomKey.self, value: frame.maxY)
                             }
                         }
-                        .frame(maxWidth: .infinity, minHeight: contentAreaHeight, alignment: .center)
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: contentAreaHeight,
+                            alignment: contentAlignment.frameAlignment
+                        )
                         .padding(.vertical, 20)
                 }
                 .scrollBounceBehavior(.basedOnSize)
@@ -94,6 +115,14 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
 
                 actions
                     .frame(maxWidth: .infinity)
+                    .background {
+                        GeometryReader { geo in
+                            Color.clear.preference(
+                                key: ActionsTopKey.self,
+                                value: geo.frame(in: .named(FigureBand.space)).minY
+                            )
+                        }
+                    }
             }
             .padding(.horizontal, 24)
             .padding(.top, 8)
@@ -114,6 +143,12 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
         .onPreferenceChange(ContentTopKey.self) { value in
             contentTop = value
         }
+        .onPreferenceChange(ContentBottomKey.self) { value in
+            contentBottom = value
+        }
+        .onPreferenceChange(ActionsTopKey.self) { value in
+            actionsTop = value
+        }
         .onPreferenceChange(ScreenWidthKey.self) { value in
             screenWidth = value
         }
@@ -131,6 +166,24 @@ struct HavenLoadingScreen: View {
             ProgressView().tint(HavenColor.ink)
         }
         .ignoresSafeArea()
+    }
+}
+
+/// Where the content sits in the space between the header and the actions.
+///
+/// Centred is right for content that never changes height, such as one field.
+/// Content that grows -- suggestions appearing, a panel opening -- has to start
+/// at the top, or answering the question moves the field out from under the
+/// person's finger.
+enum HavenContentAlignment {
+    case center
+    case top
+
+    var frameAlignment: Alignment {
+        switch self {
+        case .center: return .center
+        case .top: return .top
+        }
     }
 }
 
@@ -184,6 +237,28 @@ private struct ContentTopKey: PreferenceKey {
     }
 }
 
+/// The lowest thing the content draws, which is where a top-aligned screen's
+/// free space begins.
+private struct ContentBottomKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// Where that free space ends. Reduced like `ContentTopKey`, for the same
+/// reason: the topmost action is the one the figure must not reach.
+private struct ActionsTopKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        guard next > 0 else { return }
+        value = value > 0 ? min(value, next) : next
+    }
+}
+
 private struct ScreenWidthKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
 
@@ -199,12 +274,14 @@ extension HavenScreen where Header == QuestionHeader {
         hint: String? = nil,
         sky: Sky? = nil,
         litMajors: Set<Int>? = nil,
+        contentAlignment: HavenContentAlignment = .center,
         @ViewBuilder content: () -> Content,
         @ViewBuilder actions: () -> Actions
     ) {
         self.init(
             sky: sky,
             litMajors: litMajors,
+            contentAlignment: contentAlignment,
             header: { QuestionHeader(question: question, hint: hint) },
             content: content,
             actions: actions
@@ -265,6 +342,7 @@ private let previewSky = SkyGenerator.build(seed: "user_2abcDEF123")
     HavenScreen(
         sky: previewSky,
         litMajors: StarSlot.litMajorIndices(filled: [.name], majorCount: previewSky.majors.count),
+        contentAlignment: .top,
         header: {
             QuestionHeader(
                 question: "Where are you based?",

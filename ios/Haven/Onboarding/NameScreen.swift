@@ -28,21 +28,18 @@ struct NameScreen: View {
                     text: $name,
                     contentType: .name,
                     capitalization: .words,
+                    autofocus: true,
                     onSubmit: commit
                 )
             },
             actions: {
-                VStack(spacing: 8) {
-                    if let failure = model.failure {
-                        Text(failure)
-                            .havenBody()
-                            .multilineTextAlignment(.center)
-                            .transition(.opacity)
-                    }
-                    PrimaryButton(title: "Continue", isLoading: model.isSaving, action: commit)
-                        .disabled(trimmed.isEmpty)
-                }
-                .havenAnimation(HavenMotion.screen, value: model.failure)
+                // No skip: this is the one answer a card cannot do without.
+                OnboardingActions(
+                    failure: model.failure,
+                    isSaving: model.isSaving,
+                    canContinue: !trimmed.isEmpty,
+                    onContinue: commit
+                )
             }
         )
     }
