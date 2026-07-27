@@ -54,6 +54,10 @@ struct SkyNebula: Equatable {
 }
 
 struct SkyFlare: Equatable {
+    /// Which of `Sky.majors` this flare belongs to. The renderer needs it: a
+    /// flare is the signature of a very bright star, so it has to fade with
+    /// the star rather than blaze out of an unlit dot.
+    var major: Int
     var x: Double
     var y: Double
     var len: Double
@@ -269,6 +273,7 @@ enum SkyGenerator {
         var flares: [SkyFlare] = []
         for entry in brightest {
             flares.append(SkyFlare(
+                major: entry.offset,
                 x: entry.element.x,
                 y: entry.element.y,
                 len: entry.element.r * 9,

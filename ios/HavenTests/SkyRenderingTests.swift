@@ -54,6 +54,90 @@ struct StarSlotTests {
     }
 }
 
+// MARK: - Figure intensity
+
+/// How bright each figure star is drawn. The renderer used to know two states;
+/// the reveal needs everything between them, so the two states became the ends
+/// of a range and this is the mapping that keeps them identical.
+@Suite("Figure intensity")
+struct FigureIntensityTests {
+    @Test("a lit major is full and everything else is dark")
+    func fromLitMajors() {
+        #expect(FigureIntensity.from(litMajors: [0, 2], majorCount: 4) == [1, 0, 1, 0])
+        #expect(FigureIntensity.from(litMajors: [], majorCount: 3) == [0, 0, 0])
+        #expect(FigureIntensity.from(litMajors: [0, 1], majorCount: 2) == [1, 1])
+        #expect(FigureIntensity.from(litMajors: [0], majorCount: 0).isEmpty)
+    }
+
+    @Test("the complete figure is every star lit")
+    func complete() {
+        #expect(FigureIntensity.complete(majorCount: 3) == [1, 1, 1])
+        #expect(FigureIntensity.complete(majorCount: 0).isEmpty)
+        #expect(
+            FigureIntensity.complete(majorCount: 7)
+                == FigureIntensity.from(litMajors: Set(0..<7), majorCount: 7)
+        )
+    }
+
+    // A caller builds intensities by hand for the reveal, so an array that does
+    // not match the figure is a real case, not a hypothetical one. Missing is
+    // unlit: drawing a star nobody asked to light would be the worse guess.
+    @Test("a star the caller said nothing about stays unlit")
+    func shortArray() {
+        #expect(FigureIntensity.star(0, in: [0.5]) == 0.5)
+        #expect(FigureIntensity.star(3, in: [0.5]) == 0)
+        #expect(FigureIntensity.star(-1, in: [0.5]) == 0)
+        #expect(FigureIntensity.star(0, in: []) == 0)
+    }
+
+    // A flare is the signature of a very bright star, so one blazing out of a
+    // star that is still an unlit dot says the opposite of what the dot says.
+    // It carries the star it belongs to for exactly that reason.
+    @Test("a flare knows which star it came from")
+    func flaresCarryTheirStar() {
+        let sky = SkyGenerator.build(seed: "user_2abcDEF123")
+        let brightest = sky.majors.enumerated()
+            .sorted { a, b in
+                a.element.r == b.element.r ? a.offset < b.offset : a.element.r > b.element.r
+            }
+            .prefix(2)
+            .map(\.offset)
+
+        #expect(sky.flares.map(\.major) == Array(brightest))
+        for flare in sky.flares {
+            #expect(sky.majors.indices.contains(flare.major))
+            #expect(flare.x == sky.majors[flare.major].x)
+            #expect(flare.y == sky.majors[flare.major].y)
+        }
+    }
+
+    // A line brighter than the star it comes from reads as a diagram drawn over
+    // the sky rather than as the figure lighting up.
+    @Test("an edge is only as bright as its dimmer star")
+    func edgeTakesTheDimmer() {
+        let intensities: [Double] = [1, 0.4, 0]
+        #expect(FigureIntensity.edge(between: 0, and: 1, in: intensities) == 0.4)
+        #expect(FigureIntensity.edge(between: 1, and: 0, in: intensities) == 0.4)
+        #expect(FigureIntensity.edge(between: 0, and: 2, in: intensities) == 0)
+        #expect(FigureIntensity.edge(between: 0, and: 9, in: intensities) == 0)
+    }
+
+    // The two-state figure has to come out of the new path pixel-identical, or
+    // every screen already shipped changes appearance.
+    @Test("the two-state figure survives the round trip")
+    func twoStateIsUnchanged() {
+        let lit = StarSlot.litMajorIndices(filled: [.name, .city], majorCount: 7)
+        let intensities = FigureIntensity.from(litMajors: lit, majorCount: 7)
+
+        for index in 0..<7 {
+            #expect(FigureIntensity.star(index, in: intensities) == (lit.contains(index) ? 1 : 0))
+        }
+        // An edge between two lit stars is drawn in full; one dark end kills it.
+        #expect(FigureIntensity.edge(between: 0, and: 1, in: intensities) == 1)
+        #expect(FigureIntensity.edge(between: 0, and: 2, in: intensities) == 0)
+    }
+}
+
 // MARK: - Sky layout
 
 @Suite("Sky layout")

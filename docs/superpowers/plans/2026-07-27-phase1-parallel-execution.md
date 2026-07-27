@@ -17,6 +17,7 @@ Read this section first in every session, whatever the wave.
 
 - This repo lives on a Linux server. There is no Xcode here and no way to build or run Swift locally.
 - The working tree syncs to the user's Mac via Mutagen in about a second. The user builds, runs the simulator, and screenshots.
+- If your session is running on the Mac itself, none of that applies: `xcodegen generate` and `xcodebuild test -project Haven.xcodeproj -scheme Haven -destination 'platform=iOS Simulator,name=iPhone 17 Pro' CODE_SIGNING_ALLOWED=NO` work, and so does looking at the thing. Wave A used a temporary harness for that: swap `RootView`'s body for the view under test and drop `Clerk.configure` from `HavenApp` (it traps in an unsigned build), install to the booted simulator, `./ios/shot.sh <label>`, then restore both files before committing. It found two layout bugs a green build did not.
 - Your compile check is CI: the `ios-test` job builds and tests every PR that touches `ios/` on a macOS runner (about 5-7 minutes). Push a PR early and watch `gh pr checks <n>` instead of guessing.
 - Your visual check is SwiftUI previews. Every screen ships three: default, `.environment(\.dynamicTypeSize, .accessibility3)`, and `.havenReduceMotion()`. The user judges the real thing on the simulator after merge.
 - Adding or removing Swift files requires the user to run `xcodegen generate` on the Mac before building. Note it in the PR body when your change adds files.
@@ -57,10 +58,29 @@ Then, in a second commit, add display helpers the card surfaces need, on the mov
 extension MyCard.Platform {
     /// "x.com/", "instagram.com/", "linkedin.com/in/", "" for phone.
     var addressPrefix: String
-    /// "@handle" for x and instagram, "linkedin.com/in/slug", the number itself for phone.
-    func display(_ value: String) -> String
+}
+
+extension MyCard.Handle {
+    /// The address this handle points at: "x.com/mayachen". The number itself for phone.
+    var display: String
+}
+
+extension MyCard.City {
+    /// "Austin, TX, United States", dropping the parts that are absent or blank.
+    var line: String
+}
+
+extension MyCard {
+    /// The handle `primaryPlatform` names, or the first one if it names none.
+    var primaryHandle: Handle?
 }
 ```
+
+The city line and the primary handle are as-built additions: `HavenCard` needs both, and both are facts about the card rather than about one screen.
+
+The planned `Platform.display(_:)` returned "@handle" for x and instagram, and that shipped first and was wrong: "@mayachen" reads identically for the two of them, and the card has no brand glyph to tell them apart, because the marks are third-party trademarks with their own usage rules.
+Every platform now shows as the address it points at, which says which platform it is by being one.
+That also made the helper `addressPrefix + value` for every case, so it moved onto `Handle`, where a call site says `handle.display` and nothing has to pass the value back in.
 
 `ContactScreen` keeps its private `ContactEntry` prefixes; do not try to unify them in this wave.
 
@@ -82,6 +102,19 @@ Rendering contract:
 - The existing `litMajors` init becomes a convenience that maps to intensities of 0 and 1. Every current caller compiles unchanged.
 - Intensities are plain inputs; animating them is the caller's job. Reduce Motion callers pass final values with no animation, as everywhere else.
 
+As built, the mapping lives in `FigureIntensity` in `ios/Haven/Design/SkyMath.swift`, beside the other pure sky maths, and is what the renderer calls:
+
+```swift
+enum FigureIntensity {
+    static func from(litMajors: Set<Int>, majorCount: Int) -> [Double]
+    /// A star the caller said nothing about is unlit, so a short array is safe.
+    static func star(_ index: Int, in intensities: [Double]) -> Double
+    static func edge(between a: Int, and b: Int, in intensities: [Double]) -> Double
+}
+```
+
+`SkyLayout.figureExtent` (0.62) is now a named constant rather than a literal inside `init(band:)`, because `CardMetrics` needs the same number.
+
 Cover the mapping (`litMajors` to intensities, edge minimum) in `ios/HavenTests/SkyRenderingTests.swift` alongside whatever it already asserts; rendering itself stays judged by previews.
 
 ### A3: HavenCard
@@ -89,7 +122,7 @@ Cover the mapping (`litMajors` to intensities, edge minimum) in `ios/HavenTests/
 New file `ios/Haven/Design/HavenCard.swift`: the person's card as one component, shared by the reveal (4), My Card (7), and the beacon (9).
 
 Layout, per build-plan decision 7 ("The card layout never covers the constellation. Figure owns the top, serif name below it, imported photo small and inline beside the name."):
-- The figure on top: `SkyView` in a fixed-aspect frame (the sky is authored 384x560; keep that ratio, width-driven, height-capped so the card fits a phone with room for the name block).
+- The figure on top, held to a band at the top of the card.
 - Under it: the name in serif via `personName(_:)`, with an optional small circular photo inline beside it.
 - Under that: the city line in muted (name, admin, country joined the way `MyCard.City` has them), then the primary contact as a quiet chip using the A1 display helpers.
 - Empty fields simply do not render; the unlit star in the figure is the nudge, per decision 6.
@@ -102,7 +135,21 @@ struct HavenCard: View {
     var majorIntensities: [Double]? = nil
     var photo: Image? = nil
 }
+
+/// The card's own metrics, free-standing so the reveal can animate against them.
+enum CardMetrics {
+    static let figureBandHeight: CGFloat = 340
+    static let figureGap: CGFloat = 20
+    static let lineGap: CGFloat = 8
+    static let photoGap: CGFloat = 10
+}
 ```
+
+As-built correction, and the one thing a caller has to know: the card fills the space it is given rather than sizing a boxed sky inside itself.
+The plan said "`SkyView` in a fixed-aspect frame", and that was built first and looked wrong on the simulator: `SkyBackdrop` and `ShimmerField` paint the whole frame they are given, so a bounded sky gives the nebulae and the 128-star minor field a hard rectangular edge, which reads as a rendering mistake rather than as a sky.
+The card now lets the sky reach its own edges and passes `figureBand` for the figure alone, which also fixes the figure sitting in the top 62% of its box, since `SkyLayout(band:)` scales by the figure's real extent and `SkyLayout(container:)` does not.
+On the reveal and the beacon the card is the screen, so this is what those want.
+A caller that is not a whole screen has to hand it a definite height, and an unbounded scroll view is not one; that is C2's to handle.
 
 Previews: complete card, name-only card, accessibility XXXL, Reduce Motion.
 
@@ -112,14 +159,28 @@ New file `ios/Haven/HavenTabs.swift` plus one stub file per screen, so that wave
 
 - `HavenTabs`: a `TabView` with two tabs, People (Directory) and Search, per build-plan open question 3's recommendation.
 - Stub files, each compiling as a `HavenScreen` placeholder with the screen's real title and the three standard previews: `ios/Haven/Directory/DirectoryScreen.swift`, `ios/Haven/Search/SearchScreen.swift`, `ios/Haven/Beacon/BeaconScreen.swift`, `ios/Haven/Directory/LockScreenExplainer.swift`, `ios/Haven/Card/MyCardScreen.swift`.
-- Navigation already wired in the shell: Directory's toolbar carries a `qrcode` button pushing `BeaconScreen` and a `person.crop.circle` button pushing `MyCardScreen`; the Lock Screen explainer presents as a sheet from Directory (the promo card that triggers it is B1's job, so for now the route exists unexercised).
+- Navigation already wired in the shell: Directory's toolbar carries a `qrcode` button pushing `BeaconScreen` and a `person.crop.circle` button pushing `MyCardScreen`; the Lock Screen explainer presents as a sheet from Directory.
 - `RootView`: when onboarding has no unanswered step, show `HavenTabs` instead of `ProfileProbeView`.
 - Delete `ProfileProbe.swift` in the same commit that flips the route; the tabs calling real queries replace the probe's diagnostic job, and dead code does not stay.
+
+As-built corrections to this unit:
+
+- The route flip is in `ios/Haven/Onboarding/OnboardingFlow.swift`, not `RootView.swift`. `RootView` routes on auth state and never mentioned the probe; the fall-through past the last question is `OnboardingFlow`'s, which is also where the card reveal will go. Wave B agents still must not touch `Onboarding/`.
+- `ios/Haven/FeatureFlags.swift` is created here rather than in B4, because the shell has to gate the beacon's toolbar entry on `beaconEnabled` and B4 may not edit the shell. B4 still owns the file.
+- The explainer sheet's state and presentation live in `DirectoryScreen.swift`, which B1 owns, rather than in the shell. The stub carries a ghost button that opens it, so the route runs today instead of existing unexercised, and B1 replaces that button with the real promo card without touching shared code.
+- `project.yml` needs no edit: the target globs `Haven`, so new subdirectories are picked up. The Mac still needs `xcodegen generate` after pulling, because the `.xcodeproj` is git-ignored.
+- One repair outside the plan, in its own commit: the two `OnboardingSkips` tests asserted an empty store before writing to it, and `UserDefaults` outlives a test run on the simulator, so they passed once and failed on every run after. They clear the key first now.
+
+One more thing landed in wave A that the plan did not ask for, because A2's own rule demanded it: a diffraction flare now fades with its own star.
+`drawFlares` drew both flares at full brightness whatever their star's intensity was, so a spike blazed out of a star that was still an unlit dot -- the same contradiction A2 fixed for edges, in a third element.
+`SkyFlare` now carries the major it belongs to, which the generator already knew and threw away; no generated value changes, so the `src/sky.ts` parity tests are untouched.
+The visible consequence is that early onboarding is dimmer: the two brightest majors are usually unanswered fields, so their flares are gone until those fields are filled.
+That is the intended progression rather than a loss, and it is the same ground as the still-open question about showing the figure's skeleton dim during onboarding.
 
 ### A5: freeze the contract
 
 Finish the wave by editing this plan file: replace the signatures above with the as-built ones if anything moved during implementation, and change the word PLANNED to FROZEN on the line below.
-Contract status: PLANNED.
+Contract status: FROZEN.
 Wave B sessions must refuse to start while this still says PLANNED or the wave A PR is unmerged.
 
 Exit criteria for wave A: `ios-test` green on the PR, previews for HavenCard and the shell exist, the user has merged, and the contract above says FROZEN.
@@ -148,7 +209,10 @@ Backend, already deployed:
 - `people:listPeople` takes `{ paginationOpts: { numItems, cursor } }` and returns Convex's standard pagination result of person objects. For the shell, load the first page to drive the count and the empty state; full listing UX is Phase 2.
 - Subscribe via the shared `convex` client the way `OnboardingModel.loadCard` does, with the same 12-second bounded-wait pattern; an unreachable directory shows a retry state, not a spinner forever.
 
+The explainer sheet is already wired in your file: the stub carries a ghost button that presents it, and the real promo card replaces that button.
+
 Promo-card dismissal persists in `UserDefaults` keyed like `OnboardingSkips` does (see `OnboardingModel.swift`), keyed by user so a second account sees the card fresh.
+Note what wave A found the hard way: `UserDefaults` outlives a simulator test run, so a test that asserts an empty store has to clear the key first.
 Switching tabs on search-field focus: report in the PR how you did it; if it needs shell support, that is a finding for the PR body, and shipping the field as a non-focusing visual is the acceptable fallback for this wave.
 
 ### B2: Search screen
@@ -184,7 +248,7 @@ Spec (build plan screen 9): a real QR encoding `https://inhavens.com/<handle>`, 
 The handle is `card.username`; it was minted at card creation, so no claim flow is needed here.
 QR generation via CoreImage `CIQRCodeGenerator`, error correction level M or better, rendered crisp (nearest-neighbour scale, no interpolation) in ink-on-night colours that still scan; test the generator's output is non-nil and stable for a fixed input in `HavenTests`.
 Brightness: raise `UIScreen.main.brightness` on appear, restore the previous value on disappear, and skip the raise entirely when Reduce Motion or Low Power Mode make it hostile (state your choice in the PR).
-The whole screen sits behind `FeatureFlags.beaconEnabled` (a new tiny `ios/Haven/FeatureFlags.swift` you own, default false, doc comment saying it stays false until the web card page at `inhavens.com/<handle>` exists, per the build plan's new-scope item 3); the shell's toolbar entry hides when the flag is false.
+The whole screen sits behind `FeatureFlags.beaconEnabled` in `ios/Haven/FeatureFlags.swift`, which you own. Wave A created it, false, with the doc comment saying it stays false until the web card page at `inhavens.com/<handle>` exists, per the build plan's new-scope item 3, and the shell already hides the toolbar entry while it is false.
 
 ## Wave C: blocked or human-paced
 

@@ -32,8 +32,13 @@ struct SkyLayout {
     /// leave the bottom third of the band empty and push stars out past it.
     /// Whichever of the width or that band runs out first wins, which is what
     /// keeps the figure inside the space it was given.
+    /// How far down the source the figure actually reaches. `placeMajors` never
+    /// puts a star below this, so it, and not the full height, is what a band
+    /// has to fit.
+    static let figureExtent = 0.62
+
     init(band: CGRect, source: CGSize = CGSize(width: SkyGenerator.width, height: SkyGenerator.height)) {
-        let extent = source.height * 0.62
+        let extent = source.height * Self.figureExtent
         guard source.width > 0, extent > 0, band.width > 0, band.height > 0 else {
             scale = 0
             offset = .zero
@@ -65,6 +70,38 @@ struct SkyLayout {
     /// the positions, or the figure gets hairline-thin on a large screen.
     func length(_ value: Double) -> Double {
         value * scale
+    }
+}
+
+/// How brightly each figure star is drawn: 0 is the unlit faint dot, 1 is fully
+/// lit, and everything between is an ignition part way through.
+///
+/// The renderer knew two states until the card reveal needed the space between
+/// them. Brightness is a plain input here and animating it is the caller's job,
+/// so one renderer serves the still figure, the reveal, and the edit screen's
+/// nudges without knowing which of them it is drawing.
+enum FigureIntensity {
+    /// The two-state figure as intensities.
+    static func from(litMajors: Set<Int>, majorCount: Int) -> [Double] {
+        (0..<max(majorCount, 0)).map { litMajors.contains($0) ? 1 : 0 }
+    }
+
+    /// Every star lit, which is what the card and the beacon show.
+    static func complete(majorCount: Int) -> [Double] {
+        Array(repeating: 1, count: max(majorCount, 0))
+    }
+
+    /// One star's brightness. A star the caller said nothing about is unlit:
+    /// intensities are built by hand for the reveal, and lighting a star nobody
+    /// asked for would be the worse guess.
+    static func star(_ index: Int, in intensities: [Double]) -> Double {
+        intensities.indices.contains(index) ? intensities[index] : 0
+    }
+
+    /// An edge is drawn at the dimmer of its two stars, so a line never
+    /// outshines the star it comes from.
+    static func edge(between a: Int, and b: Int, in intensities: [Double]) -> Double {
+        min(star(a, in: intensities), star(b, in: intensities))
     }
 }
 
