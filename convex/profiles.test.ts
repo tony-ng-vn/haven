@@ -987,7 +987,9 @@ test("the address ladder falls back when a name has no latin letters", async () 
     name: "李雷",
   });
 
-  expect(minted.username).toBe("haven");
+  // "star", not "haven": the brand is reserved against impersonation, so the
+  // fallback had to move off it.
+  expect(minted.username).toBe("star");
 });
 
 test("the address ladder truncates a long name to a legal handle", async () => {
@@ -1005,4 +1007,45 @@ test("the address ladder truncates a long name to a legal handle", async () => {
   expect(minted.username).toBe("wolfeschlegelsteinhausen");
   expect(next.username).toMatch(/^[a-z0-9_]{3,24}$/);
   expect(next.username).not.toBe(minted.username);
+});
+
+test("claimHandle refuses a name the site needs for itself", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  // Reserved reads as taken rather than as an error: the name is unavailable,
+  // which is the same answer as a name another person holds, and it comes with
+  // the same way forward.
+  const result = await me.as.mutation(api.profiles.claimHandle, {
+    handle: "privacy",
+  });
+
+  expect(result.status).toBe("taken");
+  expect(result.handle).toBe("privacy");
+  expect(result.suggestions[0]).toBe("maya_chen");
+});
+
+test("setUsername refuses a name the site needs for itself", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  await expect(
+    me.as.mutation(api.profiles.setUsername, { username: "terms" }),
+  ).rejects.toThrow("not available");
+});
+
+test("a suggested handle is never one the site needs for itself", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  // Their name folds straight onto a reserved word, so the suggestion ladder
+  // has to step over it rather than hand back something unclaimable.
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Privacy" });
+
+  const result = await me.as.mutation(api.profiles.claimHandle, {
+    handle: "privacy",
+  });
+
+  expect(result.status).toBe("taken");
+  expect(result.suggestions).not.toContain("privacy");
 });
