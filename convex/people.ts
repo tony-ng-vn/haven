@@ -29,13 +29,23 @@ import {
   handleValueKey,
 } from "./handleKeys";
 import { requireImageBlob } from "./imageBlobs";
+import { deleteMemories, syncMemories } from "./memories";
 
 // Bound every list read so the query stays scalable as the table grows.
 const RESULT_LIMIT = 20;
 
 // Semantic matches below this cosine similarity read as noise, not memory.
-// Tuned against real data during verification.
+// Tuned once against person-level vectors; single memory lines score on a
+// different distribution, so this is due a recalibration against the wave B
+// evaluation set rather than by feel.
 const MIN_SEMANTIC_SCORE = 0.3;
+
+// How many people one semantic search returns.
+const SEMANTIC_RESULT_LIMIT = 8;
+
+// Memory candidates pulled before aggregating per person. Wider than the
+// result limit because many rows can belong to one person.
+const MEMORY_CANDIDATE_LIMIT = 64;
 
 const MINUTE_MS = 60_000;
 
@@ -306,6 +316,7 @@ export const addPerson = mutation({
         ? undefined
         : validatePreferredPlatform(args.preferredPlatform, contactHandles);
     const attributes = structuredAttributeFields(args);
+    const now = Date.now();
     const personId = await ctx.db.insert("people", {
       userId,
       name,
@@ -323,11 +334,17 @@ export const addPerson = mutation({
         contactHandles,
         context: args.context,
       }),
-      updatedAt: Date.now(),
+      updatedAt: now,
     });
     // Same transaction as the array, always: the index is only trustworthy
     // if it cannot drift from what the card shows.
     await insertPersonHandles(ctx, userId, personId, contactHandles);
+    await syncMemories(ctx, {
+      userId,
+      personId,
+      context: args.context,
+      createdAt: now,
+    });
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
     return personId;
   },
@@ -578,11 +595,18 @@ export const updatePerson = mutation({
     // Callers that want to leave a field untouched must resend its current value.
     // updatePerson never takes a name, so normalizedName (set at insert) is
     // never stale here and does not need recomputing.
+    const now = Date.now();
     await ctx.db.patch("people", args.id, {
       link: args.link,
       context: args.context,
       searchText: personSearchText({ ...person, context: args.context }),
-      updatedAt: Date.now(),
+      updatedAt: now,
+    });
+    await syncMemories(ctx, {
+      userId,
+      personId: args.id,
+      context: args.context,
+      createdAt: now,
     });
     await ctx.scheduler.runAfter(0, internal.people.embed, {
       personId: args.id,
@@ -710,13 +734,20 @@ export const editPerson = mutation({
     // matching the moment the edit lands.
     fields.searchText = personSearchText({ ...person, ...fields });
 
-    await ctx.db.patch("people", args.id, { ...fields, updatedAt: Date.now() });
+    const now = Date.now();
+    await ctx.db.patch("people", args.id, { ...fields, updatedAt: now });
     // A replaced array is rewritten wholesale rather than diffed: the list is
     // capped at 8, so a full rewrite is the same cost and cannot mis-diff.
     if (fields.contactHandles !== undefined) {
       await deletePersonHandles(ctx, args.id);
       await insertPersonHandles(ctx, userId, args.id, fields.contactHandles);
     }
+    await syncMemories(ctx, {
+      userId,
+      personId: args.id,
+      context: fields.context,
+      createdAt: now,
+    });
     await ctx.scheduler.runAfter(0, internal.people.embed, {
       personId: args.id,
     });
@@ -744,8 +775,10 @@ export const deletePerson = mutation({
       await ctx.storage.delete(person.photoStorageId);
     }
     // Ghost index rows would resurrect a deleted person in every handle
-    // lookup, so they go with the person.
+    // lookup, and orphaned memories would keep matching in semantic search
+    // for somebody the user deleted. Both go with the person.
     await deletePersonHandles(ctx, args.personId);
+    await deleteMemories(ctx, args.personId);
     await ctx.db.delete("people", args.personId);
     return null;
   },
@@ -824,10 +857,17 @@ export const saveSharedProfile = mutation({
       }
       Object.assign(fields, linkBackfill(owner, profileUrl));
       if (Object.keys(fields).length > 0) {
+        const now = Date.now();
         await ctx.db.patch("people", owner._id, {
           ...fields,
           searchText: personSearchText({ ...owner, ...fields }),
-          updatedAt: Date.now(),
+          updatedAt: now,
+        });
+        await syncMemories(ctx, {
+          userId,
+          personId: owner._id,
+          context: fields.context,
+          createdAt: now,
         });
         await ctx.scheduler.runAfter(0, internal.people.embed, {
           personId: owner._id,
@@ -875,16 +915,23 @@ export const saveSharedProfile = mutation({
               { platform, value },
             ]);
           }
+          const now = Date.now();
           await ctx.db.patch("people", target._id, {
             ...fields,
             searchText: personSearchText({ ...target, ...fields }),
-            updatedAt: Date.now(),
+            updatedAt: now,
           });
           // Inserted even when the array already held this handle: that only
           // happens for a person written before this index existed.
           await insertPersonHandles(ctx, userId, target._id, [
             { platform, value },
           ]);
+          await syncMemories(ctx, {
+            userId,
+            personId: target._id,
+            context: fields.context,
+            createdAt: now,
+          });
           await ctx.scheduler.runAfter(0, internal.people.embed, {
             personId: target._id,
           });
@@ -901,6 +948,7 @@ export const saveSharedProfile = mutation({
     // Through appendContext even with nothing to append to, so the clamp
     // policy lives in exactly one place.
     const { context, noteTruncated } = appendContext(undefined, note);
+    const now = Date.now();
     const personId = await ctx.db.insert("people", {
       userId,
       name,
@@ -911,9 +959,10 @@ export const saveSharedProfile = mutation({
       // preferredPlatform stays unset: the share sheet never asks how the
       // user wants to reach this person.
       searchText: personSearchText({ name, contactHandles, context }),
-      updatedAt: Date.now(),
+      updatedAt: now,
     });
     await insertPersonHandles(ctx, userId, personId, contactHandles);
+    await syncMemories(ctx, { userId, personId, context, createdAt: now });
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
     return { status: "created" as const, personId, noteTruncated };
   },
@@ -1024,6 +1073,11 @@ const searchResultValidator = v.object({
   headline: v.optional(v.string()),
   bio: v.optional(v.string()),
   score: v.number(),
+  // The memory line that matched, when one did. Evidence is the trust
+  // feature: a memory-search result without "matched because you wrote ..."
+  // reads as random. Unset when only the person's own card vector matched,
+  // because a single averaged vector cannot say which field earned the hit.
+  evidence: v.optional(v.string()),
 });
 
 export const fetchSearchResults = internalQuery({
@@ -1086,16 +1140,68 @@ export const semanticSearch = action({
       return [];
     }
     const vector = await embedText(term);
-    const matches = await ctx.vectorSearch("people", "by_embedding", {
-      vector,
-      limit: 8,
-      filter: (q) => q.eq("userId", userId),
-    });
-    const strong = matches.filter((m) => m._score >= MIN_SEMANTIC_SCORE);
-    if (strong.length === 0) {
+    // Two indexes, one query vector. Memories get the wider limit because
+    // they are per-line: a chatty person holds many rows, and a slot budget
+    // as small as the person one would let them crowd everyone else out
+    // before the per-person aggregation below ever runs.
+    const [personHits, memoryHits] = await Promise.all([
+      ctx.vectorSearch("people", "by_embedding", {
+        vector,
+        limit: SEMANTIC_RESULT_LIMIT,
+        filter: (q) => q.eq("userId", userId),
+      }),
+      ctx.vectorSearch("memories", "by_embedding", {
+        vector,
+        limit: MEMORY_CANDIDATE_LIMIT,
+        filter: (q) => q.eq("userId", userId),
+      }),
+    ]);
+
+    // Best score wins per person, and the memory that earned it is the
+    // evidence. A person can be reached from both indexes; they appear once.
+    const best = new Map<Id<"people">, { score: number; evidence?: string }>();
+    const keepBest = (
+      personId: Id<"people">,
+      score: number,
+      evidence?: string,
+    ) => {
+      const current = best.get(personId);
+      if (current === undefined || score > current.score) {
+        best.set(personId, { score, evidence });
+      }
+    };
+    // Memories are aggregated first, and the person index only displaces one
+    // on a strictly higher score: at a tie the result that can say "matched
+    // because you wrote ..." is the more useful of the two. Vector search
+    // returns descending order, so the same strict rule keeps the best
+    // memory line among several a person owns.
+    const strongMemories = memoryHits.filter(
+      (hit) => hit._score >= MIN_SEMANTIC_SCORE,
+    );
+    if (strongMemories.length > 0) {
+      const memoryScores = new Map(
+        strongMemories.map((hit) => [hit._id, hit._score]),
+      );
+      const owners: Array<{
+        _id: Id<"memories">;
+        personId: Id<"people">;
+        text: string;
+      }> = await ctx.runQuery(internal.memories.fetchMemoryOwners, {
+        ids: strongMemories.map((hit) => hit._id),
+      });
+      for (const owner of owners) {
+        keepBest(owner.personId, memoryScores.get(owner._id) ?? 0, owner.text);
+      }
+    }
+    for (const hit of personHits) {
+      if (hit._score >= MIN_SEMANTIC_SCORE) {
+        keepBest(hit._id, hit._score);
+      }
+    }
+    if (best.size === 0) {
       return [];
     }
-    const scores = new Map(strong.map((m) => [m._id, m._score]));
+
     const people: Array<{
       _id: Id<"people">;
       _creationTime: number;
@@ -1107,11 +1213,16 @@ export const semanticSearch = action({
       headline?: string;
       bio?: string;
     }> = await ctx.runQuery(internal.people.fetchSearchResults, {
-      ids: strong.map((m) => m._id),
+      ids: [...best.keys()],
     });
     return people
-      .map((person) => ({ ...person, score: scores.get(person._id) ?? 0 }))
-      .sort((a, b) => b.score - a.score);
+      .map((person) => ({
+        ...person,
+        score: best.get(person._id)?.score ?? 0,
+        evidence: best.get(person._id)?.evidence,
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, SEMANTIC_RESULT_LIMIT);
   },
 });
 

@@ -12,6 +12,15 @@ crons.interval(
   {},
 );
 
+// Same self-heal for the per-memory vectors, and how the one-off
+// memories:backfillMemories migration gets its rows embedded.
+crons.interval(
+  "memory embed backfill",
+  { hours: 24 },
+  internal.memories.backfillMemoryEmbeddings,
+  {},
+);
+
 // Self-heals a capture stuck "pending" because the extract action was
 // killed rather than throwing (timeout, redeploy) -- see sweepStuckCaptures.
 crons.interval(
