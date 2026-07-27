@@ -64,6 +64,18 @@ struct MyCardFieldTests {
         #expect(card.value(for: .handles) == "2 ways")
     }
 
+    // Photo was the one field with no way back: the row opened a picker and a
+    // picker cannot say "remove". Asking first is what makes Remove reachable
+    // at all, so which branch the row takes is asserted rather than trusted.
+    @Test("the photo row asks first once there is a photo to remove")
+    func photoAction() {
+        var card = MyCard(username: "maya", name: "Maya Chen")
+        #expect(MyCardScreen.photoAction(for: card) == .choose)
+
+        card.photoStorageId = "kg700xyz"
+        #expect(MyCardScreen.photoAction(for: card) == .options)
+    }
+
     // Only the fields that are literally one string share the text editor. A
     // key here for city or handles would write the wrong shape to the server.
     @Test("only the plain text fields carry a stored key")

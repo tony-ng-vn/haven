@@ -17,6 +17,8 @@ struct MyCardScreen: View {
     @State private var editing: CardField?
     @State private var photoItem: PhotosPickerItem?
     @State private var photo: Image?
+    @State private var choosingPhoto = false
+    @State private var photoOptions = false
     @State private var confirmingDelete = false
 
     init() {
@@ -39,6 +41,17 @@ struct MyCardScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $editing) { field in
             editor(for: field)
+        }
+        // Presented rather than wrapped around the row, so the photo row is a
+        // HavenRow like every other one and the list has a single press
+        // behaviour.
+        .photosPicker(isPresented: $choosingPhoto, selection: $photoItem, matching: .images)
+        .confirmationDialog("Your photo", isPresented: $photoOptions, titleVisibility: .hidden) {
+            Button("Choose a different photo") { choosingPhoto = true }
+            Button("Remove photo", role: .destructive) {
+                Task { await model.clear("photoStorageId") }
+            }
+            Button("Cancel", role: .cancel) {}
         }
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
@@ -135,39 +148,45 @@ struct MyCardScreen: View {
         }
     }
 
-    @ViewBuilder
     private func row(_ field: CardField, card: MyCard) -> some View {
         let value = card.value(for: field)
-        if field == .photo {
-            // The only row that opens a system picker rather than a sheet of
-            // ours, so it is a PhotosPicker rather than a HavenRow action.
-            PhotosPicker(selection: $photoItem, matching: .images) {
-                rowContent(field, value: value)
-            }
-            .buttonStyle(PressScaleStyle())
-        } else {
-            HavenRow(
-                title: field.title,
-                detail: value ?? field.placeholder,
-                accessibilityText: spoken(field, value: value)
-            ) {
-                editing = field
-            } leading: {
-                EmptyView()
-            } trailing: {
-                EmptyView()
-            }
+        return HavenRow(
+            title: field.title,
+            detail: value ?? field.placeholder,
+            accessibilityText: spoken(field, value: value)
+        ) {
+            tap(field, card: card)
+        } leading: {
+            EmptyView()
+        } trailing: {
+            EmptyView()
         }
     }
 
-    private func rowContent(_ field: CardField, value: String?) -> some View {
-        HavenRow(
-            title: field.title,
-            detail: value ?? field.placeholder,
-            accessibilityText: spoken(field, value: value),
-            leading: { EmptyView() },
-            trailing: { EmptyView() }
-        )
+    private func tap(_ field: CardField, card: MyCard) {
+        guard field == .photo else {
+            editing = field
+            return
+        }
+        switch Self.photoAction(for: card) {
+        case .choose: choosingPhoto = true
+        case .options: photoOptions = true
+        }
+    }
+
+    /// What tapping the photo row does.
+    ///
+    /// A card with no photo goes straight to the picker, because there is only
+    /// one thing to do. Once there is a photo the row has to ask, since the
+    /// system picker has no way to say "remove" and this was the one field with
+    /// no way back.
+    static func photoAction(for card: MyCard) -> PhotoAction {
+        card.photoStorageId == nil ? .choose : .options
+    }
+
+    enum PhotoAction: Equatable {
+        case choose
+        case options
     }
 
     /// An empty field says so out loud. The unlit star carries it visually and
@@ -211,7 +230,8 @@ struct MyCardScreen: View {
                 ])
             }
         case .photo:
-            // Handled by the PhotosPicker on the row itself.
+            // Never reached: the photo row opens the system picker or the
+            // remove dialog rather than one of our sheets.
             EmptyView()
         }
     }
