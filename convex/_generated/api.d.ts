@@ -12,6 +12,7 @@ import type * as authz from "../authz.js";
 import type * as captures from "../captures.js";
 import type * as crons from "../crons.js";
 import type * as emailClient from "../emailClient.js";
+import type * as handleKeys from "../handleKeys.js";
 import type * as imageBlobs from "../imageBlobs.js";
 import type * as loveAlarm from "../loveAlarm.js";
 import type * as nameSearch from "../nameSearch.js";
@@ -35,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   captures: typeof captures;
   crons: typeof crons;
   emailClient: typeof emailClient;
+  handleKeys: typeof handleKeys;
   imageBlobs: typeof imageBlobs;
   loveAlarm: typeof loveAlarm;
   nameSearch: typeof nameSearch;
