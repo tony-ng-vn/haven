@@ -8,6 +8,13 @@ struct OnboardingFlow: View {
 
     private let userId: String
 
+    /// Whether the reveal has been seen and dismissed in this session. The
+    /// reveal is a moment rather than a screen, so it is not somewhere the flow
+    /// can return to.
+    @State private var revealed = false
+    /// Set by the reveal's ghost button, so the app opens on My Card.
+    @State private var opensCard = false
+
     init(userId: String) {
         self.userId = userId
         _model = StateObject(wrappedValue: OnboardingModel(userId: userId))
@@ -40,11 +47,21 @@ struct OnboardingFlow: View {
             LocationScreen(model: model)
         } else if model.step == .contact {
             ContactScreen(model: model)
+        } else if let card = model.card, model.commits > 0, !revealed {
+            // Only for someone who just answered something. A session that
+            // opened with every question already answered has nothing to
+            // reveal, and replaying the moment would cheapen it.
+            CardRevealScreen(
+                card: card,
+                sky: model.sky,
+                confirm: { revealed = true },
+                addMore: {
+                    opensCard = true
+                    revealed = true
+                }
+            )
         } else {
-            // The card reveal belongs here and is milestone 1, judged on a
-            // device. Until it lands, a person through the questions goes
-            // straight on to the app.
-            HavenTabs(userId: userId)
+            HavenTabs(userId: userId, opensCard: opensCard)
         }
     }
 }
