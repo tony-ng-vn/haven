@@ -26,6 +26,7 @@ struct CardRevealScreen: View {
     /// The card arriving. Separate from the ignition because it is a different
     /// gesture on a different curve: the stars come up, the card comes to rest.
     @State private var settled = false
+    @State private var photo: Image?
 
     var body: some View {
         ZStack {
@@ -33,8 +34,9 @@ struct CardRevealScreen: View {
             DustLayer()
 
             VStack(spacing: 0) {
-                HavenCard(card: card, sky: sky, majorIntensities: intensities)
+                HavenCard(card: card, sky: sky, majorIntensities: intensities, photo: photo)
                     .scaleEffect(settled ? 1 : RevealMotion.arrivingScale)
+                    .cardPhoto(card.photoURL, into: $photo)
 
                 actions
                     .opacity(settled ? 1 : 0)

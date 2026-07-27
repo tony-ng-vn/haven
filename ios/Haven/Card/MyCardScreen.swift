@@ -16,6 +16,7 @@ struct MyCardScreen: View {
 
     @State private var editing: CardField?
     @State private var photoItem: PhotosPickerItem?
+    @State private var photo: Image?
     @State private var confirmingDelete = false
 
     init() {
@@ -100,12 +101,14 @@ struct MyCardScreen: View {
                     card: card,
                     sky: sky(for: card),
                     majorIntensities: intensities(for: card),
+                    photo: photo,
                     nebulaDamping: MyCardMetrics.cardNebulaDamping
                 )
             }
             .padding(.horizontal, MyCardMetrics.cardInset)
             .padding(.bottom, 24)
             .frame(maxWidth: .infinity)
+            .cardPhoto(card.photoURL, into: $photo)
 
             if let failure = model.failure {
                 Text(failure)
