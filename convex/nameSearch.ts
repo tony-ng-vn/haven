@@ -35,6 +35,7 @@ export function normalizeName(name: string): string {
 export function personSearchText(person: {
   name: string;
   headline?: string;
+  bio?: string;
   company?: string;
   role?: string;
   city?: { name: string };
@@ -46,6 +47,7 @@ export function personSearchText(person: {
     [
       person.name,
       person.headline,
+      person.bio,
       person.company,
       person.role,
       person.city?.name,
