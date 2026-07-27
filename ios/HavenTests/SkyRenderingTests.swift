@@ -54,6 +54,59 @@ struct StarSlotTests {
     }
 }
 
+// MARK: - Figure intensity
+
+/// How bright each figure star is drawn. The renderer used to know two states;
+/// the reveal needs everything between them, so the two states became the ends
+/// of a range and this is the mapping that keeps them identical.
+@Suite("Figure intensity")
+struct FigureIntensityTests {
+    @Test("a lit major is full and everything else is dark")
+    func fromLitMajors() {
+        #expect(FigureIntensity.from(litMajors: [0, 2], majorCount: 4) == [1, 0, 1, 0])
+        #expect(FigureIntensity.from(litMajors: [], majorCount: 3) == [0, 0, 0])
+        #expect(FigureIntensity.from(litMajors: [0, 1], majorCount: 2) == [1, 1])
+        #expect(FigureIntensity.from(litMajors: [0], majorCount: 0).isEmpty)
+    }
+
+    // A caller builds intensities by hand for the reveal, so an array that does
+    // not match the figure is a real case, not a hypothetical one. Missing is
+    // unlit: drawing a star nobody asked to light would be the worse guess.
+    @Test("a star the caller said nothing about stays unlit")
+    func shortArray() {
+        #expect(FigureIntensity.star(0, in: [0.5]) == 0.5)
+        #expect(FigureIntensity.star(3, in: [0.5]) == 0)
+        #expect(FigureIntensity.star(-1, in: [0.5]) == 0)
+        #expect(FigureIntensity.star(0, in: []) == 0)
+    }
+
+    // A line brighter than the star it comes from reads as a diagram drawn over
+    // the sky rather than as the figure lighting up.
+    @Test("an edge is only as bright as its dimmer star")
+    func edgeTakesTheDimmer() {
+        let intensities: [Double] = [1, 0.4, 0]
+        #expect(FigureIntensity.edge(between: 0, and: 1, in: intensities) == 0.4)
+        #expect(FigureIntensity.edge(between: 1, and: 0, in: intensities) == 0.4)
+        #expect(FigureIntensity.edge(between: 0, and: 2, in: intensities) == 0)
+        #expect(FigureIntensity.edge(between: 0, and: 9, in: intensities) == 0)
+    }
+
+    // The two-state figure has to come out of the new path pixel-identical, or
+    // every screen already shipped changes appearance.
+    @Test("the two-state figure survives the round trip")
+    func twoStateIsUnchanged() {
+        let lit = StarSlot.litMajorIndices(filled: [.name, .city], majorCount: 7)
+        let intensities = FigureIntensity.from(litMajors: lit, majorCount: 7)
+
+        for index in 0..<7 {
+            #expect(FigureIntensity.star(index, in: intensities) == (lit.contains(index) ? 1 : 0))
+        }
+        // An edge between two lit stars is drawn in full; one dark end kills it.
+        #expect(FigureIntensity.edge(between: 0, and: 1, in: intensities) == 1)
+        #expect(FigureIntensity.edge(between: 0, and: 2, in: intensities) == 0)
+    }
+}
+
 // MARK: - Sky layout
 
 @Suite("Sky layout")

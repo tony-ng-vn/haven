@@ -68,6 +68,33 @@ struct SkyLayout {
     }
 }
 
+/// How brightly each figure star is drawn: 0 is the unlit faint dot, 1 is fully
+/// lit, and everything between is an ignition part way through.
+///
+/// The renderer knew two states until the card reveal needed the space between
+/// them. Brightness is a plain input here and animating it is the caller's job,
+/// so one renderer serves the still figure, the reveal, and the edit screen's
+/// nudges without knowing which of them it is drawing.
+enum FigureIntensity {
+    /// The two-state figure as intensities.
+    static func from(litMajors: Set<Int>, majorCount: Int) -> [Double] {
+        (0..<max(majorCount, 0)).map { litMajors.contains($0) ? 1 : 0 }
+    }
+
+    /// One star's brightness. A star the caller said nothing about is unlit:
+    /// intensities are built by hand for the reveal, and lighting a star nobody
+    /// asked for would be the worse guess.
+    static func star(_ index: Int, in intensities: [Double]) -> Double {
+        intensities.indices.contains(index) ? intensities[index] : 0
+    }
+
+    /// An edge is drawn at the dimmer of its two stars, so a line never
+    /// outshines the star it comes from.
+    static func edge(between a: Int, and b: Int, in intensities: [Double]) -> Double {
+        min(star(a, in: intensities), star(b, in: intensities))
+    }
+}
+
 /// The twinkle every star shares: opacity easing between `hi` and `lo`, its own
 /// duration and phase, running forever and alternating direction. That is CSS
 /// `animation: dur ease-in-out delay infinite alternate`, reproduced so the app

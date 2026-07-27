@@ -12,10 +12,9 @@ import SwiftUI
 /// judged on a device.
 struct SkyView: View {
     let sky: Sky
-    /// Indices into `sky.majors` that render as lit. Use
-    /// `StarSlot.litMajorIndices` to derive it from filled fields; the default
-    /// is the complete figure, which is what the card and the beacon show.
-    let litMajors: Set<Int>
+    /// How brightly each of `sky.majors` is drawn, from 0 for the unlit faint
+    /// dot to 1 for fully lit. See `FigureIntensity`.
+    let majorIntensities: [Double]
     /// The band the figure may occupy, in this view's own coordinate space.
     ///
     /// Nil fills the whole view, which is what the card and the beacon want:
@@ -26,10 +25,28 @@ struct SkyView: View {
 
     @HavenReduceMotion private var reduceMotion
 
-    init(sky: Sky, litMajors: Set<Int>? = nil, figureBand: CGRect? = nil) {
+    /// The figure part way lit. Intensities are a plain input: animating them
+    /// is the caller's job, and a Reduce Motion caller passes final values with
+    /// no animation, as everywhere else.
+    init(sky: Sky, majorIntensities: [Double], figureBand: CGRect? = nil) {
         self.sky = sky
-        self.litMajors = litMajors ?? Set(sky.majors.indices)
+        self.majorIntensities = majorIntensities
         self.figureBand = figureBand
+    }
+
+    /// The figure at rest, where a star is either lit or a faint dot. Use
+    /// `StarSlot.litMajorIndices` to derive the set from filled fields; the
+    /// default is the complete figure, which is what the card and the beacon
+    /// show.
+    init(sky: Sky, litMajors: Set<Int>? = nil, figureBand: CGRect? = nil) {
+        self.init(
+            sky: sky,
+            majorIntensities: FigureIntensity.from(
+                litMajors: litMajors ?? Set(sky.majors.indices),
+                majorCount: sky.majors.count
+            ),
+            figureBand: figureBand
+        )
     }
 
     var body: some View {
@@ -40,7 +57,12 @@ struct SkyView: View {
             // leave the rest of the screen flat.
             SkyBackdrop(sky: sky)
             ShimmerField(sky: sky, figureBand: figureBand)
-            AnimatedSky(sky: sky, litMajors: litMajors, animating: !reduceMotion, figureBand: figureBand)
+            AnimatedSky(
+                sky: sky,
+                majorIntensities: majorIntensities,
+                animating: !reduceMotion,
+                figureBand: figureBand
+            )
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -134,7 +156,7 @@ private struct ShimmerField: View {
 /// per frame in a single render pass.
 private struct AnimatedSky: View {
     let sky: Sky
-    let litMajors: Set<Int>
+    let majorIntensities: [Double]
     let animating: Bool
     let figureBand: CGRect?
 
@@ -189,43 +211,49 @@ private struct AnimatedSky: View {
         }
     }
 
-    /// A line shows only when both of its stars are lit, so a half-filled
-    /// profile reads as separate lights rather than as a broken diagram.
+    /// A line is drawn at the dimmer of its two stars, so it fades in with the
+    /// second one rather than arriving whole, and a half-filled profile reads
+    /// as separate lights instead of as a broken diagram.
     private func drawEdges(_ context: inout GraphicsContext, _ layout: SkyLayout) {
         for (a, b) in sky.edges {
             guard sky.majors.indices.contains(a), sky.majors.indices.contains(b) else { continue }
-            guard litMajors.contains(a), litMajors.contains(b) else { continue }
+            let intensity = FigureIntensity.edge(between: a, and: b, in: majorIntensities)
+            guard intensity > 0 else { continue }
             var path = Path()
             path.move(to: layout.point(x: sky.majors[a].x, y: sky.majors[a].y))
             path.addLine(to: layout.point(x: sky.majors[b].x, y: sky.majors[b].y))
             context.stroke(
                 path,
-                with: .color(HavenColor.star.opacity(0.24)),
+                with: .color(HavenColor.star.opacity(0.24 * intensity)),
                 lineWidth: layout.length(0.8)
             )
         }
     }
 
+    /// A major crossfades between its two states: the faint dot fades out as
+    /// the lit glow and core fade in. At 0 and at 1 that is exactly the two
+    /// states the sky has always drawn.
     private func drawMajors(_ context: inout GraphicsContext, _ layout: SkyLayout, _ time: Double?) {
         for (index, major) in sky.majors.enumerated() {
+            let intensity = FigureIntensity.star(index, in: majorIntensities)
             let centre = layout.point(x: major.x, y: major.y)
             let radius = layout.length(major.r)
-            guard litMajors.contains(index) else {
+            if intensity < 1 {
                 // An unlit slot is a legible gap, not an absence: the star stays
                 // on screen in Faint so the edit screen can point at it.
                 context.fill(
                     circle(at: centre, radius: radius),
-                    with: .color(HavenColor.faint.opacity(0.45))
+                    with: .color(HavenColor.faint.opacity(0.45 * (1 - intensity)))
                 )
-                continue
             }
+            guard intensity > 0 else { continue }
             let a = alpha(hi: major.hi, lo: major.lo, dur: major.dur, delay: major.delay, time: time)
             let glow = radius * 2.6
             context.fill(
                 circle(at: centre, radius: glow),
                 with: .radialGradient(
                     Gradient(colors: [
-                        HavenColor.star.opacity(0.22 * a),
+                        HavenColor.star.opacity(0.22 * a * intensity),
                         HavenColor.star.opacity(0),
                     ]),
                     center: centre,
@@ -235,7 +263,7 @@ private struct AnimatedSky: View {
             )
             context.fill(
                 circle(at: centre, radius: radius),
-                with: .color(HavenColor.star.opacity(a))
+                with: .color(HavenColor.star.opacity(a * intensity))
             )
         }
     }
@@ -342,6 +370,16 @@ private let previewSky = SkyGenerator.build(seed: "user_2abcDEF123")
                 majorCount: previewSky.majors.count
             )
         )
+    }
+}
+
+// One frame of the reveal: the first star up, the second most of the way, the
+// third just catching. The line between the first two sits at the dimmer of
+// them.
+#Preview("Sky, mid ignition") {
+    ZStack {
+        NightBackground()
+        SkyView(sky: previewSky, majorIntensities: [1, 0.65, 0.2])
     }
 }
 
