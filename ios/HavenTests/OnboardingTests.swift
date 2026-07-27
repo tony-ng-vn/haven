@@ -160,10 +160,13 @@ struct OnboardingTests {
     // The skip store is what decides whether someone is asked a question a
     // second time, so its round trip through UserDefaults is worth an assertion
     // rather than a hope. Each case uses its own user id, because the store is
-    // shared with whatever else has run.
+    // shared with whatever else has run, and clears it first, because
+    // UserDefaults outlives the run: the app stays installed on the simulator,
+    // so without this the second run reads the first run's answer.
     @Test("a skip survives the app being killed")
     func skipsRoundTrip() {
         let userId = "user_skips_round_trip"
+        OnboardingSkips.save([], userId: userId)
         #expect(OnboardingSkips.load(userId: userId).isEmpty)
 
         OnboardingSkips.save([.location, .contact], userId: userId)
@@ -178,6 +181,7 @@ struct OnboardingTests {
     func skipsAreKeyedByUser() {
         let mine = "user_skips_mine"
         let theirs = "user_skips_theirs"
+        OnboardingSkips.save([], userId: theirs)
 
         OnboardingSkips.save([.location], userId: mine)
 
