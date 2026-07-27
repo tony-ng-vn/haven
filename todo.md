@@ -51,7 +51,12 @@ Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
 - [ ] Phase 5: Polish pass. Haptics, transitions, gesture physics across the app.
 - [ ] Phase 6: Distribution. TestFlight to the waitlist cohort, then App Store.
   - [ ] Go through the full iOS App Launch Checklist before submitting (Cole Caccamise): https://colecaccamise.notion.site/The-iOS-App-Launch-Checklist-3786e16e7a578019a96ac84819de934a
-  - [ ] App Store compliance basics are already listed in `mvp-design.md` (in-app account deletion, Sign in with Apple, privacy labels, permission strings).
+  - [~] App Store compliance, tracked in `mvp-design.md` under "App Store compliance checklist".
+    The code half is done ahead of this phase on purpose: those items hold still while the product changes, unlike store metadata, which the Phase 5 polish pass invalidates.
+    What is left there is dashboard and portal work, and three items are worth starting now rather than at submission.
+  - [ ] Reserve the app name in App Store Connect. Longest lead time of anything on the list, and "Haven" is crowded.
+  - [ ] Create the Clerk production instance. Web and iOS both run on a development instance today, which caps its user count and cannot be migrated off, so every day of signups makes it worse.
+  - [ ] Enable Sign In with Apple on the App ID and verify sign-in on a physical device. The entitlement is in the repo; the capability is not something a commit can turn on.
 
 ## Prototype checkpoints
 

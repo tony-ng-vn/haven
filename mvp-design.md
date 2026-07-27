@@ -331,10 +331,33 @@ UI and feel questions go through SwiftUI previews in Xcode, not the web prototyp
 
 ## App Store compliance checklist
 
-In-app account deletion (guideline 5.1.1), wired to the deletion semantics above.
-Sign in with Apple offered alongside any third-party login (guideline 4.8).
-Privacy policy URL and App Privacy nutrition labels.
-Permission strings for camera (connect scanning) and photo library (contact photos).
+Split by whether more development invalidates the item.
+Everything in the first two groups holds still, so it is done early rather than at the end; store metadata is thrown away by the Phase 5 polish pass and waits for it.
+
+Done in code:
+
+- In-app account deletion (guideline 5.1.1), wired to the deletion semantics above.
+  Both halves: the Convex purge and the Clerk user, because the guideline asks for the account and not only its contents.
+- Sign in with Apple offered alongside any third-party login (guideline 4.8), with the `com.apple.developer.applesignin` entitlement it needs on a real device.
+- Privacy policy and terms at `inhavens.com/privacy` and `/terms`.
+- Apple's privacy manifest (`ios/Haven/PrivacyInfo.xcprivacy`), declaring the UserDefaults required-reason API and the data the app collects.
+- The export-compliance answer in `Info.plist`, so uploads stop asking.
+- Permission strings: none needed yet.
+  `PhotosPicker` runs out of process, so the photo library needs no usage string, and no camera code exists until connect scanning lands.
+
+Outside code, and none of it is a commit:
+
+- Reserve the app name in App Store Connect.
+  Longest lead time on the list, and "Haven" is crowded (see Phase 0 above).
+- Create the Clerk production instance.
+  Web and iOS both authenticate against a development instance today, which caps its user count and cannot be migrated off.
+  Four things move together: Vercel's `VITE_CLERK_PUBLISHABLE_KEY`, `Config.clerkProductionKey`, `CLERK_JWT_ISSUER_DOMAIN` on the production Convex deployment, and the Clerk domains in `vercel.json`'s CSP.
+  A release build traps on the placeholder key rather than falling back, so this cannot be forgotten silently.
+- Enable the Sign In with Apple capability on the App ID in the developer portal, and verify sign-in on a physical device.
+  The entitlement alone does not provision it, and the simulator does not enforce it.
+- App Privacy answers in App Store Connect, which have to match the privacy manifest.
+- Store metadata: screenshots, description, keywords, category, age rating, support URL.
+  These wait for Phase 5, because polish changes what the screenshots show.
 
 ## Testing strategy
 
