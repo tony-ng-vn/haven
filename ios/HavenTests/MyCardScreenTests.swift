@@ -64,16 +64,22 @@ struct MyCardFieldTests {
         #expect(card.value(for: .handles) == "2 ways")
     }
 
-    // Photo was the one field with no way back: the row opened a picker and a
-    // picker cannot say "remove". Asking first is what makes Remove reachable
-    // at all, so which branch the row takes is asserted rather than trusted.
-    @Test("the photo row asks first once there is a photo to remove")
-    func photoAction() {
+    // Photo was the one field with no way back: the row opened a picker, and a
+    // picker cannot say "remove". The row now asks first when there is
+    // something to remove, and this is the flag it asks.
+    //
+    // The stored id, not the url: a photo whose url failed to resolve is still
+    // a photo the person can remove.
+    @Test("a card knows it has a photo from the stored id alone")
+    func hasPhoto() {
         var card = MyCard(username: "maya", name: "Maya Chen")
-        #expect(MyCardScreen.photoAction(for: card) == .choose)
+        #expect(!card.hasPhoto)
+
+        card.photoUrl = "https://example.convex.cloud/api/storage/kg700xyz"
+        #expect(!card.hasPhoto)
 
         card.photoStorageId = "kg700xyz"
-        #expect(MyCardScreen.photoAction(for: card) == .options)
+        #expect(card.hasPhoto)
     }
 
     // Only the fields that are literally one string share the text editor. A

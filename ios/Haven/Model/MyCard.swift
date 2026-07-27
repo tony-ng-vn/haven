@@ -102,6 +102,15 @@ extension MyCard {
         photoUrl.flatMap(URL.init(string:))
     }
 
+    /// Whether there is a photo at all.
+    ///
+    /// The stored id decides this, not the url: the id is what the row, the
+    /// star and the remove option all key off, and a url that failed to resolve
+    /// does not mean the photo is gone.
+    var hasPhoto: Bool {
+        photoStorageId != nil
+    }
+
     /// Which figure stars this card has earned. The slot mapping is fixed in
     /// `StarSlot`, so a field always lights the same star.
     var filledSlots: Set<StarSlot> {
@@ -109,7 +118,7 @@ extension MyCard {
         if name?.isEmpty == false { slots.insert(.name) }
         if city != nil { slots.insert(.city) }
         if handles?.isEmpty == false { slots.insert(.primaryContact) }
-        if photoStorageId != nil { slots.insert(.photo) }
+        if hasPhoto { slots.insert(.photo) }
         if company?.isEmpty == false { slots.insert(.company) }
         if role?.isEmpty == false { slots.insert(.role) }
         return slots

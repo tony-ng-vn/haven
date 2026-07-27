@@ -1,6 +1,5 @@
 import ClerkKit
 import ConvexMobile
-import PhotosUI
 import SwiftUI
 
 /// Screen 7 of `../../phase1-build-plan.md`: the card plus every field, filled
@@ -15,10 +14,7 @@ struct MyCardScreen: View {
     @StateObject private var model: MyCardModel
 
     @State private var editing: CardField?
-    @State private var photoItem: PhotosPickerItem?
     @State private var photo: Image?
-    @State private var choosingPhoto = false
-    @State private var photoOptions = false
     @State private var confirmingDelete = false
 
     init() {
@@ -41,29 +37,6 @@ struct MyCardScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $editing) { field in
             editor(for: field)
-        }
-        // Presented rather than wrapped around the row, so the photo row is a
-        // HavenRow like every other one and the list has a single press
-        // behaviour.
-        .photosPicker(isPresented: $choosingPhoto, selection: $photoItem, matching: .images)
-        .confirmationDialog("Your photo", isPresented: $photoOptions, titleVisibility: .hidden) {
-            Button("Choose a different photo") { choosingPhoto = true }
-            Button("Remove photo", role: .destructive) {
-                Task { await model.clear("photoStorageId") }
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-        .onChange(of: photoItem) { _, item in
-            guard let item else { return }
-            Task {
-                // Loaded as data rather than an Image: what goes to storage is
-                // the file, and re-encoding a SwiftUI Image would lose the
-                // original and its orientation.
-                if let data = try? await item.loadTransferable(type: Data.self) {
-                    await model.setPhoto(data)
-                }
-                photoItem = nil
-            }
         }
         .alert("Delete your account?", isPresented: $confirmingDelete) {
             Button("Delete", role: .destructive) {
@@ -155,38 +128,12 @@ struct MyCardScreen: View {
             detail: value ?? field.placeholder,
             accessibilityText: spoken(field, value: value)
         ) {
-            tap(field, card: card)
+            editing = field
         } leading: {
             EmptyView()
         } trailing: {
             EmptyView()
         }
-    }
-
-    private func tap(_ field: CardField, card: MyCard) {
-        guard field == .photo else {
-            editing = field
-            return
-        }
-        switch Self.photoAction(for: card) {
-        case .choose: choosingPhoto = true
-        case .options: photoOptions = true
-        }
-    }
-
-    /// What tapping the photo row does.
-    ///
-    /// A card with no photo goes straight to the picker, because there is only
-    /// one thing to do. Once there is a photo the row has to ask, since the
-    /// system picker has no way to say "remove" and this was the one field with
-    /// no way back.
-    static func photoAction(for card: MyCard) -> PhotoAction {
-        card.photoStorageId == nil ? .choose : .options
-    }
-
-    enum PhotoAction: Equatable {
-        case choose
-        case options
     }
 
     /// An empty field says so out loud. The unlit star carries it visually and
@@ -230,9 +177,11 @@ struct MyCardScreen: View {
                 ])
             }
         case .photo:
-            // Never reached: the photo row opens the system picker or the
-            // remove dialog rather than one of our sheets.
-            EmptyView()
+            PhotoEditor(photo: photo) { data in
+                await model.setPhoto(data)
+            } remove: {
+                await model.clear("photoStorageId")
+            }
         }
     }
 

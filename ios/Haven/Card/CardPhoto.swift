@@ -4,8 +4,8 @@ import SwiftUI
 ///
 /// Its own type rather than an `AsyncImage` inside `HavenCard`, because the
 /// card is a dumb view: it is handed everything it draws, which is what lets a
-/// preview and a test render one without a network. Both screens that show a
-/// card load the photo the same way and pass it in.
+/// preview render one without a network. Both screens that show a card load the
+/// photo the same way and pass it in.
 enum CardPhoto {
     /// The photo, or nil for a card that has none, a url that will not load, or
     /// bytes that are not an image. A card without a photo is an ordinary card,
@@ -38,7 +38,13 @@ private struct CardPhotoLoader: ViewModifier {
     @Binding var photo: Image?
 
     func body(content: Content) -> some View {
-        content.task(id: url) { photo = await CardPhoto.load(url) }
+        content.task(id: url) {
+            let loaded = await CardPhoto.load(url)
+            // A cancelled fetch returns nil like any other failure, and writing
+            // that would clear a photo the replacement task has already loaded.
+            guard !Task.isCancelled else { return }
+            photo = loaded
+        }
     }
 }
 

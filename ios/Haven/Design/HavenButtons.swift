@@ -16,37 +16,54 @@ struct PrimaryButton: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack {
-                // The label stays laid out while loading, so the button cannot
-                // change height under a spinner.
-                // Baseline-aligned, not centred: at accessibility text sizes the
-                // title wraps, and a centred glyph then floats against the
-                // middle of a two-line block instead of sitting with the words.
-                HStack(alignment: .firstTextBaseline, spacing: 7) {
-                    if let systemImage {
-                        Image(systemName: systemImage)
-                    }
-                    Text(title)
-                }
-                .opacity(isLoading ? 0 : 1)
-                if isLoading {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .tint(HavenColor.creamInk)
-                }
-            }
-            .font(HavenFont.buttonLabel)
-            .foregroundStyle(HavenColor.creamInk)
-            .padding(.vertical, 13)
-            .padding(.horizontal, 20)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .background(HavenColor.cream, in: RoundedRectangle(cornerRadius: 12))
-            .opacity(isEnabled ? 1 : 0.3)
+            PrimaryLabel(title: title, systemImage: systemImage, isLoading: isLoading)
         }
         .buttonStyle(PressScaleStyle())
         .disabled(isLoading)
         .accessibilityLabel(title)
         .accessibilityValue(isLoading ? "Working" : "")
+    }
+}
+
+/// What a primary action looks like, without being a Button.
+///
+/// Split out for `PhotosPicker`, which brings its own control and can only be
+/// given a label. A second copy of these paddings is how two primary actions
+/// end up subtly different heights.
+struct PrimaryLabel: View {
+    let title: String
+    var systemImage: String? = nil
+    var isLoading = false
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        ZStack {
+            // The label stays laid out while loading, so the button cannot
+            // change height under a spinner.
+            // Baseline-aligned, not centred: at accessibility text sizes the
+            // title wraps, and a centred glyph then floats against the
+            // middle of a two-line block instead of sitting with the words.
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                }
+                Text(title)
+            }
+            .opacity(isLoading ? 0 : 1)
+            if isLoading {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .tint(HavenColor.creamInk)
+            }
+        }
+        .font(HavenFont.buttonLabel)
+        .foregroundStyle(HavenColor.creamInk)
+        .padding(.vertical, 13)
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .background(HavenColor.cream, in: RoundedRectangle(cornerRadius: 12))
+        .opacity(isEnabled ? 1 : 0.3)
     }
 }
 
