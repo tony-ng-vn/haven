@@ -239,7 +239,7 @@ private struct ContactPlatform {
         // X sends the username with the token, so the value is proven. That
         // read sits behind paid API tiers, so the day it stops arriving the row
         // degrades to a paste rather than dead-ending.
-        method: .authorize(.x, provesItsHandle: true, fallback: { _ in .pasteX }),
+        method: .authorize(.x, provesItsHandle: true, fallback: { _ in .enterX }),
         handlePrefix: "@"
     )
     // The OIDC provider, not the legacy one: Clerk's `oauth_linkedin` is
@@ -262,7 +262,7 @@ private struct ContactPlatform {
     // for everybody and land here anyway, one wasted round trip later.
     static let instagram = ContactPlatform(
         id: .instagram, title: "Instagram", call: "Add",
-        method: .typed(.pasteInstagram), handlePrefix: "@"
+        method: .typed(.enterInstagram), handlePrefix: "@"
     )
     static let phone = ContactPlatform(
         id: .phone, title: "Phone", call: "Add",
@@ -282,15 +282,15 @@ private struct ContactPlatform {
 /// one.
 private enum ContactEntry: Hashable {
     case confirmLinkedIn(connectedAs: String)
-    case pasteX
-    case pasteInstagram
+    case enterX
+    case enterInstagram
     case typePhone
 
     var platform: MyCard.Platform {
         switch self {
         case .confirmLinkedIn: return .linkedin
-        case .pasteX: return .x
-        case .pasteInstagram: return .instagram
+        case .enterX: return .x
+        case .enterInstagram: return .instagram
         case .typePhone: return .phone
         }
     }
@@ -304,8 +304,8 @@ private enum ContactEntry: Hashable {
         let value: String?
         switch self {
         case .confirmLinkedIn: value = ContactValue.linkedInHandle(from: typed)
-        case .pasteX: value = ContactValue.xHandle(from: typed)
-        case .pasteInstagram: value = ContactValue.instagramHandle(from: typed)
+        case .enterX: value = ContactValue.xHandle(from: typed)
+        case .enterInstagram: value = ContactValue.instagramHandle(from: typed)
         case .typePhone: value = ContactValue.phoneNumber(from: typed)
         }
         return value.map { ChosenContact(platform: platform, value: $0, verified: false) }
@@ -317,30 +317,24 @@ private enum ContactEntry: Hashable {
     func guess(from name: String) -> String {
         switch self {
         case .confirmLinkedIn: return ContactValue.linkedInSlug(from: name)
-        case .pasteX, .pasteInstagram, .typePhone: return ""
+        case .enterX, .enterInstagram, .typePhone: return ""
         }
     }
 
-    /// Nil where the field speaks for itself. Phone needs no explanation; the
-    /// others are explaining a platform's limit, not ours.
+    /// Nil where the field speaks for itself, which is everywhere except
+    /// LinkedIn.
+    ///
+    /// X and Instagram used to explain here why Haven asks for a link rather
+    /// than reading the account. Nobody needed that: the field takes a handle
+    /// straight, and a paragraph about someone else's API pricing turned a
+    /// one-word answer into homework.
     var note: String? {
         switch self {
         case .confirmLinkedIn(let name):
-            return """
-                Connected as \(name). LinkedIn verifies you but never sends your \
-                profile address, so check this is right.
-                """
-        case .pasteX:
-            return """
-                X only shares usernames with apps on paid API tiers, so paste \
-                your link and we will pull the handle out of it.
-                """
-        case .pasteInstagram:
-            return """
-                Instagram only shares profiles with apps for Creator and Business \
-                accounts, so paste your link and we will pull the handle out of it.
-                """
-        case .typePhone:
+            // The one field that arrives pre-filled with a guess, so it is the
+            // one that has to ask for a look.
+            return "Connected as \(name). We guessed your address -- check it."
+        case .enterX, .enterInstagram, .typePhone:
             return nil
         }
     }
@@ -348,8 +342,8 @@ private enum ContactEntry: Hashable {
     var label: String {
         switch self {
         case .confirmLinkedIn: return "Your LinkedIn address"
-        case .pasteX: return "Your X link"
-        case .pasteInstagram: return "Your Instagram link"
+        case .enterX: return "Your X handle"
+        case .enterInstagram: return "Your Instagram handle"
         case .typePhone: return "Your phone number"
         }
     }
@@ -357,8 +351,8 @@ private enum ContactEntry: Hashable {
     var placeholder: String {
         switch self {
         case .confirmLinkedIn: return "linkedin.com/in/handle"
-        case .pasteX: return "Paste your X link"
-        case .pasteInstagram: return "Paste your Instagram link"
+        case .enterX: return "@handle or link"
+        case .enterInstagram: return "@handle or link"
         case .typePhone: return "Phone number"
         }
     }
@@ -371,7 +365,7 @@ private enum ContactEntry: Hashable {
     var keyboard: UIKeyboardType {
         switch self {
         case .typePhone: return .phonePad
-        case .confirmLinkedIn, .pasteX, .pasteInstagram: return .URL
+        case .confirmLinkedIn, .enterX, .enterInstagram: return .URL
         }
     }
 }
