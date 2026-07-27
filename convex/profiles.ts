@@ -1,4 +1,10 @@
-import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
+import {
+  internalMutation,
+  mutation,
+  query,
+  MutationCtx,
+  QueryCtx,
+} from "./_generated/server";
 import { Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
@@ -338,6 +344,152 @@ export const generateUploadUrl = mutation({
     return await ctx.storage.generateUploadUrl();
   },
 });
+
+// How many rows of one table a single purge transaction removes. Deliberately
+// well under Convex's per-transaction ceiling: the purge reschedules itself
+// while any table is still full, so the bound costs a few more transactions
+// and buys an account that deletes however much the person accumulated.
+const PURGE_PAGE = 200;
+
+// Deletes the caller's account: the profile row first, so the address stops
+// resolving the moment this returns, then everything they own.
+//
+// Idempotent on purpose. There is no row to "not find" -- a second tap, or a
+// tap by someone who never finished onboarding, is the same request and gets
+// the same answer, per the repo's creation convention read backwards.
+//
+// Other people's rows about the caller are not touched. A person someone else
+// saved is their private note, and account deletion is not a right to reach
+// into somebody else's directory.
+export const deleteMyAccount = mutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const userId = await requireUser(ctx);
+    const profile = await getProfileByUser(ctx, userId);
+    if (profile !== null) {
+      if (profile.photoStorageId !== undefined) {
+        await ctx.storage.delete(profile.photoStorageId);
+      }
+      await ctx.db.delete("profiles", profile._id);
+    }
+    await purgeOwnedRows(ctx, userId);
+    return null;
+  },
+});
+
+// The continuation of a purge that did not fit in one transaction.
+//
+// Guarded on the profile row being absent: if the person signed back in and
+// started a new card while this was queued, the rows it would delete are the
+// new account's, and finishing the old purge would empty a directory nobody
+// asked to empty.
+export const purgeAccountData = internalMutation({
+  args: { userId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if ((await getProfileByUser(ctx, args.userId)) !== null) {
+      return null;
+    }
+    await purgeOwnedRows(ctx, args.userId);
+    return null;
+  },
+});
+
+// One page across every table the user owns rows in, rescheduling itself if
+// any table still has more. Blobs go with their rows: a file nobody can reach
+// is still a file we are storing about someone who asked to be forgotten.
+async function purgeOwnedRows(ctx: MutationCtx, userId: string): Promise<void> {
+  let more = false;
+
+  const people = await ctx.db
+    .query("people")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .take(PURGE_PAGE);
+  for (const person of people) {
+    if (person.screenshotId !== undefined) {
+      await ctx.storage.delete(person.screenshotId);
+    }
+    if (person.photoStorageId !== undefined) {
+      await ctx.storage.delete(person.photoStorageId);
+    }
+    const handles = await ctx.db
+      .query("personHandles")
+      .withIndex("by_person", (q) => q.eq("personId", person._id))
+      .collect();
+    for (const handle of handles) {
+      await ctx.db.delete("personHandles", handle._id);
+    }
+    await ctx.db.delete("people", person._id);
+  }
+  more ||= people.length === PURGE_PAGE;
+
+  const captures = await ctx.db
+    .query("captures")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .take(PURGE_PAGE);
+  for (const capture of captures) {
+    await ctx.storage.delete(capture.screenshotId);
+    await ctx.db.delete("captures", capture._id);
+  }
+  more ||= captures.length === PURGE_PAGE;
+
+  // Both sides of a connection, and the shared note that hangs off it. A note
+  // written together stops being reachable when one side leaves, so leaving
+  // the row behind would keep the other person's half of a conversation
+  // pointing at nothing.
+  for (const side of ["A", "B"] as const) {
+    const connections = await ctx.db
+      .query("connections")
+      .withIndex(
+        side === "A" ? "by_userAId_and_personAId" : "by_userBId_and_personBId",
+        (q) =>
+          side === "A" ? q.eq("userAId", userId) : q.eq("userBId", userId),
+      )
+      .take(PURGE_PAGE);
+    for (const connection of connections) {
+      const notes = await ctx.db
+        .query("sharedNotes")
+        .withIndex("by_connectionId", (q) =>
+          q.eq("connectionId", connection._id),
+        )
+        .collect();
+      for (const note of notes) {
+        await ctx.db.delete("sharedNotes", note._id);
+      }
+      await ctx.db.delete("connections", connection._id);
+    }
+    more ||= connections.length === PURGE_PAGE;
+  }
+
+  // Ephemeral by design and expiring anyway, but a presence row keyed to a
+  // deleted account still names them in a room until it does.
+  const presence = await ctx.db
+    .query("loveAlarmPresence")
+    .withIndex("by_userId_and_expiresAt", (q) => q.eq("userId", userId))
+    .take(PURGE_PAGE);
+  for (const row of presence) {
+    await ctx.db.delete("loveAlarmPresence", row._id);
+  }
+  more ||= presence.length === PURGE_PAGE;
+
+  // Last, because every delete above ran under a limiter that keys off this
+  // table: clearing it first would let the purge lift the caller's own caps.
+  const limits = await ctx.db
+    .query("rateLimits")
+    .withIndex("by_user_action", (q) => q.eq("userId", userId))
+    .take(PURGE_PAGE);
+  for (const limit of limits) {
+    await ctx.db.delete("rateLimits", limit._id);
+  }
+  more ||= limits.length === PURGE_PAGE;
+
+  if (more) {
+    await ctx.scheduler.runAfter(0, internal.profiles.purgeAccountData, {
+      userId,
+    });
+  }
+}
 
 // The caller's whole card. Onboarding resumes at the first unanswered question,
 // and the client works that out from this, not from a local counter: a counter

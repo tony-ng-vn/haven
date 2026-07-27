@@ -357,6 +357,112 @@ test("generateUploadUrl is rate limited per user", async () => {
   ).resolves.toBeTruthy();
 });
 
+// App Review 5.1.1: an account someone made in the app has to be deletable
+// from the app. Everything the caller owns goes, and nothing anyone else owns.
+test("deleteMyAccount removes the caller's profile and everything they own", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  const photoStorageId = await seedPhoto(t);
+  const captureBlob = await seedPhoto(t);
+
+  await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Maya Chen",
+    photoStorageId,
+    handles: [{ platform: "x", value: "mayachen", verified: true }],
+  });
+  await me.as.mutation(api.people.addPerson, {
+    name: "Ada Lovelace",
+    contactHandles: [{ platform: "x", value: "ada" }],
+    context: "Met at a conference.",
+  });
+  const captureId = await t.run((ctx) =>
+    ctx.db.insert("captures", {
+      userId: me.userId,
+      screenshotId: captureBlob,
+      status: "ready" as const,
+    }),
+  );
+
+  await me.as.mutation(api.profiles.deleteMyAccount, {});
+
+  expect(await storedProfile(t, me.userId)).toBeNull();
+  await t.run(async (ctx) => {
+    expect(
+      await ctx.db
+        .query("people")
+        .withIndex("by_user", (q) => q.eq("userId", me.userId))
+        .collect(),
+    ).toEqual([]);
+    expect(
+      await ctx.db
+        .query("personHandles")
+        .withIndex("by_user_and_platform_and_valueKey", (q) =>
+          q.eq("userId", me.userId),
+        )
+        .collect(),
+    ).toEqual([]);
+    expect(await ctx.db.get("captures", captureId)).toBeNull();
+    expect(
+      await ctx.db
+        .query("rateLimits")
+        .withIndex("by_user_action", (q) => q.eq("userId", me.userId))
+        .collect(),
+    ).toEqual([]);
+    // The blobs go with the rows. A file nobody can reach is still a file
+    // we are storing about someone who asked to be forgotten.
+    expect(await ctx.db.system.get(photoStorageId)).toBeNull();
+    expect(await ctx.db.system.get(captureBlob)).toBeNull();
+  });
+});
+
+test("deleteMyAccount leaves other people's rows alone", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  const other = asNewUser(t);
+
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+  await other.as.mutation(api.profiles.updateMyProfile, {
+    name: "Ada Lovelace",
+  });
+  await other.as.mutation(api.people.addPerson, {
+    name: "Maya Chen",
+    contactHandles: [{ platform: "x", value: "mayachen" }],
+    context: "Met through Haven.",
+  });
+
+  await me.as.mutation(api.profiles.deleteMyAccount, {});
+
+  expect(await storedProfile(t, other.userId)).not.toBeNull();
+  // Someone else's private note about me is their row, not mine, so deleting
+  // my account must not reach into their directory.
+  await t.run(async (ctx) => {
+    expect(
+      await ctx.db
+        .query("people")
+        .withIndex("by_user", (q) => q.eq("userId", other.userId))
+        .collect(),
+    ).toHaveLength(1);
+  });
+});
+
+// The row is gone the moment the mutation returns, so a second tap is not an
+// error and a half-finished purge is not a dead end.
+test("deleteMyAccount is safe to call twice and with no profile row", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  await expect(
+    me.as.mutation(api.profiles.deleteMyAccount, {}),
+  ).resolves.toBeNull();
+
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+  await me.as.mutation(api.profiles.deleteMyAccount, {});
+  await expect(
+    me.as.mutation(api.profiles.deleteMyAccount, {}),
+  ).resolves.toBeNull();
+  expect(await storedProfile(t, me.userId)).toBeNull();
+});
+
 test("profile functions reject unauthenticated callers", async () => {
   const t = convexTest(schema, modules);
 
@@ -364,6 +470,9 @@ test("profile functions reject unauthenticated callers", async () => {
     "Not signed in",
   );
   await expect(t.mutation(api.profiles.generateUploadUrl, {})).rejects.toThrow(
+    "Not signed in",
+  );
+  await expect(t.mutation(api.profiles.deleteMyAccount, {})).rejects.toThrow(
     "Not signed in",
   );
   await expect(t.query(api.profiles.getMyCard, {})).rejects.toThrow(
