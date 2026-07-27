@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Partial plist: everything else is generated from build settings
+	  (GENERATE_INFOPLIST_FILE merges this file in), the same arrangement the
+	  app target uses.
+
+	  This exists for one key with no INFOPLIST_KEY_* form. There is no
+	  INFOPLIST_KEY_NSExtensionPointIdentifier, and setting one is silently
+	  ignored rather than rejected: the build still succeeds, the extension is
+	  still embedded, and the app then fails to install with a placeholder
+	  error that names neither the widget nor this key.
+	-->
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.widgetkit-extension</string>
+	</dict>
+</dict>
+</plist>

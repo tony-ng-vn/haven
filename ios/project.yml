@@ -53,6 +53,10 @@ targets:
         product: ClerkConvex
       - package: PhoneNumberKit
         product: PhoneNumberKit
+      # Embeds the widget in the app. Without this the extension builds but
+      # never ships inside the bundle, so it never appears in the widget
+      # gallery and the whole feature is invisible.
+      - target: HavenWidget
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.inhavens.haven
@@ -68,6 +72,26 @@ targets:
     scheme:
       testTargets:
         - HavenTests
+
+  HavenWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: HavenWidget
+      # Named file, not the Haven directory: the widget is a separate process
+      # that must not pull in Clerk or Convex, and globbing the app's sources
+      # would drag both in through the first file that imports them.
+      - path: Haven/HavenDeepLink.swift
+    dependencies: []
+    settings:
+      base:
+        # Must be a child of the app's identifier. A sibling builds fine and
+        # then fails at install, which reads as a runtime mystery.
+        PRODUCT_BUNDLE_IDENTIFIER: com.inhavens.haven.widget
+        # The name under the widget in the gallery.
+        INFOPLIST_KEY_CFBundleDisplayName: Haven
+        # Carries NSExtensionPointIdentifier, which has no build-setting form.
+        INFOPLIST_FILE: HavenWidget/Info.plist
 
   HavenTests:
     type: bundle.unit-test

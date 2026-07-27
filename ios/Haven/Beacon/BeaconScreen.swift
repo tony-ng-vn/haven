@@ -5,9 +5,10 @@ import SwiftUI
 /// Screen 9 of `../../phase1-build-plan.md`: the code someone else points a
 /// camera at.
 ///
-/// Unreachable while `FeatureFlags.beaconEnabled` is false, which it stays
-/// until the page at `inhavens.com/<handle>` exists. A code that lands on a 404
-/// is worse than no code.
+/// Reached from the People toolbar and from the Lock Screen widget, both
+/// behind `FeatureFlags.beaconEnabled`. That flag stays false until the page
+/// at `inhavens.com/<handle>` exists: a code that lands on a 404 is worse than
+/// no code.
 struct BeaconScreen: View {
     @StateObject private var model: BeaconModel
 

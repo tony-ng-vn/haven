@@ -47,6 +47,28 @@ struct HavenTabs: View {
         .onAppear {
             if opensCard { peopleRoute = [.card] }
         }
+        // The Lock Screen widget's tap arrives here. The beacon hangs off the
+        // People tab's stack, so the tab has to come along or the push lands
+        // on a stack nobody is looking at.
+        //
+        // Behind the same flag as the toolbar button: the widget is one more
+        // way into the beacon, and a second door governed by a second switch
+        // is how a flagged-off screen ends up reachable anyway.
+        .onOpenURL { url in
+            guard Self.opensBeacon(url) else { return }
+            tab = .people
+            peopleRoute = [.beacon]
+        }
+    }
+
+    /// Whether a url should open the beacon.
+    ///
+    /// Separated from the view so the flag half can be tested. That half is the
+    /// safety-critical one: the widget is a door into the beacon that the
+    /// toolbar's own check does not cover, and a door governed by no switch is
+    /// how a flagged-off screen becomes reachable anyway.
+    static func opensBeacon(_ url: URL) -> Bool {
+        FeatureFlags.beaconEnabled && HavenDeepLink(url: url) == .beacon
     }
 
     private enum Tab {
