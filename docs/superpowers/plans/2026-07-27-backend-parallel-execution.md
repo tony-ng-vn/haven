@@ -68,7 +68,8 @@ export function handleIndexKeys(handle: { platform: string; value: string }): {
 ```
 
 Finish the wave by editing this plan file: replace the signatures above with the as-built ones if anything moved, and change the word PLANNED to FROZEN on the line below.
-Contract status: PLANNED.
+Contract status: FROZEN.
+As built the signatures above are exact; `handleIndexKeys` takes a structural `{ platform, value }` rather than a named type, so `convex/handleKeys.ts` imports nothing and any handle-shaped object folds through it.
 Wave B sessions must refuse to start while this still says PLANNED or the wave A PR is unmerged.
 
 Exit criteria: full suite and both typechecks green, merged, contract says FROZEN.
