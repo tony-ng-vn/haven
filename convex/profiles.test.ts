@@ -76,6 +76,48 @@ test("getMyCard returns null until the row exists, then the whole card", async (
   });
 });
 
+// The card the app draws needs a URL, not a storage id -- an id is not
+// something a client can fetch. Without this the photo uploads, the row says
+// it is there, and the card face never changes.
+test("getMyCard resolves the photo to a URL the client can fetch", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+  expect(await me.as.query(api.profiles.getMyCard, {})).toMatchObject({
+    photoUrl: null,
+  });
+
+  const photo = await seedPhoto(t);
+  const saved = await me.as.mutation(api.profiles.updateMyProfile, {
+    photoStorageId: photo,
+  });
+
+  // The mutation's own return value feeds the screen before the subscription
+  // catches up, so it has to carry the URL too.
+  expect(saved.photoUrl).toEqual(expect.any(String));
+  expect((await me.as.query(api.profiles.getMyCard, {}))?.photoUrl).toBe(
+    saved.photoUrl,
+  );
+});
+
+test("clearing the photo clears the URL with it", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+  await me.as.mutation(api.profiles.updateMyProfile, {
+    photoStorageId: await seedPhoto(t),
+  });
+
+  const cleared = await me.as.mutation(api.profiles.updateMyProfile, {
+    photoStorageId: null,
+  });
+
+  expect(cleared.photoUrl).toBeNull();
+  expect(cleared.photoStorageId).toBeUndefined();
+});
+
 // Onboarding resumes at the first unanswered question, and the client decides
 // that from the card alone. A card that answered for someone else would send a
 // person straight past the questions they still owe.

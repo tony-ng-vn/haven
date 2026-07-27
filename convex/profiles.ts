@@ -46,6 +46,9 @@ const myCardValidator = v.object({
   updatedAt: v.number(),
   name: v.optional(v.string()),
   photoStorageId: v.optional(v.id("_storage")),
+  // Always present, null when there is no photo. The client needs to tell "no
+  // photo" from "not loaded yet", and an absent key cannot say which.
+  photoUrl: v.union(v.null(), v.string()),
   city: v.optional(cityValidator),
   handles: v.optional(v.array(handleValidator)),
   primaryPlatform: v.optional(platformValidator),
@@ -210,7 +213,10 @@ async function mintHandle(ctx: MutationCtx, name: string): Promise<string> {
   return free[0];
 }
 
-function toMyCard(profile: Doc<"profiles">) {
+// Async only because of the photo. A storage id is not something a client can
+// fetch, so the URL is resolved here the same way the public card and the
+// people list already do it.
+async function toMyCard(ctx: QueryCtx, profile: Doc<"profiles">) {
   return {
     _id: profile._id,
     _creationTime: profile._creationTime,
@@ -218,6 +224,10 @@ function toMyCard(profile: Doc<"profiles">) {
     updatedAt: profile.updatedAt,
     name: profile.name,
     photoStorageId: profile.photoStorageId,
+    photoUrl:
+      profile.photoStorageId === undefined
+        ? null
+        : await ctx.storage.getUrl(profile.photoStorageId),
     city: profile.city,
     handles: profile.handles,
     primaryPlatform: profile.primaryPlatform,
@@ -567,7 +577,7 @@ export const getMyCard = query({
   handler: async (ctx) => {
     const userId = await requireUser(ctx);
     const profile = await getProfileByUser(ctx, userId);
-    return profile === null ? null : toMyCard(profile);
+    return profile === null ? null : await toMyCard(ctx, profile);
   },
 });
 
@@ -711,7 +721,7 @@ export const updateMyProfile = mutation({
       if (created === null) {
         throw new Error("Could not create profile");
       }
-      return toMyCard(created);
+      return await toMyCard(ctx, created);
     }
 
     await ctx.db.patch("profiles", existing._id, { ...fields, updatedAt: now });
@@ -719,7 +729,7 @@ export const updateMyProfile = mutation({
     if (updated === null) {
       throw new Error("Could not save profile");
     }
-    return toMyCard(updated);
+    return await toMyCard(ctx, updated);
   },
 });
 
