@@ -29,9 +29,6 @@ Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
   Still open for `loveAlarm` and `sharedNotes`, and for the web UI itself.
   `profiles.username` is settled by question 5 (reused as the one handle).
 - [ ] Housekeeping: pull `main` into the working checkout, then remove the leftover `.worktrees/feat-ios-foundations` worktree and its branch so there is one copy.
-- [ ] Known flake, do not weaken the guard: "embed gives up after 3 total attempts" in `convex/people.test.ts` fails intermittently only under heavy CPU contention (a convex-test scheduler race can start the same scheduled job twice; the app code is correctly bounded).
-  Green in CI.
-  Fix belongs upstream in convex-test or by serializing that file, not by loosening the assertion.
 
 ## MVP backlog (in order)
 
