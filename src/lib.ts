@@ -426,15 +426,25 @@ export function bootMode(input: {
 // Clerk-flow shape.
 export type View = "home" | "signin" | "splash" | "waitlist" | "card" | "legal";
 
+/// The one path segment a url names, lowercased, or null when it names none or
+/// more than one.
+///
+/// Every route the site owns lives at the top level, next to the cards, so they
+/// all ask this same question first. A trailing slash and any casing are
+/// forgiven, because a url typed or pasted by hand still has to land.
+function topLevelSegment(pathname: string): string | null {
+  const segments = pathname.split("/").filter((segment) => segment !== "");
+  return segments.length === 1 ? segments[0].toLowerCase() : null;
+}
+
 /// The handle a path names, or null when the path is not somebody's card.
 ///
 /// A card is inhavens.com/<handle> with nothing above it, so this doubles as
 /// the guard that keeps the site's own paths out of the card route. It reads
 /// the same rules the backend claims against, from the same module.
 export function handleFromPath(pathname: string): string | null {
-  const segments = pathname.split("/").filter((segment) => segment !== "");
-  if (segments.length !== 1) return null;
-  const handle = segments[0].toLowerCase();
+  const handle = topLevelSegment(pathname);
+  if (handle === null) return null;
   return isClaimableHandle(handle) ? handle : null;
 }
 
@@ -442,12 +452,11 @@ export function handleFromPath(pathname: string): string | null {
 export type LegalDoc = "privacy" | "terms";
 
 /// The two documents the App Store asks for before it will take a submission.
-/// Both words are already held back in handleNames, so no card can sit on
-/// either path -- these two routes and that reserved list are one decision.
+/// Both words are also held back in handleNames, so nobody can claim a card at
+/// either path -- but this route is checked first regardless, so the site keeps
+/// its own pages even if that list ever loses a word.
 export function legalDocFromPath(pathname: string): LegalDoc | null {
-  const segments = pathname.split("/").filter((segment) => segment !== "");
-  if (segments.length !== 1) return null;
-  const name = segments[0].toLowerCase();
+  const name = topLevelSegment(pathname);
   return name === "privacy" || name === "terms" ? name : null;
 }
 
@@ -458,15 +467,16 @@ export function resolveView(input: {
   hasSessionHint: boolean;
   pathname?: string;
 }): View {
-  // Before the auth checks, deliberately. The person this page exists for is a
-  // stranger who just scanned a code, and they arrive signed out: leaving it
-  // until after would sit them on a splash while Clerk boots, and would send a
-  // signed-in visitor to their own home instead of the card they opened.
-  if (handleFromPath(input.pathname ?? "/") !== null) return "card";
-  // Same reasoning, and one more: App Review opens the privacy url from App
-  // Store Connect signed out, and anything other than the policy reads as a
-  // broken link.
+  // The site's own pages first, so no handle can ever shadow one. App Review
+  // opens the privacy url from App Store Connect, and anything other than the
+  // policy there reads as a broken link.
   if (legalDocFromPath(input.pathname ?? "/") !== null) return "legal";
+  // Then cards, before the auth checks and deliberately so. The person this
+  // page exists for is a stranger who just scanned a code, and they arrive
+  // signed out: leaving it until after would sit them on a splash while Clerk
+  // boots, and would send a signed-in visitor to their own home instead of the
+  // card they opened.
+  if (handleFromPath(input.pathname ?? "/") !== null) return "card";
   if (input.isAuthenticated) return "home";
   if (!isJoinHash(input.hash) && isClerkFlowHash(input.hash)) return "signin";
   if (input.isLoading && bootMode(input) === "splash") return "splash";

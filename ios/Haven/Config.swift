@@ -29,7 +29,8 @@ enum Config {
     ///   1. Vercel's VITE_CLERK_PUBLISHABLE_KEY for production.
     ///   2. CLERK_JWT_ISSUER_DOMAIN on the third-hound-186 Convex deployment.
     ///   3. The Clerk domains in vercel.json's Content-Security-Policy.
-    private static let clerkProductionKey = "pk_live_REPLACE_BEFORE_SHIPPING"
+    private static let clerkProductionPlaceholder = "pk_live_REPLACE_BEFORE_SHIPPING"
+    private static let clerkProductionKey = clerkProductionPlaceholder
 
     /// Which key this build signs in with.
     ///
@@ -44,8 +45,8 @@ enum Config {
         return clerkDevelopmentKey
         #else
         precondition(
-            clerkProductionKey.hasPrefix("pk_live_")
-                && !clerkProductionKey.hasSuffix("REPLACE_BEFORE_SHIPPING"),
+            clerkProductionKey != clerkProductionPlaceholder
+                && clerkProductionKey.hasPrefix("pk_live_"),
             """
             Config.clerkProductionKey is still the placeholder. A release build \
             must sign in against the production Clerk instance -- see the note \
