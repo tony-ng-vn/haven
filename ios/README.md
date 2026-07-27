@@ -56,7 +56,7 @@ To start the questions again, empty the `profiles` table on the dev deployment a
 `xcodegen generate` rewrites the project, so a signing team set by hand in Xcode is wiped on each regenerate.
 Either set your team once in Signing & Capabilities after generating, or add `DEVELOPMENT_TEAM` to `project.yml`.
 
-## Compile-check from the command line
+## Build and run from the command line
 
 Always run `xcodegen generate` first.
 The `.xcodeproj` is git-ignored, so a copy left over from an earlier checkout can be missing files that exist on disk, and the build then fails for a reason that is not real.
@@ -66,8 +66,23 @@ xcodegen generate
 # Use any installed simulator (xcrun simctl list devices); iPhone 17 ships with the iOS 26.5 runtime.
 xcodebuild build -project Haven.xcodeproj -scheme Haven \
   -destination 'platform=iOS Simulator,name=iPhone 17' \
-  CODE_SIGNING_ALLOWED=NO
+  -derivedDataPath build
 ```
+
+Do not add `CODE_SIGNING_ALLOWED=NO` to a build you intend to launch.
+Without signing, `Haven/Haven.entitlements` is never embedded, so the app has no `keychain-access-groups` entitlement, and `Clerk.configure` in `HavenApp.init` traps at launch with `OSStatus -34018: A required entitlement isn't present`.
+It crashes before any UI exists, on every launch, and the crash report blames `Clerk.swift` rather than the missing entitlement.
+The command above ad-hoc signs with the entitlements attached, which is all the simulator needs.
+
+`-derivedDataPath build` puts the app somewhere you can name (`build/` is git-ignored).
+To install and launch it on the booted simulator:
+
+```sh
+xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/Haven.app
+xcrun simctl launch --console-pty booted com.inhavens.haven
+```
+
+`--console-pty` keeps the app's stdout and stderr in the terminal, which is where a Swift trap prints the message the crash report leaves out.
 
 ## Tests
 
@@ -79,7 +94,8 @@ xcodebuild test -project Haven.xcodeproj -scheme Haven \
 ```
 
 Swift Testing, in the `HavenTests` target.
-The unit tests are hosted in the app, so launching them starts Clerk, which logs `OSStatus -34018` keychain failures when code signing is off.
+`CODE_SIGNING_ALLOWED=NO` belongs here and nowhere else: under XCTest, Clerk skips the keychain work that would otherwise throw, so an unsigned test run gets through `Clerk.configure` where an unsigned app launch traps.
+The tests are hosted in the app, so it still logs `OSStatus -34018` keychain failures on the way through.
 That noise is expected in a test run and does not affect the results; on a signed build the entitlement is present.
 
 CI runs these tests in `.github/workflows/ios.yml`, on any pull request that touches `ios/`.
@@ -88,7 +104,7 @@ A pull request that touches no Swift skips the job, because macOS runners are bi
 What is worth testing here: pure logic. Sky generation, search filtering, the pending queue, overlay merge.
 Springs and haptics are judged by hand on a device, because no assertion captures whether something feels right.
 
-Verified: this scaffold builds green against ConvexMobile 0.8.1, ClerkKit/ClerkKitUI 1.3.2, and ClerkConvex 0.1.0 on the iOS 26.5 simulator.
+Verified: this scaffold builds green against ConvexMobile 0.8.1, ClerkKit/ClerkKitUI 1.3.3, and ClerkConvex 0.1.0 on the iOS 26.5 simulator.
 
 ## Design system
 
