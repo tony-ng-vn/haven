@@ -7,11 +7,14 @@ import {
 } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { Doc } from "./_generated/dataModel";
+import { MutationCtx } from "./_generated/server";
+import { Doc, Id } from "./_generated/dataModel";
 import { extractProfile } from "./openaiClient";
 import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
 import { normalizeName, personSearchText } from "./nameSearch";
+import { contactHandleValidator } from "./peopleFields";
+import { handleDisplayValue, handleIndexKeys } from "./handleKeys";
 import { requireImageBlob } from "./imageBlobs";
 
 const MINUTE_MS = 60_000;
@@ -25,6 +28,39 @@ const extractedValidator = v.object({
   headline: v.optional(v.string()),
   bio: v.optional(v.string()),
 });
+
+type ContactHandle = { platform: string; value: string };
+
+// The one place both accept paths fold a platform and a handle into the
+// shape people.contactHandles stores: display value on the row, index keys on
+// personHandles, folded by the shared seam so a screenshot and a share of the
+// same account can never land on two people.
+function foldContactHandle(
+  platform: string,
+  handle: string,
+): ContactHandle | undefined {
+  const folded = handleIndexKeys({ platform, value: handle });
+  if (folded.platform === "" || folded.valueKey === "") {
+    return undefined;
+  }
+  return { platform: folded.platform, value: handleDisplayValue(handle) };
+}
+
+// The identity index, written in the same transaction as the array it
+// mirrors. Called only where the person was just inserted, so there is
+// nothing to reconcile: the person owns exactly this one handle.
+async function insertCaptureHandle(
+  ctx: MutationCtx,
+  userId: string,
+  personId: Id<"people">,
+  handle: ContactHandle,
+): Promise<void> {
+  await ctx.db.insert("personHandles", {
+    userId,
+    personId,
+    ...handleIndexKeys(handle),
+  });
+}
 
 export const generateUploadUrl = mutation({
   args: {},
@@ -197,6 +233,18 @@ export const acceptCapture = mutation({
     if (capture.status !== "ready" || capture.extracted === undefined) {
       throw new Error("Capture is not ready");
     }
+    // Lenient on purpose, unlike acceptManualCapture below: the model answers
+    // with nobody present, and a screenshot showing no handle is honestly a
+    // name-only person rather than a failed capture.
+    const contactHandle =
+      capture.extracted.handle === undefined
+        ? undefined
+        : foldContactHandle(
+            capture.extracted.platform,
+            capture.extracted.handle,
+          );
+    const contactHandles =
+      contactHandle === undefined ? undefined : [contactHandle];
     const personId = await ctx.db.insert("people", {
       userId,
       name: capture.extracted.name,
@@ -207,6 +255,7 @@ export const acceptCapture = mutation({
         name: capture.extracted.name,
         headline: capture.extracted.headline,
         handle: capture.extracted.handle,
+        contactHandles,
         context: args.context,
       }),
       link: args.link,
@@ -215,9 +264,13 @@ export const acceptCapture = mutation({
       platform: capture.extracted.platform,
       handle: capture.extracted.handle,
       headline: capture.extracted.headline,
+      contactHandles,
       // The screenshot stays with the person as a visual memory anchor.
       screenshotId: capture.screenshotId,
     });
+    if (contactHandle !== undefined) {
+      await insertCaptureHandle(ctx, userId, personId, contactHandle);
+    }
     await ctx.db.delete("captures", args.captureId);
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
     return personId;
@@ -236,6 +289,10 @@ export const acceptManualCapture = mutation({
     headline: v.optional(v.string()),
     context: v.optional(v.string()),
     link: v.optional(v.string()),
+    // One object rather than two loose fields, so a platform can never
+    // arrive without the handle it names. Omitted means the human saw no
+    // handle to type, which is a name-only person.
+    contactHandle: v.optional(contactHandleValidator),
   },
   returns: v.id("people"),
   handler: async (ctx, args) => {
@@ -255,6 +312,24 @@ export const acceptManualCapture = mutation({
     if (name === "") {
       throw new Error("Name is required");
     }
+    // Strict where acceptCapture is lenient: the human is at the keyboard, so
+    // a blank half of a typed handle is a client bug worth surfacing rather
+    // than input to silently drop. Same wording as the other handle paths.
+    let contactHandle: ContactHandle | undefined;
+    if (args.contactHandle !== undefined) {
+      if (args.contactHandle.platform.trim() === "") {
+        throw new Error("A platform cannot be blank");
+      }
+      if (handleDisplayValue(args.contactHandle.value) === "") {
+        throw new Error("A handle cannot be blank");
+      }
+      contactHandle = foldContactHandle(
+        args.contactHandle.platform,
+        args.contactHandle.value,
+      );
+    }
+    const contactHandles =
+      contactHandle === undefined ? undefined : [contactHandle];
     const personId = await ctx.db.insert("people", {
       userId,
       name,
@@ -263,15 +338,20 @@ export const acceptManualCapture = mutation({
       searchText: personSearchText({
         name,
         headline: args.headline,
+        contactHandles,
         context: args.context,
       }),
       link: args.link,
       context: args.context,
       headline: args.headline,
+      contactHandles,
       // The screenshot stays with the person as a visual memory anchor.
       screenshotId: capture.screenshotId,
       updatedAt: Date.now(),
     });
+    if (contactHandle !== undefined) {
+      await insertCaptureHandle(ctx, userId, personId, contactHandle);
+    }
     await ctx.db.delete("captures", args.captureId);
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
     return personId;
