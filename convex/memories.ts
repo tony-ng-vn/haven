@@ -35,7 +35,7 @@ const EMBED_SWEEP_LIMIT = 200;
 // appendContext has always joined entries with a newline, so splitting on one
 // is faithful to the boundaries the user actually wrote -- which is also what
 // makes the migration in backfillMemories the same operation as a live write.
-export function splitMemoryLines(context: string | undefined): string[] {
+function splitMemoryLines(context: string | undefined): string[] {
   if (context === undefined) {
     return [];
   }

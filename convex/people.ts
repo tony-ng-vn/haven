@@ -1198,10 +1198,14 @@ export const semanticSearch = action({
         keepBest(hit._id, hit._score);
       }
     }
-    if (best.size === 0) {
+    // Ranked and cut before hydration, not after: the memory index alone can
+    // name far more people than a page of results holds.
+    const ranked = [...best.entries()]
+      .sort(([, a], [, b]) => b.score - a.score)
+      .slice(0, SEMANTIC_RESULT_LIMIT);
+    if (ranked.length === 0) {
       return [];
     }
-
     const people: Array<{
       _id: Id<"people">;
       _creationTime: number;
@@ -1213,16 +1217,15 @@ export const semanticSearch = action({
       headline?: string;
       bio?: string;
     }> = await ctx.runQuery(internal.people.fetchSearchResults, {
-      ids: [...best.keys()],
+      ids: ranked.map(([personId]) => personId),
     });
-    return people
-      .map((person) => ({
-        ...person,
-        score: best.get(person._id)?.score ?? 0,
-        evidence: best.get(person._id)?.evidence,
-      }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, SEMANTIC_RESULT_LIMIT);
+    const byId = new Map(people.map((person) => [person._id, person]));
+    // flatMap, so a person deleted between the vector search and this read
+    // drops out rather than surfacing as a hole.
+    return ranked.flatMap(([personId, { score, evidence }]) => {
+      const person = byId.get(personId);
+      return person === undefined ? [] : [{ ...person, score, evidence }];
+    });
   },
 });
 
