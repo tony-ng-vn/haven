@@ -96,7 +96,7 @@ struct HavenCard: View {
     }
 
     private func contactChip(_ handle: MyCard.Handle) -> some View {
-        Text(handle.platform.display(handle.value))
+        Text(handle.display)
             .havenSecondary()
             .padding(.horizontal, 12)
             .padding(.vertical, 6)

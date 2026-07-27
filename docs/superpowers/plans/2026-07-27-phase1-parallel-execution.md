@@ -58,8 +58,11 @@ Then, in a second commit, add display helpers the card surfaces need, on the mov
 extension MyCard.Platform {
     /// "x.com/", "instagram.com/", "linkedin.com/in/", "" for phone.
     var addressPrefix: String
-    /// "@handle" for x and instagram, "linkedin.com/in/slug", the number itself for phone.
-    func display(_ value: String) -> String
+}
+
+extension MyCard.Handle {
+    /// The address this handle points at: "x.com/mayachen". The number itself for phone.
+    var display: String
 }
 
 extension MyCard.City {
@@ -74,6 +77,10 @@ extension MyCard {
 ```
 
 The city line and the primary handle are as-built additions: `HavenCard` needs both, and both are facts about the card rather than about one screen.
+
+The planned `Platform.display(_:)` returned "@handle" for x and instagram, and that shipped first and was wrong: "@mayachen" reads identically for the two of them, and the card has no brand glyph to tell them apart, because the marks are third-party trademarks with their own usage rules.
+Every platform now shows as the address it points at, which says which platform it is by being one.
+That also made the helper `addressPrefix + value` for every case, so it moved onto `Handle`, where a call site says `handle.display` and nothing has to pass the value back in.
 
 `ContactScreen` keeps its private `ContactEntry` prefixes; do not try to unify them in this wave.
 
@@ -164,9 +171,11 @@ As-built corrections to this unit:
 - `project.yml` needs no edit: the target globs `Haven`, so new subdirectories are picked up. The Mac still needs `xcodegen generate` after pulling, because the `.xcodeproj` is git-ignored.
 - One repair outside the plan, in its own commit: the two `OnboardingSkips` tests asserted an empty store before writing to it, and `UserDefaults` outlives a test run on the simulator, so they passed once and failed on every run after. They clear the key first now.
 
-Also worth knowing, and deliberately not fixed here: `drawFlares` draws the two diffraction flares at full brightness whatever their star's intensity is, because `SkyFlare` carries coordinates and not a major index.
-That is pre-existing and visible in onboarding today, but the card makes it obvious: a spike blazes out of a star that is still an unlit dot.
-It matters most to C1, where stars ignite one at a time, so the fix belongs in that session where it can be judged by eye.
+One more thing landed in wave A that the plan did not ask for, because A2's own rule demanded it: a diffraction flare now fades with its own star.
+`drawFlares` drew both flares at full brightness whatever their star's intensity was, so a spike blazed out of a star that was still an unlit dot -- the same contradiction A2 fixed for edges, in a third element.
+`SkyFlare` now carries the major it belongs to, which the generator already knew and threw away; no generated value changes, so the `src/sky.ts` parity tests are untouched.
+The visible consequence is that early onboarding is dimmer: the two brightest majors are usually unanswered fields, so their flares are gone until those fields are filled.
+That is the intended progression rather than a loss, and it is the same ground as the still-open question about showing the figure's skeleton dim during onboarding.
 
 ### A5: freeze the contract
 

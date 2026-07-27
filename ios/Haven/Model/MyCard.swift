@@ -47,17 +47,19 @@ extension MyCard.Platform {
         }
     }
 
-    /// The stored value as a card shows it.
+}
+
+extension MyCard.Handle {
+    /// How a card shows this handle: the address it points at, or the number
+    /// itself for phone.
     ///
-    /// Instagram and X are read as handles, so they take the `@` their own
-    /// products put in front of one. A LinkedIn slug means nothing on its own,
-    /// so it shows as the address instead. A phone number is already itself.
-    func display(_ value: String) -> String {
-        switch self {
-        case .instagram, .x: return "@\(value)"
-        case .linkedin: return addressPrefix + value
-        case .phone: return value
-        }
+    /// The same shape for every platform on purpose. "@mayachen" is how people
+    /// write a handle, but it reads identically for X and for Instagram, and
+    /// the card has no brand glyph to tell them apart -- the marks are
+    /// third-party trademarks with their own usage rules. An address says which
+    /// platform it is by being one.
+    var display: String {
+        platform.addressPrefix + value
     }
 }
 

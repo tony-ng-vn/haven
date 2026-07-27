@@ -92,12 +92,21 @@ struct MyCardTests {
 
 @Suite("Card display")
 struct MyCardDisplayTests {
-    @Test("a handle shows the way its own platform writes it")
+    // Every platform shows as the address it points at, because a bare
+    // "@mayachen" reads the same for X and for Instagram and the card has no
+    // glyph to tell them apart.
+    @Test("a handle shows as the address it points at")
     func handleDisplay() {
-        #expect(MyCard.Platform.x.display("mayachen") == "@mayachen")
-        #expect(MyCard.Platform.instagram.display("mayachen") == "@mayachen")
-        #expect(MyCard.Platform.linkedin.display("maya-chen") == "linkedin.com/in/maya-chen")
-        #expect(MyCard.Platform.phone.display("+84 90 000 0000") == "+84 90 000 0000")
+        func display(_ platform: MyCard.Platform, _ value: String) -> String {
+            MyCard.Handle(platform: platform, value: value, verified: false).display
+        }
+
+        #expect(display(.x, "mayachen") == "x.com/mayachen")
+        #expect(display(.instagram, "mayachen") == "instagram.com/mayachen")
+        #expect(display(.linkedin, "maya-chen") == "linkedin.com/in/maya-chen")
+        // A number is already an address of its own, and prefixing it would
+        // invent one that does not exist.
+        #expect(display(.phone, "+84 90 000 0000") == "+84 90 000 0000")
     }
 
     // The prefixes are what a link to the person is built from, so a wrong one
