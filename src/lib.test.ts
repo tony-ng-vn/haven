@@ -274,6 +274,19 @@ describe("buildEmbedText", () => {
     );
   });
 
+  test("the bio joins the haystack after the headline", () => {
+    expect(
+      buildEmbedText({
+        name: "Ada Lovelace",
+        headline: "Compiler engineer",
+        bio: "Building symbolic math tools.",
+        context: "Met at the meetup.",
+      }),
+    ).toBe(
+      "Ada Lovelace\nCompiler engineer\nBuilding symbolic math tools.\nMet at the meetup.",
+    );
+  });
+
   test("skips missing and blank parts", () => {
     expect(buildEmbedText({ name: "Grace Hopper" })).toBe("Grace Hopper");
     expect(

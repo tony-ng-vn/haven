@@ -72,6 +72,7 @@ const personValidator = v.object({
   platform: v.optional(v.string()),
   handle: v.optional(v.string()),
   headline: v.optional(v.string()),
+  bio: v.optional(v.string()),
   screenshotId: v.optional(v.id("_storage")),
   city: v.optional(cityInputValidator),
   company: v.optional(v.string()),
@@ -94,6 +95,7 @@ async function projectPerson(ctx: QueryCtx, person: Doc<"people">) {
     platform: person.platform,
     handle: person.handle,
     headline: person.headline,
+    bio: person.bio,
     screenshotId: person.screenshotId,
     city: person.city,
     company: person.company,
@@ -964,6 +966,7 @@ async function embedPerson(
     platform: person.platform,
     handle: person.handle,
     headline: person.headline,
+    bio: person.bio,
     role: person.role,
     company: person.company,
     cityName: person.city?.name,
@@ -1019,6 +1022,7 @@ const searchResultValidator = v.object({
   platform: v.optional(v.string()),
   handle: v.optional(v.string()),
   headline: v.optional(v.string()),
+  bio: v.optional(v.string()),
   score: v.number(),
 });
 
@@ -1043,6 +1047,7 @@ export const fetchSearchResults = internalQuery({
       platform: person.platform,
       handle: person.handle,
       headline: person.headline,
+      bio: person.bio,
     }));
   },
 });
@@ -1100,6 +1105,7 @@ export const semanticSearch = action({
       platform?: string;
       handle?: string;
       headline?: string;
+      bio?: string;
     }> = await ctx.runQuery(internal.people.fetchSearchResults, {
       ids: strong.map((m) => m._id),
     });

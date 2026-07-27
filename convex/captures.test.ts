@@ -230,6 +230,29 @@ test("acceptCapture creates an owned person and consumes the capture", async () 
   expect(hits.map((p) => p.name)).toEqual(["Ada Lovelace"]);
 });
 
+test("acceptCapture keeps the extracted bio and makes it searchable", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const personId = await as.mutation(api.captures.acceptCapture, { captureId });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  // The bio is the richest text the extraction paid for -- what the person
+  // says they are about. Dropping it at accept would leave them invisible to
+  // every "who do I know who does X" search.
+  const person = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(person?.bio).toBe("Building symbolic math tools.");
+  const hits = await as.query(api.people.searchDirectory, {
+    keyword: "symbolic",
+  });
+  expect(hits.map((p) => p.name)).toEqual(["Ada Lovelace"]);
+});
+
 test("a manually named capture is findable by keyword search", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);

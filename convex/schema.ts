@@ -28,6 +28,9 @@ export default defineSchema({
     platform: v.optional(v.string()),
     handle: v.optional(v.string()),
     headline: v.optional(v.string()),
+    // The profile's own about text, kept from extraction because it is the
+    // words a "who do I know who does X" query is most likely to paraphrase.
+    bio: v.optional(v.string()),
     screenshotId: v.optional(v.id("_storage")),
     // Haven Meet provenance. Each side still gets a private people row; this
     // key only lets a repeat in-person exchange stay idempotent.

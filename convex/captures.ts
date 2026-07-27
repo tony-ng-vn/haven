@@ -254,6 +254,7 @@ export const acceptCapture = mutation({
       searchText: personSearchText({
         name: capture.extracted.name,
         headline: capture.extracted.headline,
+        bio: capture.extracted.bio,
         handle: capture.extracted.handle,
         contactHandles,
         context: args.context,
@@ -264,6 +265,7 @@ export const acceptCapture = mutation({
       platform: capture.extracted.platform,
       handle: capture.extracted.handle,
       headline: capture.extracted.headline,
+      bio: capture.extracted.bio,
       contactHandles,
       // The screenshot stays with the person as a visual memory anchor.
       screenshotId: capture.screenshotId,

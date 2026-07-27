@@ -268,6 +268,7 @@ export function buildEmbedText(fields: {
   platform?: string;
   handle?: string;
   headline?: string;
+  bio?: string;
   role?: string;
   company?: string;
   cityName?: string;
@@ -286,6 +287,7 @@ export function buildEmbedText(fields: {
     fields.name,
     platformLine,
     fields.headline,
+    fields.bio,
     workLine,
     fields.cityName,
     fields.context,
