@@ -86,6 +86,11 @@ enum FigureIntensity {
         (0..<max(majorCount, 0)).map { litMajors.contains($0) ? 1 : 0 }
     }
 
+    /// Every star lit, which is what the card and the beacon show.
+    static func complete(majorCount: Int) -> [Double] {
+        Array(repeating: 1, count: max(majorCount, 0))
+    }
+
     /// One star's brightness. A star the caller said nothing about is unlit:
     /// intensities are built by hand for the reveal, and lighting a star nobody
     /// asked for would be the worse guess.

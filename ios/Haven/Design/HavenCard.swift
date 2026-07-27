@@ -63,10 +63,7 @@ struct HavenCard: View {
     }
 
     private var intensities: [Double] {
-        majorIntensities ?? FigureIntensity.from(
-            litMajors: Set(sky.majors.indices),
-            majorCount: sky.majors.count
-        )
+        majorIntensities ?? FigureIntensity.complete(majorCount: sky.majors.count)
     }
 
     /// The photo is decoration beside the name, never a substitute for it, so a

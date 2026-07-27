@@ -69,6 +69,16 @@ struct FigureIntensityTests {
         #expect(FigureIntensity.from(litMajors: [0], majorCount: 0).isEmpty)
     }
 
+    @Test("the complete figure is every star lit")
+    func complete() {
+        #expect(FigureIntensity.complete(majorCount: 3) == [1, 1, 1])
+        #expect(FigureIntensity.complete(majorCount: 0).isEmpty)
+        #expect(
+            FigureIntensity.complete(majorCount: 7)
+                == FigureIntensity.from(litMajors: Set(0..<7), majorCount: 7)
+        )
+    }
+
     // A caller builds intensities by hand for the reveal, so an array that does
     // not match the figure is a real case, not a hypothetical one. Missing is
     // unlit: drawing a star nobody asked to light would be the worse guess.

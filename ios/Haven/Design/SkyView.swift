@@ -39,12 +39,11 @@ struct SkyView: View {
     /// default is the complete figure, which is what the card and the beacon
     /// show.
     init(sky: Sky, litMajors: Set<Int>? = nil, figureBand: CGRect? = nil) {
+        let count = sky.majors.count
         self.init(
             sky: sky,
-            majorIntensities: FigureIntensity.from(
-                litMajors: litMajors ?? Set(sky.majors.indices),
-                majorCount: sky.majors.count
-            ),
+            majorIntensities: litMajors.map { FigureIntensity.from(litMajors: $0, majorCount: count) }
+                ?? FigureIntensity.complete(majorCount: count),
             figureBand: figureBand
         )
     }
