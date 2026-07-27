@@ -69,10 +69,16 @@ xcodebuild build -project Haven.xcodeproj -scheme Haven \
   -derivedDataPath build
 ```
 
-Do not add `CODE_SIGNING_ALLOWED=NO` to a build you intend to launch.
-Without signing, `Haven/Haven.entitlements` is never embedded, so the app has no `keychain-access-groups` entitlement, and `Clerk.configure` in `HavenApp.init` traps at launch with `OSStatus -34018: A required entitlement isn't present`.
-It crashes before any UI exists, on every launch, and the crash report blames `Clerk.swift` rather than the missing entitlement.
-The command above ad-hoc signs with the entitlements attached, which is all the simulator needs.
+Never add `CODE_SIGNING_ALLOWED=NO` to a command you run on your own machine, whichever command it is.
+It produces an app that crashes on every launch, and the crash report blames `Clerk.swift` rather than the real cause.
+
+The reason is worth knowing, because the entitlement the simulator reads is not the one you would expect.
+For a simulator build Xcode writes two files: `Haven.app.xcent`, the real code-signing entitlements, which is empty here because there is no signing team, and `Haven.app-Simulated.xcent`, which carries `application-identifier` and `keychain-access-groups` under a placeholder `FAKETEAMID`.
+Only the second one matters, and it is embedded as a `__TEXT,__entitlements` section in the binary rather than into the signature.
+That is why `codesign -d --entitlements` prints an empty dict on a build that works perfectly.
+
+`CODE_SIGNING_ALLOWED=NO` skips the step that produces and embeds it, leaving a `linker-signed` binary with no such section.
+Clerk then fails on `OSStatus -34018: A required entitlement isn't present` inside `Clerk.configure`, which `HavenApp.init` calls before any UI exists.
 
 `-derivedDataPath build` puts the app somewhere you can name (`build/` is git-ignored).
 To install and launch it on the booted simulator:
@@ -89,14 +95,17 @@ xcrun simctl launch --console-pty booted com.inhavens.haven
 ```sh
 xcodegen generate
 xcodebuild test -project Haven.xcodeproj -scheme Haven \
-  -destination 'platform=iOS Simulator,name=iPhone 17' \
-  CODE_SIGNING_ALLOWED=NO
+  -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
 Swift Testing, in the `HavenTests` target.
-`CODE_SIGNING_ALLOWED=NO` belongs here and nowhere else: under XCTest, Clerk skips the keychain work that would otherwise throw, so an unsigned test run gets through `Clerk.configure` where an unsigned app launch traps.
-The tests are hosted in the app, so it still logs `OSStatus -34018` keychain failures on the way through.
-That noise is expected in a test run and does not affect the results; on a signed build the entitlement is present.
+
+No `CODE_SIGNING_ALLOWED=NO` here either, and this is the case that surprises people.
+The tests would pass with it: they are hosted in the app, and under XCTest Clerk skips the keychain work that would otherwise throw, so the run gets through `Clerk.configure` where a real launch traps.
+What it costs you is the simulator. A hosted test run installs the app, so an unsigned run replaces whatever is on the device with a build that crashes the moment you tap its icon, and stays that way until something reinstalls a good one.
+That is a confusing bug to chase an hour later, and skipping the signing step buys nothing.
+
+CI keeps the flag in `.github/workflows/ios.yml`, which is fine: nobody opens the app on a runner.
 
 CI runs these tests in `.github/workflows/ios.yml`, on any pull request that touches `ios/`.
 A pull request that touches no Swift skips the job, because macOS runners are billed at several times the Linux rate.
