@@ -178,22 +178,6 @@ private struct HandleValueEditor: View {
     }
 }
 
-extension MyCard.Platform: Identifiable {
-    public var id: String { rawValue }
-
-    /// What the platform is called in the interface. Text rather than a mark:
-    /// the brand glyphs are third-party trademarks with their own usage rules,
-    /// and picking them is its own piece of work.
-    var label: String {
-        switch self {
-        case .instagram: return "Instagram"
-        case .x: return "X"
-        case .linkedin: return "LinkedIn"
-        case .phone: return "Phone"
-        }
-    }
-}
-
 extension MyCard.Handle {
     var convexArgument: [String: ConvexEncodable?] {
         ["platform": platform.rawValue, "value": value, "verified": verified]

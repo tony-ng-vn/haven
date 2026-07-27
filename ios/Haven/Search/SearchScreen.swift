@@ -78,7 +78,10 @@ struct SearchScreen: View {
                 .frame(height: SearchMetrics.interpLineHeight)
                 .accessibilityHidden(true)
 
-            Text(query.isEmpty ? "Search is not wired up yet." : "Nothing to search yet.")
+            // One line, and the same one whether or not anything is typed:
+            // there is nothing behind the field yet, and saying it two
+            // different ways would imply the two states differ.
+            Text("Searching does not work yet.")
                 .havenSecondary()
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.top, 32)

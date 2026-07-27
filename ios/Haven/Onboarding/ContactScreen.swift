@@ -363,15 +363,10 @@ private enum ContactEntry: Hashable {
         }
     }
 
-    /// The address the card will carry, shown live under the field.
-    var addressPrefix: String {
-        switch self {
-        case .confirmLinkedIn: return "linkedin.com/in/"
-        case .pasteX: return "x.com/"
-        case .pasteInstagram: return "instagram.com/"
-        case .typePhone: return ""
-        }
-    }
+    /// The address the card will carry, shown live under the field. Read off
+    /// the platform rather than listed again here: two copies of the same four
+    /// strings are two places for them to stop agreeing.
+    var addressPrefix: String { platform.addressPrefix }
 
     var keyboard: UIKeyboardType {
         switch self {

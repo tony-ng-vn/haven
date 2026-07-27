@@ -218,7 +218,7 @@ final class OnboardingModel: ObservableObject {
         // button that spins forever is worse than one that says what happened.
         // The wait is what ends, not the write -- if it lands late, the next
         // attempt overwrites it with the same values.
-        let saved = await write.value(within: .seconds(Self.networkDeadline))
+        let saved = await write.value(within: .seconds(HavenNetwork.deadline))
         isSaving = false
         guard let saved else {
             failure = "That did not save. Check your connection and try again."
@@ -227,36 +227,24 @@ final class OnboardingModel: ObservableObject {
         await commit(saved)
     }
 
-    /// Long enough for a slow connection, short enough that a dead one does not
-    /// hold the screen.
-    private static let networkDeadline: TimeInterval = 12
-
     private func loadCard() {
-        cancellable = convex
-            .subscribe(to: "profiles:getMyCard", yielding: MyCard?.self)
-            // The first value only. While onboarding runs this device is the
-            // sole writer, and every commit hands back the new card; a live
-            // subscription would just add a second, later source that can move
-            // someone off the question they are in the middle of answering.
-            .first()
-            // The Convex client reconnects rather than failing, so a read with
-            // no network does not error -- it waits. Nothing else would ever end
-            // that wait, and an onboarding that opens on a spinner forever is
-            // the one outcome with no way out of it.
-            .timeout(.seconds(Self.networkDeadline), scheduler: DispatchQueue.main)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                // Any ending counts, not just a failure: a timeout finishes the
-                // stream without a value, so still being in `.loading` here is
-                // what "we never heard back" looks like.
-                guard let self, self.load == .loading else { return }
-                self.load = .unreachable
-            } receiveValue: { [weak self] card in
-                guard let self else { return }
-                self.card = card
-                self.step = OnboardingStep.first(unansweredIn: card, skipped: self.skipped)
-                self.load = .ready
-            }
+        cancellable = HavenNetwork.subscribe(
+            to: "profiles:getMyCard",
+            yielding: MyCard?.self,
+            // While onboarding runs this device is the sole writer, and every
+            // commit hands back the new card. A live subscription would add a
+            // second, later source that can move someone off the question they
+            // are in the middle of answering.
+            firstValueOnly: true
+        ) { [weak self] card in
+            guard let self else { return }
+            self.card = card
+            self.step = OnboardingStep.first(unansweredIn: card, skipped: self.skipped)
+            self.load = .ready
+        } onSilence: { [weak self] in
+            guard let self, self.load == .loading else { return }
+            self.load = .unreachable
+        }
     }
 
     /// Publishes the new card, then the new question. The two are separate beats
