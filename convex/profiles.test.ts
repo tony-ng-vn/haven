@@ -673,6 +673,76 @@ test("a meetExchange person is findable by keyword search", async () => {
   expect(hits.map((p) => p.name)).toEqual(["@bob"]);
 });
 
+// One of the three insert paths that used to write people invisible to the
+// identity index. A person met through Haven has to be findable by handle like
+// anyone else, or re-sharing their profile later twins them.
+test("a meetExchange person carries the handle index", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+
+  const { personId } = await alice.as.mutation(api.profiles.meetExchange, {
+    username: "bob",
+  });
+
+  await t.run(async (ctx) => {
+    const person = await ctx.db.get("people", personId);
+    expect(person?.contactHandles).toEqual([
+      { platform: "haven", value: "bob" },
+    ]);
+    // The legacy scalars stay: the web meet UI still reads them, and this
+    // adds the index rather than replacing what was there.
+    expect(person?.platform).toBe("Haven");
+    expect(person?.handle).toBe("bob");
+
+    const rows = await ctx.db
+      .query("personHandles")
+      .withIndex("by_user_and_platform_and_valueKey", (q) =>
+        q
+          .eq("userId", alice.userId)
+          .eq("platform", "haven")
+          .eq("valueKey", handleValueKey("bob")),
+      )
+      .collect();
+    expect(rows.map((row) => row.personId)).toEqual([personId]);
+
+    // Both sides get a row, so the person Bob gets for Alice is indexed too.
+    const bobsRows = await ctx.db
+      .query("personHandles")
+      .withIndex("by_user_and_platform_and_valueKey", (q) =>
+        q.eq("userId", bob.userId),
+      )
+      .collect();
+    expect(bobsRows).toHaveLength(1);
+    expect(bobsRows[0].valueKey).toBe(handleValueKey("alice"));
+  });
+});
+
+// The index row is inserted next to the person, so a repeat confirmation must
+// not stack a second one on the same person.
+test("a repeated meetExchange does not duplicate the index row", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+
+  await alice.as.mutation(api.profiles.meetExchange, { username: "bob" });
+  await alice.as.mutation(api.profiles.meetExchange, { username: "bob" });
+
+  await t.run(async (ctx) => {
+    const rows = await ctx.db
+      .query("personHandles")
+      .withIndex("by_user_and_platform_and_valueKey", (q) =>
+        q.eq("userId", alice.userId),
+      )
+      .collect();
+    expect(rows).toHaveLength(1);
+  });
+});
+
 test("meetExchange is idempotent for repeated in-person confirmations", async () => {
   const t = convexTest(schema, modules);
   const alice = asNewUser(t);

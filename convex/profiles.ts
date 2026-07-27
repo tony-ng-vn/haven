@@ -22,7 +22,7 @@ import {
   platformValidator,
   publicHandleValidator,
 } from "./profileFields";
-import { handleDisplayValue } from "./handleKeys";
+import { handleDisplayValue, handleIndexKeys } from "./handleKeys";
 
 const MINUTE_MS = 60_000;
 
@@ -285,6 +285,11 @@ async function ensureMeetPerson(args: {
 
   const displayName = `@${args.contactUsername}`;
   const meetContext = "Met in person through Haven Meet.";
+  // A Haven username is a handle like any other, so the person gets one in
+  // contactHandles and a matching index row. Without them a person met in
+  // person is invisible to every handle lookup, and re-sharing their profile
+  // later would create a second row for the same human.
+  const havenHandle = { platform: "haven", value: args.contactUsername };
   const personId = await args.ctx.db.insert("people", {
     userId: args.ownerUserId,
     name: displayName,
@@ -297,9 +302,17 @@ async function ensureMeetPerson(args: {
     }),
     context: meetContext,
     updatedAt: args.now,
+    // The legacy scalars stay: the web meet UI reads them, and the index is
+    // an addition rather than a replacement.
     platform: "Haven",
     handle: args.contactUsername,
+    contactHandles: [havenHandle],
     havenContactUserId: args.contactUserId,
+  });
+  await args.ctx.db.insert("personHandles", {
+    userId: args.ownerUserId,
+    personId,
+    ...handleIndexKeys(havenHandle),
   });
   await args.ctx.scheduler.runAfter(0, internal.people.embed, { personId });
   return personId;
