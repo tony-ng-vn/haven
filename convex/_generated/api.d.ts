@@ -15,6 +15,7 @@ import type * as emailClient from "../emailClient.js";
 import type * as handleKeys from "../handleKeys.js";
 import type * as imageBlobs from "../imageBlobs.js";
 import type * as loveAlarm from "../loveAlarm.js";
+import type * as memories from "../memories.js";
 import type * as nameSearch from "../nameSearch.js";
 import type * as openaiClient from "../openaiClient.js";
 import type * as people from "../people.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   handleKeys: typeof handleKeys;
   imageBlobs: typeof imageBlobs;
   loveAlarm: typeof loveAlarm;
+  memories: typeof memories;
   nameSearch: typeof nameSearch;
   openaiClient: typeof openaiClient;
   people: typeof people;

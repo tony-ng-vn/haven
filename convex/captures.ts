@@ -16,6 +16,7 @@ import { normalizeName, personSearchText } from "./nameSearch";
 import { contactHandleValidator } from "./peopleFields";
 import { handleDisplayValue, handleIndexKeys } from "./handleKeys";
 import { requireImageBlob } from "./imageBlobs";
+import { syncMemories } from "./memories";
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -245,6 +246,7 @@ export const acceptCapture = mutation({
           );
     const contactHandles =
       contactHandle === undefined ? undefined : [contactHandle];
+    const now = Date.now();
     const personId = await ctx.db.insert("people", {
       userId,
       name: capture.extracted.name,
@@ -261,7 +263,7 @@ export const acceptCapture = mutation({
       }),
       link: args.link,
       context: args.context,
-      updatedAt: Date.now(),
+      updatedAt: now,
       platform: capture.extracted.platform,
       handle: capture.extracted.handle,
       headline: capture.extracted.headline,
@@ -273,6 +275,12 @@ export const acceptCapture = mutation({
     if (contactHandle !== undefined) {
       await insertCaptureHandle(ctx, userId, personId, contactHandle);
     }
+    await syncMemories(ctx, {
+      userId,
+      personId,
+      context: args.context,
+      createdAt: now,
+    });
     await ctx.db.delete("captures", args.captureId);
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
     return personId;
@@ -332,6 +340,7 @@ export const acceptManualCapture = mutation({
     }
     const contactHandles =
       contactHandle === undefined ? undefined : [contactHandle];
+    const now = Date.now();
     const personId = await ctx.db.insert("people", {
       userId,
       name,
@@ -349,11 +358,17 @@ export const acceptManualCapture = mutation({
       contactHandles,
       // The screenshot stays with the person as a visual memory anchor.
       screenshotId: capture.screenshotId,
-      updatedAt: Date.now(),
+      updatedAt: now,
     });
     if (contactHandle !== undefined) {
       await insertCaptureHandle(ctx, userId, personId, contactHandle);
     }
+    await syncMemories(ctx, {
+      userId,
+      personId,
+      context: args.context,
+      createdAt: now,
+    });
     await ctx.db.delete("captures", args.captureId);
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
     return personId;

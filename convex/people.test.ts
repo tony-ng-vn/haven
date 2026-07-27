@@ -44,11 +44,16 @@ function stubEmbeddings(vector: number[]) {
 // Like stubEmbeddings, but each call to the embeddings endpoint is handed
 // to `respond`, which decides success or failure per call -- for exercising
 // the embed action's retry-with-backoff path.
+//
+// Attempts are counted per input text, not globally: saving a person embeds
+// the person AND each line of their note as its own memory, so "the second
+// attempt" has to mean the second attempt at that text rather than the
+// second network call the test happened to see.
 function stubEmbeddingsSequence(
-  respond: (callIndex: number) => Response,
-): { callCount: () => number } {
+  respond: (attempt: number, input: string) => Response,
+): { attemptsFor: (input: string) => number } {
   const realFetch = globalThis.fetch;
-  let calls = 0;
+  const attempts = new Map<string, number>();
   vi.stubGlobal(
     "fetch",
     async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -60,14 +65,18 @@ function stubEmbeddingsSequence(
         return realFetch(input, init);
       }
       if (url.hostname === "api.openai.com" && url.pathname.includes("/embeddings")) {
-        const response = respond(calls);
-        calls++;
-        return response;
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          input?: string;
+        };
+        const text = body.input ?? "";
+        const attempt = attempts.get(text) ?? 0;
+        attempts.set(text, attempt + 1);
+        return respond(attempt, text);
       }
       return realFetch(input, init);
     },
   );
-  return { callCount: () => calls };
+  return { attemptsFor: (input) => attempts.get(input) ?? 0 };
 }
 
 beforeEach(() => {
@@ -86,6 +95,11 @@ const manualAdd = {
   contactHandles: [{ platform: "phone", value: "unlisted" }],
   context: "met before this test",
 };
+
+// What buildEmbedText produces for `addPerson({ ...manualAdd, name: "Maya
+// Chen" })`. The retry tests count attempts against this exact string so a
+// memory row's own embed cannot be mistaken for one of the person's retries.
+const PERSON_EMBED_TEXT = `Maya Chen\n${manualAdd.context}`;
 
 test("addPerson creates a person owned by the caller with a timestamp", async () => {
   const t = convexTest(schema, modules);
@@ -489,8 +503,11 @@ test("backfillNormalizedNames patches rows missing normalizedName and skips the 
 test("backfillEmbeddings continues past a failing row", async () => {
   // The daily cron runs this unattended; one poisoned row must not strand
   // everyone queued behind it.
-  const stub = stubEmbeddingsSequence((callIndex) =>
-    callIndex === 0
+  // Poisoned by which row it is, not by which call it is: the sweep embeds
+  // people and memories on the same endpoint, so an ordinal would pick a
+  // victim at random.
+  const stub = stubEmbeddingsSequence((_attempt, input) =>
+    input.includes("First Failing")
       ? new Response("upstream error", { status: 500 })
       : Response.json({ data: [{ embedding: new Array(1536).fill(0.1) }] }),
   );
@@ -515,7 +532,8 @@ test("backfillEmbeddings continues past a failing row", async () => {
 
   const embedded = await t.action(internal.people.backfillEmbeddings, {});
   expect(embedded).toBe(1);
-  expect(stub.callCount()).toBe(2);
+  expect(stub.attemptsFor("First Failing")).toBe(1);
+  expect(stub.attemptsFor("Second Fine")).toBe(1);
 
   const first = await t.run((ctx) => ctx.db.get("people", firstId));
   expect(first?.embedding).toBeUndefined();
@@ -591,8 +609,8 @@ test("embed slices an over-long combined text before requesting an embedding", a
 // ------------------------------------------------------------ embed retries
 
 test("embed retries after a failure and succeeds on the next attempt", async () => {
-  const stub = stubEmbeddingsSequence((callIndex) =>
-    callIndex === 0
+  const stub = stubEmbeddingsSequence((attempt) =>
+    attempt === 0
       ? new Response("rate limited", { status: 429 })
       : Response.json({ data: [{ embedding: new Array(1536).fill(0.1) }] }),
   );
@@ -605,7 +623,9 @@ test("embed retries after a failure and succeeds on the next attempt", async () 
 
   const stored = await t.run((ctx) => ctx.db.get("people", id));
   expect(stored?.embedding).toBeDefined();
-  expect(stub.callCount()).toBe(2);
+  // The person's own embed input, not the memory row's, which holds the
+  // bare note line and embeds on its own schedule.
+  expect(stub.attemptsFor(PERSON_EMBED_TEXT)).toBe(2);
 });
 
 test("embed gives up after 3 total attempts without throwing", async () => {
@@ -624,7 +644,7 @@ test("embed gives up after 3 total attempts without throwing", async () => {
 
   const stored = await t.run((ctx) => ctx.db.get("people", id));
   expect(stored?.embedding).toBeUndefined();
-  expect(stub.callCount()).toBe(3);
+  expect(stub.attemptsFor(PERSON_EMBED_TEXT)).toBe(3);
   expect(consoleError).toHaveBeenCalled();
 
   consoleError.mockRestore();

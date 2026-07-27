@@ -90,6 +90,31 @@ export default defineSchema({
       dimensions: 1536,
       filterFields: ["userId"],
     }),
+  // One line of what the user wrote about a person, kept as its own row with
+  // its own vector. people.context stays the rolled-up display copy; these
+  // are the retrieval copy, because a single averaged person vector scores
+  // low for a query that hits only one facet of a well-known person.
+  // Derived, never authored directly: every write path that sets a person's
+  // context syncs these in the same transaction (syncMemories in
+  // memories.ts), and deletePerson takes them with it.
+  memories: defineTable({
+    userId: v.string(),
+    personId: v.id("people"),
+    text: v.string(),
+    // The person's updatedAt when the line was first seen, so a migrated
+    // memory dates from when the user wrote it, not from the migration.
+    createdAt: v.number(),
+    // Same idempotency contract as people.embedding/embeddedText: the stored
+    // text is the key for the stored vector.
+    embedding: v.optional(v.array(v.float64())),
+    embeddedText: v.optional(v.string()),
+  })
+    .index("by_person", ["personId"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["userId"],
+    }),
   // The identity index behind people.contactHandles: Convex indexes scalar
   // fields only, so "which person has this Instagram handle?" is unanswerable
   // from the array itself. Every write that touches contactHandles maintains
