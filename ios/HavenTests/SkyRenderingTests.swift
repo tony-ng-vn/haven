@@ -90,6 +90,27 @@ struct FigureIntensityTests {
         #expect(FigureIntensity.star(0, in: []) == 0)
     }
 
+    // A flare is the signature of a very bright star, so one blazing out of a
+    // star that is still an unlit dot says the opposite of what the dot says.
+    // It carries the star it belongs to for exactly that reason.
+    @Test("a flare knows which star it came from")
+    func flaresCarryTheirStar() {
+        let sky = SkyGenerator.build(seed: "user_2abcDEF123")
+        let brightest = sky.majors.enumerated()
+            .sorted { a, b in
+                a.element.r == b.element.r ? a.offset < b.offset : a.element.r > b.element.r
+            }
+            .prefix(2)
+            .map(\.offset)
+
+        #expect(sky.flares.map(\.major) == Array(brightest))
+        for flare in sky.flares {
+            #expect(sky.majors.indices.contains(flare.major))
+            #expect(flare.x == sky.majors[flare.major].x)
+            #expect(flare.y == sky.majors[flare.major].y)
+        }
+    }
+
     // A line brighter than the star it comes from reads as a diagram drawn over
     // the sky rather than as the figure lighting up.
     @Test("an edge is only as bright as its dimmer star")

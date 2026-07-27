@@ -269,9 +269,15 @@ private struct AnimatedSky: View {
 
     /// Two diffraction spikes crossed at the figure's brightest stars. The detail
     /// that makes the sky read as photographed rather than as plotted.
+    ///
+    /// A flare fades with its own star, for the same reason an edge does: it is
+    /// the signature of a very bright star, so one blazing out of a star that is
+    /// still an unlit dot contradicts the dot.
     private func drawFlares(_ context: inout GraphicsContext, _ layout: SkyLayout, _ time: Double?) {
         for flare in sky.flares {
-            let a = alpha(hi: 0.8, lo: 0.35, dur: flare.dur, delay: flare.delay, time: time)
+            let intensity = FigureIntensity.star(flare.major, in: majorIntensities)
+            guard intensity > 0 else { continue }
+            let a = alpha(hi: 0.8, lo: 0.35, dur: flare.dur, delay: flare.delay, time: time) * intensity
             let centre = layout.point(x: flare.x, y: flare.y)
             let len = layout.length(flare.len)
             let waist = layout.length(1.1)
