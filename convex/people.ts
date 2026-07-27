@@ -1166,6 +1166,12 @@ export const backfillSearchText = internalMutation({
   },
 });
 
+// Idempotency key for the maintenance functions below: re-running one must
+// never double-index a handle. JSON so a platform containing a separator
+// cannot collide with another pair.
+const handleIndexKey = (row: { platform: string; valueKey: string }) =>
+  JSON.stringify([row.platform, row.valueKey]);
+
 // One-off maintenance: people saved between contactHandles shipping and the
 // personHandles index existing carry the array but no index rows, so a share
 // of a handle they already hold would twin them. Paged rather than a single
@@ -1185,10 +1191,6 @@ export const backfillPersonHandles = internalMutation({
       numItems: BACKFILL_BATCH_SIZE,
       cursor: args.cursor ?? null,
     });
-    // Idempotent: re-running must never double-index a handle. The key
-    // is JSON so a platform containing a separator cannot collide.
-    const indexKey = (row: { platform: string; valueKey: string }) =>
-      JSON.stringify([row.platform, row.valueKey]);
     let patched = 0;
     for (const person of page.page) {
       const handles = person.contactHandles ?? [];
@@ -1199,9 +1201,9 @@ export const backfillPersonHandles = internalMutation({
         .query("personHandles")
         .withIndex("by_person", (q) => q.eq("personId", person._id))
         .take(MAX_CONTACT_HANDLES);
-      const indexed = new Set(existing.map(indexKey));
+      const indexed = new Set(existing.map(handleIndexKey));
       const missing = handles.filter(
-        (handle) => !indexed.has(indexKey(handleIndexKeys(handle))),
+        (handle) => !indexed.has(handleIndexKey(handleIndexKeys(handle))),
       );
       if (missing.length === 0) {
         continue;
@@ -1210,6 +1212,87 @@ export const backfillPersonHandles = internalMutation({
       patched++;
     }
     return { patched, isDone: page.isDone, cursor: page.continueCursor };
+  },
+});
+
+// One-off maintenance: the screenshot and meet-exchange paths wrote people
+// with only the legacy platform/handle scalars, so those accounts were
+// invisible to every handle lookup and a later share twinned the person.
+// This folds those scalars into contactHandles and the personHandles index.
+// Paged for the same reason backfillPersonHandles is: an unindexed person is
+// a corrupted identity, so "done" has to mean it. Run with:
+// npx convex run people:backfillLegacyHandles '{}'
+// and re-run with '{"cursor": "<cursor>"}' until isDone.
+//
+// Deliberately conservative on two counts. A person whose array already
+// holds that platform is skipped and counted, never overwritten: which of
+// two disagreeing accounts is current is a product decision, not a
+// migration's. And neither updatedAt nor searchText is touched, because a
+// migration is not an edit -- recency ordering stays where the user left it,
+// and the legacy handle is already in the keyword haystack.
+export const backfillLegacyHandles = internalMutation({
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  returns: v.object({
+    patched: v.number(),
+    skipped: v.number(),
+    isDone: v.boolean(),
+    cursor: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const page = await ctx.db.query("people").paginate({
+      numItems: BACKFILL_BATCH_SIZE,
+      cursor: args.cursor ?? null,
+    });
+    let patched = 0;
+    let skipped = 0;
+    for (const person of page.page) {
+      if (person.platform === undefined || person.handle === undefined) {
+        continue;
+      }
+      const legacy = {
+        platform: person.platform,
+        value: handleDisplayValue(person.handle),
+      };
+      const keys = handleIndexKeys(legacy);
+      // A platform with no handle, or a handle of punctuation alone, names
+      // no account: there is nothing to index and nothing to report.
+      if (keys.platform === "" || keys.valueKey === "") {
+        continue;
+      }
+      const handles = person.contactHandles ?? [];
+      if (
+        handles.length >= MAX_CONTACT_HANDLES ||
+        handles.some(
+          (handle) => handleIndexKeys(handle).platform === keys.platform,
+        )
+      ) {
+        skipped++;
+        continue;
+      }
+      // Same idempotency rule as backfillPersonHandles: an index row that
+      // already exists is never doubled, however the two got out of step.
+      const existing = await ctx.db
+        .query("personHandles")
+        .withIndex("by_person", (q) => q.eq("personId", person._id))
+        .take(MAX_CONTACT_HANDLES);
+      const indexed = new Set(existing.map(handleIndexKey));
+      await ctx.db.patch("people", person._id, {
+        contactHandles: [
+          ...handles,
+          { platform: keys.platform, value: legacy.value },
+        ],
+      });
+      if (!indexed.has(handleIndexKey(keys))) {
+        await insertPersonHandles(ctx, person.userId, person._id, [legacy]);
+      }
+      patched++;
+    }
+    return {
+      patched,
+      skipped,
+      isDone: page.isDone,
+      cursor: page.continueCursor,
+    };
   },
 });
 

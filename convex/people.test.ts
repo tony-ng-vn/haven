@@ -1857,3 +1857,218 @@ test("backfillPersonHandles pages past the first batch", async () => {
     await t.run((ctx) => ctx.db.query("personHandles").collect()),
   ).toHaveLength(total);
 });
+
+// ------------------------------------------ legacy scalar identity backfill
+
+// Drive the paged migration the way an operator does: run it, feed the
+// cursor back, stop when it says it is done. Bounded so a broken cursor
+// fails the test instead of hanging it.
+async function drainLegacyHandlesBackfill(
+  t: ReturnType<typeof convexTest>,
+): Promise<{ patched: number; skipped: number }> {
+  let cursor: string | null = null;
+  let patched = 0;
+  let skipped = 0;
+  for (let page = 0; page < 20; page++) {
+    // Annotated because the cursor fed back in would otherwise make the
+    // inferred result type circular.
+    const result: {
+      patched: number;
+      skipped: number;
+      isDone: boolean;
+      cursor: string;
+    } = await t.mutation(internal.people.backfillLegacyHandles, { cursor });
+    patched += result.patched;
+    skipped += result.skipped;
+    if (result.isDone) {
+      return { patched, skipped };
+    }
+    cursor = result.cursor;
+  }
+  throw new Error("backfillLegacyHandles never finished");
+}
+
+test("backfillLegacyHandles folds legacy scalars into the identity index", async () => {
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  const updatedAt = Date.now() - 60_000;
+  // A person written by the screenshot pipeline before it maintained the
+  // index: reachable on Instagram, invisible to every handle lookup.
+  const legacyId = await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "Mai Tr\u1ea7n",
+      normalizedName: "mai tran",
+      platform: "Instagram",
+      handle: "@Mai.Makes",
+      updatedAt,
+    }),
+  );
+
+  expect(await drainLegacyHandlesBackfill(t)).toEqual({
+    patched: 1,
+    skipped: 0,
+  });
+
+  const person = await t.run((ctx) => ctx.db.get("people", legacyId));
+  expect(person?.contactHandles).toEqual([
+    { platform: "instagram", value: "Mai.Makes" },
+  ]);
+  // A migration is not an edit: it must not reshuffle the directory's
+  // recency order under the user.
+  expect(person?.updatedAt).toBe(updatedAt);
+  expect(
+    await t.run((ctx) => ctx.db.query("personHandles").take(10)),
+  ).toMatchObject([
+    { userId, personId: legacyId, platform: "instagram", valueKey: "mai.makes" },
+  ]);
+
+  // The point of the whole migration: a later share finds them instead of
+  // twinning them.
+  expect(await as.mutation(api.people.saveSharedProfile, sharedProfile)).toEqual(
+    { status: "already", personId: legacyId, noteTruncated: false },
+  );
+
+  // Idempotent: a second pass to done has nothing left to patch, and the
+  // person it already covered is now counted as skipped.
+  expect(await drainLegacyHandlesBackfill(t)).toEqual({
+    patched: 0,
+    skipped: 1,
+  });
+  expect(
+    await t.run((ctx) => ctx.db.query("personHandles").take(10)),
+  ).toHaveLength(1);
+});
+
+test("backfillLegacyHandles appends beside handles on other platforms", async () => {
+  const t = convexTest(schema, modules);
+  const { userId } = await asNewUser(t);
+  const personId = await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "Mai Tr\u1ea7n",
+      normalizedName: "mai tran",
+      contactHandles: [{ platform: "linkedin", value: "mai-tran-8a91b2" }],
+      platform: "instagram",
+      handle: "mai.makes",
+      updatedAt: Date.now(),
+    }),
+  );
+
+  expect(await drainLegacyHandlesBackfill(t)).toEqual({
+    patched: 1,
+    skipped: 0,
+  });
+
+  const person = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(person?.contactHandles).toEqual([
+    { platform: "linkedin", value: "mai-tran-8a91b2" },
+    { platform: "instagram", value: "mai.makes" },
+  ]);
+});
+
+test("backfillLegacyHandles never overwrites a platform the array already holds", async () => {
+  const t = convexTest(schema, modules);
+  const { userId } = await asNewUser(t);
+  // The array and the legacy scalars disagree about which Instagram account
+  // this is. Picking a winner is a product decision, not a migration's.
+  const personId = await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "Mai Tr\u1ea7n",
+      normalizedName: "mai tran",
+      contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+      platform: "Instagram",
+      handle: "@an.old.account",
+      updatedAt: Date.now(),
+    }),
+  );
+
+  expect(await drainLegacyHandlesBackfill(t)).toEqual({
+    patched: 0,
+    skipped: 1,
+  });
+  const person = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(person?.contactHandles).toEqual([
+    { platform: "instagram", value: "mai.makes" },
+  ]);
+  expect(await t.run((ctx) => ctx.db.query("personHandles").take(10))).toEqual(
+    [],
+  );
+});
+
+test("backfillLegacyHandles leaves people with nothing to fold alone", async () => {
+  const t = convexTest(schema, modules);
+  const { userId } = await asNewUser(t);
+  await t.run(async (ctx) => {
+    // Name-only, the honest state of a capture with no visible handle.
+    await ctx.db.insert("people", {
+      userId,
+      name: "Binh Le",
+      normalizedName: "binh le",
+      updatedAt: Date.now(),
+    });
+    // A platform with no handle names no account, and a handle with no
+    // platform cannot be indexed: neither is a person to touch.
+    await ctx.db.insert("people", {
+      userId,
+      name: "Vy Ho",
+      normalizedName: "vy ho",
+      platform: "instagram",
+      updatedAt: Date.now(),
+    });
+    await ctx.db.insert("people", {
+      userId,
+      name: "Nam Pham",
+      normalizedName: "nam pham",
+      handle: "@nam",
+      updatedAt: Date.now(),
+    });
+    // A handle of punctuation alone folds to nothing at all.
+    await ctx.db.insert("people", {
+      userId,
+      name: "Linh Do",
+      normalizedName: "linh do",
+      platform: "instagram",
+      handle: " @ ",
+      updatedAt: Date.now(),
+    });
+  });
+
+  expect(await drainLegacyHandlesBackfill(t)).toEqual({
+    patched: 0,
+    skipped: 0,
+  });
+  expect(await t.run((ctx) => ctx.db.query("personHandles").take(10))).toEqual(
+    [],
+  );
+});
+
+test("backfillLegacyHandles pages past the first batch", async () => {
+  const t = convexTest(schema, modules);
+  const { userId } = await asNewUser(t);
+  // One more than BACKFILL_BATCH_SIZE: a single un-cursored scan would report
+  // "done" while the tail keeps its unindexed identity, which is exactly the
+  // corruption this migration exists to end.
+  const total = 501;
+  await t.run(async (ctx) => {
+    for (let i = 0; i < total; i++) {
+      await ctx.db.insert("people", {
+        userId,
+        name: `Person ${i}`,
+        normalizedName: `person ${i}`,
+        platform: "instagram",
+        handle: `handle${i}`,
+        updatedAt: Date.now(),
+      });
+    }
+  });
+
+  expect(await drainLegacyHandlesBackfill(t)).toEqual({
+    patched: total,
+    skipped: 0,
+  });
+  expect(
+    await t.run((ctx) => ctx.db.query("personHandles").take(total + 1)),
+  ).toHaveLength(total);
+});
