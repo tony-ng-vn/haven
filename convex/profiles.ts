@@ -13,6 +13,7 @@ import {
   platformValidator,
   publicHandleValidator,
 } from "./profileFields";
+import { handleDisplayValue } from "./handleKeys";
 
 const MINUTE_MS = 60_000;
 
@@ -132,7 +133,12 @@ function validateHandles(handles: HandleInput[]): HandleInput[] {
     seen.add(handle.platform);
     return {
       platform: handle.platform,
-      value: requireText("A handle", handle.value),
+      // This mutation is the authority on how a handle is stored: the client
+      // parses for live preview only. Folding here with the same rules
+      // people.saveSharedProfile uses means the account you publish on your
+      // card and the account someone saves off it share one identity key,
+      // however either side typed it.
+      value: requireText("A handle", handleDisplayValue(handle.value)),
       verified: handle.verified,
     };
   });

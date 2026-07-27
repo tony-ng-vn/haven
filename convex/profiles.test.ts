@@ -3,6 +3,7 @@ import { convexTest, type TestConvex } from "convex-test";
 import { expect, test } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
+import { handleValueKey } from "./handleKeys";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -195,6 +196,35 @@ test("updateMyProfile allows one handle per platform only", async () => {
       ],
     }),
   ).rejects.toThrow("one handle per platform");
+});
+
+test("updateMyProfile folds a stored handle onto its identity key", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  const saved = await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "Mai Nguyen",
+    handles: [{ platform: "instagram", value: " @Mai.Makes ", verified: true }],
+  });
+
+  const stored = (await storedProfile(t, me.userId))?.handles?.[0]?.value;
+  expect(stored).toBeDefined();
+  expect(handleValueKey(stored as string)).toBe(handleValueKey("mai.makes"));
+  // Folded for identity, not flattened for display: the card still shows the
+  // capitalization its owner typed.
+  expect(saved.handles?.[0]?.value).toBe("Mai.Makes");
+});
+
+test("updateMyProfile rejects a handle that is nothing but at signs", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Mai Nguyen" });
+
+  await expect(
+    me.as.mutation(api.profiles.updateMyProfile, {
+      handles: [{ platform: "instagram", value: "@@", verified: false }],
+    }),
+  ).rejects.toThrow("cannot be blank");
 });
 
 test("updateMyProfile rejects a primary platform that is not in the handle list", async () => {
