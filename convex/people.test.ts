@@ -2072,3 +2072,155 @@ test("backfillLegacyHandles pages past the first batch", async () => {
     await t.run((ctx) => ctx.db.query("personHandles").take(total + 1)),
   ).toHaveLength(total);
 });
+
+// ------------------------------------------- duplicate handle owner report
+
+// Drain the report the way an operator does, page by page, so a group that
+// straddles a page boundary has to survive the round trip.
+async function collectDuplicateHandleOwners(
+  t: ReturnType<typeof convexTest>,
+  pageSize?: number,
+): Promise<
+  Array<{
+    userId: string;
+    platform: string;
+    valueKey: string;
+    personIds: string[];
+  }>
+> {
+  let cursor: string | null = null;
+  const duplicates = [];
+  for (let page = 0; page < 20; page++) {
+    // Annotated because the cursor fed back in would otherwise make the
+    // inferred result type circular.
+    const result: {
+      duplicates: Array<{
+        userId: string;
+        platform: string;
+        valueKey: string;
+        personIds: string[];
+      }>;
+      scanned: number;
+      isDone: boolean;
+      cursor: string;
+    } = await t.query(internal.people.reportDuplicateHandleOwners, {
+      cursor,
+      pageSize,
+    });
+    duplicates.push(...result.duplicates);
+    if (result.isDone) {
+      return duplicates;
+    }
+    cursor = result.cursor;
+  }
+  throw new Error("reportDuplicateHandleOwners never finished");
+}
+
+test("reportDuplicateHandleOwners finds the twins one account spawned", async () => {
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  const other = asNewUser(t);
+  // No global uniqueness is imposed on the legacy mutations (capture plan),
+  // so the same account genuinely can end up on two people.
+  const first = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
+    name: "Mai Tran",
+    contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+  });
+  const second = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
+    name: "Mai T.",
+    contactHandles: [{ platform: "Instagram", value: "@Mai.Makes" }],
+  });
+  // A handle only one person owns is not a duplicate...
+  await as.mutation(api.people.addPerson, {
+    ...manualAdd,
+    name: "Binh Le",
+    contactHandles: [{ platform: "linkedin", value: "binh-le" }],
+  });
+  // ...and the same account in someone else's directory is their own person,
+  // never a duplicate of mine.
+  await other.as.mutation(api.people.addPerson, {
+    ...manualAdd,
+    name: "Mai Tran",
+    contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+  });
+
+  expect(await collectDuplicateHandleOwners(t)).toEqual([
+    {
+      userId,
+      platform: "instagram",
+      valueKey: "mai.makes",
+      personIds: [first, second],
+    },
+  ]);
+});
+
+test("reportDuplicateHandleOwners does not mistake a doubled row for a twin", async () => {
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  const personId = await as.mutation(api.people.addPerson, {
+    ...manualAdd,
+    name: "Mai Tran",
+    contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+  });
+  // saveSharedProfile's attach path inserts an index row even when the array
+  // already held that handle, so one person can own two identical rows. One
+  // person owning their own account twice is not a duplicate owner.
+  await t.run((ctx) =>
+    ctx.db.insert("personHandles", {
+      userId,
+      personId,
+      platform: "instagram",
+      valueKey: "mai.makes",
+    }),
+  );
+
+  expect(await collectDuplicateHandleOwners(t)).toEqual([]);
+});
+
+test("reportDuplicateHandleOwners reports a group split across pages once", async () => {
+  const t = convexTest(schema, modules);
+  const { userId } = await asNewUser(t);
+  // Raw rows keep the index order deterministic: with a page of one, the two
+  // owners of the same account land in different pages. A grouping that only
+  // looks within a page would miss them, and a naive fix would report them
+  // twice -- either way the wave C decision is made on wrong numbers.
+  const owners = await t.run(async (ctx) => {
+    const a = await ctx.db.insert("people", {
+      userId,
+      name: "Mai Tran",
+      updatedAt: Date.now(),
+    });
+    const b = await ctx.db.insert("people", {
+      userId,
+      name: "Mai T.",
+      updatedAt: Date.now(),
+    });
+    for (const personId of [a, b]) {
+      await ctx.db.insert("personHandles", {
+        userId,
+        personId,
+        platform: "instagram",
+        valueKey: "mai.makes",
+      });
+    }
+    // A later key, so the split group is not simply the tail of the scan.
+    await ctx.db.insert("personHandles", {
+      userId,
+      personId: a,
+      platform: "linkedin",
+      valueKey: "mai-tran",
+    });
+    return [a, b];
+  });
+
+  expect(await collectDuplicateHandleOwners(t, 1)).toEqual([
+    {
+      userId,
+      platform: "instagram",
+      valueKey: "mai.makes",
+      personIds: owners,
+    },
+  ]);
+});

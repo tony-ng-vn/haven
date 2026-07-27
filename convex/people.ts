@@ -1296,6 +1296,116 @@ export const backfillLegacyHandles = internalMutation({
   },
 });
 
+// How many index rows one report page scans, and how many owners of a single
+// account it will name. A handle owned by more people than the cap is already
+// a five-alarm finding; the cap only stops one pathological group from
+// unbounding the read.
+const DUPLICATE_SCAN_PAGE_SIZE = 500;
+const MAX_HANDLE_OWNERS = 64;
+
+// Report only, never a merge: which of two people holding one account is the
+// real one is a product decision, and a migration that guessed would delete
+// somebody's memory of a person. This exists so the wave C reconciliation is
+// decided on real numbers -- and only a report of zero duplicates lets
+// saveSharedProfile's lookup move from .first() to .unique(). Run with:
+// npx convex run people:reportDuplicateHandleOwners '{}'
+// and re-run with '{"cursor": "<cursor>"}' until isDone.
+export const reportDuplicateHandleOwners = internalQuery({
+  // pageSize is for tests, which prove the page-boundary rule below with a
+  // tiny page.
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    pageSize: v.optional(v.number()),
+  },
+  returns: v.object({
+    duplicates: v.array(
+      v.object({
+        userId: v.string(),
+        platform: v.string(),
+        valueKey: v.string(),
+        personIds: v.array(v.id("people")),
+      }),
+    ),
+    scanned: v.number(),
+    isDone: v.boolean(),
+    cursor: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    // Paged over the identity index rather than the table's creation order,
+    // so every row of one (userId, platform, valueKey) is adjacent and a
+    // page's interior groups are complete as read.
+    const page = await ctx.db
+      .query("personHandles")
+      .withIndex("by_user_and_platform_and_valueKey")
+      .paginate({
+        numItems: args.pageSize ?? DUPLICATE_SCAN_PAGE_SIZE,
+        cursor: args.cursor ?? null,
+      });
+
+    const groups = new Map<string, Array<Doc<"personHandles">>>();
+    for (const row of page.page) {
+      const key = JSON.stringify([row.userId, row.platform, row.valueKey]);
+      const rows = groups.get(key);
+      if (rows === undefined) {
+        groups.set(key, [row]);
+      } else {
+        rows.push(row);
+      }
+    }
+    const keys = [...groups.keys()];
+    const pageRowIds = new Set(page.page.map((row) => row._id));
+    const duplicates: Array<{
+      userId: string;
+      platform: string;
+      valueKey: string;
+      personIds: Array<Id<"people">>;
+    }> = [];
+    for (const [position, key] of keys.entries()) {
+      const inPage = groups.get(key) ?? [];
+      const sample = inPage[0];
+      // Only the first and last group of a page can continue outside it, so
+      // only those two need the index consulted. Two extra reads per page
+      // buy an exact report; grouping page-locally would miss a split group
+      // entirely and report zero duplicates where there are some.
+      const rows =
+        position === 0 || position === keys.length - 1
+          ? await ctx.db
+              .query("personHandles")
+              .withIndex("by_user_and_platform_and_valueKey", (q) =>
+                q
+                  .eq("userId", sample.userId)
+                  .eq("platform", sample.platform)
+                  .eq("valueKey", sample.valueKey),
+              )
+              .take(MAX_HANDLE_OWNERS)
+          : inPage;
+      // The page holding a group's first row owns reporting it, so a split
+      // group is counted once rather than once per page it touches.
+      if (!pageRowIds.has(rows[0]._id)) {
+        continue;
+      }
+      // By person, not by row: one person can hold two index rows for their
+      // own account (saveSharedProfile's attach path inserts unconditionally),
+      // and that is drift to heal, not two people to reconcile.
+      const personIds = [...new Set(rows.map((row) => row.personId))];
+      if (personIds.length > 1) {
+        duplicates.push({
+          userId: sample.userId,
+          platform: sample.platform,
+          valueKey: sample.valueKey,
+          personIds,
+        });
+      }
+    }
+    return {
+      duplicates,
+      scanned: page.page.length,
+      isDone: page.isDone,
+      cursor: page.continueCursor,
+    };
+  },
+});
+
 // One-off maintenance: rows written before normalizedName existed (or
 // inserted directly by the capture pipeline, which bypasses addPerson)
 // are unreachable by search_normalized_name until patched. Run with:
