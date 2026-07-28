@@ -144,7 +144,16 @@ enum PhotoUpload {
     }
 
     /// POSTs the bytes and returns the storage id they landed in.
-    static func send(_ data: Data, to url: String) async throws -> String {
+    ///
+    /// The content type is declared rather than assumed: Convex stores what
+    /// the upload says, and a shared screenshot is usually a PNG, so leaving
+    /// the card's JPEG default on it would file the wrong type against the
+    /// blob for the life of the row.
+    static func send(
+        _ data: Data,
+        to url: String,
+        contentType: String = "image/jpeg"
+    ) async throws -> String {
         guard let endpoint = URL(string: url) else {
             throw UploadError.badURL
         }
@@ -152,7 +161,7 @@ enum PhotoUpload {
         request.httpMethod = "POST"
         // Convex reads the blob's content type from this header, and the photo
         // validator on the other side refuses anything that is not an image.
-        request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         let (body, response) = try await URLSession.shared.upload(for: request, from: data)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw UploadError.rejected

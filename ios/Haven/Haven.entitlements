@@ -20,5 +20,20 @@
 	<array>
 		<string>$(AppIdentifierPrefix)com.inhavens.haven</string>
 	</array>
+	<!--
+	  The container the share extension writes captures into. The extension
+	  carries the identical entitlement; a group only one of them holds is not
+	  shared, and each process quietly gets its own private directory instead
+	  of an error.
+
+	  Needs the group registered in the developer portal and added to both App
+	  IDs, the same way the Sign In with Apple capability above does. The
+	  simulator does not enforce it, so a missing registration shows up only on
+	  a real device -- as captures that vanish.
+	-->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.inhavens.haven</string>
+	</array>
 </dict>
 </plist>

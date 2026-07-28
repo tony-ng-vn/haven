@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  The container the extension writes captures into and reads the directory
+	  mirror from. The app carries the identical entitlement; a group only one
+	  of them holds is not shared, and each process then quietly gets its own
+	  private directory instead of an error.
+
+	  Needs the group registered in the developer portal and added to both App
+	  IDs. The entitlement alone does not provision, and the simulator does not
+	  enforce it -- so this works in development and, on a real device,
+	  containerURL answers nil and every capture is dropped.
+	-->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.inhavens.haven</string>
+	</array>
+</dict>
+</plist>
