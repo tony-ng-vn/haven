@@ -11,7 +11,6 @@ import SwiftUI
 /// which keeps this screen at one decision.
 struct WelcomeScreen: View {
     @Environment(Clerk.self) private var clerk
-    @Environment(\.openURL) private var openURL
     @HavenReduceMotion private var reduceMotion
 
     @State private var arrived = false
@@ -21,6 +20,7 @@ struct WelcomeScreen: View {
     /// Counts failures rather than triggering on the message, so a second
     /// identical failure still gets its haptic.
     @State private var failureCount = 0
+    @State private var legalDocument: LegalDocument?
 
     var body: some View {
         HavenScreen(sky: nil, ambient: .welcome) {
@@ -86,6 +86,7 @@ struct WelcomeScreen: View {
         .sheet(isPresented: $showingOtherOptions) {
             AuthView()
         }
+        .legalSheet($legalDocument)
         .sensoryFeedback(.error, trigger: failureCount)
         .task { arrived = true }
     }
@@ -103,7 +104,7 @@ struct WelcomeScreen: View {
     private var legalButtons: some View {
         ForEach(LegalDocument.allCases) { document in
             Button {
-                openURL(document.url)
+                legalDocument = document
             } label: {
                 Text(document.title)
                     .havenSecondary()

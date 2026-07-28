@@ -13,8 +13,6 @@ import SwiftUI
 struct MyCardScreen: View {
     @StateObject private var model: MyCardModel
 
-    @Environment(\.openURL) private var openURL
-
     /// Which side of the card is up.
     ///
     /// Owned by `HavenTabs` rather than by this screen, because the Lock Screen
@@ -27,6 +25,7 @@ struct MyCardScreen: View {
     @State private var editing: CardField?
     @State private var photo: Image?
     @State private var confirmingDelete = false
+    @State private var legalDocument: LegalDocument?
 
     init(showingCode: Binding<Bool>) {
         _model = StateObject(wrappedValue: MyCardModel())
@@ -87,6 +86,7 @@ struct MyCardScreen: View {
             // "my login survives this" would have read it correctly.
             Text("Your card, everyone you have saved, and your Haven account itself. This cannot be undone.")
         }
+        .legalSheet($legalDocument)
     }
 
     @ViewBuilder
@@ -205,8 +205,11 @@ struct MyCardScreen: View {
                 .padding(.top, 26)
                 .padding(.bottom, 6)
             ForEach(LegalDocument.allCases) { document in
-                HavenRow(title: document.title, action: { openURL(document.url) }) {
-                    RowMark.external
+                // A chevron rather than the external mark: these open inside
+                // Haven now, so the back the chevron promises is one the row
+                // actually delivers.
+                HavenRow(title: document.title, action: { legalDocument = document }) {
+                    RowMark.chevron
                 }
             }
         }

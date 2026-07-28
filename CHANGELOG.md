@@ -6,13 +6,15 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
-## v0.7.2
+## v0.8.0
 
 2026-07-28
 
 **iOS**
 
 - The privacy policy and terms of service are now one tap away on the welcome screen, before you sign in, instead of only appearing once you already have an account.
+- Both pages now open inside Haven rather than handing you to Safari. You read them over the app and close them with Done, and whatever you were in the middle of, including a sign-in you had not finished, is still there when you come back.
+- A menu in the top corner of People holds them too, so the policy is somewhere you can find it from the app itself, not only from the screen about your own card.
 
 ---
 

@@ -22,6 +22,8 @@ struct HavenTabs: View {
     /// the code as an event, not as a destination: it can arrive when the card
     /// is already open and showing its front, and it can arrive twice.
     @State private var showingCode = false
+    /// Which legal page the menu asked for, if any.
+    @State private var legalDocument: LegalDocument?
 
     var body: some View {
         TabView(selection: $tab) {
@@ -54,6 +56,9 @@ struct HavenTabs: View {
         // Selection is Star everywhere else in Haven, and the system default
         // accent is the one colour the palette does not contain.
         .tint(HavenColor.star)
+        // On the TabView rather than inside the People stack, so the page
+        // covers the tab bar the way a sheet from anywhere else in Haven does.
+        .legalSheet($legalDocument)
         .onAppear {
             if opensCard { openCard(showingCode: false) }
         }
@@ -99,6 +104,24 @@ struct HavenTabs: View {
     /// has to say which side is up: a link can only carry a destination.
     @ToolbarContentBuilder
     private var directoryToolbar: some ToolbarContent {
+        // The legal pages, somewhere a person can find them without owning a
+        // card. My Card carries them too, but that is a screen about you, and
+        // someone looking for the privacy policy is not looking for themselves.
+        //
+        // Leading, so the card keeps the trailing corner it has always had:
+        // moving the one control people already reach for to make room for the
+        // one they will want twice would be the wrong trade.
+        ToolbarItem(placement: .topBarLeading) {
+            Menu {
+                ForEach(LegalDocument.allCases) { document in
+                    Button(document.title) { legalDocument = document }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .accessibilityLabel("More")
+        }
+
         ToolbarItem(placement: .topBarTrailing) {
             Button {
                 openCard(showingCode: false)
