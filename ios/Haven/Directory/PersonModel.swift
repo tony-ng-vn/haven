@@ -27,6 +27,33 @@ struct Person: Decodable, Equatable {
     /// existed carries. Read only to be shown; nothing here writes them.
     var platform: String?
     var handle: String?
+    /// Whether this row follows a live Haven card, and whose.
+    ///
+    /// Null for an ordinary contact somebody saved by hand or off a share.
+    /// The server derives it from the row alone, so a list read costs no extra
+    /// lookups; `havenContactUserId` is deliberately not on the payload,
+    /// because this answers every question a client has about it.
+    var connection: Connection?
+
+    /// Mirrors `connectionValidator` in `convex/people.ts`.
+    struct Connection: Decodable, Equatable {
+        let state: State
+        /// Their Haven address. Live on this read; a snapshot on list reads.
+        let peerUsername: String
+
+        enum State: String, Decodable, Equatable {
+            /// A live connection: their card's fields merge into this row on
+            /// every read, and changing their job changes what you see.
+            case connected
+            /// It was a connection and is not any more, because they deleted
+            /// their account or one of you disconnected. Everything here is
+            /// the last thing their card said, and it will not change again.
+            case ended
+        }
+    }
+
+    var isConnected: Bool { connection?.state == .connected }
+    var wasConnected: Bool { connection?.state == .ended }
 
     struct City: Decodable, Equatable {
         let name: String
@@ -111,6 +138,11 @@ struct Person: Decodable, Equatable {
         }
         return covered ? nil : linkURL
     }
+}
+
+/// What `profiles:disconnect` answers.
+struct DisconnectOutcome: Decodable, Equatable {
+    let status: String
 }
 
 enum PersonLoad: Equatable {
@@ -257,6 +289,37 @@ final class PersonModel: ObservableObject {
                 with: ["id": id, "photoStorageId": storageId]
             )
         }
+    }
+
+    /// Ends the connection without forgetting the person.
+    ///
+    /// The gentler of the two: both sides keep their own notes, photo and
+    /// memory of each other as a frozen snapshot, and the shared note goes
+    /// with the edge. Connecting again later thaws this same row rather than
+    /// making a second contact for the same human, which is why the row is
+    /// kept at all.
+    ///
+    /// A second tap answers `notConnected` rather than failing, and the screen
+    /// treats that as done: it is the same request and it deserves the same
+    /// answer.
+    func disconnect() async -> Bool {
+        guard !isSaving, isLive else { return false }
+        isSaving = true
+        failure = nil
+        let id = personId
+        let work = Task { () throws -> String in
+            let outcome: DisconnectOutcome = try await convex.mutation(
+                "profiles:disconnect", with: ["personId": id]
+            )
+            return outcome.status
+        }
+        let status = await work.value(within: .seconds(HavenNetwork.deadline))
+        isSaving = false
+        guard status != nil else {
+            failure = "That did not go through. Check your connection and try again."
+            return false
+        }
+        return true
     }
 
     /// Forgets this person entirely: their row, their handles, their memories,

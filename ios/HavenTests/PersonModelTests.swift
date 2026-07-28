@@ -1,3 +1,4 @@
+import Foundation
 import ConvexMobile
 import Testing
 
@@ -203,5 +204,74 @@ struct NoteEditingTests {
     func noSaveBeforeLoad() {
         let model = PersonModel(preview: .loading, draft: "typed too early")
         #expect(model.canSave == false)
+    }
+}
+
+@Suite("A person who is on Haven")
+struct ConnectedPersonTests {
+    private func person(_ connection: Person.Connection?) -> Person {
+        var person = Person(_id: "p1", name: "Mai Tran")
+        person.connection = connection
+        return person
+    }
+
+    // Three states, and the middle one is the one that has to be legible: a row
+    // that stopped following a card looks exactly like a person who never
+    // changes anything unless it says so.
+    @Test("connected, ended and neither are three different answers")
+    func threeStates() {
+        let live = person(Person.Connection(state: .connected, peerUsername: "mayachen"))
+        #expect(live.isConnected)
+        #expect(!live.wasConnected)
+
+        let frozen = person(Person.Connection(state: .ended, peerUsername: "mayachen"))
+        #expect(!frozen.isConnected)
+        #expect(frozen.wasConnected)
+
+        let ordinary = person(nil)
+        #expect(!ordinary.isConnected)
+        #expect(!ordinary.wasConnected)
+    }
+
+    // The payload the server actually sends, including the null that means
+    // "somebody you saved yourself".
+    @Test("the connection decodes, and its absence is an ordinary contact")
+    func decodesConnection() throws {
+        let connected = try JSONDecoder().decode(Person.self, from: Data("""
+        {"_id":"p1","_creationTime":1,"updatedAt":1,"name":"Mai Tran","photoUrl":null,
+         "connection":{"state":"connected","peerUsername":"mayachen"}}
+        """.utf8))
+        #expect(connected.connection?.state == .connected)
+        #expect(connected.connection?.peerUsername == "mayachen")
+
+        let ended = try JSONDecoder().decode(Person.self, from: Data("""
+        {"_id":"p1","_creationTime":1,"updatedAt":1,"name":"Mai Tran","photoUrl":null,
+         "connection":{"state":"ended","peerUsername":"mayachen"}}
+        """.utf8))
+        #expect(ended.connection?.state == .ended)
+
+        let plain = try JSONDecoder().decode(Person.self, from: Data("""
+        {"_id":"p1","_creationTime":1,"updatedAt":1,"name":"Mai Tran","photoUrl":null,
+         "connection":null}
+        """.utf8))
+        #expect(plain.connection == nil)
+    }
+
+    // The server merges a connected peer's own handles into contactHandles on
+    // the detail read, so reach needs no special case -- this pins that it does
+    // not grow one.
+    @Test("a connected person's handles are read the same way anybody's are")
+    func mergedHandlesNeedNoSpecialCase() {
+        var person = Person(
+            _id: "p1",
+            name: "Mai Tran",
+            contactHandles: [
+                Person.Handle(platform: "instagram", value: "mai.makes"),
+                Person.Handle(platform: "x", value: "mai_makes"),
+            ],
+            preferredPlatform: "x"
+        )
+        person.connection = Person.Connection(state: .connected, peerUsername: "maitran")
+        #expect(person.reachableHandles.map(\.platform) == ["x", "instagram"])
     }
 }

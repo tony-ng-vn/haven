@@ -6,6 +6,19 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.25.0
+
+2026-07-28
+
+**iOS**
+
+- A person you connected to on Haven now says so, and their screen follows their card: change your job and everyone connected to you sees it, without either of you doing anything.
+- A connection that ended says that too. If somebody deletes their Haven account, or one of you disconnects, their screen keeps everything you wrote and says plainly that what it shows is the last thing their card said and will not change again -- rather than looking like somebody who simply never updates anything.
+- You can disconnect without deleting them. You keep them and your notes; their card stops updating here, and the note the two of you wrote together goes with the connection.
+- On a connected person, the fields that are theirs say they are theirs, so an edit that would be overwritten on the next read is not offered as though it would stick.
+
+---
+
 ## v0.23.0
 
 2026-07-28

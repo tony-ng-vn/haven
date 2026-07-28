@@ -21,6 +21,7 @@ struct PersonEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var editing: PersonField?
     @State private var confirmingDelete = false
+    @State private var confirmingDisconnect = false
 
     var body: some View {
         HavenScreen(
@@ -34,6 +35,16 @@ struct PersonEditor: View {
         }
         .sheet(item: $editing) { field in
             editor(for: field)
+        }
+        .alert("Stop following their card?", isPresented: $confirmingDisconnect) {
+            Button("Disconnect", role: .destructive) {
+                Task { _ = await model.disconnect() }
+            }
+            Button("Stay connected", role: .cancel) {}
+        } message: {
+            // Names what goes and what stays, because the difference between
+            // this and Delete is the whole reason both exist.
+            Text("You keep them and everything you wrote. Their card stops updating here, and the note the two of you wrote together goes.")
         }
         .alert("Delete this person?", isPresented: $confirmingDelete) {
             Button("Delete", role: .destructive) {
@@ -59,6 +70,14 @@ struct PersonEditor: View {
                         .padding(.bottom, 8)
                 }
 
+                if person.isConnected {
+                    // Their card is the source for these, and the server
+                    // overwrites this row from it. An edit here would look
+                    // like it took and be gone by the next read.
+                    Text("Their name, photo, city, company and role come from their card. What you write about them is yours.")
+                        .havenSecondary()
+                        .padding(.bottom, 14)
+                }
                 ForEach(PersonField.allCases) { field in
                     row(field, person: person)
                 }
@@ -67,6 +86,16 @@ struct PersonEditor: View {
                     .havenGroupLabel()
                     .padding(.top, 26)
                     .padding(.bottom, 6)
+                // Offered only while there is a connection to end. A frozen row
+                // has nothing left to disconnect from, and the server would
+                // answer "notConnected" to a tap nobody should have been given.
+                if person.isConnected {
+                    HavenRow(
+                        title: "Disconnect",
+                        detail: "Keep them, stop following their card",
+                        action: { confirmingDisconnect = true }
+                    )
+                }
                 // Warned rather than merely listed, the way account deletion is
                 // on My Card: this is a screen people open to fix a typo.
                 HavenRow(
@@ -163,6 +192,12 @@ private let editablePerson = Person(
 
 #Preview("Details") {
     PersonEditor(model: PersonModel(preview: .ready(editablePerson)), photo: nil)
+}
+
+#Preview("Details, a person on Haven") {
+    var connected = editablePerson
+    connected.connection = Person.Connection(state: .connected, peerUsername: "adalovelace")
+    return PersonEditor(model: PersonModel(preview: .ready(connected)), photo: nil)
 }
 
 #Preview("Details, accessibility XXXL") {

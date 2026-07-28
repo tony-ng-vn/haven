@@ -82,6 +82,9 @@ struct PersonScreen: View {
                     Text(detail)
                         .havenSecondary()
                 }
+                if let connection = model.person?.connection {
+                    ConnectionChip(connection: connection)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -124,6 +127,14 @@ struct PersonScreen: View {
         VStack(alignment: .leading, spacing: 20) {
             if let about = person.headline ?? person.bio, !about.isEmpty {
                 Text(about)
+                    .havenSecondary()
+            }
+
+            if person.wasConnected {
+                // Said once, plainly, where the fields it is about are. A row
+                // that stopped following a card and does not say so reads as a
+                // person who simply never changes anything.
+                Text("This is the last thing their card said. It will not change again.")
                     .havenSecondary()
             }
 
@@ -219,6 +230,45 @@ struct PersonScreen: View {
     }
 }
 
+/// Whether this row follows a live card, said quietly.
+///
+/// A chip rather than a banner: being connected is a fact about the person, not
+/// an event, and the screen's subject is still them. The ended state is the one
+/// that has to be legible, because a frozen row and a person who never changes
+/// anything look identical otherwise.
+private struct ConnectionChip: View {
+    let connection: Person.Connection
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: connection.state == .connected ? "link" : "link.badge.plus")
+                .font(.system(size: 9, weight: .semibold))
+            Text(label)
+                .font(.footnote)
+        }
+        .foregroundStyle(connection.state == .connected ? HavenColor.star : HavenColor.faint)
+        .padding(.horizontal, 9)
+        .frame(minHeight: 24)
+        .background(
+            connection.state == .connected
+                ? HavenColor.star.opacity(0.14) : HavenColor.fill,
+            in: Capsule()
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
+    }
+
+    private var label: String {
+        connection.state == .connected ? "Connected" : "No longer connected"
+    }
+
+    /// The address is worth speaking here and not worth printing: on screen the
+    /// chip sits under their name and the reach rows carry the address anyway.
+    private var spoken: String {
+        "\(label), \(BeaconAddress.display(for: connection.peerUsername))"
+    }
+}
+
 enum PersonMetrics {
     /// Big enough to recognise a face at a glance, small enough that the name
     /// beside it is still the first thing read.
@@ -268,6 +318,39 @@ private let sparsePerson = Person(
     NavigationStack {
         PersonScreen(model: PersonModel(preview: .ready(sparsePerson)))
     }
+}
+
+private var connectedPerson: Person {
+    var person = previewPerson
+    person.connection = Person.Connection(state: .connected, peerUsername: "adalovelace")
+    return person
+}
+
+private var formerlyConnectedPerson: Person {
+    var person = previewPerson
+    person.connection = Person.Connection(state: .ended, peerUsername: "adalovelace")
+    return person
+}
+
+#Preview("A person on Haven") {
+    NavigationStack {
+        PersonScreen(model: PersonModel(preview: .ready(connectedPerson)))
+    }
+}
+
+// The state that has to be legible: everything here is the last thing their
+// card said, and nothing about the fields alone says so.
+#Preview("A person who left Haven") {
+    NavigationStack {
+        PersonScreen(model: PersonModel(preview: .ready(formerlyConnectedPerson)))
+    }
+}
+
+#Preview("A person on Haven, accessibility XXXL") {
+    NavigationStack {
+        PersonScreen(model: PersonModel(preview: .ready(connectedPerson)))
+    }
+    .environment(\.dynamicTypeSize, .accessibility3)
 }
 
 #Preview("Unreachable") {
