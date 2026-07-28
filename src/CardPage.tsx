@@ -1,5 +1,5 @@
 import { useQuery } from "convex/react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../convex/_generated/api";
 import { PersonSky } from "./PersonSky";
 
@@ -20,6 +20,10 @@ type Platform = keyof typeof PLATFORM_HOME;
 // to arrive. The query is public and the page never asks who is reading it.
 export function CardPage({ handle }: { handle: string }) {
   const card = useQuery(api.profiles.getByHandle, { handle });
+  // A Convex storage url is signed and can stop resolving. A stranger who
+  // pointed a camera at somebody's beacon should not be met with a broken
+  // image glyph, and a card without a photo is an ordinary card.
+  const [photoFailed, setPhotoFailed] = useState(false);
 
   useEffect(() => {
     if (card === undefined) return;
@@ -74,8 +78,13 @@ export function CardPage({ handle }: { handle: string }) {
         <PersonSky name={card.name} handle={card.handle} />
       </div>
       <div className="card-content">
-        {card.photoUrl !== null && (
-          <img className="card-photo" src={card.photoUrl} alt="" />
+        {card.photoUrl !== null && !photoFailed && (
+          <img
+            className="card-photo"
+            src={card.photoUrl}
+            alt=""
+            onError={() => setPhotoFailed(true)}
+          />
         )}
         <h1 className="card-name">{card.name}</h1>
         {cityLine !== null && <p className="card-city">{cityLine}</p>}
@@ -84,6 +93,12 @@ export function CardPage({ handle }: { handle: string }) {
           <ul className="card-handles">
             {card.handles.map((entry) => {
               const home = PLATFORM_HOME[entry.platform as Platform];
+              // A platform this page has no address for is skipped rather than
+              // crashed on. The validator closes the list today, so this can
+              // only fire if one grows a fourth member and this table is not
+              // updated with it -- and a stranger's first sight of Haven must
+              // not be a white screen because of that.
+              if (home === undefined) return null;
               return (
                 <li key={`${entry.platform}:${entry.value}`}>
                   <a
@@ -92,7 +107,7 @@ export function CardPage({ handle }: { handle: string }) {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    {home.label}
+                    <span className="card-handle-label">{home.label}</span>
                     <span className="card-handle-value">{entry.value}</span>
                   </a>
                 </li>
