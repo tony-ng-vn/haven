@@ -85,8 +85,11 @@ struct MyCardScreen: View {
         VStack(alignment: .leading, spacing: 0) {
             // The card is an object here, not a bleed. It has a real edge now,
             // so the four-sided fade that used to dissolve it into the night is
-            // gone: a sky that stops at a lit rim is a card, and only a sky
+            // gone: a sky that stops at a printed rule is a card, and only a sky
             // that stops at nothing needed hiding.
+            //
+            // The drift goes outside the padding, so it moves the card and not
+            // the space it sits in. Everything below stays where it is.
             CardObject {
                 HavenCard(
                     card: card,
@@ -99,6 +102,7 @@ struct MyCardScreen: View {
             .padding(.horizontal, MyCardMetrics.cardInset)
             .padding(.bottom, 24)
             .frame(maxWidth: .infinity)
+            .cardFloat()
             .cardPhoto(card.photoURL, into: $photo)
 
             if let failure = model.failure {
