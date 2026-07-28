@@ -21,14 +21,16 @@ The PR bodies are the detailed record of every piece of shipped work and its kno
 
 ## A frontend session runs in parallel
 
-A second session is planning and executing the iOS/web side toward the same v1.
+The counterpart plan is `2026-07-28-frontend-completion-plan.md` (PR 135).
 The ownership split, binding on both sides:
 
 - This (backend) track owns `convex/`, `scripts/`, `.env.local.example`, and backend plan docs.
-- The frontend track owns `ios/` and `src/`.
-- Neither edits the other's tree. `todo.md` and `CHANGELOG.md` are shared; keep edits small and merge conflicts honestly.
+- The frontend track owns `ios/`, `src/`, `public/`, `index.html`, `vercel.json`, `design/`, `brand/`, `.github/workflows/ios.yml`, and frontend plan docs.
+- Neither edits the other's tree. `todo.md`, `CHANGELOG.md`, `package.json`, and `.github/workflows/test.yml` are shared; keep edits small and scoped, and resolve merge conflicts honestly.
+- Version bumps collide by design: both tracks append to `CHANGELOG.md` and bump `package.json`. Whoever merges second rebases and takes the next number; never reuse a version.
 - A backend contract change that affects a client (validator shape, new function, changed outcome union) must be stated in the PR TLDR and added to the "Contract changes for the frontend" section at the bottom of this file, in the same PR.
-- When a frontend plan appears in `docs/superpowers/plans/`, read it before starting your next unit and reconcile: anything it expects of the backend that this plan does not provide is a finding to record here, not silent scope.
+- Before each unit, re-read the frontend plan's "Contract requests for the backend" section; anything it requests that this plan does not provide is a finding to record here, not silent scope.
+- Frontend unit F3 blocks on unit B1 here, which is one more reason B1 goes first.
 
 ## State as of 2026-07-28 (corrects the stale tracker)
 
@@ -97,7 +99,7 @@ Each has a recommended default so an autonomous run can proceed; every applied d
 
 - D1 loveAlarm fate. Default: keep the table and functions, add the expiry sweep (B2.2), decide keep-or-cut with the user before the Phase 6 privacy labels, because presence data must be declared.
 - D2 sharedNotes fate. Default: keep. PR 126 made it load-bearing on the `connections` edge and correctly cascaded; cutting it now is work, keeping it is free.
-- D3 screenshot triage surface. iOS can create captures (`createCapture`) but has no UI to list, accept, or discard them; only the web triage screen does. The backend is complete either way. This is a frontend/product call: either iOS builds a triage surface, or v1 accepts web-only triage, or shared-to-Haven screenshots are cut from v1. Recorded here so the frontend plan answers it; the backend owes nothing new.
+- D3 screenshot triage surface. Answered by the frontend plan's gate FD1: v1 keeps screenshot sharing and triage stays web-only; an iOS triage surface is a recorded post-v1 candidate. The backend owes nothing new.
 - D4 Stripe scope for v1. Default: park it. It is unspecced in `mvp-design.md`, unreachable from any client, and App Store guideline 3.1.1 means Stripe cannot gate an iOS feature anyway; keep the webhook and mirror as shipped (they are tested and inert), build no checkout and no StoreKit for v1. D4b (subscriptions rows on account deletion) is handled in B1.5.
 - D5 disconnect semantics. Default: build `profiles.disconnect` per B1.4.
 
@@ -121,7 +123,7 @@ Run in this order from a tree current with main.
 7. Extraction cutover to Interfaze credit, if still wanted: set the `EXTRACTION_*` triple per `docs/superpowers/specs/2026-07-27-interfaze-cursor-api-research.md`, verify one real screenshot capture end to end, rollback is unsetting the three vars.
 8. Clerk production instance, before real users: the four-place swap (`ios/Haven/Config.swift`, Vercel `VITE_CLERK_PUBLISHABLE_KEY`, `CLERK_JWT_ISSUER_DOMAIN` on prod Convex, the CSP entries in `vercel.json`).
    The issuer is half of `tokenIdentifier`, there is no re-keying migration, and none is planned; every existing row orphans at the swap, which is why it happens before real signups or not at all.
-   The iOS half of the swap belongs to the frontend track; coordinate the timing.
+   This track runs only the two env halves (Vercel and prod Convex); `Config.swift` and `vercel.json` are frontend-owned and its unit H1 prepares them. Coordinate the timing with the user.
 9. Ask quality, once real notes exist: `OPENAI_API_KEY=sk-... node scripts/eval-ask.ts` for a recall number, one real ask for cost, and recalibrate the 0.3 semantic-search floor against the eval set instead of feel.
 
 ## Definition of done for "backend 100% for v1"
@@ -138,6 +140,7 @@ Kept current by every backend PR that changes a client-visible shape; the fronte
 
 - PLANNED (B1.2): `personValidator` gains `havenContactUserId` and a `connection` object; shape lands here when built.
 - PLANNED (B1.4): new `profiles.disconnect({ personId })` mutation with an explicit outcome union.
+- Received from the frontend plan, non-blocking, post-v1: the `verified` flag on profile handles is client-asserted through `updateMyProfile` and published on the public card; it should become server-derived from the OAuth link once that matters. Accepted for v1 at cohort scale.
 - Already true and waiting on frontend wiring, no backend work owed: `people:addPerson` (requires name, handle, and note since PR 86), `profiles:recordOnboardingStep` (device-local skips lose state on reinstall), `profiles:claimHandle` (handle edit UI), `captures:listCaptures`/`acceptCapture`/`acceptManualCapture`/`discardCapture`/`retryExtract` (triage, see D3), `people:getPerson` already returns `photoUrl` and `contactHandles` that iOS drops, `saveSharedProfile.noteTruncated` is computed and discarded client-side, `profiles:connect` has no iOS caller and no scanner or universal-link handler exists.
 
 ## Model guidance per unit
