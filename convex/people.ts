@@ -605,14 +605,6 @@ export const directoryFacets = query({
   },
 });
 
-// A connected Haven user's card is theirs and stays current; the notes and
-// the photo you attached are yours. Reference rather than copy is the whole
-// point -- copying at connect time is what lets contacts go stale, which is
-// the problem Haven exists to solve (mvp-design).
-//
-// Only the detail read merges. A directory page would turn into one profile
-// read per row, and the snapshot written at connect time is what keeps lists
-// and search readable in the meantime.
 // The peer's own ways to be reached, under the owner's layer. Display only:
 // writing them into contactHandles would put rows in the identity index the
 // owner never saved, and a handle the peer later drops could never be taken
@@ -640,6 +632,14 @@ function mergePeerHandles(
   ];
 }
 
+// A connected Haven user's card is theirs and stays current; the notes and
+// the photo you attached are yours. Reference rather than copy is the whole
+// point -- copying at connect time is what lets contacts go stale, which is
+// the problem Haven exists to solve (mvp-design).
+//
+// Only the detail read merges. A directory page would turn into one profile
+// read per row, and the snapshot written at connect time is what keeps lists
+// and search readable in the meantime.
 async function projectConnectedPerson(ctx: QueryCtx, person: Doc<"people">) {
   const projected = await projectPerson(ctx, person);
   // A frozen row still names the peer, so that a reconnection can thaw it,

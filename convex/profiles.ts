@@ -1154,6 +1154,8 @@ export const disconnect = mutation({
       throw new Error("Person not found");
     }
     const ended = await endConnection(ctx, userId, args.personId, Date.now());
-    return { status: ended ? ("disconnected" as const) : ("notConnected" as const) };
+    return {
+      status: ended ? ("disconnected" as const) : ("notConnected" as const),
+    };
   },
 });
