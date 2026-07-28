@@ -2,10 +2,14 @@
   "name": "haven-app",
   "private": true,
 <<<<<<< HEAD
+<<<<<<< HEAD
   "version": "0.14.0",
 =======
   "version": "0.12.0",
 >>>>>>> origin/feat/ios-person-detail
+=======
+  "version": "0.15.0",
+>>>>>>> origin/feat/ios-onboarding-server-state
   "type": "module",
   "scripts": {
     "dev": "vite",

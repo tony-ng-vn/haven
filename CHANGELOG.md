@@ -6,6 +6,18 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.15.0
+
+2026-07-28
+
+**iOS**
+
+- A question you skipped during onboarding stays skipped. It used to be remembered only on the phone you skipped it on, so reinstalling Haven, or signing in on a second phone, asked you everything again.
+- Onboarding also stops restarting itself. Clearing your city on My Card used to drop you back into the questions on the next launch, because an empty field and a question nobody had asked looked identical from the app's side.
+- Connecting X or LinkedIn now brings your photo across. The picture the provider already has of you lands on your card and lights its star, so the photo question answers itself. A photo you chose yourself is never replaced.
+
+---
+
 ## v0.14.0
 
 2026-07-28
