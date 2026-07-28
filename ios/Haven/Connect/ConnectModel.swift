@@ -77,6 +77,12 @@ final class ConnectModel: ObservableObject {
     /// simulator, a phone with the camera refused, a handle read out loud.
     @Published var typed = ""
 
+    /// The person on screen, drawn from the seed their card is drawn from
+    /// everywhere else. Built once when the card arrives rather than in the
+    /// view, which would generate a hundred and fifty stars and a spanning tree
+    /// on every render and defeat the caching `SkyView` is built around.
+    @Published private(set) var sky: Sky?
+
     private let isLive: Bool
     private var cancellable: AnyCancellable?
     /// The handle currently being looked up, so a second sighting of the same
@@ -92,6 +98,8 @@ final class ConnectModel: ObservableObject {
         isLive = false
         self.state = state
         self.typed = typed
+        if case .found(let card) = state { sky = SkyGenerator.build(seed: card.handle) }
+        if case .connected(_, let card) = state { sky = SkyGenerator.build(seed: card.handle) }
     }
 
     var canLookUpTyped: Bool {
@@ -122,6 +130,10 @@ final class ConnectModel: ObservableObject {
         // The same code, seen again by a camera running at thirty frames a
         // second, is not a second request.
         guard handle != looking else { return }
+        // Nor is a second Return pressed while the first read is still out.
+        // `fetch` resumes a continuation from a subscription this would replace,
+        // so a second read starting here strands the first one forever.
+        guard state != .looking else { return }
         looking = handle
         state = .looking
         guard isLive else { return }
@@ -130,6 +142,7 @@ final class ConnectModel: ObservableObject {
             state = .unknown(handle)
             return
         }
+        sky = SkyGenerator.build(seed: card.handle)
         state = .found(card)
     }
 
