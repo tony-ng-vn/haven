@@ -62,6 +62,24 @@ struct DirectoryMirrorLookupTests {
         )
     }
 
+    // The add sheet asks the same question about platforms no share ever
+    // arrives from, and folds them the same way the server does.
+    @Test("a free-form platform is looked up like any other")
+    func freeFormPlatform() {
+        let withWhatsApp = DirectoryMirror(
+            refreshedAt: Date(timeIntervalSince1970: 1_000),
+            people: [
+                person(
+                    id: "p9",
+                    name: "Mai Tran",
+                    handles: [MirrorHandle(platform: "whatsapp", value: "+84901234567")]
+                )
+            ]
+        )
+        #expect(withWhatsApp.person(holding: "WhatsApp", value: "+84901234567")?.id == "p9")
+        #expect(withWhatsApp.person(holding: "telegram", value: "+84901234567") == nil)
+    }
+
     @Test("a handle nobody holds finds nobody")
     func unknownHandle() {
         #expect(

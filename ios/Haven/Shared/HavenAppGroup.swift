@@ -18,4 +18,17 @@ enum HavenAppGroup {
             forSecurityApplicationGroupIdentifier: identifier
         )
     }
+
+    /// Where the app keeps the same files when the group is not provisioned.
+    ///
+    /// Private to the app, so the extension can never read it -- which is why
+    /// only the app has a use for it. It exists because saving somebody by hand
+    /// writes to the queue first and must never fail, and on a device missing
+    /// the group entitlement `containerURL` is nil.
+    static var appContainerURL: URL {
+        let base = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        return base.appendingPathComponent("Haven", isDirectory: true)
+    }
 }

@@ -55,8 +55,16 @@ struct DirectoryMirror: Codable, Equatable, Sendable {
     /// (platform, handle) is exactly what the server keys on. A name match is
     /// a suggestion; this is an identity.
     func person(holding link: ProfileLink) -> MirrorPerson? {
-        let wanted = MirrorHandle(platform: link.platform.rawValue, handle: link.handle)
-            .indexKey
+        person(holding: link.platform.rawValue, value: link.handle)
+    }
+
+    /// The same question asked about a platform Haven does not parse shares
+    /// from.
+    ///
+    /// A person saved by hand can carry a WhatsApp or Telegram handle, and the
+    /// server keys on the same pair however the handle was written down.
+    func person(holding platform: String, value: String) -> MirrorPerson? {
+        let wanted = MirrorHandle(platform: platform, handle: value).indexKey
         return people.first { person in
             person.handles.contains { $0.indexKey == wanted }
         }
@@ -114,6 +122,14 @@ struct DirectoryMirrorStore {
     static func inAppGroup() -> DirectoryMirrorStore? {
         guard let container = HavenAppGroup.containerURL else { return nil }
         return DirectoryMirrorStore(directory: container)
+    }
+
+    /// The mirror the app reads and writes, which falls back to its own
+    /// container for the same reason `CaptureQueue.forApp` does: without a
+    /// group, the add sheet would have no idea who is already in the directory
+    /// and would offer to attach nobody to anybody.
+    static func forApp() -> DirectoryMirrorStore {
+        inAppGroup() ?? DirectoryMirrorStore(directory: HavenAppGroup.appContainerURL)
     }
 
     var fileURL: URL {
