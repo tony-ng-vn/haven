@@ -22,6 +22,15 @@
 	  at all. The one url behind it is defined in HavenDeepLink, which both
 	  the app and the widget target compile.
 	-->
+	<!--
+	  Asked for at the moment somebody points the phone at a card, and never
+	  before: DataScannerViewController requests it when scanning starts, and
+	  the connect screen only starts scanning when it is open. The wording says
+	  what the camera is for and what it is not -- no frame is stored, uploaded
+	  or read for anything but the code.
+	-->
+	<key>NSCameraUsageDescription</key>
+	<string>Haven uses the camera to read the code on the back of somebody's card. Nothing it sees is saved or sent anywhere.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
