@@ -27,6 +27,9 @@ struct CardObject<Face: View>: View {
             .overlay(innerRule)
             .overlay(outerRule)
             .aspectRatio(CardObjectMetrics.aspect, contentMode: .fit)
+            // After the aspect, so the cap bounds the card rather than the
+            // space it was offered.
+            .frame(maxWidth: CardObjectMetrics.maxWidth)
         // Never rasterise. A drawingGroup here would flatten the face into a
         // bitmap and take the serif name's crispness and the sky's live canvas
         // with it, which is exactly the softness this is trying to avoid.
@@ -118,6 +121,16 @@ enum CardObjectMetrics {
     /// the same number or the card changes width between the two screens that
     /// show it.
     static let screenInset: CGFloat = 68
+
+    /// As wide as the card ever gets.
+    ///
+    /// Haven ships on iPad, and an inset off an unbounded width is not a size:
+    /// the height follows from the aspect, so a 12.9 inch iPad on its side
+    /// computes a card taller than the display and pushes every row under it
+    /// out of reach. A card is a held object, not a page, so it stops growing
+    /// somewhere. Comfortably wider than the widest phone, so this only ever
+    /// binds on a tablet.
+    static let maxWidth: CGFloat = 340
 
     /// How strongly the nebulae read on a card.
     ///

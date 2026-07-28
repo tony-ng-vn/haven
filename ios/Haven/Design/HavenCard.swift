@@ -40,6 +40,11 @@ struct HavenCard: View {
     /// thumbnail floating against two lines of serif.
     @ScaledMetric(relativeTo: .title) private var photoDiameter: CGFloat = 40
 
+    /// The platform marks grow with the text too. What the row can actually
+    /// hold is decided in `contacts`, against the card's real width.
+    @ScaledMetric(relativeTo: .footnote) private var markDiameter: CGFloat =
+        CardMetrics.contactDiameter
+
     @State private var footHeight: CGFloat = 0
 
     var body: some View {
@@ -57,7 +62,7 @@ struct HavenCard: View {
                     sceneryOffset: sceneryOffset
                 )
 
-                foot
+                foot(inWidth: geo.size.width - 2 * CardMetrics.footInset)
                     .frame(maxWidth: .infinity)
                     .background {
                         GeometryReader { text in
@@ -75,14 +80,18 @@ struct HavenCard: View {
     }
 
     /// Everything the text does not need. Measured, so a name that wraps at an
-    /// accessibility size pushes the figure up rather than through it.
+    /// accessibility size pushes the figure up rather than through it -- down
+    /// to the floor `figureBandHeight` keeps, past which the name shrinks
+    /// instead.
     private func figureBand(in size: CGSize) -> CGRect {
-        let taken = footHeight + CardMetrics.footInset + CardMetrics.figureGap
-        return CGRect(
+        CGRect(
             x: 0,
             y: 0,
             width: size.width,
-            height: max(size.height - taken, 0)
+            height: CardMetrics.figureBandHeight(
+                cardHeight: size.height,
+                footHeight: footHeight
+            )
         )
     }
 
@@ -90,7 +99,7 @@ struct HavenCard: View {
         majorIntensities ?? FigureIntensity.complete(majorCount: sky.majors.count)
     }
 
-    private var foot: some View {
+    private func foot(inWidth width: CGFloat) -> some View {
         VStack(spacing: CardMetrics.lineGap) {
             identity
             if let city = card.city?.line, !city.isEmpty {
@@ -99,7 +108,7 @@ struct HavenCard: View {
                     .multilineTextAlignment(.center)
             }
             if !handles.isEmpty {
-                contacts
+                contacts(inWidth: width)
                     .padding(.top, CardMetrics.contactsGap)
             }
         }
@@ -129,6 +138,13 @@ struct HavenCard: View {
                         .personName(.card)
                         .foregroundStyle(HavenColor.ink)
                         .multilineTextAlignment(.center)
+                        // Where the pressure goes once the figure has stopped
+                        // giving up room. "Maria Fernanda Rodriguez" at an
+                        // accessibility size wants five lines in a 201pt
+                        // column; two and a shrink keeps the whole name and
+                        // leaves the constellation somewhere to be.
+                        .lineLimit(CardMetrics.nameLineLimit)
+                        .minimumScaleFactor(CardMetrics.nameMinimumScale)
                 }
             }
         }
@@ -137,10 +153,15 @@ struct HavenCard: View {
     /// One circle per way this person can be reached, and only the ways they
     /// actually have. A fixed set of four would put an Instagram mark on a card
     /// with no Instagram, which is a card telling a small lie about someone.
-    private var contacts: some View {
-        HStack(spacing: CardMetrics.contactGap) {
+    private func contacts(inWidth width: CGFloat) -> some View {
+        let diameter = CardMetrics.fittedContactDiameter(
+            scaled: markDiameter,
+            fitting: width,
+            count: handles.count
+        )
+        return HStack(spacing: CardMetrics.contactGap) {
             ForEach(handles, id: \.platform) { handle in
-                PlatformMark(platform: handle.platform)
+                PlatformMark(platform: handle.platform, diameter: diameter)
             }
         }
         // On your own card these say which platforms are on it and nothing
@@ -168,24 +189,30 @@ struct HavenCard: View {
 /// least honestly Haven's drawing rather than a bad copy of theirs.
 struct PlatformMark: View {
     let platform: MyCard.Platform
+    var diameter: CGFloat = CardMetrics.contactDiameter
 
     var body: some View {
         Group {
             switch platform {
             case .linkedin:
-                Text("in").font(.system(size: 15, weight: .semibold))
+                Text("in").font(.system(size: glyph, weight: .semibold))
             case .x:
-                Text("X").font(.system(size: 15, weight: .semibold))
+                Text("X").font(.system(size: glyph, weight: .semibold))
             case .instagram:
-                Image(systemName: "camera").font(.system(size: 14, weight: .medium))
+                Image(systemName: "camera").font(.system(size: glyph * 0.92, weight: .medium))
             case .phone:
-                Image(systemName: "phone.fill").font(.system(size: 13, weight: .medium))
+                Image(systemName: "phone.fill").font(.system(size: glyph * 0.86, weight: .medium))
             }
         }
         .foregroundStyle(HavenColor.star)
-        .frame(width: CardMetrics.contactDiameter, height: CardMetrics.contactDiameter)
+        .frame(width: diameter, height: diameter)
         .overlay(Circle().strokeBorder(HavenColor.hairlineStrong))
     }
+
+    /// Read off the circle rather than off the text size, so the mark keeps its
+    /// proportions once the circle has stopped growing. Sizing it from Dynamic
+    /// Type directly is how a glyph ends up bigger than the ring around it.
+    private var glyph: CGFloat { diameter * 0.42 }
 }
 
 private struct CardFootHeightKey: PreferenceKey {
@@ -207,7 +234,54 @@ enum CardMetrics {
     static let photoGap: CGFloat = 10
     static let contactsGap: CGFloat = 14
     static let contactGap: CGFloat = 12
-    static let contactDiameter: CGFloat = 44
+
+    /// A platform mark, at the usual text size.
+    ///
+    /// Was 44, which is the tap-target minimum -- a size that promised these
+    /// were buttons when they do nothing, and that four of them plus their gaps
+    /// could not fit inside the card's own foot on any phone Haven supports.
+    static let contactDiameter: CGFloat = 36
+    /// Small enough to be tight, big enough to still read as a mark rather than
+    /// a speck.
+    static let contactDiameterFloor: CGFloat = 22
+
+    /// The least of the card the figure keeps, whatever the name does.
+    ///
+    /// A long name at an accessibility size can want more room than the card
+    /// has. Without this the figure gives up all of it, and a person's own
+    /// constellation quietly is not there -- which reads as a bug in the sky
+    /// rather than as text that did not fit.
+    static let figureBandFloor: CGFloat = 0.34
+
+    /// A name is allowed two lines and then has to shrink. Truncating is not an
+    /// option -- half a name is the wrong person -- and neither is unlimited
+    /// wrapping, which is what took the figure's room in the first place.
+    static let nameLineLimit = 2
+    static let nameMinimumScale: CGFloat = 0.55
+
+    /// How big the platform marks can actually be here.
+    ///
+    /// `@ScaledMetric` grows them with the text, and the card does not grow
+    /// with anything: at an accessibility size the designed 36 becomes 60 or
+    /// more, and four of those never fit. This takes the smaller of what the
+    /// text size asked for and what the row can hold.
+    static func fittedContactDiameter(
+        scaled: CGFloat,
+        fitting width: CGFloat,
+        count: Int
+    ) -> CGFloat {
+        guard count > 0 else { return scaled }
+        let gaps = contactGap * CGFloat(count - 1)
+        let share = (width - gaps) / CGFloat(count)
+        return max(min(scaled, share), contactDiameterFloor)
+    }
+
+    /// The band the figure draws in: everything the text does not need, down to
+    /// a floor.
+    static func figureBandHeight(cardHeight: CGFloat, footHeight: CGFloat) -> CGFloat {
+        let taken = footHeight + footInset + figureGap
+        return max(cardHeight - taken, figureBandFloor * cardHeight)
+    }
 }
 
 // MARK: - Previews

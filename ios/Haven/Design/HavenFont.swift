@@ -82,11 +82,16 @@ extension View {
     }
 
     /// A group heading over a list of rows ("Connect an account").
+    ///
+    /// `muted` rather than `faint`, because these sit low on the page and the
+    /// background runs toward dusk as it descends: `faint` measures 4.57:1 over
+    /// night and 3.40:1 over dusk, so the ACCOUNT heading failed exactly where
+    /// it renders. `TextContrastTests` pins both.
     func havenGroupLabel() -> some View {
         font(.system(.caption2, weight: .semibold))
             .tracking(HavenFont.wideTracking)
             .textCase(.uppercase)
-            .foregroundStyle(HavenColor.faint)
+            .foregroundStyle(HavenColor.muted)
     }
 
     /// Machine-shaped text: the address on the card's back, a phone number.
