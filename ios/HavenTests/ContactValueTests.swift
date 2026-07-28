@@ -70,6 +70,47 @@ struct ContactValueTests {
         #expect(ContactValue.xHandle(from: String(repeating: "a", count: 16)) == nil)
     }
 
+    // Only ever asked for by the add-someone sheet: the card offers four
+    // platforms and Telegram is not one of them, but a person you save by hand
+    // can carry any handle worth recording.
+    @Test("a Telegram handle survives either of Telegram's addresses")
+    func telegramFromLinks() {
+        let expected = "tonybuilds"
+        let inputs = [
+            "tonybuilds",
+            "@tonybuilds",
+            "t.me/tonybuilds",
+            "https://t.me/tonybuilds",
+            "https://telegram.me/tonybuilds/",
+            "  https://t.me/tonybuilds?start=1  ",
+        ]
+        for input in inputs {
+            #expect(ContactValue.telegramHandle(from: input) == expected, "\(input)")
+        }
+    }
+
+    @Test("Telegram keeps the characters and the lengths it allows")
+    func telegramCharacters() {
+        #expect(ContactValue.telegramHandle(from: "tony_builds1") == "tony_builds1")
+        #expect(ContactValue.telegramHandle(from: "") == nil)
+        #expect(ContactValue.telegramHandle(from: "tony.builds") == nil)
+        #expect(ContactValue.telegramHandle(from: "tony-builds") == nil)
+        // Telegram's own bounds: five to thirty-two.
+        #expect(ContactValue.telegramHandle(from: "tony") == nil)
+        #expect(ContactValue.telegramHandle(from: String(repeating: "a", count: 33)) == nil)
+        #expect(ContactValue.telegramHandle(from: String(repeating: "a", count: 32)) != nil)
+    }
+
+    // LinkedIn allows a 100-character slug; the server stores a handle only up
+    // to 60 and throws over it. A value refused here is an answer somebody can
+    // fix, and one accepted here is a queued capture that can never drain.
+    @Test("a LinkedIn slug longer than the server stores is refused, not queued")
+    func linkedInRespectsTheServerCap() {
+        let atCap = String(repeating: "a", count: HavenFieldCaps.handle)
+        #expect(ContactValue.linkedInHandle(from: atCap) == atCap)
+        #expect(ContactValue.linkedInHandle(from: atCap + "a") == nil)
+    }
+
     @Test("a LinkedIn address is reduced to the part that identifies the profile")
     func linkedInFromLinks() {
         let expected = "tony-nguyen"

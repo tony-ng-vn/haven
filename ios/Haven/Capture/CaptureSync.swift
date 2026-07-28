@@ -2,6 +2,30 @@ import Combine
 import ConvexMobile
 import SwiftUI
 
+/// A request to send whatever capture is waiting, now rather than at the next
+/// launch.
+///
+/// An environment value rather than a closure threaded down through the view
+/// tree: nothing between the root and the add sheet -- onboarding, the tabs,
+/// the directory list -- has any business knowing the capture queue exists, and
+/// passing one through each of them would teach every one of them that it does.
+/// The default does nothing, so a preview renders without a Convex client
+/// behind it.
+struct CaptureDrainRequest {
+    var run: () async -> Void = {}
+}
+
+private struct CaptureDrainRequestKey: EnvironmentKey {
+    static let defaultValue = CaptureDrainRequest()
+}
+
+extension EnvironmentValues {
+    var requestCaptureDrain: CaptureDrainRequest {
+        get { self[CaptureDrainRequestKey.self] }
+        set { self[CaptureDrainRequestKey.self] = newValue }
+    }
+}
+
 /// A person as the mirror needs them, straight off `people:listPeople`.
 ///
 /// Its own shape rather than `DirectoryPerson`: the directory screen shows a
@@ -31,18 +55,18 @@ private struct MirrorPage: Decodable {
 /// look for something that is already where it belongs.
 @MainActor
 final class CaptureSync: ObservableObject {
-    private let queue: CaptureQueue?
+    private let queues: [CaptureQueue]
     private let mirror: DirectoryMirrorStore?
     private let sink: CaptureSink
     private var isRunning = false
     private var cancellable: AnyCancellable?
 
     init(
-        queue: CaptureQueue? = CaptureQueue.inAppGroup(),
-        mirror: DirectoryMirrorStore? = DirectoryMirrorStore.inAppGroup(),
+        queues: [CaptureQueue] = CaptureQueue.drainable(),
+        mirror: DirectoryMirrorStore? = DirectoryMirrorStore.forApp(),
         sink: CaptureSink = ConvexCaptureSink()
     ) {
-        self.queue = queue
+        self.queues = queues
         self.mirror = mirror
         self.sink = sink
     }
@@ -61,7 +85,7 @@ final class CaptureSync: ObservableObject {
         isRunning = true
         defer { isRunning = false }
 
-        if let queue {
+        for queue in queues {
             _ = await CaptureDrain(queue: queue, sink: sink).run()
         }
         await refreshMirror()
