@@ -205,3 +205,47 @@ test("ASK_* env moves ask and brings its own key and model", async () => {
     },
   ]);
 });
+
+// A model with no definition of "headline" fills it with whatever sits under
+// the name, which on Instagram is the bio's linked account (PR 104's noted
+// concern). headline is not an identity field, so nothing breaks -- but it is
+// in the keyword haystack and in the embedding, so the wrong text there makes
+// a person findable by somebody else's account name.
+test("extraction says what a headline is on a platform that has none", async () => {
+  vi.stubEnv("OPENAI_API_KEY", "sk-openai");
+  const bodies: string[] = [];
+  vi.stubGlobal("fetch", async (_input: RequestInfo | URL, init?: RequestInit) => {
+    bodies.push(String(init?.body));
+    return Response.json({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              is_profile: true,
+              platform: "instagram",
+              name: "Ada Lovelace",
+              handle: null,
+              headline: null,
+              bio: null,
+            }),
+          },
+        },
+      ],
+    });
+  });
+
+  await extractProfile("https://img.example/shot.png");
+
+  const sent = JSON.parse(bodies[0]) as {
+    response_format: {
+      json_schema: {
+        schema: { properties: { headline: { description: string } } };
+      };
+    };
+  };
+  const headline = sent.response_format.json_schema.schema.properties.headline;
+  // The instruction has to reach the model, not just the source file.
+  expect(headline.description).toMatch(/Instagram/);
+  expect(headline.description).toMatch(/null/);
+  expect(headline.description).toMatch(/bio/);
+});

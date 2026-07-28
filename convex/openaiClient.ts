@@ -46,11 +46,13 @@ const EXTRACTION_SCHEMA = {
     },
     headline: {
       type: ["string", "null"],
-      description: "Their title, tagline, or one-line bio header if visible.",
+      description:
+        "The one line the platform shows as a title under the name -- a LinkedIn headline, a GitHub tagline. Many platforms have no such field: Instagram, TikTok and Threads show a bio there instead, and on those the answer is null and the text belongs in bio. Never a linked account, website, category label, follower count, or pronouns.",
     },
     bio: {
       type: ["string", "null"],
-      description: "A short summary of any visible bio or about text.",
+      description:
+        "The person's own about text, wherever the platform puts it. On a platform with no headline this is where the text under the name goes.",
     },
   },
 } as const;
@@ -61,6 +63,12 @@ const EXTRACTION_PROMPT = [
   "the person's visible details. Only report what is actually visible; never",
   "guess a handle or invent text. If the image is not a person's profile,",
   "set is_profile to false.",
+  // Without this the model fills headline with whatever sits under the name,
+  // which on Instagram is the bio's linked account. headline is not an
+  // identity field, but it is in the keyword haystack and in the embedding,
+  // so the wrong text there makes a person findable by somebody else's
+  // account name. A field the platform does not have is null, not guessed.
+  "A field this platform does not have is null. Prefer null to a near miss.",
 ].join(" ");
 
 function requireEnv(name: string): string {

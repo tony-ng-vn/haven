@@ -2244,3 +2244,67 @@ test("reportDuplicateHandleOwners reports a group split across pages once", asyn
     },
   ]);
 });
+
+// Same reasoning as the card: these are drawn on a row sized for a line, the
+// client caps nothing today, and the server accepted a megabyte.
+test("addPerson refuses fields longer than the row can draw", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  await expect(
+    me.as.mutation(api.people.addPerson, {
+      ...manualAdd,
+      name: "N".repeat(41),
+    }),
+  ).rejects.toThrow("Keep a name under 40 characters");
+  await expect(
+    me.as.mutation(api.people.addPerson, {
+      ...manualAdd,
+      name: "Ada",
+      company: "C".repeat(61),
+    }),
+  ).rejects.toThrow("under 60 characters");
+  await expect(
+    me.as.mutation(api.people.addPerson, {
+      ...manualAdd,
+      name: "Ada",
+      role: "R".repeat(61),
+    }),
+  ).rejects.toThrow("under 60 characters");
+  await expect(
+    me.as.mutation(api.people.addPerson, {
+      ...manualAdd,
+      name: "Ada",
+      city: { name: "C".repeat(41) },
+    }),
+  ).rejects.toThrow("under 40 characters");
+  await expect(
+    me.as.mutation(api.people.addPerson, {
+      name: "Ada",
+      context: "met at the compiler meetup",
+      contactHandles: [{ platform: "phone", value: "h".repeat(61) }],
+    }),
+  ).rejects.toThrow("under 60 characters");
+
+  // Nothing landed on the way through any of those.
+  expect(await t.run((ctx) => ctx.db.query("people").collect())).toEqual([]);
+});
+
+test("editPerson refuses the same fields the same way", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  const id = await me.as.mutation(api.people.addPerson, {
+    ...manualAdd,
+    name: "Ada Lovelace",
+  });
+
+  await expect(
+    me.as.mutation(api.people.editPerson, { id, name: "N".repeat(41) }),
+  ).rejects.toThrow("under 40 characters");
+  await expect(
+    me.as.mutation(api.people.editPerson, { id, company: "C".repeat(61) }),
+  ).rejects.toThrow("under 60 characters");
+
+  const person = await me.as.query(api.people.getPerson, { id });
+  expect(person?.name).toBe("Ada Lovelace");
+});
