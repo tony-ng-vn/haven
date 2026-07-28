@@ -10,17 +10,41 @@ struct WidgetPromoCard: View {
     let dismiss: () -> Void
 
     var body: some View {
+        PromoCard(
+            title: "Your code, one tap from the Lock Screen",
+            detail: "Add the widget and your code is there when you need it.",
+            action: "See how",
+            open: open,
+            dismiss: dismiss
+        )
+    }
+}
+
+/// The shape both of the directory's suggestions take.
+///
+/// Two of them now -- the Lock Screen widget and Haven's place in the share
+/// sheet -- and they are the same card for the same reason: each asks for
+/// something iOS will not let an app do for somebody, so each can only ask,
+/// once, and take no for an answer. One shape rather than two that drift.
+struct PromoCard: View {
+    let title: String
+    let detail: String
+    let action: String
+    let open: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Your code, one tap from the Lock Screen")
+            Text(title)
                 .havenBody()
                 // Room for the dismiss target, which floats over the card
                 // rather than sitting in this stack: at 44pt it would set the
                 // height of the whole first line.
                 .padding(.trailing, 28)
-            Text("Add the widget and your code is there when you need it.")
+            Text(detail)
                 .havenSecondary()
             Button(action: open) {
-                Text("See how")
+                Text(action)
                     .font(HavenFont.buttonLabel)
                     .foregroundStyle(HavenColor.star)
                     .frame(minHeight: 44, alignment: .leading)
@@ -47,6 +71,44 @@ struct WidgetPromoCard: View {
             .accessibilityLabel("Dismiss")
         }
     }
+}
+
+/// Whether this person has dismissed the share-sheet card.
+///
+/// Its own key rather than a shared one: turning down the widget says nothing
+/// about wanting Haven in the share sheet, and one dismissal hiding both
+/// suggestions would take away the one that matters most.
+enum SharePromoDismissal {
+    static func isDismissed(userId: String) -> Bool {
+        UserDefaults.standard.bool(forKey: key(userId))
+    }
+
+    static func dismiss(userId: String) {
+        UserDefaults.standard.set(true, forKey: key(userId))
+    }
+
+    static func reset(userId: String) {
+        UserDefaults.standard.removeObject(forKey: key(userId))
+    }
+
+    private static func key(_ userId: String) -> String {
+        "haven.directory.sharePromoDismissed.\(userId)"
+    }
+}
+
+#Preview("Share sheet promo card") {
+    ZStack {
+        NightBackground()
+        PromoCard(
+            title: "Put Haven at the front of the share sheet",
+            detail: "It starts at the back, behind More. Move it once and saving somebody is two taps.",
+            action: "Show me",
+            open: {},
+            dismiss: {}
+        )
+        .padding(24)
+    }
+    .ignoresSafeArea()
 }
 
 #Preview("Widget promo card") {

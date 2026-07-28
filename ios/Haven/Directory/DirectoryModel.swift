@@ -70,6 +70,16 @@ final class DirectoryModel: ObservableObject {
         return []
     }
 
+    /// True once the directory has answered and holds nobody.
+    ///
+    /// Distinct from `people.isEmpty`, which is also true while the read is in
+    /// flight: a suggestion that flashed up during loading and vanished when
+    /// the first page landed would be worse than one that waits a beat.
+    var isEmpty: Bool {
+        if case .ready(let page) = load { return page.page.isEmpty }
+        return false
+    }
+
     /// How many people to say there are.
     ///
     /// Nil while loading or unreachable, because a count of zero and a count we

@@ -6,6 +6,17 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.19.0
+
+2026-07-28
+
+**iOS**
+
+- Haven now teaches you where it lives. A fresh install puts it at the very back of the share sheet, behind More, which is exactly where nobody finds it -- and no app is allowed to move itself. The People screen offers to walk you through it: a picture of where Haven should sit, three steps, and a real share sheet to do them on, with a practice person to save at the end.
+- The suggestion only appears while you have nobody saved, and it takes no for an answer.
+
+---
+
 ## v0.10.0
 
 2026-07-28

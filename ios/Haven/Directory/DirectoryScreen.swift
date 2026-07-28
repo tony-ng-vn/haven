@@ -16,7 +16,9 @@ struct DirectoryScreen: View {
 
     @StateObject private var model: DirectoryModel
     @State private var showsExplainer = false
+    @State private var showsPinWalkthrough = false
     @State private var promoDismissed: Bool
+    @State private var sharePromoDismissed: Bool
 
     init(
         userId: String,
@@ -29,6 +31,9 @@ struct DirectoryScreen: View {
         _model = StateObject(wrappedValue: DirectoryModel())
         _promoDismissed = State(
             initialValue: WidgetPromoDismissal.isDismissed(userId: userId)
+        )
+        _sharePromoDismissed = State(
+            initialValue: SharePromoDismissal.isDismissed(userId: userId)
         )
     }
 
@@ -46,6 +51,9 @@ struct DirectoryScreen: View {
         _promoDismissed = State(
             initialValue: WidgetPromoDismissal.isDismissed(userId: userId)
         )
+        _sharePromoDismissed = State(
+            initialValue: SharePromoDismissal.isDismissed(userId: userId)
+        )
     }
 
     var body: some View {
@@ -58,6 +66,9 @@ struct DirectoryScreen: View {
         .navigationTitle(title)
         .sheet(isPresented: $showsExplainer) {
             LockScreenExplainer()
+        }
+        .sheet(isPresented: $showsPinWalkthrough) {
+            PinWalkthrough()
         }
     }
 
@@ -98,6 +109,23 @@ struct DirectoryScreen: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
+            // The share sheet first, and only while the directory is empty.
+            // It is the one suggestion that makes the rest of the app work --
+            // Haven starts buried behind More, where nobody finds it -- and
+            // somebody who already has people has plainly found a way to save
+            // them.
+            if model.isEmpty, !sharePromoDismissed {
+                PromoCard(
+                    title: "Put Haven at the front of the share sheet",
+                    detail: "It starts at the back, behind More. Move it once and saving somebody is two taps.",
+                    action: "Show me",
+                    open: { showsPinWalkthrough = true },
+                    dismiss: {
+                        SharePromoDismissal.dismiss(userId: userId)
+                        sharePromoDismissed = true
+                    }
+                )
+            }
             if !promoDismissed {
                 WidgetPromoCard(
                     open: { showsExplainer = true },
@@ -110,6 +138,7 @@ struct DirectoryScreen: View {
             body(for: model.load)
         }
         .havenAnimation(HavenMotion.screen, value: promoDismissed)
+        .havenAnimation(HavenMotion.screen, value: sharePromoDismissed)
     }
 
     @ViewBuilder
