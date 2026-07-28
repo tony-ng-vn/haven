@@ -1,11 +1,44 @@
 /// <reference types="vite/client" />
 import { convexTest, type TestConvex } from "convex-test";
-import { expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
 import { handleValueKey } from "./handleKeys";
 
 const modules = import.meta.glob("./**/*.ts");
+
+// Only the tests that drain the scheduler touch timers or the network, so
+// both are opt-in per test and restored here rather than set up globally.
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+// Stub only the embeddings endpoint, the way people.test.ts does: draining
+// the scheduler runs the embed action the snapshot fan-out re-queues, and a
+// test must not depend on a real key or a real network.
+function stubEmbeddings(vector: number[]) {
+  const realFetch = globalThis.fetch;
+  vi.stubGlobal(
+    "fetch",
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const raw = String(input);
+      let url: URL;
+      try {
+        url = new URL(raw);
+      } catch {
+        return realFetch(input, init);
+      }
+      if (
+        url.hostname === "api.openai.com" &&
+        url.pathname.includes("/embeddings")
+      ) {
+        return Response.json({ data: [{ embedding: vector }] });
+      }
+      return realFetch(input, init);
+    },
+  );
+}
 
 let nextSubject = 0;
 function asNewUser(t: ReturnType<typeof convexTest>) {
@@ -1341,4 +1374,464 @@ test("deleting an account takes that account's own memories with it", async () =
   // them behind is a deletion that did not delete everything.
   expect(await t.run((ctx) => ctx.db.query("memories").collect())).toEqual([]);
   expect(await t.run((ctx) => ctx.db.get("people", personId))).toBeNull();
+});
+
+// ---------------------------------------------- connection snapshot refresh
+
+test("a peer changing jobs becomes findable under their new company", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    name: "Bob Hopper",
+    company: "Analytical Engines",
+  });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  await alice.as.mutation(api.profiles.connect, { username: "bob" });
+
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    company: "Pixel Foundry",
+  });
+
+  // The detail read already merged the live card; search runs over the
+  // snapshot, so without a fan-out a connection who changes jobs is
+  // unfindable by the company they actually work at.
+  const found = await alice.as.query(api.people.searchDirectory, {
+    keyword: "pixel",
+  });
+  expect(found.map((person) => person.name)).toEqual(["Bob Hopper"]);
+  expect(
+    await alice.as.query(api.people.searchDirectory, { keyword: "analytical" }),
+  ).toEqual([]);
+});
+
+test("a peer's new name, role and city reach the connected row's keys", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, { name: "Bob Hopper" });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    name: "Bo Hopper",
+    role: "Designer",
+    city: { name: "Da Nang", country: "VN" },
+  });
+
+  const stored = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(stored).toMatchObject({
+    name: "Bo Hopper",
+    normalizedName: "bo hopper",
+    role: "Designer",
+    roleKey: "designer",
+    city: { name: "Da Nang", country: "VN" },
+    cityKey: "da nang",
+  });
+  // The chip filters equality-match on those keys, so a stale key is a
+  // person missing from a filter that should list them.
+  expect(
+    (
+      await alice.as.query(api.people.searchDirectory, { city: "da nang" })
+    ).map((person) => person.name),
+  ).toEqual(["Bo Hopper"]);
+});
+
+test("a peer's card edit does not reorder the owner's directory", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, { name: "Bob Hopper" });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+  const before = await t.run((ctx) => ctx.db.get("people", personId));
+
+  await bob.as.mutation(api.profiles.updateMyProfile, { company: "Pixel" });
+
+  // The Directory pages most-recently-touched first. Somebody else editing
+  // their own card is not the owner touching this row, so recency stays
+  // where the owner left it.
+  const after = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(after?.updatedAt).toBe(before?.updatedAt);
+});
+
+test("the owner's own label survives a peer's card edit", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  // Bob never set a name, so there is nothing of his to render and the label
+  // Alice chose is all this row has.
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+  await alice.as.mutation(api.people.editPerson, {
+    id: personId,
+    name: "Bob from the ferry",
+  });
+
+  await bob.as.mutation(api.profiles.updateMyProfile, { company: "Pixel" });
+
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.name).toBe("Bob from the ferry");
+  expect(person?.company).toBe("Pixel");
+});
+
+test("the fan-out finishes past the first page of connections", async () => {
+  vi.useFakeTimers();
+  stubEmbeddings([0.1, 0.2, 0.3]);
+  const t = convexTest(schema, modules);
+  const bob = asNewUser(t);
+  await bob.as.mutation(api.profiles.updateMyProfile, { name: "Bob Hopper" });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+
+  // More rows than one transaction's page, seeded directly: 105 real connects
+  // would test the scheduler, not the paging, and cost a minute to run.
+  const owners = 105;
+  await t.run(async (ctx) => {
+    for (let i = 0; i < owners; i++) {
+      await ctx.db.insert("people", {
+        userId: `owner_${i}`,
+        name: "Bob Hopper",
+        normalizedName: "bob hopper",
+        searchText: "bob hopper",
+        updatedAt: 1,
+        platform: "Haven",
+        handle: "bob",
+        contactHandles: [{ platform: "haven", value: "bob" }],
+        havenContactUserId: bob.userId,
+      });
+    }
+  });
+
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    company: "Pixel Foundry",
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const rows = await t.run((ctx) =>
+    ctx.db
+      .query("people")
+      .withIndex("by_havenContactUserId", (q) =>
+        q.eq("havenContactUserId", bob.userId),
+      )
+      .collect(),
+  );
+  expect(rows).toHaveLength(owners);
+  // A fan-out that stops at the page boundary leaves the tail of a popular
+  // user's connections frozen at their connect-time card forever.
+  expect(rows.every((row) => row.companyKey === "pixel foundry")).toBe(true);
+});
+
+// -------------------------------------------------- connection state on read
+
+test("the person payload says a contact is a live connection", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, { name: "Bob Hopper" });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.connection).toEqual({
+    state: "connected",
+    peerUsername: "bob",
+  });
+  // Their Clerk identity key is not part of the answer: a client has no use
+  // for it, and this is somebody else's.
+  expect(person).not.toHaveProperty("havenContactUserId");
+
+  // And on a list row, which cannot afford a profile read per person: the
+  // Directory has to render the connected chip without one.
+  const listed = await alice.as.query(api.people.searchDirectory, {
+    keyword: "hopper",
+  });
+  expect(listed[0].connection).toEqual({
+    state: "connected",
+    peerUsername: "bob",
+  });
+});
+
+test("a contact the owner saved themselves is not a connection", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const personId = await alice.as.mutation(api.people.addPerson, {
+    name: "Ada Lovelace",
+    contactHandles: [{ platform: "phone", value: "unlisted" }],
+    context: "met at the compiler meetup",
+  });
+
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.connection).toBeNull();
+});
+
+test("a peer leaving Haven leaves a row that says the connection ended", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, { name: "Bob Hopper" });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  await bob.as.mutation(api.profiles.deleteMyAccount, {});
+
+  // Alice keeps the contact, like a phone contact, but the client has to be
+  // able to explain why it stopped updating rather than show a live chip
+  // over a card that will never move again.
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.connection).toEqual({ state: "ended", peerUsername: "bob" });
+  expect(person?.name).toBe("Bob Hopper");
+  // The reference goes with the account: their identity leaves with them,
+  // so there is nothing left to reconnect to.
+  const stored = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(stored?.havenContactUserId).toBeUndefined();
+  expect(stored?.connectionEndedAt).toEqual(expect.any(Number));
+});
+
+test("a connection's card shows how to reach them", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    name: "Bob Hopper",
+    handles: [
+      { platform: "instagram", value: "bobshots", verified: true },
+      { platform: "phone", value: "+84 90 000 0000", verified: false },
+    ],
+    primaryPlatform: "instagram",
+  });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.contactHandles).toEqual([
+    { platform: "haven", value: "bob" },
+    { platform: "instagram", value: "bobshots" },
+    { platform: "phone", value: "+84 90 000 0000" },
+  ]);
+  // Their card says how they would rather be reached, and the merged list
+  // is useless without it.
+  expect(person?.preferredPlatform).toBe("instagram");
+
+  // Display only. Writing their handles into the owner's row would put rows
+  // in the identity index the owner never saved, and a peer who drops a
+  // handle could never take them back out.
+  const stored = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(stored?.contactHandles).toEqual([{ platform: "haven", value: "bob" }]);
+  expect(
+    await t.run((ctx) =>
+      ctx.db
+        .query("personHandles")
+        .withIndex("by_user_and_platform_and_valueKey", (q) =>
+          q.eq("userId", alice.userId),
+        )
+        .collect(),
+    ),
+  ).toHaveLength(1);
+});
+
+test("the owner's own handle for a connection wins over the peer's card", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    name: "Bob Hopper",
+    handles: [{ platform: "instagram", value: "bobshots", verified: true }],
+  });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  await alice.as.mutation(api.people.editPerson, {
+    id: personId,
+    contactHandles: [{ platform: "instagram", value: "bob.the.second" }],
+    preferredPlatform: "instagram",
+  });
+
+  // Their card is theirs, but a handle the owner typed is their layer, and
+  // the overlay puts the owner's layer on top.
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.contactHandles).toEqual([
+    { platform: "instagram", value: "bob.the.second" },
+  ]);
+});
+
+// ------------------------------------------------------------- disconnecting
+
+async function onlyPerson(t: TestConvex<typeof schema>, userId: string) {
+  return await t.run(async (ctx) => {
+    const rows = await ctx.db
+      .query("people")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    expect(rows).toHaveLength(1);
+    return rows[0];
+  });
+}
+
+async function connectedPair(t: TestConvex<typeof schema>) {
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.updateMyProfile, { name: "Alice Ng" });
+  await alice.as.mutation(api.profiles.claimHandle, { handle: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, { name: "Bob Hopper" });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+  return { alice, bob, personId };
+}
+
+test("disconnect ends the edge, the shared note, and both live merges", async () => {
+  const t = convexTest(schema, modules);
+  const { alice, bob, personId } = await connectedPair(t);
+  await alice.as.mutation(api.sharedNotes.updateForPerson, {
+    personId,
+    content: "we said we would ship by Friday",
+  });
+
+  const outcome = await alice.as.mutation(api.profiles.disconnect, {
+    personId,
+  });
+
+  expect(outcome).toEqual({ status: "disconnected" });
+  expect(await connectionsBetween(t, alice.userId, bob.userId)).toEqual([]);
+  // The note was written by two people and is reachable through the edge;
+  // leaving it behind would silently reattach it if they connect again.
+  expect(await t.run((ctx) => ctx.db.query("sharedNotes").collect())).toEqual(
+    [],
+  );
+
+  // Both sides keep the contact as the frozen snapshot they own, and both
+  // stop rendering a card that will no longer move.
+  const mine = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(mine?.name).toBe("Bob Hopper");
+  expect(mine?.connection).toEqual({ state: "ended", peerUsername: "bob" });
+
+  const theirs = await onlyPerson(t, bob.userId);
+  const theirView = await bob.as.query(api.people.getPerson, {
+    id: theirs._id,
+  });
+  expect(theirView?.connection).toEqual({
+    state: "ended",
+    peerUsername: "alice",
+  });
+});
+
+test("a disconnected pair can connect again", async () => {
+  const t = convexTest(schema, modules);
+  const { alice, bob, personId } = await connectedPair(t);
+  await alice.as.mutation(api.profiles.disconnect, { personId });
+
+  const again = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  // The same rows, reconnected: a second contact for the same human is the
+  // one thing the meet path exists to prevent.
+  expect(again.status).toBe("connected");
+  expect(again.personId).toBe(personId);
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.connection).toEqual({
+    state: "connected",
+    peerUsername: "bob",
+  });
+  expect(await connectionsBetween(t, alice.userId, bob.userId)).toHaveLength(1);
+});
+
+test("disconnect says so when there was no connection to end", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const personId = await alice.as.mutation(api.people.addPerson, {
+    name: "Ada Lovelace",
+    contactHandles: [{ platform: "phone", value: "unlisted" }],
+    context: "met at the compiler meetup",
+  });
+
+  expect(
+    await alice.as.mutation(api.profiles.disconnect, { personId }),
+  ).toEqual({ status: "notConnected" });
+  // A contact the owner saved is not collateral: it stays exactly as it was.
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.connection).toBeNull();
+});
+
+test("disconnect refuses a person the caller does not own", async () => {
+  const t = convexTest(schema, modules);
+  const { bob, personId } = await connectedPair(t);
+
+  await expect(
+    bob.as.mutation(api.profiles.disconnect, { personId }),
+  ).rejects.toThrow("Person not found");
+});
+
+test("deleting a connected contact freezes the other side instead of stranding it", async () => {
+  const t = convexTest(schema, modules);
+  const { alice, bob, personId } = await connectedPair(t);
+
+  await alice.as.mutation(api.people.deletePerson, { personId });
+
+  // Bob's row kept pointing at a live card whose edge and shared note had
+  // been destroyed under him, so his screen said "connected" while nothing
+  // about the connection was left.
+  const theirs = await onlyPerson(t, bob.userId);
+  const theirView = await bob.as.query(api.people.getPerson, {
+    id: theirs._id,
+  });
+  expect(theirView?.connection).toEqual({
+    state: "ended",
+    peerUsername: "alice",
+  });
+  // The reference survives the freeze, unlike after an account deletion:
+  // it is what lets a later reconnection thaw this row rather than twin the
+  // human, and the peer still exists to reconnect to.
+  expect(theirs.havenContactUserId).toBe(alice.userId);
+  expect(theirs.connectionEndedAt).toEqual(expect.any(Number));
+});
+
+test("deleting an account keeps the billing history it did not own", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+  await t.run((ctx) =>
+    ctx.db.insert("subscriptions", {
+      userId: me.userId,
+      source: "stripe",
+      stripeCustomerId: "cus_test",
+      stripeSubscriptionId: "sub_test",
+      status: "canceled",
+      currentPeriodEnd: 0,
+      cancelAtPeriodEnd: true,
+      lastEventCreated: 1,
+      updatedAt: 1,
+    }),
+  );
+
+  await me.as.mutation(api.profiles.deleteMyAccount, {});
+
+  // Deliberate, not an oversight in the purge: what was charged to a card is
+  // a record the billing system owns, and it outlives the account.
+  const rows = await t.run((ctx) => ctx.db.query("subscriptions").collect());
+  expect(rows).toHaveLength(1);
+  expect(rows[0].stripeSubscriptionId).toBe("sub_test");
 });

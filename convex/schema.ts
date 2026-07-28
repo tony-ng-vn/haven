@@ -36,6 +36,12 @@ export default defineSchema({
     // Haven Meet provenance. Each side still gets a private people row; this
     // key only lets a repeat in-person exchange stay idempotent.
     havenContactUserId: v.optional(v.string()),
+    // When this row stopped referencing a live card, because the peer deleted
+    // their account or one side disconnected. Both paths clear
+    // havenContactUserId, which on its own is indistinguishable from a
+    // contact that was never a connection -- and the client has to explain
+    // why a card it used to keep current will never move again.
+    connectionEndedAt: v.optional(v.number()),
     // Structured attributes for the MVP search contract: the display value
     // and its accent-folded filter key travel together, because the Phase 3
     // chips equality-match on the key (normalizeName in nameSearch.ts) while

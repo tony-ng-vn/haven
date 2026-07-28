@@ -87,6 +87,12 @@ Branch `chore/convex-hygiene`.
 5. Server-side field caps: `updateMyProfile` and `addPerson`/`editPerson` accept unbounded strings where the product caps them (the prototype capped name at 40).
    Cap name and the other free-text card fields server-side to match; pick limits from the iOS field definitions and record them as constants with WHY comments.
 
+### Findings recorded while building B1, not built
+
+- A peer who changes their Haven address with `claimHandle` leaves every connection's row holding the old one: `people.handle`, the `haven` entry in `contactHandles`, and the `personHandles` index row all keep the username they had at connect time. That is the same staleness bug B1.1 fixes for the card fields, and B1.1 does not fix it, for a specific reason: refreshing an indexed handle can collide with a row the owner already holds under that `(userId, platform, valueKey)`, which would manufacture exactly the duplicates wave C step 4 has to report as zero before B3 can ship. Doing it properly means a per-row collision check and a decision about which owner wins, which is its own unit.
+  Nothing client-facing is stale meanwhile: `connection.peerUsername` is served live on the detail read.
+- A peer clearing a card field (company, role, city) leaves the connection's snapshot holding the old value, because `projectConnectedPerson` falls back to the snapshot when the profile has none, and the fan-out matches that fallback so search and card agree. Reading a cleared field as a clear is a change to the overlay's merge rule, not to the fan-out, and it is unspecced in `mvp-design.md`.
+
 ### B3: the .unique() flip (gated on wave C step 4; owns one line of convex/people.ts)
 
 Branch `fix/convex-unique-handle-lookup`, its own tiny PR.
@@ -138,8 +144,12 @@ Run in this order from a tree current with main.
 
 Kept current by every backend PR that changes a client-visible shape; the frontend session reads this section, not the diffs.
 
-- PLANNED (B1.2): `personValidator` gains `havenContactUserId` and a `connection` object; shape lands here when built.
-- PLANNED (B1.4): new `profiles.disconnect({ personId })` mutation with an explicit outcome union.
+- SHIPPED (B1.2, PR 139): `personValidator` gains `connection: { state: "connected" | "ended", peerUsername: string } | null`, on every read that returns a person (`getPerson`, `listPeople`, `searchPeople`, `searchDirectory`, `editPerson`).
+  `null` is an ordinary contact the owner saved; `"connected"` is a live Haven connection whose card merges into the row and whose shared note is reachable; `"ended"` is a row that began as a connection and no longer follows a live card, because the peer deleted their account or one side disconnected.
+  `peerUsername` is the peer's Haven address, live on the detail read and from the row's snapshot on list reads.
+  `havenContactUserId` is deliberately NOT on the payload, against this plan's original wording: it is the peer's Clerk identity key, `connection` answers every question a client has, and `myCardValidator` already states the rule for the caller's own id. If the frontend finds a need `connection` cannot serve, say so here rather than reading it off a diff.
+- SHIPPED (B1.3, PR 139): the detail read (`getPerson`) merges a connected peer's own `handles` into `contactHandles` under the owner's own entries, one per platform, and fills `preferredPlatform` from their `primaryPlatform` when the owner has set none. Display only; the stored row is unchanged. Phone is included, unlike on the public web card: see B1.3's note.
+- SHIPPED (B1.4, PR 139): `profiles.disconnect({ personId })` returns `{ status: "disconnected" | "notConnected" }` and throws `"Person not found"` for a person the caller does not own. Both sides keep their contact as a frozen snapshot (`connection.state` becomes `"ended"`), the edge and the shared note go, and connecting again thaws the same row rather than creating a second contact. `people.deletePerson` on a connected person now runs the same teardown.
 - Received from the frontend plan, non-blocking, post-v1: the `verified` flag on profile handles is client-asserted through `updateMyProfile` and published on the public card; it should become server-derived from the OAuth link once that matters. Accepted for v1 at cohort scale.
 - Already true and waiting on frontend wiring, no backend work owed: `people:addPerson` (requires name, handle, and note since PR 86), `profiles:recordOnboardingStep` (device-local skips lose state on reinstall), `profiles:claimHandle` (handle edit UI), `captures:listCaptures`/`acceptCapture`/`acceptManualCapture`/`discardCapture`/`retryExtract` (triage, see D3), `people:getPerson` already returns `photoUrl` and `contactHandles` that iOS drops, `saveSharedProfile.noteTruncated` is computed and discarded client-side, `profiles:connect` has no iOS caller and no scanner or universal-link handler exists.
 

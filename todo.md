@@ -79,7 +79,8 @@ code is waiting on any of it.
   - [ ] Run `scripts/eval-ask.ts` against a live key for a real recall number, and measure cost per ask. Both deliberately outside CI.
 - [~] Phase 4: Connect. Mutual auto-connect between two Haven users.
   - [x] Convex backend (PR 126): `profiles.connect`, the `connections` edge, both-side directory rows, live-card merge on the detail read, deletion collapsing to frozen snapshots.
-  - [ ] Backend follow-ups: snapshot fan-out refresh so search matches a peer's current card, connection state on the person payload, disconnect. Unit B1 of `docs/superpowers/plans/2026-07-28-backend-completion-plan.md`.
+  - [x] Backend follow-ups (unit B1, PR 139): snapshot fan-out so search matches a peer's current card, `connection` state on the person payload, the peer's handles on the merged card, `profiles.disconnect` with `deletePerson` delegating to the same teardown.
+    Two known gaps stay open and are written up under "Findings recorded while building B1" in `docs/superpowers/plans/2026-07-28-backend-completion-plan.md`: a peer changing their Haven address leaves the stored handle stale (deferred because refreshing an indexed handle can manufacture the duplicates wave C step 4 must report as zero), and a peer clearing a card field leaves the snapshot holding the old value.
   - [ ] iOS: nothing calls `profiles:connect`; no scanner, and no universal-link handler for `inhavens.com/<handle>`, so scanning a Haven QR lands in Safari.
 - [ ] Stripe subscription mirroring shipped (PR 123: webhook, `subscriptions` table, `hasProAccess`) but nothing reads it, there is no checkout, and App Store guideline 3.1.1 blocks Stripe-gated iOS features. Default decision: parked for v1 (gate D4 in the backend completion plan).
 - [ ] Phase 5: Polish pass. Haptics, transitions, gesture physics across the app.

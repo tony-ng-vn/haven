@@ -13,6 +13,7 @@ import { checkRateLimit } from "./rateLimit";
 import { normalizeName, personSearchText } from "./nameSearch";
 import { requireImageBlob } from "./imageBlobs";
 import { deleteMemories } from "./memories";
+import { endConnection } from "./connections";
 import {
   cityInputValidator,
   cityValidator,
@@ -287,43 +288,53 @@ function definedFields(fields: CardFields): CardFields {
 async function ensureMeetPerson(args: {
   ctx: MutationCtx;
   ownerUserId: string;
-  contactUserId: string;
-  contactUsername: string;
-  contactName?: string;
-  contactCompany?: string;
-  contactRole?: string;
-  contactCity?: { name: string; admin?: string; country?: string };
+  contact: Doc<"profiles">;
   now: number;
 }): Promise<Id<"people">> {
+  const contactUsername = args.contact.username;
   const existing = await args.ctx.db
     .query("people")
     .withIndex("by_user_and_havenContactUserId", (q) =>
       q
         .eq("userId", args.ownerUserId)
-        .eq("havenContactUserId", args.contactUserId),
+        .eq("havenContactUserId", args.contact.userId),
     )
     .unique();
   if (existing !== null) {
+    // A pair who disconnected and met again thaws the row they already have.
+    // A second contact for the same human is the one thing this path exists
+    // to prevent, and the card they carry has moved on since the freeze.
+    if (existing.connectionEndedAt !== undefined) {
+      await args.ctx.db.patch("people", existing._id, {
+        ...snapshotPatch(existing, args.contact),
+        connectionEndedAt: undefined,
+      });
+      await args.ctx.scheduler.runAfter(0, internal.people.embed, {
+        personId: existing._id,
+      });
+    }
     return existing._id;
   }
 
   // Their own name if they have set one. The handle is the fallback, not the
   // default: a directory full of "@bob" is a directory nobody can read.
-  const displayName = args.contactName ?? `@${args.contactUsername}`;
+  const displayName = args.contact.name ?? `@${contactUsername}`;
   // A Haven username is a handle like any other, so the person gets one in
   // contactHandles and a matching index row. Without them a person met in
   // person is invisible to every handle lookup, and re-sharing their profile
   // later would create a second row for the same human.
-  const havenHandle = { platform: "haven", value: args.contactUsername };
+  const havenHandle = { platform: "haven", value: contactUsername };
+  const city = toCityInput(args.contact.city);
   // Snapshotted so the row is findable by keyword the moment it lands. The
   // live values still win on read (projectConnectedPerson) -- this copy only
-  // feeds the search indexes, which cannot query another table.
+  // feeds the search indexes, which cannot query another table, and
+  // refreshSnapshotPage keeps it current afterwards.
   const snapshot = {
     name: displayName,
-    company: args.contactCompany,
-    role: args.contactRole,
-    city: toCityInput(args.contactCity),
-    handle: args.contactUsername,
+    company: args.contact.company,
+    role: args.contact.role,
+    city,
+    handle: contactUsername,
     contactHandles: [havenHandle],
   };
   const personId = await args.ctx.db.insert("people", {
@@ -332,24 +343,21 @@ async function ensureMeetPerson(args: {
     // From the underlying name, not the decorated display form: the "@" on a
     // handle fallback is sugar, and normalizing it in would make searching
     // "bob" miss the person shown as "@bob".
-    normalizedName: normalizeName(args.contactName ?? args.contactUsername),
+    normalizedName: normalizeName(args.contact.name ?? contactUsername),
     // This insert bypasses addPerson, so it feeds the keyword index itself.
     searchText: personSearchText(snapshot),
-    company: args.contactCompany,
+    company: args.contact.company,
     companyKey:
-      args.contactCompany === undefined
+      args.contact.company === undefined
         ? undefined
-        : normalizeName(args.contactCompany),
-    role: args.contactRole,
+        : normalizeName(args.contact.company),
+    role: args.contact.role,
     roleKey:
-      args.contactRole === undefined
+      args.contact.role === undefined
         ? undefined
-        : normalizeName(args.contactRole),
-    city: toCityInput(args.contactCity),
-    cityKey:
-      args.contactCity === undefined
-        ? undefined
-        : normalizeName(args.contactCity.name),
+        : normalizeName(args.contact.role),
+    city,
+    cityKey: city === undefined ? undefined : normalizeName(city.name),
     // No context, and so no memory row: a synthetic "met through Haven" line
     // would give every connection an identical, meaningless memory, and the
     // edge already records the provenance. The first memory of this person
@@ -358,9 +366,9 @@ async function ensureMeetPerson(args: {
     // The legacy scalars stay: the web meet UI reads them, and the index is
     // an addition rather than a replacement.
     platform: "Haven",
-    handle: args.contactUsername,
+    handle: contactUsername,
     contactHandles: [havenHandle],
-    havenContactUserId: args.contactUserId,
+    havenContactUserId: args.contact.userId,
   });
   await args.ctx.db.insert("personHandles", {
     userId: args.ownerUserId,
@@ -370,6 +378,130 @@ async function ensureMeetPerson(args: {
   await args.ctx.scheduler.runAfter(0, internal.people.embed, { personId });
   return personId;
 }
+
+// How many referencing rows one fan-out transaction refreshes. Smaller than
+// PURGE_PAGE because each refreshed row also schedules an embed.
+const SNAPSHOT_PAGE = 100;
+
+// The card fields a connection's directory row snapshots. A photo or a
+// handle edit changes nothing that lives on the other side's row, so it
+// schedules no fan-out.
+const SNAPSHOT_FIELDS = ["name", "company", "role", "city"] as const;
+
+function sameCity(a: CityInput | undefined, b: CityInput | undefined): boolean {
+  return (
+    a?.name === b?.name && a?.admin === b?.admin && a?.country === b?.country
+  );
+}
+
+// What one referencing row has to change to match the peer's current card.
+//
+// Mirrors projectConnectedPerson field for field, and that is the invariant:
+// the snapshot only exists to feed the search indexes, which cannot read
+// another table, so it has to hold exactly what the detail read renders or
+// search and card disagree about the same person. A field the peer does not
+// have is left alone for the same reason -- the read falls back to the
+// snapshot there, so clearing it would hide something still on screen.
+function snapshotPatch(
+  person: Doc<"people">,
+  profile: Doc<"profiles">,
+): Partial<Doc<"people">> {
+  const next: Partial<Doc<"people">> = {};
+  if (profile.name !== undefined) {
+    if (profile.name !== person.name) {
+      next.name = profile.name;
+      next.normalizedName = normalizeName(profile.name);
+    }
+  } else if (person.name === `@${person.handle}`) {
+    // A peer with no card name has only the handle fallback, and the owner
+    // may have relabelled the row since. The fallback refreshes only while
+    // it is still the fallback: a name the owner typed is theirs to keep.
+    const fallback = `@${profile.username}`;
+    if (fallback !== person.name) {
+      next.name = fallback;
+      next.normalizedName = normalizeName(profile.username);
+    }
+  }
+  if (profile.company !== undefined && profile.company !== person.company) {
+    next.company = profile.company;
+    next.companyKey = normalizeName(profile.company);
+  }
+  if (profile.role !== undefined && profile.role !== person.role) {
+    next.role = profile.role;
+    next.roleKey = normalizeName(profile.role);
+  }
+  const city = toCityInput(profile.city);
+  if (city !== undefined && !sameCity(city, person.city)) {
+    next.city = city;
+    next.cityKey = normalizeName(city.name);
+  }
+  const searchText = personSearchText({ ...person, ...next });
+  if (searchText !== person.searchText) {
+    next.searchText = searchText;
+  }
+  return next;
+}
+
+// One page of the fan-out that keeps every connection's directory row current
+// with the peer's card, rescheduling itself while more rows remain -- the
+// same shape purgeOwnedRows uses, except a refresh does not remove the rows
+// it visits, so progress needs a cursor rather than a shrinking head.
+//
+// updatedAt is deliberately not touched: the Directory pages
+// most-recently-touched first, and somebody else editing their own card is
+// not the owner touching this row.
+async function refreshSnapshotPage(
+  ctx: MutationCtx,
+  profile: Doc<"profiles">,
+  cursor: string | null,
+): Promise<void> {
+  const page = await ctx.db
+    .query("people")
+    .withIndex("by_havenContactUserId", (q) =>
+      q.eq("havenContactUserId", profile.userId),
+    )
+    .paginate({ numItems: SNAPSHOT_PAGE, cursor });
+  for (const person of page.page) {
+    // A frozen row keeps naming the peer so a reconnection can thaw it, and
+    // refreshing it would undo the freeze one field at a time.
+    if (person.connectionEndedAt !== undefined) {
+      continue;
+    }
+    const fields = snapshotPatch(person, profile);
+    if (Object.keys(fields).length === 0) {
+      continue;
+    }
+    await ctx.db.patch("people", person._id, fields);
+    // The row's searchable text moved, so its vector has to move with it or
+    // semantic search keeps answering with the card they used to have.
+    await ctx.scheduler.runAfter(0, internal.people.embed, {
+      personId: person._id,
+    });
+  }
+  if (!page.isDone) {
+    await ctx.scheduler.runAfter(
+      0,
+      internal.profiles.refreshConnectionSnapshots,
+      { userId: profile.userId, cursor: page.continueCursor },
+    );
+  }
+}
+
+// The continuation of a fan-out that did not fit in one transaction. Reads
+// the profile again rather than trusting the caller's copy: a card edited
+// twice in a row must not finish its first fan-out with the older card.
+export const refreshConnectionSnapshots = internalMutation({
+  args: { userId: v.string(), cursor: v.union(v.string(), v.null()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const profile = await getProfileByUser(ctx, args.userId);
+    if (profile === null) {
+      return null;
+    }
+    await refreshSnapshotPage(ctx, profile, args.cursor);
+    return null;
+  },
+});
 
 export const getMyProfile = query({
   args: {},
@@ -567,6 +699,7 @@ async function purgeOwnedRows(ctx: MutationCtx, userId: string): Promise<void> {
   for (const person of referencing) {
     await ctx.db.patch("people", person._id, {
       havenContactUserId: undefined,
+      connectionEndedAt: Date.now(),
     });
   }
   more ||= referencing.length === PURGE_PAGE;
@@ -609,6 +742,13 @@ async function purgeOwnedRows(ctx: MutationCtx, userId: string): Promise<void> {
     await ctx.db.delete("loveAlarmPresence", row._id);
   }
   more ||= presence.length === PURGE_PAGE;
+
+  // subscriptions rows are deliberately not purged, and this is the only
+  // table that survives. What was charged to a card is the billing system's
+  // record, not the account's: it answers refund and chargeback questions
+  // long after the account is gone, and it is keyed to a Stripe customer
+  // rather than describing the person. Deleting it would leave money moved
+  // with nothing on our side saying why.
 
   // Last, because every delete above ran under a limiter that keys off this
   // table: clearing it first would let the purge lift the caller's own caps.
@@ -789,6 +929,15 @@ export const updateMyProfile = mutation({
     if (updated === null) {
       throw new Error("Could not save profile");
     }
+    // Every connection holds a snapshot of this card so their search index has
+    // something to match on, and a snapshot nobody refreshes is exactly the
+    // stale contact Haven exists to abolish. The first page runs here, so the
+    // common card edit is current the moment this returns; the rest is
+    // scheduled. The insert branch above needs none: a profile that did not
+    // exist a moment ago cannot be referenced.
+    if (SNAPSHOT_FIELDS.some((field) => field in fields)) {
+      await refreshSnapshotPage(ctx, updated, null);
+    }
     return await toMyCard(ctx, updated);
   },
 });
@@ -923,23 +1072,13 @@ export const connect = mutation({
     const personId = await ensureMeetPerson({
       ctx,
       ownerUserId: userId,
-      contactUserId: peerProfile.userId,
-      contactUsername: peerProfile.username,
-      contactName: peerProfile.name,
-      contactCompany: peerProfile.company,
-      contactRole: peerProfile.role,
-      contactCity: peerProfile.city,
+      contact: peerProfile,
       now,
     });
     const peerPersonId = await ensureMeetPerson({
       ctx,
       ownerUserId: peerProfile.userId,
-      contactUserId: userId,
-      contactUsername: myProfile.username,
-      contactName: myProfile.name,
-      contactCompany: myProfile.company,
-      contactRole: myProfile.role,
-      contactCity: myProfile.city,
+      contact: myProfile,
       now,
     });
 
@@ -988,6 +1127,35 @@ export const connect = mutation({
       status: "connected" as const,
       personId,
       peerUsername: peerProfile.username,
+    };
+  },
+});
+
+// The way out of a connection. Until this existed the only exit was
+// deletePerson, which threw away the owner's own notes and photo to end a
+// relationship -- and connecting is one tap, so ending one should not cost
+// the memory of the person.
+//
+// Both sides keep their contact as the frozen snapshot they own; what ends
+// is the live reference and the note the two of them wrote together. It is
+// mutual because the edge is: there is no half of a connection to keep.
+export const disconnect = mutation({
+  args: { personId: v.id("people") },
+  returns: v.object({
+    // "notConnected" when there was no connection to end, which is the same
+    // answer a second tap deserves.
+    status: v.union(v.literal("disconnected"), v.literal("notConnected")),
+  }),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    await checkRateLimit(ctx, userId, "disconnect", 20, MINUTE_MS);
+    const person = await ctx.db.get("people", args.personId);
+    if (person === null || person.userId !== userId) {
+      throw new Error("Person not found");
+    }
+    const ended = await endConnection(ctx, userId, args.personId, Date.now());
+    return {
+      status: ended ? ("disconnected" as const) : ("notConnected" as const),
     };
   },
 });
