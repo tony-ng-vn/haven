@@ -175,6 +175,10 @@ struct DirectoryPagingTests {
         #expect(afterOne > before)
         #expect(model.window == afterOne)
         #expect(model.isLoadingMore)
+    }
+}
+
+@MainActor
 @Suite("The directory's two suggestions")
 struct DirectoryPromoTests {
     // Distinct from people.isEmpty, which is also true while the read is in
