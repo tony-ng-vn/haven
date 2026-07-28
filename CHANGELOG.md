@@ -6,6 +6,17 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.27.0
+
+2026-07-28
+
+**iOS**
+
+- Three pieces of text that were failing contrast at the bottom of the screen now read there: the search field's label on People, the placing line under a person an ask names, and the line that says a connection has ended. The page darkens toward the bottom, and all three could end up in the dark half.
+- The reason an ask gives for each match is now the brightest thing in the row, rather than the line above it being the dimmest. Same hierarchy, made by lifting what matters instead of sinking what does not.
+
+---
+
 ## v0.26.0
 
 2026-07-28

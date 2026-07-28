@@ -106,6 +106,10 @@ struct TextContrastTests {
         #expect(contrast(HavenColor.ember, on: HavenColor.dusk) >= Self.readable)
     }
 
+    /// What WCAG asks of a glyph or a control's edge, which is a lower bar than
+    /// text because a shape is not read.
+    static let discernible: Double = 3.0
+
     /// Why the group labels and row accessories moved off `faint`: it reads at
     /// the top of the page and fails at the bottom, and the ACCOUNT heading is
     /// at the bottom. Pinned so nobody moves them back.
@@ -113,6 +117,28 @@ struct TextContrastTests {
     func faintIsNotForText() {
         #expect(contrast(HavenColor.faint, on: HavenColor.night) >= Self.readable)
         #expect(contrast(HavenColor.faint, on: HavenColor.dusk) < Self.readable)
+    }
+
+    /// What `faint` is still for, and the reason the remaining call sites are
+    /// not a backlog. It measures 3.40 over dusk: under the 4.5 a sentence
+    /// needs and over the 3.0 a glyph needs. Every place it survives is a
+    /// symbol -- a remove button, a dismiss cross, a corner mark, the drawn
+    /// mockups -- and every interactive one of those carries a text label of
+    /// its own. If this ever drops below 3.0 those become a real problem, and
+    /// this is what says so.
+    @Test("faint is a colour for glyphs")
+    func faintIsForGlyphs() {
+        #expect(contrast(HavenColor.faint, on: HavenColor.dusk) >= Self.discernible)
+        #expect(contrast(HavenColor.faint, on: HavenColor.night) >= Self.discernible)
+    }
+
+    /// The colours text actually uses, checked at the bottom of the page where
+    /// the ground is lightest and the margin is thinnest.
+    @Test("every colour Haven sets text in reads at the foot of the page")
+    func textColoursReadWhereTheyAreDarkest() {
+        for colour in [HavenColor.ink, HavenColor.muted, HavenColor.star, HavenColor.ember] {
+            #expect(contrast(colour, on: HavenColor.dusk) >= Self.readable)
+        }
     }
 
     /// WCAG 2.1 relative luminance and contrast ratio, on the resolved colours
