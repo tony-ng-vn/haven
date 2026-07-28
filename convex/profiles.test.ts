@@ -1808,3 +1808,30 @@ test("deleting a connected contact freezes the other side instead of stranding i
   expect(theirs.havenContactUserId).toBe(alice.userId);
   expect(theirs.connectionEndedAt).toEqual(expect.any(Number));
 });
+
+test("deleting an account keeps the billing history it did not own", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+  await t.run((ctx) =>
+    ctx.db.insert("subscriptions", {
+      userId: me.userId,
+      source: "stripe",
+      stripeCustomerId: "cus_test",
+      stripeSubscriptionId: "sub_test",
+      status: "canceled",
+      currentPeriodEnd: 0,
+      cancelAtPeriodEnd: true,
+      lastEventCreated: 1,
+      updatedAt: 1,
+    }),
+  );
+
+  await me.as.mutation(api.profiles.deleteMyAccount, {});
+
+  // Deliberate, not an oversight in the purge: what was charged to a card is
+  // a record the billing system owns, and it outlives the account.
+  const rows = await t.run((ctx) => ctx.db.query("subscriptions").collect());
+  expect(rows).toHaveLength(1);
+  expect(rows[0].stripeSubscriptionId).toBe("sub_test");
+});

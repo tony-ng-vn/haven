@@ -743,6 +743,13 @@ async function purgeOwnedRows(ctx: MutationCtx, userId: string): Promise<void> {
   }
   more ||= presence.length === PURGE_PAGE;
 
+  // subscriptions rows are deliberately not purged, and this is the only
+  // table that survives. What was charged to a card is the billing system's
+  // record, not the account's: it answers refund and chargeback questions
+  // long after the account is gone, and it is keyed to a Stripe customer
+  // rather than describing the person. Deleting it would leave money moved
+  // with nothing on our side saying why.
+
   // Last, because every delete above ran under a limiter that keys off this
   // table: clearing it first would let the purge lift the caller's own caps.
   const limits = await ctx.db
