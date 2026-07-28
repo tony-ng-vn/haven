@@ -176,6 +176,12 @@ struct ContactScreen: View {
     private func finish(_ platform: ContactPlatform, _ account: ConnectedAccount) {
         guard case .authorize(_, let provesItsHandle, _) = platform.method else { return }
 
+        // Every successful authorization returns an avatar, and until now it
+        // was carried this far and dropped. Handed over rather than imported
+        // here: it should land with the contact answer, not during the editing
+        // of it.
+        model.rememberAvatar(account.imageUrl)
+
         // Whether a username in the payload IS the handle is a fact about the
         // platform, not about whether one happened to arrive. LinkedIn's
         // payload can carry a username that is not the profile address, and

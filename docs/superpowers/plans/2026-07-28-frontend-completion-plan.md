@@ -347,7 +347,9 @@ One session drives; this section is its operating loop, and the goal prompt poin
 - [ ] E1 pin walkthrough and practice capture
 - [x] E2 handle claim at card creation -- void on inspection, see "Corrections to this plan's inventory" (PR 143)
 - [x] E3 address editor in My Card (PR 143)
-- [ ] E4 server onboarding state and avatar import
+- [ ] E2 handle claim at card creation
+- [ ] E3 address editor in My Card
+- [x] E4 server onboarding state and avatar import (PR 144)
 - [ ] F1 scan and connect
 - [ ] F2 universal links
 - [ ] F3 connected-person state (needs backend B1)
