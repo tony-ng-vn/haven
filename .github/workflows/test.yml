@@ -15,10 +15,29 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
-      - run: npm test
+
+      # Self-hosted runner, so unlike ubuntu-latest the hardware isn't fixed;
+      # this is what makes a slow run's summary legible later.
+      - name: Runner stats
+        run: |
+          {
+            echo "### Runner"
+            echo "| | |"
+            echo "|---|---|"
+            echo "| host | $(hostname) |"
+            echo "| cpu cores | $(sysctl -n hw.ncpu) |"
+            echo "| total ram | $(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 )) GB |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: npm ci
+        run: .github/workflows/time-step.sh "npm ci" npm ci
+
+      - name: npm test
+        run: .github/workflows/time-step.sh "npm test" npm test
         env:
           # The convex tests stub all network calls, but the OpenAI client
           # asserts a key exists before the stubbed fetch is ever reached.
           OPENAI_API_KEY: ci-dummy-key-network-is-mocked
-      - run: npm run build
+
+      - name: npm run build
+        run: .github/workflows/time-step.sh "npm run build" npm run build
