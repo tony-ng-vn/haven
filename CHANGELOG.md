@@ -6,6 +6,18 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.14.0
+
+2026-07-28
+
+**iOS**
+
+- Your card now shows the address it points at, under Your address, and you can change it. Until now Haven picked one for you when you signed up and there was no way to see it, let alone pick a different one.
+- If the address you want is taken, Haven says so and offers ones that are free right now, built from your own name. It does not guess for you.
+- The editor says what changing it costs before you change it: the code on the back of your card opens that page, and the old address stops working.
+
+---
+
 ## v0.10.0
 
 2026-07-28

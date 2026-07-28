@@ -151,6 +151,115 @@ struct TextFieldEditor: View {
     }
 }
 
+/// The editor for the address the card's code points at.
+///
+/// Its own editor rather than another `TextFieldEditor`, because this is the
+/// one field on the card that can be refused. Every other one is stored as
+/// typed; an address is a claim on a name at the root of the site, and somebody
+/// else may already hold it. So it has a state the others do not -- taken, with
+/// free alternatives -- and it has no Remove: a card with no address has no
+/// code and no page.
+struct AddressEditor: View {
+    /// The address as it stands. Every profile has one: the server mints it
+    /// silently when the card is created, so this screen changes an address
+    /// rather than asking for a first one.
+    let current: String
+    /// Answers what the server made of the claim, or nil when the round trip
+    /// never came back.
+    let claim: (String) async -> HandleClaim?
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String
+    @State private var working = false
+    /// The alternatives the server offered, once it has refused one.
+    @State private var suggestions: [String] = []
+    @State private var refused: String?
+
+    init(current: String, claim: @escaping (String) async -> HandleClaim?) {
+        self.current = current
+        self.claim = claim
+        _text = State(initialValue: current)
+    }
+
+    private var candidate: String? { HavenHandle.candidate(from: text) }
+
+    private var isUnchanged: Bool { candidate == current }
+
+    var body: some View {
+        HavenScreen(
+            question: "Your address",
+            // Said plainly and once. Changing it is not dangerous, but somebody
+            // whose code is already on a business card deserves to know before
+            // rather than after.
+            hint: "This is the page your card's code opens. Change it and the old address stops working.",
+            contentAlignment: .top
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                HavenField(
+                    label: "Your address",
+                    placeholder: "yourname",
+                    text: $text,
+                    capitalization: .never,
+                    submitLabel: .done,
+                    autofocus: true,
+                    onSubmit: commit
+                )
+                // What the address will actually be, as it is typed. The host
+                // is shown because the address is a page, not a handle.
+                Text(preview)
+                    .havenSecondary(candidate == nil && !text.isEmpty ? HavenColor.ember : HavenColor.muted)
+
+                if let refused {
+                    Text("\(BeaconAddress.display(for: refused)) is taken.")
+                        .havenSecondary(HavenColor.ember)
+                }
+                if !suggestions.isEmpty {
+                    Text("Free right now")
+                        .havenGroupLabel()
+                        .padding(.top, 6)
+                    ForEach(suggestions, id: \.self) { suggestion in
+                        HavenRow(
+                            title: BeaconAddress.display(for: suggestion),
+                            action: { text = suggestion }
+                        ) {
+                            RowAccessory(text: "Use")
+                        }
+                    }
+                }
+            }
+        } actions: {
+            PrimaryButton(title: "Save", isLoading: working, action: commit)
+                .disabled(candidate == nil || isUnchanged)
+        }
+    }
+
+    /// The line under the field: the page this would be, or the rule it is
+    /// breaking, or nothing at all while there is nothing to say.
+    private var preview: String {
+        if let candidate { return BeaconAddress.display(for: candidate) }
+        return text.isEmpty ? BeaconAddress.display(for: current) : HavenHandle.help
+    }
+
+    private func commit() {
+        guard let candidate, !isUnchanged, !working else { return }
+        working = true
+        refused = nil
+        Task {
+            let outcome = await claim(candidate)
+            working = false
+            guard let outcome else { return }
+            guard outcome.isClaimed else {
+                // Held open on a refusal, with somewhere to go. Closing here
+                // would leave somebody on the old address with no idea why.
+                refused = outcome.handle
+                suggestions = outcome.suggestions
+                return
+            }
+            dismiss()
+        }
+    }
+}
+
 /// The editor for the photo.
 ///
 /// A sheet like every other field rather than a picker hung straight off the
@@ -300,4 +409,38 @@ struct CityFieldEditor: View {
             dismiss()
         }
     }
+}
+
+// MARK: - Previews
+
+#Preview("Your address") {
+    AddressEditor(current: "mayachen") { _ in
+        HandleClaim(status: "claimed", handle: "mayachen", suggestions: [])
+    }
+}
+
+// What a refusal looks like: the name that is taken, and free alternatives
+// built from the person's own name.
+#Preview("Your address, taken") {
+    AddressEditor(current: "mayachen") { handle in
+        HandleClaim(
+            status: "taken",
+            handle: handle,
+            suggestions: ["maya_chen", "maya_chen2", "mayac"]
+        )
+    }
+}
+
+#Preview("Your address, accessibility XXXL") {
+    AddressEditor(current: "mayachen") { _ in
+        HandleClaim(status: "claimed", handle: "mayachen", suggestions: [])
+    }
+    .environment(\.dynamicTypeSize, .accessibility3)
+}
+
+#Preview("Your address, Reduce Motion") {
+    AddressEditor(current: "mayachen") { _ in
+        HandleClaim(status: "claimed", handle: "mayachen", suggestions: [])
+    }
+    .havenReduceMotion()
 }
