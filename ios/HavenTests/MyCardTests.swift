@@ -12,6 +12,30 @@ private func decode(_ json: String) throws -> MyCard? {
 
 @Suite("My card")
 struct MyCardTests {
+    // The onboarding record, which the app started reading in the same change
+    // that started writing it. An absent record is the normal case for every
+    // row written before it existed, and has to stay harmless.
+    @Test("the onboarding record decodes, and its absence is not a failure")
+    func decodesOnboarding() throws {
+        let card = try #require(
+            try decode("""
+            {"_id":"p1","_creationTime":1,"updatedAt":1,"username":"maya","photoUrl":null,
+             "onboarding":{"name":"answered","location":"skipped","completedAt":1700000000000}}
+            """)
+        )
+        #expect(card.onboarding?.name == .answered)
+        #expect(card.onboarding?.location == .skipped)
+        #expect(card.onboarding?.contact == nil)
+        #expect(card.onboarding?.completedAt == 1_700_000_000_000)
+
+        let bare = try #require(
+            try decode("""
+            {"_id":"p1","_creationTime":1,"updatedAt":1,"username":"maya","photoUrl":null}
+            """)
+        )
+        #expect(bare.onboarding == nil)
+    }
+
     // The exact shape myCardValidator returns, including the two keys the app
     // has no use for and the stored city's private Phase 3 filter key. An
     // unknown key must stay harmless: the server is free to add fields.
