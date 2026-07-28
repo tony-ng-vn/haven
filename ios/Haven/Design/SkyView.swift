@@ -32,6 +32,16 @@ struct SkyView: View {
     /// What a full-screen sky uses.
     static let fullScreenNebulaDamping: Double = 0.4
 
+    /// Slides the scenery sideways, leaving the figure where it is.
+    ///
+    /// Only the card uses this, for its parallax. The split is by what a thing
+    /// is, not by which layer happens to draw it: nebulae, every minor star,
+    /// the coloured giants and the shooting star are scenery and move, while
+    /// the figure -- its majors, its connecting lines and their flares -- is the
+    /// person and stays put. Moving that inside its own frame is what would
+    /// stop the card reading as one object.
+    var sceneryOffset: CGFloat = 0
+
     @HavenReduceMotion private var reduceMotion
 
     /// The figure part way lit. Intensities are a plain input: animating them
@@ -41,12 +51,14 @@ struct SkyView: View {
         sky: Sky,
         majorIntensities: [Double],
         figureBand: CGRect? = nil,
-        nebulaDamping: Double = SkyView.fullScreenNebulaDamping
+        nebulaDamping: Double = SkyView.fullScreenNebulaDamping,
+        sceneryOffset: CGFloat = 0
     ) {
         self.sky = sky
         self.majorIntensities = majorIntensities
         self.figureBand = figureBand
         self.nebulaDamping = nebulaDamping
+        self.sceneryOffset = sceneryOffset
     }
 
     /// The figure at rest, where a star is either lit or a faint dot. Use
@@ -57,7 +69,8 @@ struct SkyView: View {
         sky: Sky,
         litMajors: Set<Int>? = nil,
         figureBand: CGRect? = nil,
-        nebulaDamping: Double = SkyView.fullScreenNebulaDamping
+        nebulaDamping: Double = SkyView.fullScreenNebulaDamping,
+        sceneryOffset: CGFloat = 0
     ) {
         let count = sky.majors.count
         self.init(
@@ -65,23 +78,35 @@ struct SkyView: View {
             majorIntensities: litMajors.map { FigureIntensity.from(litMajors: $0, majorCount: count) }
                 ?? FigureIntensity.complete(majorCount: count),
             figureBand: figureBand,
-            nebulaDamping: nebulaDamping
+            nebulaDamping: nebulaDamping,
+            sceneryOffset: sceneryOffset
         )
     }
 
     var body: some View {
         ZStack {
             // Three layers, split by how often each has to repaint.
+            //
+            // The first two are padded by the travel before being offset, so
+            // sliding never exposes an unpainted strip inside the card's clip.
+            //
             // The nebulae stay full bleed whatever the figure does. They are
             // the ground, not the person, and cropping them to a band would
             // leave the rest of the screen flat.
             SkyBackdrop(sky: sky, nebulaDamping: nebulaDamping)
+                .padding(.horizontal, -abs(sceneryOffset))
+                .offset(x: sceneryOffset)
             ShimmerField(sky: sky, figureBand: figureBand)
+                .padding(.horizontal, -abs(sceneryOffset))
+                .offset(x: sceneryOffset)
+            // This layer draws both scenery and figure, so it slides its own
+            // scenery internally rather than being offset whole.
             AnimatedSky(
                 sky: sky,
                 majorIntensities: majorIntensities,
                 animating: !reduceMotion,
-                figureBand: figureBand
+                figureBand: figureBand,
+                sceneryOffset: sceneryOffset
             )
         }
         .allowsHitTesting(false)
@@ -91,7 +116,8 @@ struct SkyView: View {
 
 // MARK: - Static layers
 
-/// Nebulae. Never animated, so this canvas paints once.
+/// Nebulae. Nothing inside them changes, so this canvas paints once and is
+/// only ever moved -- the card slides it for parallax without repainting it.
 private struct SkyBackdrop: View {
     let sky: Sky
 
@@ -177,10 +203,16 @@ private struct AnimatedSky: View {
     let majorIntensities: [Double]
     let animating: Bool
     let figureBand: CGRect?
+    /// Applied to this canvas's scenery only. See `SkyView.sceneryOffset`.
+    var sceneryOffset: CGFloat = 0
+
+    @Environment(\.havenAmbientPaused) private var paused
 
     var body: some View {
         if animating {
-            TimelineView(.animation) { timeline in
+            // Stops waking at display rate while a sheet covers the screen.
+            // Roughly 45 draw calls a frame for a sky nobody can see.
+            TimelineView(.animation(paused: paused)) { timeline in
                 canvas(time: timeline.date.timeIntervalSinceReferenceDate)
             }
         } else {
@@ -195,12 +227,22 @@ private struct AnimatedSky: View {
     private func canvas(time: Double?) -> some View {
         Canvas(rendersAsynchronously: true) { context, size in
             let layout = SkyLayout(figureBand: figureBand, container: size)
-            drawMinors(&context, layout, time)
-            drawGiants(&context, layout, time)
+            // Scenery is drawn in a shifted layer; the figure is not. The split
+            // is by what a thing is: the featured minors and the giants belong
+            // to the sky, so they travel with the rest of it even though they
+            // are drawn here for cost reasons.
+            context.drawLayer { scenery in
+                scenery.translateBy(x: sceneryOffset, y: 0)
+                drawMinors(&scenery, layout, time)
+                drawGiants(&scenery, layout, time)
+            }
             drawEdges(&context, layout)
             drawMajors(&context, layout, time)
             drawFlares(&context, layout, time)
-            drawShootingStar(&context, layout, time)
+            context.drawLayer { scenery in
+                scenery.translateBy(x: sceneryOffset, y: 0)
+                drawShootingStar(&scenery, layout, time)
+            }
         }
     }
 

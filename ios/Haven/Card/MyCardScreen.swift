@@ -37,6 +37,10 @@ struct MyCardScreen: View {
         )
         .navigationTitle("Your card")
         .navigationBarTitleDisplayMode(.inline)
+        // The card and its sky are both ambient loops running at display rate.
+        // A sheet covers them completely, so they carry on redrawing something
+        // nobody can see until it is dismissed.
+        .havenAmbientPaused(editing != nil || confirmingDelete)
         .sheet(item: $editing) { field in
             editor(for: field)
         }
@@ -82,23 +86,48 @@ struct MyCardScreen: View {
     }
 
     private func loaded(_ card: MyCard) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // Seeded the way it is everywhere else: from the identity that survives
+        // a name change.
+        //
+        // Built here rather than inside the drift closure below, which re-runs
+        // every frame. Generating a sky is cheap, but it allocates a fresh
+        // value each time, and SkyView's layers hold it as a stored property --
+        // so rebuilding it per frame would defeat the caching the whole sky is
+        // designed around.
+        let sky = SkyGenerator.build(seed: card.username)
+        let intensities = FigureIntensity.from(
+            litMajors: StarSlot.litMajorIndices(
+                filled: card.filledSlots,
+                majorCount: sky.majors.count
+            ),
+            majorCount: sky.majors.count
+        )
+
+        return VStack(alignment: .leading, spacing: 0) {
             // The card is an object here, not a bleed. It has a real edge now,
             // so the four-sided fade that used to dissolve it into the night is
-            // gone: a sky that stops at a lit rim is a card, and only a sky
+            // gone: a sky that stops at a printed rule is a card, and only a sky
             // that stops at nothing needed hiding.
-            CardObject {
-                HavenCard(
-                    card: card,
-                    sky: sky(for: card),
-                    majorIntensities: intensities(for: card),
-                    photo: photo,
-                    nebulaDamping: MyCardMetrics.cardNebulaDamping
-                )
+            //
+            // The card barely moves and its sky moves the other way. The offset
+            // goes outside the padding, so it shifts the card and not the space
+            // it sits in: everything below stays exactly where it is.
+            CardDriftClock { drift in
+                CardObject {
+                    HavenCard(
+                        card: card,
+                        sky: sky,
+                        majorIntensities: intensities,
+                        photo: photo,
+                        nebulaDamping: CardObjectMetrics.nebulaDamping,
+                        sceneryOffset: drift.scenery
+                    )
+                }
+                .padding(.horizontal, MyCardMetrics.cardInset)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity)
+                .offset(x: drift.card)
             }
-            .padding(.horizontal, MyCardMetrics.cardInset)
-            .padding(.bottom, 24)
-            .frame(maxWidth: .infinity)
             .cardPhoto(card.photoURL, into: $photo)
 
             if let failure = model.failure {
@@ -209,35 +238,17 @@ struct MyCardScreen: View {
         }
     }
 
-    /// The figure, seeded the way it is everywhere else: from the identity that
-    /// survives a name change.
-    private func sky(for card: MyCard) -> Sky {
-        SkyGenerator.build(seed: card.username)
-    }
-
-    private func intensities(for card: MyCard) -> [Double] {
-        let sky = sky(for: card)
-        return FigureIntensity.from(
-            litMajors: StarSlot.litMajorIndices(
-                filled: card.filledSlots,
-                majorCount: sky.majors.count
-            ),
-            majorCount: sky.majors.count
-        )
-    }
 }
 
 enum MyCardMetrics {
-    /// How far the card object is held off the sides of the screen. Its height
-    /// follows from its aspect, so this is the only size the screen chooses.
-    static let cardInset: CGFloat = 44
-
-    /// A card crops far less of each nebula's core than a full screen, so it
-    /// can carry more of the wash than the full-screen 0.4. Not much more: at
-    /// 0.85 a person whose hues land on green and teal gets a card washed in
-    /// colours the dusk palette does not contain, which is the exact failure
-    /// the full-screen damping exists to prevent.
-    static let cardNebulaDamping: Double = 0.5
+    /// How far the card is held off the sides of this screen's own column.
+    ///
+    /// Sits on top of `HavenScreen`'s 24pt, so the card ends up
+    /// `CardObjectMetrics.screenInset` from the edge of the display -- the same
+    /// as the reveal, which has no column and applies that inset directly.
+    /// Change one and change the other, or the card resizes between the two
+    /// screens that show it.
+    static let cardInset: CGFloat = CardObjectMetrics.screenInset - 24
 }
 
 // MARK: - Previews

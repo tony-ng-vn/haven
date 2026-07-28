@@ -34,9 +34,33 @@ struct CardRevealScreen: View {
             DustLayer()
 
             VStack(spacing: 0) {
-                HavenCard(card: card, sky: sky, majorIntensities: intensities, photo: photo)
-                    .scaleEffect(settled ? 1 : RevealMotion.arrivingScale)
-                    .cardPhoto(card.photoURL, into: $photo)
+                // The card no longer fills the screen, so it needs the space
+                // shared out around it: centred in what the actions leave, the
+                // way every other Haven screen holds its content.
+                Spacer(minLength: 0)
+
+                // The same object My Card shows, at the same width, drifting
+                // the same way. This is the first time anyone sees their card,
+                // so it has to be the card -- a full-bleed sky with a name on
+                // it is a different thing wearing the same data.
+                CardDriftClock { drift in
+                    CardObject {
+                        HavenCard(
+                            card: card,
+                            sky: sky,
+                            majorIntensities: intensities,
+                            photo: photo,
+                            nebulaDamping: CardObjectMetrics.nebulaDamping,
+                            sceneryOffset: drift.scenery
+                        )
+                    }
+                    .padding(.horizontal, CardObjectMetrics.screenInset)
+                    .offset(x: drift.card)
+                }
+                .scaleEffect(settled ? 1 : RevealMotion.arrivingScale)
+                .cardPhoto(card.photoURL, into: $photo)
+
+                Spacer(minLength: 0)
 
                 actions
                     .opacity(settled ? 1 : 0)
