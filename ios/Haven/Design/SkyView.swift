@@ -32,6 +32,14 @@ struct SkyView: View {
     /// What a full-screen sky uses.
     static let fullScreenNebulaDamping: Double = 0.4
 
+    /// Slides the ground sideways, leaving the figure where it is.
+    ///
+    /// Only the card uses this, for its parallax. The split is deliberate: the
+    /// nebulae and the minor field are scenery and may move, but the figure is
+    /// the person and stays put. Moving it inside its own frame is what would
+    /// stop the card reading as one object.
+    var backdropOffset: CGFloat = 0
+
     @HavenReduceMotion private var reduceMotion
 
     /// The figure part way lit. Intensities are a plain input: animating them
@@ -41,12 +49,14 @@ struct SkyView: View {
         sky: Sky,
         majorIntensities: [Double],
         figureBand: CGRect? = nil,
-        nebulaDamping: Double = SkyView.fullScreenNebulaDamping
+        nebulaDamping: Double = SkyView.fullScreenNebulaDamping,
+        backdropOffset: CGFloat = 0
     ) {
         self.sky = sky
         self.majorIntensities = majorIntensities
         self.figureBand = figureBand
         self.nebulaDamping = nebulaDamping
+        self.backdropOffset = backdropOffset
     }
 
     /// The figure at rest, where a star is either lit or a faint dot. Use
@@ -57,7 +67,8 @@ struct SkyView: View {
         sky: Sky,
         litMajors: Set<Int>? = nil,
         figureBand: CGRect? = nil,
-        nebulaDamping: Double = SkyView.fullScreenNebulaDamping
+        nebulaDamping: Double = SkyView.fullScreenNebulaDamping,
+        backdropOffset: CGFloat = 0
     ) {
         let count = sky.majors.count
         self.init(
@@ -65,7 +76,8 @@ struct SkyView: View {
             majorIntensities: litMajors.map { FigureIntensity.from(litMajors: $0, majorCount: count) }
                 ?? FigureIntensity.complete(majorCount: count),
             figureBand: figureBand,
-            nebulaDamping: nebulaDamping
+            nebulaDamping: nebulaDamping,
+            backdropOffset: backdropOffset
         )
     }
 
@@ -75,8 +87,12 @@ struct SkyView: View {
             // The nebulae stay full bleed whatever the figure does. They are
             // the ground, not the person, and cropping them to a band would
             // leave the rest of the screen flat.
+            // The first two are ground and may slide; the third is the figure
+            // and may not.
             SkyBackdrop(sky: sky, nebulaDamping: nebulaDamping)
+                .offset(x: backdropOffset)
             ShimmerField(sky: sky, figureBand: figureBand)
+                .offset(x: backdropOffset)
             AnimatedSky(
                 sky: sky,
                 majorIntensities: majorIntensities,

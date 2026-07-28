@@ -1,60 +1,72 @@
 import SwiftUI
 
-/// The card's ambient drift: a slow sway that never leaves the centre for long
-/// and always comes back to it.
+/// The card's ambient life: the card barely moves, and the sky behind it moves
+/// the other way.
+///
+/// Almost all of the motion is parallax rather than travel. The card itself
+/// shifts two points, which is small enough that nothing on screen reads as
+/// sliding, while the star field behind it goes three points the other way. The
+/// relative movement is what sells depth -- you are looking through the card at
+/// something further away, rather than watching a card cross the screen.
+///
+/// What moves is the ground only: nebulae and the minor star field. The figure
+/// stays locked to the card, because the constellation is not a backdrop, it is
+/// the person. Sliding it inside its own frame would be the one thing that
+/// breaks the card as an object.
 ///
 /// Position is read off a clock rather than animated between two endpoints, and
-/// that is the whole design. `sin(0)` is zero, so the rest position is exactly
-/// the centre the card is meant to sit at, a still screenshot is always
-/// perfectly centred, and Reduce Motion is the same value rather than a special
-/// case that can rot. An endpoint animation gives none of that: it oscillates
-/// between two edges, so "at rest" is whichever edge it happened to stop at.
+/// that is the whole design. `sin(0)` is zero, so the rest pose is exactly the
+/// centre the card is meant to sit at, a still screenshot is always perfectly
+/// centred, and Reduce Motion is the same pose rather than a special case that
+/// can rot. An endpoint animation gives none of that: it oscillates between two
+/// edges, so "at rest" is whichever edge it happened to stop at.
 enum CardFloat {
     /// How far the card travels each side of centre.
-    ///
-    /// The card sits 44pt off each side of the screen, so this is nowhere near
-    /// clipping. The constraint is perceptual, not spatial: see the speed note
-    /// on `period`.
-    static let amplitude: CGFloat = 6
+    static let amplitude: CGFloat = 2
 
-    /// One full there-and-back.
+    /// How far the ground travels, and which way.
     ///
-    /// Peak speed works out at about 5.4 pt/s, which sits just above the
-    /// fastest drifting dust mote. Fast enough that the card is not dead,
-    /// slow enough that the eye does not follow it while reading the name.
-    static let period: TimeInterval = 7
+    /// Negative because it moves against the card: that opposition is the
+    /// entire effect. Larger than the card's own travel because the nearer
+    /// thing should move less, which is the one rule parallax has.
+    static let backdropAmplitude: CGFloat = -3
 
-    static func offset(at time: TimeInterval) -> CGFloat {
-        amplitude * sin(2 * .pi * time / period)
+    /// One full there-and-back. Long: the two layers are pulling apart and back
+    /// together, and that reads as breathing only if it is unhurried.
+    static let period: TimeInterval = 11
+
+    /// Where both layers sit at a given moment.
+    struct Pose: Equatable {
+        var card: CGFloat
+        var backdrop: CGFloat
+
+        /// Dead centre. Both the starting pose and the Reduce Motion pose.
+        static let rest = Pose(card: 0, backdrop: 0)
+    }
+
+    static func pose(at time: TimeInterval) -> Pose {
+        let phase = sin(2 * .pi * time / period)
+        return Pose(card: amplitude * phase, backdrop: backdropAmplitude * phase)
     }
 }
 
-extension View {
-    /// Sets this view drifting.
-    ///
-    /// Applied by the screen rather than baked into `CardObject`, which is a
-    /// presentation primitive: the card is the same object whether it is
-    /// floating on My Card or arriving on the reveal.
-    func cardFloat() -> some View {
-        modifier(CardFloatModifier())
-    }
-}
+/// Drives a card and its ground from one clock.
+///
+/// A view rather than a modifier because two different things move by two
+/// different amounts, and a modifier can only offset what it wraps.
+struct CardDrift<Content: View>: View {
+    @ViewBuilder var content: (CardFloat.Pose) -> Content
 
-private struct CardFloatModifier: ViewModifier {
     @HavenReduceMotion private var reduceMotion
 
-    func body(content: Content) -> some View {
+    var body: some View {
         if reduceMotion {
-            // Not a frozen frame of the animation: the resting position IS
-            // zero, so this is the same card, simply not moving.
-            content
+            // Not a frozen frame of the animation: the resting pose IS zero, so
+            // this is the same card, simply not moving.
+            content(.rest)
         } else {
             TimelineView(.animation) { timeline in
-                content.offset(
-                    x: CardFloat.offset(
-                        at: timeline.date.timeIntervalSinceReferenceDate
-                    )
-                )
+                content(CardFloat.pose(at: timeline.date.timeIntervalSinceReferenceDate))
             }
         }
     }

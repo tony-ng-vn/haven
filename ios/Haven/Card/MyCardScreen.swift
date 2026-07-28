@@ -88,21 +88,25 @@ struct MyCardScreen: View {
             // gone: a sky that stops at a printed rule is a card, and only a sky
             // that stops at nothing needed hiding.
             //
-            // The drift goes outside the padding, so it moves the card and not
-            // the space it sits in. Everything below stays where it is.
-            CardObject {
-                HavenCard(
-                    card: card,
-                    sky: sky(for: card),
-                    majorIntensities: intensities(for: card),
-                    photo: photo,
-                    nebulaDamping: MyCardMetrics.cardNebulaDamping
-                )
+            // The card barely moves and its sky moves the other way. The offset
+            // goes outside the padding, so it shifts the card and not the space
+            // it sits in: everything below stays exactly where it is.
+            CardDrift { drift in
+                CardObject {
+                    HavenCard(
+                        card: card,
+                        sky: sky(for: card),
+                        majorIntensities: intensities(for: card),
+                        photo: photo,
+                        nebulaDamping: MyCardMetrics.cardNebulaDamping,
+                        backdropOffset: drift.backdrop
+                    )
+                }
+                .padding(.horizontal, MyCardMetrics.cardInset)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity)
+                .offset(x: drift.card)
             }
-            .padding(.horizontal, MyCardMetrics.cardInset)
-            .padding(.bottom, 24)
-            .frame(maxWidth: .infinity)
-            .cardFloat()
             .cardPhoto(card.photoURL, into: $photo)
 
             if let failure = model.failure {

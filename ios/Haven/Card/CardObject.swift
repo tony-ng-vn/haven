@@ -132,40 +132,52 @@ private let previewCard = MyCard(
     primaryPlatform: .x
 )
 
-private var previewFace: some View {
-    HavenCard(card: previewCard, sky: previewSky, nebulaDamping: 0.5)
+private func previewFace(backdropOffset: CGFloat = 0) -> some View {
+    HavenCard(
+        card: previewCard,
+        sky: previewSky,
+        nebulaDamping: 0.5,
+        backdropOffset: backdropOffset
+    )
+}
+
+/// The card as My Card drives it: drifting, with its ground drifting against it.
+private struct DriftingPreview: View {
+    var body: some View {
+        CardDrift { drift in
+            CardObject { previewFace(backdropOffset: drift.backdrop) }
+                .padding(.horizontal, 68)
+                .offset(x: drift.card)
+        }
+    }
 }
 
 // Padded to 68pt, which is the screen's own 24 plus the card's 44. A preview at
 // the bare inset shows a card wider than the one that ships, which is how a
 // wrapping name goes unnoticed until it is on a phone.
-#Preview("Card object") {
+#Preview("Card object, still") {
     ZStack {
         NightBackground()
-        CardObject { previewFace }
+        CardObject { previewFace() }
             .padding(.horizontal, 68)
     }
     .ignoresSafeArea()
 }
 
-#Preview("Card object, floating") {
+#Preview("Card object, drifting") {
     ZStack {
         NightBackground()
-        CardObject { previewFace }
-            .padding(.horizontal, 68)
-            .cardFloat()
+        DriftingPreview()
     }
     .ignoresSafeArea()
 }
 
-// Should be indistinguishable from the resting frame above: the drift's rest
-// position is zero, so there is nothing to freeze.
+// Should be indistinguishable from the still preview above: the drift's rest
+// pose is zero for both layers, so there is nothing to freeze.
 #Preview("Card object, Reduce Motion") {
     ZStack {
         NightBackground()
-        CardObject { previewFace }
-            .padding(.horizontal, 68)
-            .cardFloat()
+        DriftingPreview()
     }
     .ignoresSafeArea()
     .havenReduceMotion()
@@ -174,7 +186,7 @@ private var previewFace: some View {
 #Preview("Card object, accessibility XXXL") {
     ZStack {
         NightBackground()
-        CardObject { previewFace }
+        CardObject { previewFace() }
             .padding(.horizontal, 68)
     }
     .ignoresSafeArea()
