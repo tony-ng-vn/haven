@@ -11,14 +11,21 @@ struct DirectoryScreen: View {
     /// Focusing a search field belongs to the Search tab, so the field here
     /// hands the whole interaction over rather than imitating it.
     let openSearch: () -> Void
+    /// Pushes one person's screen, which is where their note gets written.
+    let openPerson: (String) -> Void
 
     @StateObject private var model: DirectoryModel
     @State private var showsExplainer = false
     @State private var promoDismissed: Bool
 
-    init(userId: String, openSearch: @escaping () -> Void) {
+    init(
+        userId: String,
+        openSearch: @escaping () -> Void,
+        openPerson: @escaping (String) -> Void
+    ) {
         self.userId = userId
         self.openSearch = openSearch
+        self.openPerson = openPerson
         _model = StateObject(wrappedValue: DirectoryModel())
         _promoDismissed = State(
             initialValue: WidgetPromoDismissal.isDismissed(userId: userId)
@@ -26,9 +33,15 @@ struct DirectoryScreen: View {
     }
 
     /// A loaded screen that never opens a socket, for previews.
-    init(userId: String, openSearch: @escaping () -> Void, preview: DirectoryLoad) {
+    init(
+        userId: String,
+        openSearch: @escaping () -> Void,
+        openPerson: @escaping (String) -> Void = { _ in },
+        preview: DirectoryLoad
+    ) {
         self.userId = userId
         self.openSearch = openSearch
+        self.openPerson = openPerson
         _model = StateObject(wrappedValue: DirectoryModel(preview: preview))
         _promoDismissed = State(
             initialValue: WidgetPromoDismissal.isDismissed(userId: userId)
@@ -138,17 +151,20 @@ struct DirectoryScreen: View {
         .padding(.top, 32)
     }
 
-    /// Names only, and no row action. Opening a person is Phase 2, and a row
-    /// that looks tappable and goes nowhere is a worse answer than a row that
-    /// does not pretend.
+    /// Every row opens the person, which is where their note is written.
     private var list: some View {
         VStack(spacing: 0) {
             ForEach(model.people) { person in
                 HavenRow(
                     title: person.name,
                     detail: person.detail,
+                    action: { openPerson(person.id) },
                     leading: { EmptyView() },
-                    trailing: { EmptyView() }
+                    trailing: {
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(HavenColor.faint)
+                    }
                 )
             }
         }

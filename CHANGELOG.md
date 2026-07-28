@@ -6,6 +6,18 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.4.0
+
+2026-07-28
+
+**iOS**
+
+- Tapping someone in your directory now opens them, which it never did before. Their card is at the top, and under it is a box for what you remember about them.
+- That box is the first place in the iPhone app where you can write anything about a person. Until now Haven could search your notes and reason over them, and there was no way to write one.
+- The box says to keep one line per thing, because each line is searchable on its own -- "met at the Founder Inc dinner" and "works on an infinite-context database" find them separately.
+
+---
+
 ## v0.3.0
 
 2026-07-28
