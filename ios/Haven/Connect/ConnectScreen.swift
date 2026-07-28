@@ -22,6 +22,9 @@ struct ConnectScreen: View {
     @StateObject private var model: ConnectModel
     @Environment(\.dismiss) private var dismiss
     @State private var photo: Image?
+    /// True once a connection has landed, so the haptic fires on the moment
+    /// rather than on every state the screen passes through.
+    @State private var connected = false
 
     init(openPerson: @escaping (String) -> Void = { _ in }, initialHandle: String? = nil) {
         self.openPerson = openPerson
@@ -45,6 +48,12 @@ struct ConnectScreen: View {
             actions
         }
         .presentationDragIndicator(.visible)
+        // Light on commit. Two people ending up in each other's directories is
+        // the most commit-like thing in the app, and it was silent.
+        .sensoryFeedback(.impact(weight: .light), trigger: connected)
+        .onChange(of: model.state) { _, state in
+            if case .connected = state { connected = true }
+        }
         // A link arrives with the person already named, so the camera never
         // opens: the screen goes straight to whoever the address points at.
         .task {

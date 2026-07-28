@@ -156,3 +156,26 @@ struct StarIgnitionTests {
         #expect(HavenMotion.starIgnitionHold == 0.40)
     }
 }
+
+@Suite("Where the springs are")
+struct MotionShapeTests {
+    // The audit behind the one spring, kept as an assertion so a second one
+    // cannot appear without somebody deciding it should. A timing curve
+    // restarts at zero velocity when interrupted, which only matters where a
+    // finger can catch something already moving; the card flip is the only
+    // animation in Haven a tap can interrupt, because it is the only one a tap
+    // toggles.
+    @Test("the flip is the interruptible animation, and the rest are curves")
+    func onlyTheFlipSprings() {
+        #expect(HavenMotion.cardFlip == HavenMotion.interruptible)
+        for curve in [
+            HavenMotion.press,
+            HavenMotion.screen,
+            HavenMotion.starIgnition,
+            HavenMotion.revealSettle,
+        ] {
+            #expect(curve != HavenMotion.interruptible)
+        }
+    }
+
+}

@@ -423,7 +423,7 @@ blocked on those merges rather than on any decision.
 - [x] F2 universal links (PR 154)
 - [x] F3 connected-person state (PR 155)
 - [x] G1 card review fixes (PR 156)
-- [ ] G2 motion and haptics
+- [x] G2 motion and haptics (PR 157)
 - [ ] G3 accessibility audit
 - [ ] G4 copy convergence
 - [ ] H1 release readiness

@@ -6,6 +6,17 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.26.0
+
+2026-07-28
+
+**iOS**
+
+- Turning the card over twice quickly no longer hitches. The flip is the one thing in Haven a finger can catch mid-flight, and it was animated on a curve that restarts from a standstill when you interrupt it.
+- Saving somebody by hand, writing a note, and connecting to another person now each land with the same light tap that answering an onboarding question does. All three were silent, which made the app's most deliberate actions feel like nothing had happened.
+
+---
+
 ## v0.25.0
 
 2026-07-28
