@@ -6,6 +6,19 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.11.0
+
+2026-07-28
+
+**iOS**
+
+- You can add someone by hand. The Add someone button on People has been sitting there disabled since the screen was built; it now opens a sheet asking their name, one way to reach them, and one line about them, and saves them to your directory.
+- The handle can be on any of six platforms, not just the three Haven reads shares from: Instagram, X, LinkedIn, phone, WhatsApp and Telegram. Paste a profile link or type the handle; Haven shows you what it will actually store before you save.
+- Adding someone works with no signal. The save is written to your phone and sent when there is a connection, the same way a profile shared into Haven is, so nobody is ever lost to a basement.
+- If the handle you type is already on somebody in your directory, Haven says who before you save, and your note is added to them rather than filing a second copy of the same person. If the name matches somebody instead, it offers them and lets you decide.
+
+---
+
 ## v0.10.0
 
 2026-07-28

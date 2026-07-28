@@ -2,6 +2,30 @@ import Combine
 import ConvexMobile
 import SwiftUI
 
+/// A request to send whatever capture is waiting, now rather than at the next
+/// launch.
+///
+/// An environment value rather than a closure threaded down through the view
+/// tree: nothing between the root and the add sheet -- onboarding, the tabs,
+/// the directory list -- has any business knowing the capture queue exists, and
+/// passing one through each of them would teach every one of them that it does.
+/// The default does nothing, so a preview renders without a Convex client
+/// behind it.
+struct CaptureDrainRequest {
+    var run: () async -> Void = {}
+}
+
+private struct CaptureDrainRequestKey: EnvironmentKey {
+    static let defaultValue = CaptureDrainRequest()
+}
+
+extension EnvironmentValues {
+    var requestCaptureDrain: CaptureDrainRequest {
+        get { self[CaptureDrainRequestKey.self] }
+        set { self[CaptureDrainRequestKey.self] = newValue }
+    }
+}
+
 /// A person as the mirror needs them, straight off `people:listPeople`.
 ///
 /// Its own shape rather than `DirectoryPerson`: the directory screen shows a
