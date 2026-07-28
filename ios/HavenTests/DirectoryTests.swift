@@ -177,3 +177,51 @@ struct DirectoryPagingTests {
         #expect(model.isLoadingMore)
     }
 }
+
+@MainActor
+@Suite("The directory's two suggestions")
+struct DirectoryPromoTests {
+    // Distinct from people.isEmpty, which is also true while the read is in
+    // flight. A suggestion that flashed up during loading and vanished when the
+    // first page landed would be worse than one that waits a beat.
+    @Test("a directory is empty only once it has answered")
+    func emptyMeansAnswered() {
+        #expect(!DirectoryModel(preview: .loading).isEmpty)
+        #expect(!DirectoryModel(preview: .unreachable).isEmpty)
+        #expect(DirectoryModel(preview: .ready(DirectoryPage(page: [], isDone: true))).isEmpty)
+        #expect(
+            !DirectoryModel(
+                preview: .ready(
+                    DirectoryPage(page: [DirectoryPerson(_id: "p1", name: "Ada")], isDone: true)
+                )
+            ).isEmpty
+        )
+    }
+
+    // Turning down the widget says nothing about wanting Haven in the share
+    // sheet. One key hiding both would take away the one that matters most.
+    @Test("the two suggestions are dismissed separately")
+    func dismissalsAreSeparate() {
+        let userId = "user_two_promos"
+        WidgetPromoDismissal.reset(userId: userId)
+        SharePromoDismissal.reset(userId: userId)
+
+        WidgetPromoDismissal.dismiss(userId: userId)
+
+        #expect(WidgetPromoDismissal.isDismissed(userId: userId))
+        #expect(!SharePromoDismissal.isDismissed(userId: userId))
+    }
+
+    @Test("dismissing the share sheet card sticks, and only for this account")
+    func sharePromoDismissalIsKeyedByUser() {
+        let mine = "user_share_promo_mine"
+        let theirs = "user_share_promo_theirs"
+        SharePromoDismissal.reset(userId: mine)
+        SharePromoDismissal.reset(userId: theirs)
+
+        SharePromoDismissal.dismiss(userId: mine)
+
+        #expect(SharePromoDismissal.isDismissed(userId: mine))
+        #expect(!SharePromoDismissal.isDismissed(userId: theirs))
+    }
+}
