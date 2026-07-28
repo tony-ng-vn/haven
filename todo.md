@@ -5,6 +5,28 @@ The stable design and architecture live in `mvp-design.md`, and Phase 1's implem
 
 Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
 
+## Needs you
+
+Everything here is blocked on a dashboard, a physical device, or a key. No
+code is waiting on any of it.
+
+**Dashboards**
+
+- [ ] **Clerk production instance.** Turn off SMS code under Multi-factor first (that is the only thing blocking the free plan). Then create it on `inhavens.com`, set up Apple and LinkedIn OAuth with your own credentials -- production instances do not use Clerk's shared ones -- and recreate the JWT template named exactly `convex`. Then swap the key in four places: `ios/Haven/Config.swift`, `VITE_CLERK_PUBLISHABLE_KEY` on Vercel, `CLERK_JWT_ISSUER_DOMAIN` on the Convex prod deployment, and the three `valued-bonefish-64` entries in `vercel.json`'s CSP. Do it before real users: the issuer is half of `tokenIdentifier`, so every existing row orphans.
+- [ ] **Vercel: is `CONVEX_DEPLOY_KEY` a production or a preview key?** Settings -> Environment Variables. If it is a production key, every PR preview deploys the backend to production before review. A preview key gives each branch its own throwaway deployment, which is what you want.
+- [ ] **App Store Connect: reserve the name.** Longest lead time of anything on this list, and "Haven" is crowded.
+- [ ] **Apple Developer: enable Sign in with Apple on the App ID.** The entitlement is in the repo; the capability is not something a commit can turn on.
+
+**Your phone** (an unsigned simulator build cannot configure Clerk, so none of these can be checked without a device)
+
+- [ ] Write a note on someone, then search a word that appears only in that note.
+- [ ] Share a profile from Instagram, X and LinkedIn into Haven, and confirm the person lands in the directory.
+- [ ] Ask search a question and see whether the answer is any good.
+
+**A key**
+
+- [ ] `OPENAI_API_KEY=sk-... node scripts/eval-ask.ts` for a real recall number, and one ask against a real network to measure cost per question. Worth doing only once there are notes to read -- before that it measures nothing.
+
 ## Now / next
 
 - [~] Phase 1: Onboarding, card, and the two home screens. Full spec and milestone definitions of done in `phase1-build-plan.md`.
