@@ -16,6 +16,38 @@ struct MyCard: Decodable, Equatable {
     var primaryPlatform: Platform?
     var company: String?
     var role: String?
+    /// What happened to each onboarding question, as the server records it.
+    ///
+    /// Absent on every row written before `recordOnboardingStep` existed, which
+    /// is why the device store stays: a card with no record here is a card that
+    /// only the device knows about.
+    var onboarding: Onboarding?
+
+    /// Mirrors `onboardingValidator` in `convex/profileFields.ts`.
+    struct Onboarding: Decodable, Equatable {
+        var name: State?
+        var location: State?
+        var contact: State?
+        /// Stamped once every question has been decided, however it was
+        /// decided. Reaching the end by skipping is still reaching the end.
+        var completedAt: Double?
+
+        /// What happened to one question. "Asked and declined" is a fact the
+        /// card itself cannot carry: a skipped city and a city nobody got round
+        /// to asking for leave the same empty field.
+        enum State: String, Decodable, Equatable {
+            case answered
+            case skipped
+        }
+
+        func state(of step: OnboardingStep) -> State? {
+            switch step {
+            case .name: return name
+            case .location: return location
+            case .contact: return contact
+            }
+        }
+    }
 
     struct City: Decodable, Equatable {
         let name: String

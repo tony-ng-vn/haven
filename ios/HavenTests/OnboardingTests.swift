@@ -122,3 +122,97 @@ struct OnboardingTests {
         #expect(OnboardingStep.first(unansweredIn: card) == .name)
     }
 }
+
+// The server's record of what happened to each question, and how it meets the
+// device store that used to be the only one.
+@Suite("Onboarding progress, recorded")
+struct OnboardingProgressTests {
+    private func card(_ onboarding: MyCard.Onboarding?) -> MyCard {
+        var card = MyCard(username: "maya", name: "Maya Chen")
+        card.onboarding = onboarding
+        return card
+    }
+
+    // The reinstall case, which is the whole point of the record. A skip made
+    // on the last phone is honoured on this one, with an empty device store.
+    @Test("a skip recorded on the server is honoured on a fresh device")
+    func serverSkipSurvivesReinstall() {
+        let recorded = card(MyCard.Onboarding(location: .skipped))
+        #expect(OnboardingProgress.skipped(in: recorded, onDevice: []) == [.location])
+        #expect(OnboardingStep.first(unansweredIn: recorded, skipped: [.location]) == .contact)
+    }
+
+    // The other direction: a skip made with no signal is still a skip, even
+    // though the server never heard about it.
+    @Test("a skip the server has not heard about still counts")
+    func deviceSkipCountsAlone() {
+        #expect(OnboardingProgress.skipped(in: card(nil), onDevice: [.contact]) == [.contact])
+        let recorded = card(MyCard.Onboarding(location: .skipped))
+        #expect(
+            OnboardingProgress.skipped(in: recorded, onDevice: [.contact])
+                == [.location, .contact]
+        )
+    }
+
+    // Only skips. An answered question is already covered by the field it
+    // fills, and counting it here would keep the question unasked after
+    // somebody cleared that field.
+    @Test("an answered question is not a skipped one")
+    func answeredIsNotSkipped() {
+        let answered = card(MyCard.Onboarding(name: .answered, location: .answered))
+        #expect(OnboardingProgress.skipped(in: answered, onDevice: []).isEmpty)
+    }
+
+    @Test("the server is told about skips it does not have")
+    func pushesUnrecorded() {
+        #expect(OnboardingProgress.unrecorded(onDevice: [.location], in: card(nil)) == [.location])
+        // Already recorded, however it was recorded: nothing to say.
+        let recorded = card(MyCard.Onboarding(location: .skipped))
+        #expect(OnboardingProgress.unrecorded(onDevice: [.location], in: recorded).isEmpty)
+        let answeredInstead = card(MyCard.Onboarding(location: .answered))
+        #expect(OnboardingProgress.unrecorded(onDevice: [.location], in: answeredInstead).isEmpty)
+    }
+
+    // The server refuses to record a skipped name, so sending one would be an
+    // error repeated on every launch for the life of the install.
+    @Test("a skipped name is never pushed")
+    func neverPushesName() {
+        #expect(OnboardingProgress.unrecorded(onDevice: [.name, .contact], in: card(nil)) == [.contact])
+    }
+
+    @Test("what is pushed goes in question order")
+    func pushesInOrder() {
+        #expect(
+            OnboardingProgress.unrecorded(onDevice: [.contact, .location], in: card(nil))
+                == [.location, .contact]
+        )
+    }
+
+    // Onboarding happening once is a fact the server holds now. Before this,
+    // clearing your city on My Card dropped you back into the questions,
+    // because an empty field and an unasked question looked identical.
+    @Test("a finished onboarding does not restart when a field is cleared")
+    func completedStaysCompleted() {
+        var finished = card(
+            MyCard.Onboarding(
+                name: .answered,
+                location: .answered,
+                contact: .answered,
+                completedAt: 1_700_000_000_000
+            )
+        )
+        // Every field but the name emptied, exactly as clearing them on My Card
+        // would leave the card.
+        finished.city = nil
+        finished.handles = []
+        #expect(OnboardingStep.first(unansweredIn: finished) == nil)
+    }
+
+    // A row written before the record existed carries none of it, and has to
+    // behave exactly as it did.
+    @Test("a card with no record behaves the way it always did")
+    func legacyCardUnchanged() {
+        #expect(OnboardingStep.first(unansweredIn: card(nil)) == .location)
+        #expect(OnboardingProgress.skipped(in: card(nil), onDevice: []).isEmpty)
+    }
+}

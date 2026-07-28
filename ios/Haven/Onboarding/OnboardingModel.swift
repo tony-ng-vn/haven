@@ -54,6 +54,15 @@ enum OnboardingStep: Int, CaseIterable {
     case name
     case location
     case contact
+
+    /// The name `recordOnboardingStep` takes.
+    var recordName: String {
+        switch self {
+        case .name: return "name"
+        case .location: return "location"
+        case .contact: return "contact"
+        }
+    }
 }
 
 extension OnboardingStep {
@@ -67,6 +76,11 @@ extension OnboardingStep {
         unansweredIn card: MyCard?,
         skipped: Set<OnboardingStep> = []
     ) -> OnboardingStep? {
+        // Onboarding happening once is now a fact the server holds, so clearing
+        // a field on My Card no longer drops somebody back into the questions.
+        // Before this record existed there was nothing to tell "never asked"
+        // from "asked and answered, then emptied", and the flow guessed wrong.
+        if card?.onboarding?.completedAt != nil { return nil }
         let filled = card?.filledSlots ?? []
         if !filled.contains(.name) { return .name }
         if !filled.contains(.city), !skipped.contains(.location) { return .location }
@@ -75,12 +89,54 @@ extension OnboardingStep {
     }
 }
 
+/// Reconciling the device's record of what was skipped with the server's.
+///
+/// The device store used to be the record. It is a cache of this one now: a
+/// skip made offline still has to survive the app being killed, and a skip made
+/// on a phone that has since been wiped still has to be honoured on the next
+/// one. Neither store is authoritative on its own, so both are read and the
+/// device pushes anything the server has not heard.
+enum OnboardingProgress {
+    /// Every question this person has passed on, according to both stores.
+    ///
+    /// A union rather than a winner: the server knows about other devices, and
+    /// the device knows about a skip whose write has not landed yet. Only
+    /// `skipped` counts -- an answered question is already covered by its
+    /// filled field, and treating it as decided here would keep a question
+    /// unasked after the field it fills was cleared.
+    static func skipped(
+        in card: MyCard?,
+        onDevice deviceSkips: Set<OnboardingStep>
+    ) -> Set<OnboardingStep> {
+        guard let onboarding = card?.onboarding else { return deviceSkips }
+        let recorded = OnboardingStep.allCases.filter { onboarding.state(of: $0) == .skipped }
+        return deviceSkips.union(recorded)
+    }
+
+    /// The skips the server has not been told about yet.
+    ///
+    /// The retry. A skip made with no signal, or on a build before this record
+    /// existed, is pushed the next time the card loads rather than lost.
+    static func unrecorded(
+        onDevice deviceSkips: Set<OnboardingStep>,
+        in card: MyCard?
+    ) -> [OnboardingStep] {
+        // Name can never be skipped -- the server refuses to record it, and
+        // sending one would be an error on every launch forever.
+        deviceSkips
+            .filter { $0 != .name && card?.onboarding?.state(of: $0) == nil }
+            .sorted { $0.rawValue < $1.rawValue }
+    }
+}
+
 /// Questions this person passed on, kept on the device.
 ///
-/// A skip is a local decision, not a fact about the card. The server has no
-/// field for "asked and declined", and adding one would make a skipped city
-/// indistinguishable from one nobody has got round to asking for. Keyed by user
-/// so a second account on the same phone starts clean.
+/// This was the record. It is a cache of `profiles.onboarding` now: the server
+/// grew a field for "asked and declined" precisely because a skipped city and a
+/// city nobody got round to asking for leave the same empty field. The cache
+/// still earns its keep -- a skip made with no signal has to survive the app
+/// being killed, and it is what `OnboardingProgress.unrecorded` retries from.
+/// Keyed by user so a second account on the same phone starts clean.
 enum OnboardingSkips {
     static func load(userId: String) -> Set<OnboardingStep> {
         let stored = UserDefaults.standard.array(forKey: key(userId)) as? [Int] ?? []
@@ -136,6 +192,9 @@ final class OnboardingModel: ObservableObject {
     /// spinner: the question stays up through the star ignition, and a second
     /// tap in that window would fire the same write twice.
     private var committing = false
+    /// The avatar an authorization handed back, waiting for its contact answer
+    /// to land.
+    private var pendingAvatar: String?
     private var cancellable: AnyCancellable?
 
     /// - Parameter userId: the Clerk user id. It is the seed for the whole
@@ -192,6 +251,61 @@ final class OnboardingModel: ObservableObject {
         guard !contact.value.isEmpty else { return }
         let handles: [ConvexEncodable?] = [contact.convexArgument]
         await save(["handles": handles, "primaryPlatform": contact.platform.rawValue])
+        // After the answer, not beside it. Both are writes to the same row, and
+        // running them together would mean one of them losing the `committing`
+        // guard and reporting a failure that was really a collision.
+        await importAvatar()
+    }
+
+    /// Holds the avatar a provider handed back, for `saveContact` to import
+    /// once the contact answer itself has landed.
+    ///
+    /// Remembered rather than imported on the spot because an authorization can
+    /// be followed by a panel, a correction, and a Continue -- and the photo
+    /// should arrive with the answer, not during the editing of it.
+    func rememberAvatar(_ url: String?) {
+        pendingAvatar = url
+    }
+
+    /// Brings the provider's avatar into Haven's own storage.
+    ///
+    /// Only when there is no photo yet. Every successful authorization returns
+    /// one, and a person who has already chosen a photo has said what they want
+    /// their card to show; a payload is not an argument against that. Haven
+    /// cannot tell a photo somebody picked from one it imported, so it never
+    /// replaces either.
+    ///
+    /// Silent throughout. A failed import leaves the photo star unlit, which is
+    /// the state the person was already in, and My Card's photo row is right
+    /// there. Nothing here is worth interrupting the reveal for.
+    func importAvatar() async {
+        guard let source = pendingAvatar, let url = URL(string: source) else { return }
+        guard card?.hasPhoto == false else {
+            pendingAvatar = nil
+            return
+        }
+        guard let data = await Self.download(url), let contentType = ImageFormat.contentType(of: data)
+        else { return }
+        pendingAvatar = nil
+        let work = Task { () throws -> MyCard in
+            let target: String = try await convex.mutation("profiles:generateUploadUrl")
+            let storageId = try await PhotoUpload.send(data, to: target, contentType: contentType)
+            return try await convex.mutation(
+                "profiles:updateMyProfile",
+                with: ["photoStorageId": storageId]
+            )
+        }
+        guard let saved = await work.value(within: .seconds(HavenNetwork.deadline)) else { return }
+        card = saved
+    }
+
+    private static func download(_ url: URL) async -> Data? {
+        guard let (data, response) = try? await URLSession.shared.data(from: url) else {
+            return nil
+        }
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode) else { return nil }
+        return data
     }
 
     /// Passes on a question. Recorded on the device rather than sent, because
@@ -200,8 +314,35 @@ final class OnboardingModel: ObservableObject {
     func skip(_ step: OnboardingStep) {
         guard !committing else { return }
         skipped.insert(step)
+        // The device write first and unconditionally: it is what makes a skip
+        // survive a kill, and it is the retry queue for the record below.
         OnboardingSkips.save(skipped, userId: userId)
+        record(step, as: "skipped")
         self.step = OnboardingStep.first(unansweredIn: card, skipped: skipped)
+    }
+
+    /// Tells the server what happened to a question.
+    ///
+    /// Never awaited by the flow. A record that does not land must not hold up
+    /// the next question -- the answer itself is already saved, and the record
+    /// is caught up by `reconcile` on the next launch.
+    private func record(_ step: OnboardingStep, as state: String) {
+        Task {
+            let _: String? = try? await convex.mutation(
+                "profiles:recordOnboardingStep",
+                with: ["step": step.recordName, "state": state]
+            )
+        }
+    }
+
+    /// Pushes anything the device knows and the server does not.
+    ///
+    /// The catch-up for a skip made offline, and for every skip made by a build
+    /// that shipped before this record existed.
+    private func reconcile(against card: MyCard?) {
+        for step in OnboardingProgress.unrecorded(onDevice: skipped, in: card) {
+            record(step, as: "skipped")
+        }
     }
 
     private func save(_ fields: [String: ConvexEncodable?]) async {
@@ -239,6 +380,12 @@ final class OnboardingModel: ObservableObject {
         ) { [weak self] card in
             guard let self else { return }
             self.card = card
+            // Both stores, then the catch-up. A skip recorded on another phone
+            // has to be honoured here, and a skip made here while offline has
+            // to reach the server eventually.
+            self.skipped = OnboardingProgress.skipped(in: card, onDevice: self.skipped)
+            OnboardingSkips.save(self.skipped, userId: self.userId)
+            self.reconcile(against: card)
             self.step = OnboardingStep.first(unansweredIn: card, skipped: self.skipped)
             self.load = .ready
         } onSilence: { [weak self] in
@@ -253,6 +400,10 @@ final class OnboardingModel: ObservableObject {
     private func commit(_ saved: MyCard) async {
         card = saved
         commits += 1
+        // Recorded from the question that was on screen, not guessed from which
+        // field changed: an answer and the question it answers are the same
+        // event, and a later edit to the same field is not.
+        if let answered = step { record(answered, as: "answered") }
         try? await Task.sleep(for: .seconds(HavenMotion.starIgnitionDuration))
         step = OnboardingStep.first(unansweredIn: saved, skipped: skipped)
     }
