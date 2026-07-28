@@ -18,7 +18,7 @@ on:
 
 jobs:
   ios-test:
-    runs-on: macos-latest
+    runs-on: self-hosted-mac
     # A hung simulator boot is the usual failure here, and the default 6 hour
     # timeout would bill all of it at the macOS rate for a job of minutes.
     timeout-minutes: 30
