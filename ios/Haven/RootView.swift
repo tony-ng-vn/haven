@@ -55,6 +55,13 @@ struct RootView: View {
                     guard phase == .active else { return }
                     Task { await captures.run() }
                 }
+                // A capture made inside the app has nothing to come back
+                // from, so it asks for the same pass here rather than waiting
+                // for a foreground that already happened.
+                .environment(
+                    \.requestCaptureDrain,
+                    CaptureDrainRequest(run: { await captures.run() })
+                )
         } else {
             loading
         }

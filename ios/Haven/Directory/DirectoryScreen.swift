@@ -16,7 +16,11 @@ struct DirectoryScreen: View {
 
     @StateObject private var model: DirectoryModel
     @State private var showsExplainer = false
+    @State private var showsAdd = false
     @State private var promoDismissed: Bool
+    /// Sending what was just written is the app's job, not this screen's; it
+    /// only asks. See `CaptureDrainRequest`.
+    @Environment(\.requestCaptureDrain) private var requestCaptureDrain
 
     init(
         userId: String,
@@ -59,6 +63,26 @@ struct DirectoryScreen: View {
         .sheet(isPresented: $showsExplainer) {
             LockScreenExplainer()
         }
+        // Both read at presentation time rather than held: the mirror is
+        // rewritten after every sync, and a sheet opened tomorrow should not
+        // offer yesterday's directory.
+        .sheet(isPresented: $showsAdd) {
+            AddPersonSheet(
+                mirror: DirectoryMirrorStore.forApp().load(),
+                queue: .forApp(),
+                onSaved: onPersonAdded
+            )
+        }
+    }
+
+    /// The capture is on disk; this is what turns it into a row.
+    ///
+    /// Without it a person added while online would not appear until the app
+    /// next came back to the foreground, which reads as a save that did not
+    /// work. Offline it changes nothing: the drain keeps what it could not
+    /// send, and the next launch tries again.
+    private func onPersonAdded() {
+        Task { await requestCaptureDrain.run() }
     }
 
     /// "People", with a count once there is one worth giving.
@@ -167,11 +191,7 @@ struct DirectoryScreen: View {
     }
 
     private var actions: some View {
-        PrimaryButton(title: "Add someone") {}
-            // Phase 2 builds the form behind this. Disabled rather than hidden,
-            // so the shape of the screen does not move under someone when it
-            // arrives.
-            .disabled(true)
+        PrimaryButton(title: "Add someone") { showsAdd = true }
     }
 }
 
