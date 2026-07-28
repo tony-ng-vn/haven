@@ -23,6 +23,126 @@ private func string(_ args: [String: ConvexEncodable?], _ key: String) -> String
     return value as? String
 }
 
+@Suite("What a person shows")
+struct PersonFieldTests {
+    // The choice somebody made about how to reach this person is the whole
+    // meaning of a preferred platform, so it leads.
+    @Test("the preferred way to reach them comes first")
+    func preferredLeads() {
+        let person = Person(
+            _id: "p1",
+            name: "Mai Tran",
+            contactHandles: [
+                Person.Handle(platform: "instagram", value: "mai.makes"),
+                Person.Handle(platform: "phone", value: "+84901234567"),
+            ],
+            preferredPlatform: "phone"
+        )
+        #expect(person.reachableHandles.map(\.platform) == ["phone", "instagram"])
+    }
+
+    @Test("with no preference the stored order stands")
+    func noPreference() {
+        let person = Person(
+            _id: "p1",
+            name: "Mai Tran",
+            contactHandles: [
+                Person.Handle(platform: "instagram", value: "mai.makes"),
+                Person.Handle(platform: "phone", value: "+84901234567"),
+            ]
+        )
+        #expect(person.reachableHandles.map(\.platform) == ["instagram", "phone"])
+    }
+
+    // A row saved by an early screenshot capture carries the single legacy
+    // pair and no contactHandles. Showing nothing would say Haven has no way
+    // to reach somebody it plainly does.
+    @Test("a person written before contactHandles still shows their one handle")
+    func legacyHandle() {
+        let person = Person(
+            _id: "p1",
+            name: "Mai Tran",
+            platform: "instagram",
+            handle: "mai.makes"
+        )
+        #expect(person.reachableHandles == [Person.Handle(platform: "instagram", value: "mai.makes")])
+    }
+
+    @Test("a person with nothing to reach has nothing to show")
+    func noHandles() {
+        #expect(Person(_id: "p1", name: "Mai Tran").reachableHandles.isEmpty)
+    }
+
+    // A shared profile stores the handle and the URL it came from. Listing
+    // both would be one way to reach somebody, twice, worded differently.
+    @Test("a link that is already one of the handles is not repeated")
+    func linkFoldedIntoHandles() {
+        let person = Person(
+            _id: "p1",
+            name: "Mai Tran",
+            link: "https://instagram.com/Mai.Makes",
+            contactHandles: [Person.Handle(platform: "instagram", value: "mai.makes")]
+        )
+        #expect(person.standaloneLink == nil)
+    }
+
+    @Test("a link that points somewhere else is shown")
+    func standaloneLink() {
+        let person = Person(
+            _id: "p1",
+            name: "Mai Tran",
+            link: "https://maitran.example",
+            contactHandles: [Person.Handle(platform: "instagram", value: "mai.makes")]
+        )
+        #expect(person.standaloneLink?.absoluteString == "https://maitran.example")
+    }
+
+    @Test("the line under the name reads work then place")
+    func detailLine() {
+        let person = Person(
+            _id: "p1",
+            name: "Mai Tran",
+            company: "Haven",
+            role: "Founder",
+            city: Person.City(name: "Da Nang", country: "Vietnam")
+        )
+        #expect(person.detail == "Founder, Haven | Da Nang, Vietnam")
+        #expect(Person(_id: "p1", name: "Mai Tran").detail == nil)
+    }
+
+    // An empty field says so out loud, because the row shows a placeholder and
+    // a screen reader would otherwise hear the placeholder as the value.
+    @Test("an edit row reads the value, or nothing")
+    func editRowValues() {
+        let person = Person(
+            _id: "p1",
+            name: "Mai Tran",
+            company: "Haven",
+            city: Person.City(name: "Da Nang"),
+            contactHandles: [Person.Handle(platform: "instagram", value: "mai.makes")]
+        )
+        #expect(person.value(for: .name) == "Mai Tran")
+        #expect(person.value(for: .company) == "Haven")
+        #expect(person.value(for: .role) == nil)
+        #expect(person.value(for: .city) == "Da Nang")
+        #expect(person.value(for: .handles) == "instagram.com/mai.makes")
+        #expect(person.value(for: .photo) == nil)
+    }
+
+    @Test("more than one handle is counted rather than listed")
+    func manyHandles() {
+        let person = Person(
+            _id: "p1",
+            name: "Mai Tran",
+            contactHandles: [
+                Person.Handle(platform: "instagram", value: "mai.makes"),
+                Person.Handle(platform: "phone", value: "+84901234567"),
+            ]
+        )
+        #expect(person.value(for: .handles) == "2 ways")
+    }
+}
+
 @Suite("Note arguments")
 struct NoteArgumentTests {
     @Test("a written note is sent as text")

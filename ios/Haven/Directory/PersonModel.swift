@@ -4,8 +4,10 @@ import SwiftUI
 
 /// One saved person as `people:getPerson` returns them.
 ///
-/// A subset of what the query sends: this screen shows who they are and what
-/// you wrote about them, and an unknown key is ignored.
+/// Everything the query sends that this screen has a use for. It used to be a
+/// good deal less: the photo, the handles, the preferred platform and the link
+/// were all being sent and dropped on the floor, which is why the screen could
+/// show you who somebody was and never how to reach them.
 struct Person: Decodable, Equatable {
     let _id: String
     let name: String
@@ -15,17 +17,99 @@ struct Person: Decodable, Equatable {
     var company: String?
     var role: String?
     var city: City?
+    var link: String?
+    /// Resolved server-side, because a storage id is not something a client can
+    /// fetch. Null for a person with no photo, which is most of them.
+    var photoUrl: String?
+    var contactHandles: [Handle]?
+    var preferredPlatform: String?
+    /// The single platform and handle a person written before `contactHandles`
+    /// existed carries. Read only to be shown; nothing here writes them.
+    var platform: String?
+    var handle: String?
 
     struct City: Decodable, Equatable {
         let name: String
+        var admin: String?
+        var country: String?
+
+        /// The city as one line. A blank part is dropped rather than shown as a
+        /// stray comma -- MapKit hands back an empty admin area for countries
+        /// that have no states.
+        var line: String {
+            [name, admin, country]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+                .joined(separator: ", ")
+        }
+    }
+
+    /// One way to reach this person. `platform` is a plain string because a
+    /// saved person can carry a handle on a platform Haven has never heard of.
+    struct Handle: Decodable, Equatable, Identifiable {
+        let platform: String
+        let value: String
+
+        /// One handle per platform is the rule the server enforces, so the
+        /// platform identifies the row.
+        var id: String { platform }
     }
 
     /// The line under the name: what they do, then where they are.
     var detail: String? {
         let work = [role, company].compactMap { $0 }.filter { !$0.isEmpty }
         let parts = work.isEmpty ? [] : [work.joined(separator: ", ")]
-        let all = parts + [city?.name].compactMap { $0 }
+        let all = parts + [city?.line].compactMap { $0 }
         return all.isEmpty ? nil : all.joined(separator: " | ")
+    }
+
+    /// Every way to reach them, with the one they chose first.
+    ///
+    /// The preferred platform leads, because that is what choosing it meant. A
+    /// person written before `contactHandles` existed falls back to the single
+    /// legacy pair, so a row saved by an early screenshot capture still says
+    /// how to reach them rather than nothing at all.
+    var reachableHandles: [Handle] {
+        let handles = contactHandles ?? []
+        guard handles.isEmpty else {
+            guard let preferredPlatform else { return handles }
+            return handles.filter { $0.platform == preferredPlatform }
+                + handles.filter { $0.platform != preferredPlatform }
+        }
+        guard let platform, let handle, !platform.isEmpty, !handle.isEmpty else {
+            return []
+        }
+        return [Handle(platform: platform, value: handle)]
+    }
+
+    /// The photo, ready to hand to a loader. Nil covers both "no photo" and a
+    /// url that does not parse, because the screen shows the same thing either
+    /// way.
+    var photoURL: URL? {
+        photoUrl.flatMap(URL.init(string:))
+    }
+
+    /// Their own page, when a capture recorded one and it is openable.
+    var linkURL: URL? {
+        guard let link, !link.trimmedLikeJS.isEmpty else { return nil }
+        return URL(string: link)
+    }
+
+    /// The link, but only when it is not one of the handles already on screen.
+    ///
+    /// A profile shared into Haven stores both: the handle it dedups on and the
+    /// URL it came from. Showing both would be one way to reach somebody listed
+    /// twice, differently worded, with the second one adding nothing. Folded
+    /// the way the server folds a handle, so "@Mai.Makes" and "mai.makes" are
+    /// recognised as the same account.
+    var standaloneLink: URL? {
+        guard let linkURL, let link else { return nil }
+        guard let parsed = ProfileURL.parse(link) else { return linkURL }
+        let covered = reachableHandles.contains { handle in
+            handle.platform.trimmedLikeJS.lowercased() == parsed.platform.rawValue
+                && MirrorHandle.valueKey(handle.value) == MirrorHandle.valueKey(parsed.handle)
+        }
+        return covered ? nil : linkURL
     }
 }
 
@@ -40,8 +124,13 @@ enum PersonLoad: Equatable {
 /// One person, and the note you keep about them.
 ///
 /// The note is the whole reason this screen exists. Everything else here is
-/// theirs and arrives from the card; the note is the part only you can write,
-/// and the part search and ask have nothing to work with until you do.
+/// theirs and arrives from a card or a capture; the note is the part only you
+/// can write, and the part search and ask have nothing to work with until you
+/// do.
+///
+/// One model for the whole screen rather than one per field: every edit is the
+/// same partial update against the same row, and splitting them would mean six
+/// subscriptions to one document.
 @MainActor
 final class PersonModel: ObservableObject {
     @Published private(set) var load: PersonLoad = .loading
@@ -52,6 +141,9 @@ final class PersonModel: ObservableObject {
     /// overwrote the field would delete what someone is in the middle of
     /// typing.
     @Published var draft = ""
+    /// True once this person has been deleted, so the screen showing them can
+    /// leave rather than sit on a row that no longer exists.
+    @Published private(set) var isDeleted = false
 
     private let personId: String
     private let isLive: Bool
@@ -129,6 +221,92 @@ final class PersonModel: ObservableObject {
         }
     }
 
+    // MARK: - Editing
+
+    /// Changes some of this person's fields and leaves the rest alone.
+    ///
+    /// A dictionary rather than a whole person, because `editPerson` is a
+    /// partial contract: an omitted key is untouched and an explicit null
+    /// clears the field. Sending a whole person would mean deciding, for every
+    /// empty field, whether "nothing here" meant "leave it" or "remove it", and
+    /// getting that backwards erases somebody's work in silence.
+    func edit(_ fields: [String: ConvexEncodable?]) async {
+        var arguments = fields
+        arguments["id"] = personId
+        await write { try await convex.mutation("people:editPerson", with: arguments) }
+    }
+
+    /// Removes a field. Convex tells an absent key from an explicit null, and
+    /// only the second one means "take this away".
+    func clear(_ field: String) async {
+        await edit([field: nil as String?])
+    }
+
+    /// Uploads a photo and attaches it in one go.
+    ///
+    /// Two round trips that have to read as one action: a blob uploaded and
+    /// never attached is an orphan the sweep eventually reclaims, and the
+    /// person would have watched a spinner for nothing.
+    func setPhoto(_ data: Data) async {
+        let id = personId
+        await write {
+            let url: String = try await convex.mutation("profiles:generateUploadUrl")
+            let storageId = try await PhotoUpload.send(data, to: url)
+            return try await convex.mutation(
+                "people:editPerson",
+                with: ["id": id, "photoStorageId": storageId]
+            )
+        }
+    }
+
+    /// Forgets this person entirely: their row, their handles, their memories,
+    /// and the photo Haven was holding for them.
+    ///
+    /// Answers whether it went through, so the screen showing them can leave
+    /// rather than sit on somebody who is gone. A failure says so and stays put:
+    /// being returned to the list with the person still in it, and no
+    /// explanation, is the worst of the three outcomes.
+    func delete() async -> Bool {
+        guard !isSaving, isLive else { return false }
+        isSaving = true
+        failure = nil
+        let id = personId
+        let work = Task { () throws -> Bool in
+            let _: String? = try await convex.mutation(
+                "people:deletePerson",
+                with: ["personId": id]
+            )
+            return true
+        }
+        let done = await work.value(within: .seconds(HavenNetwork.deadline)) ?? false
+        isSaving = false
+        if done {
+            isDeleted = true
+        } else {
+            failure = "That did not go through. Check your connection and try again."
+        }
+        return done
+    }
+
+    /// Runs an edit with the bounded wait and the one failure message every
+    /// field on this screen shares.
+    private func write(_ body: @escaping () async throws -> Person) async {
+        guard !isSaving, isLive else { return }
+        isSaving = true
+        failure = nil
+        let work = Task { try await body() }
+        let saved = await work.value(within: .seconds(HavenNetwork.deadline))
+        isSaving = false
+        guard let saved else {
+            failure = "That did not save. Check your connection and try again."
+            return
+        }
+        // The subscription brings this too, a moment later. Publishing it now
+        // is what makes an edit feel like it took rather than like it is being
+        // considered.
+        load = .ready(saved)
+    }
+
     private func subscribe() {
         guard isLive else { return }
         cancellable = HavenNetwork.subscribe(
@@ -138,7 +316,10 @@ final class PersonModel: ObservableObject {
         ) { [weak self] person in
             guard let self else { return }
             guard let person else {
-                self.load = .unreachable
+                // Not after a delete: the read answering null is exactly what a
+                // successful delete looks like, and the screen is already
+                // leaving on its own.
+                if !self.isDeleted { self.load = .unreachable }
                 return
             }
             self.load = .ready(person)
