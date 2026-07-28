@@ -2651,9 +2651,19 @@ feedback-widget.feedback-fab {
   background: rgba(245, 245, 247, 0.13);
 }
 
+/* Holds its width, so it is the handle that gives when the row is tight. */
+.card-handle-label {
+  flex: none;
+}
+
 .card-handle-value {
   color: rgba(245, 245, 247, 0.62);
-  /* A long handle truncates rather than pushing the platform name off the row. */
+  /* A long handle truncates rather than pushing the platform name off the row.
+     min-width is the load-bearing line: a flex item defaults to min-width:auto
+     and refuses to shrink below its content, so without it the ellipsis never
+     fired and a 100-character LinkedIn slug -- which the app's own handle
+     editor accepts -- pushed "LinkedIn" out of the row. */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
