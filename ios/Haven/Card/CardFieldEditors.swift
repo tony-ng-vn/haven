@@ -109,22 +109,44 @@ struct TextFieldEditor: View {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// The server caps these, and a cap only the server enforces surfaces as
+    /// "check your connection" -- see `HavenFieldCaps`.
+    private var cap: (label: String, max: Int)? {
+        switch field {
+        case .name: return ("a name", HavenFieldCaps.name)
+        case .company: return ("a company", HavenFieldCaps.line)
+        case .role: return ("a role", HavenFieldCaps.line)
+        case .photo, .city, .handles: return nil
+        }
+    }
+
+    private var complaint: String? {
+        guard let cap, !HavenFieldCaps.fits(trimmed, within: cap.max) else { return nil }
+        return HavenFieldCaps.tooLong(cap.label, max: cap.max)
+    }
+
     var body: some View {
         HavenScreen(question: field.title) {
-            HavenField(
-                label: field.title,
-                placeholder: field.placeholder,
-                text: $text,
-                contentType: field == .name ? .name : nil,
-                capitalization: .words,
-                submitLabel: .done,
-                autofocus: true,
-                onSubmit: commit
-            )
+            VStack(alignment: .leading, spacing: 8) {
+                HavenField(
+                    label: field.title,
+                    placeholder: field.placeholder,
+                    text: $text,
+                    contentType: field == .name ? .name : nil,
+                    capitalization: .words,
+                    submitLabel: .done,
+                    autofocus: true,
+                    onSubmit: commit
+                )
+                if let complaint {
+                    Text(complaint)
+                        .havenSecondary(HavenColor.ember)
+                }
+            }
         } actions: {
             VStack(spacing: 8) {
                 PrimaryButton(title: "Save", isLoading: working, action: commit)
-                    .disabled(field == .name && trimmed.isEmpty)
+                    .disabled(complaint != nil || (field == .name && trimmed.isEmpty))
                 if field != .name, !initial.isEmpty {
                     GhostButton(title: "Remove") {
                         Task {
@@ -139,7 +161,7 @@ struct TextFieldEditor: View {
     }
 
     private func commit() {
-        guard !working else { return }
+        guard !working, complaint == nil else { return }
         // Emptying an optional field is removing it, which is a different
         // mutation from saving a blank the server would refuse.
         if field != .name, trimmed.isEmpty {

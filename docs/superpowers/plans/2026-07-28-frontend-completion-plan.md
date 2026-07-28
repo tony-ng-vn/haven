@@ -425,7 +425,7 @@ blocked on those merges rather than on any decision.
 - [x] G1 card review fixes (PR 156)
 - [x] G2 motion and haptics (PR 157)
 - [x] G3 accessibility audit (PR 158)
-- [ ] G4 copy convergence
+- [x] G4 copy convergence (PR 159)
 - [ ] H1 release readiness
 - [ ] H2 final checklist sweep
 - [x] I1 CI signing-flag removal (PR 136)

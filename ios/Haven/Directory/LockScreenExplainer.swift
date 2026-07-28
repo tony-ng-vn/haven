@@ -7,6 +7,13 @@ import SwiftUI
 /// this screen cannot do the thing it is describing -- all it can do is show
 /// what the result looks like and get out of the way. One line of words, one
 /// picture, and the steps a tap deeper for whoever wants them.
+///
+/// PR 97 left the primary copy and the destination open, and the card's back
+/// reshaped both: there is no beacon screen any more, so the widget's tap lands
+/// on the card already turned to its code. Settled in wave G4 and left as it
+/// is. "Your code, under the clock" is the whole pitch, and it is still true of
+/// where the tap now lands -- the widget was never a route to a screen, it was
+/// a route to the code, and the code moved without the promise changing.
 struct LockScreenExplainer: View {
     @Environment(\.dismiss) private var dismiss
 

@@ -158,3 +158,27 @@ struct AddPersonCapTests {
         #expect(HavenFieldCaps.fits("\u{1ec5}", within: 1))
     }
 }
+
+@Suite("What a field says when there is too much in it")
+struct FieldCapMessageTests {
+    // The message names the field and the number, the way the server's own
+    // does. "Too long" without a number is a guessing game, and the round trip
+    // that used to deliver the news arrived as "check your connection".
+    @Test("the complaint names the field and the number")
+    func namesBoth() {
+        let message = HavenFieldCaps.tooLong("a name", max: HavenFieldCaps.name)
+        #expect(message.contains("a name"))
+        #expect(message.contains("40"))
+    }
+
+    // The caps are convex/fieldCaps.ts. A client that capped lower would refuse
+    // what the server accepts; one that capped higher would let the server
+    // throw, which is the bug this closes.
+    @Test("the caps are the server's caps")
+    func mirrorsTheServer() {
+        #expect(HavenFieldCaps.name == 40)
+        #expect(HavenFieldCaps.cityPart == 40)
+        #expect(HavenFieldCaps.line == 60)
+        #expect(HavenFieldCaps.handle == 60)
+    }
+}
