@@ -6,6 +6,16 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.11.0
+
+2026-07-28
+
+**CI**
+
+- The iOS test job runs one at a time across every branch. There is one Mac and one simulator on it, and two runs landing together fought over the same simulator device -- one of them died during startup with an error that reads exactly like a real test failure and is not one. It cost two false reds in a day.
+
+---
+
 ## v0.10.0
 
 2026-07-28
