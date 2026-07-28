@@ -8,6 +8,7 @@ import {
   platformValidator,
 } from "./profileFields";
 import { contactHandleValidator } from "./peopleFields";
+import { subscriptionStatusValidator } from "./stripeFields";
 
 export default defineSchema({
   people: defineTable({
@@ -264,4 +265,40 @@ export default defineSchema({
     email: v.string(),
     source: v.union(v.literal("desktop"), v.literal("phone")),
   }).index("by_email", ["email"]),
+
+  // A user's paid plan, mirrored from the billing system that owns it. Only
+  // the webhook handler writes here -- never client code -- so the billing
+  // system stays the source of truth and a compromised client cannot grant
+  // itself Pro.
+  //
+  // One row per subscription, not per user: a user who cancels and later
+  // resubscribes gets a second Stripe subscription, and keeping both rows
+  // preserves the billing history. hasProAccess therefore asks "does any row
+  // grant access?" rather than reading a single current row.
+  subscriptions: defineTable({
+    // Clerk's identity.tokenIdentifier, the same ownership key people and
+    // profiles use.
+    userId: v.string(),
+    // Which billing system owns this row. Apple requires StoreKit to own iOS
+    // purchases that unlock in-app features (App Store guideline 3.1.1), so
+    // this gains "app_store" when the iOS tier ships. Naming it now keeps
+    // that from being a reshape later.
+    source: v.literal("stripe"),
+    stripeCustomerId: v.string(),
+    stripeSubscriptionId: v.string(),
+    status: subscriptionStatusValidator,
+    // Unix seconds, straight from Stripe. Read off the subscription ITEM, not
+    // the subscription: API version 2026-06-24 removed current_period_end
+    // from the parent object.
+    currentPeriodEnd: v.number(),
+    cancelAtPeriodEnd: v.boolean(),
+    // event.created of the newest event applied to this row. Stripe redelivers
+    // on any non-2xx and does not guarantee ordering, so this is what stops a
+    // late "active" from resurrecting a cancelled subscription -- see
+    // applySubscriptionEvent.
+    lastEventCreated: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_stripeSubscriptionId", ["stripeSubscriptionId"]),
 });

@@ -13,6 +13,8 @@ import type * as captures from "../captures.js";
 import type * as crons from "../crons.js";
 import type * as emailClient from "../emailClient.js";
 import type * as handleKeys from "../handleKeys.js";
+import type * as handleNames from "../handleNames.js";
+import type * as http from "../http.js";
 import type * as imageBlobs from "../imageBlobs.js";
 import type * as loveAlarm from "../loveAlarm.js";
 import type * as memories from "../memories.js";
@@ -24,6 +26,8 @@ import type * as profileFields from "../profileFields.js";
 import type * as profiles from "../profiles.js";
 import type * as rateLimit from "../rateLimit.js";
 import type * as sharedNotes from "../sharedNotes.js";
+import type * as stripe from "../stripe.js";
+import type * as stripeFields from "../stripeFields.js";
 import type * as waitlist from "../waitlist.js";
 
 import type {
@@ -38,6 +42,8 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   emailClient: typeof emailClient;
   handleKeys: typeof handleKeys;
+  handleNames: typeof handleNames;
+  http: typeof http;
   imageBlobs: typeof imageBlobs;
   loveAlarm: typeof loveAlarm;
   memories: typeof memories;
@@ -49,6 +55,8 @@ declare const fullApi: ApiFromModules<{
   profiles: typeof profiles;
   rateLimit: typeof rateLimit;
   sharedNotes: typeof sharedNotes;
+  stripe: typeof stripe;
+  stripeFields: typeof stripeFields;
   waitlist: typeof waitlist;
 }>;
 

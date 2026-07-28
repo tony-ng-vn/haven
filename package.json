@@ -15,7 +15,8 @@
     "convex": "^1.41.0",
     "feedback-sdk-widget": "^0.1.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "stripe": "^22.3.2"
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
