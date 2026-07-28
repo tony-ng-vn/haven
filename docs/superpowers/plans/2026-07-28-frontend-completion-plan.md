@@ -339,18 +339,16 @@ One session drives; this section is its operating loop, and the goal prompt poin
 
 ## State
 
-- [ ] D1 manual add
-- [ ] D2 person detail completion
-- [ ] D3 search and ask navigation
-- [ ] D4 directory paging
+- [x] D1 manual add (PR 138)
+- [x] D2 person detail completion (PR 140)
+- [x] D3 search and ask navigation (PR 141)
+- [ ] D4 directory paging (PR 147, open)
 - [x] D5 welcome legal links (PR 137)
-- [ ] E1 pin walkthrough and practice capture
+- [ ] E1 pin walkthrough and practice capture (PR 148, open)
 - [x] E2 handle claim at card creation -- void on inspection, see "Corrections to this plan's inventory" (PR 143)
 - [x] E3 address editor in My Card (PR 143)
-- [ ] E2 handle claim at card creation
-- [ ] E3 address editor in My Card
 - [x] E4 server onboarding state and avatar import (PR 144)
-- [ ] F1 scan and connect
+- [x] F1 scan and connect (PR 146)
 - [ ] F2 universal links
 - [ ] F3 connected-person state (needs backend B1)
 - [ ] G1 card review fixes
