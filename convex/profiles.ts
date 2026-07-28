@@ -27,6 +27,13 @@ import {
 } from "./profileFields";
 import { handleDisplayValue, handleIndexKeys } from "./handleKeys";
 import { HANDLE_PATTERN, isReservedHandle } from "./handleNames";
+import {
+  CARD_LINE_MAX,
+  CARD_NAME_MAX,
+  CITY_PART_MAX,
+  HANDLE_MAX,
+  requireWithin,
+} from "./fieldCaps";
 
 const MINUTE_MS = 60_000;
 
@@ -132,8 +139,23 @@ function requireText(label: string, raw: string): string {
   return value;
 }
 
+// Company and role: one card line each, so one budget each.
+function cappedLine(label: string, article: string, raw: string): string {
+  const value = requireText(label, raw);
+  requireWithin(article, value, CARD_LINE_MAX);
+  return value;
+}
+
 function withCityKey(city: CityInput) {
   const name = requireText("City", city.name);
+  requireWithin("a city name", name, CITY_PART_MAX);
+  // Admin area and country render beside the city, so they share its budget.
+  if (city.admin !== undefined) {
+    requireWithin("a state or region", city.admin, CITY_PART_MAX);
+  }
+  if (city.country !== undefined) {
+    requireWithin("a country", city.country, CITY_PART_MAX);
+  }
   return { ...city, name, normalized: normalizeName(name) };
 }
 
@@ -153,10 +175,16 @@ function validateHandles(handles: HandleInput[]): HandleInput[] {
       // people.saveSharedProfile uses means the account you publish on your
       // card and the account someone saves off it share one identity key,
       // however either side typed it.
-      value: requireText("A handle", handleDisplayValue(handle.value)),
+      value: cappedHandleValue(handle.value),
       verified: handle.verified,
     };
   });
+}
+
+function cappedHandleValue(raw: string): string {
+  const value = requireText("A handle", handleDisplayValue(raw));
+  requireWithin("a handle", value, HANDLE_MAX);
+  return value;
 }
 
 const HANDLE_SUFFIX_TRIES = 10;
@@ -853,6 +881,7 @@ export const updateMyProfile = mutation({
       if (name === "") {
         throw new Error("Enter your name");
       }
+      requireWithin("your name", name, CARD_NAME_MAX);
       fields.name = name;
     }
     if (args.photoStorageId !== undefined) {
@@ -875,11 +904,11 @@ export const updateMyProfile = mutation({
       fields.company =
         args.company === null
           ? undefined
-          : requireText("Company", args.company);
+          : cappedLine("Company", "a company", args.company);
     }
     if (args.role !== undefined) {
       fields.role =
-        args.role === null ? undefined : requireText("Role", args.role);
+        args.role === null ? undefined : cappedLine("Role", "a role", args.role);
     }
 
     // The primary platform must point at a handle that exists once this write

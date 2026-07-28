@@ -31,6 +31,13 @@ import {
 import { requireImageBlob } from "./imageBlobs";
 import { deleteMemories, syncMemories } from "./memories";
 import { endConnection } from "./connections";
+import {
+  CARD_LINE_MAX,
+  CARD_NAME_MAX,
+  CITY_PART_MAX,
+  HANDLE_MAX,
+  requireWithin,
+} from "./fieldCaps";
 
 // Bound every list read so the query stays scalable as the table grows.
 const RESULT_LIMIT = 20;
@@ -195,6 +202,7 @@ function structuredAttributeFields(args: {
     if (company === "") {
       throw new Error("Company cannot be blank");
     }
+    requireWithin("a company", company, CARD_LINE_MAX);
     fields.company = company;
     fields.companyKey = normalizeName(company);
   }
@@ -203,6 +211,7 @@ function structuredAttributeFields(args: {
     if (role === "") {
       throw new Error("Role cannot be blank");
     }
+    requireWithin("a role", role, CARD_LINE_MAX);
     fields.role = role;
     fields.roleKey = normalizeName(role);
   }
@@ -210,6 +219,14 @@ function structuredAttributeFields(args: {
     const name = args.city.name.trim();
     if (name === "") {
       throw new Error("City cannot be blank");
+    }
+    requireWithin("a city name", name, CITY_PART_MAX);
+    // Admin area and country render beside the city, so they share its budget.
+    if (args.city.admin !== undefined) {
+      requireWithin("a state or region", args.city.admin, CITY_PART_MAX);
+    }
+    if (args.city.country !== undefined) {
+      requireWithin("a country", args.city.country, CITY_PART_MAX);
     }
     fields.city = { ...args.city, name };
     fields.cityKey = normalizeName(name);
@@ -245,6 +262,19 @@ function validateContactHandles(
     }
     seen.add(platform);
     return { platform, value };
+  });
+}
+
+// The interactive paths' handle validation: the same folding, plus the cap.
+// Deliberately not folded into validateContactHandles, which the capture
+// paths also use -- those run without the user present, so they stay lenient
+// rather than failing a queued share nobody can shorten.
+function validateOwnedHandles(
+  handles: ContactHandleInput[],
+): ContactHandleInput[] {
+  return validateContactHandles(handles).map((handle) => {
+    requireWithin("a handle", handle.value, HANDLE_MAX);
+    return handle;
   });
 }
 
@@ -340,10 +370,11 @@ export const addPerson = mutation({
     if (name === "") {
       throw new Error("Name is required");
     }
+    requireWithin("a name", name, CARD_NAME_MAX);
     // Identity and a story are what make a manual add searchable and
     // referenceable later, so a handle and a note are required here; the
     // capture paths stay lenient because they run without the user present.
-    const contactHandles = validateContactHandles(args.contactHandles ?? []);
+    const contactHandles = validateOwnedHandles(args.contactHandles ?? []);
     if (contactHandles.length === 0) {
       throw new Error("A contact handle is required");
     }
@@ -769,6 +800,7 @@ export const editPerson = mutation({
       if (name === "") {
         throw new Error("Name is required");
       }
+      requireWithin("a name", name, CARD_NAME_MAX);
       fields.name = name;
       // A rename that skips this leaves the person findable only under the
       // old name.
@@ -813,7 +845,7 @@ export const editPerson = mutation({
       }
     }
     if (args.contactHandles !== undefined) {
-      fields.contactHandles = validateContactHandles(args.contactHandles);
+      fields.contactHandles = validateOwnedHandles(args.contactHandles);
     }
 
     // The preferred platform must point at a handle that exists once this

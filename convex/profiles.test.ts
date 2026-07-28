@@ -1073,10 +1073,10 @@ test("the address ladder truncates a long name to a legal handle", async () => {
   const other = asNewUser(t);
 
   const minted = await me.as.mutation(api.profiles.updateMyProfile, {
-    name: "Wolfeschlegelsteinhausenbergerdorff Featherstonehaugh",
+    name: "Wolfeschlegelsteinhausenbergerdorff Fea",
   });
   const next = await other.as.mutation(api.profiles.updateMyProfile, {
-    name: "Wolfeschlegelsteinhausenbergerdorff Featherstonehaugh",
+    name: "Wolfeschlegelsteinhausenbergerdorff Fea",
   });
 
   expect(minted.username).toBe("wolfeschlegelsteinhausen");
@@ -1834,4 +1834,67 @@ test("deleting an account keeps the billing history it did not own", async () =>
   const rows = await t.run((ctx) => ctx.db.query("subscriptions").collect());
   expect(rows).toHaveLength(1);
   expect(rows[0].stripeSubscriptionId).toBe("sub_test");
+});
+
+// ------------------------------------------------------------- field lengths
+
+// The prototype has capped the name field at 40 since the design was
+// ratified and the server accepted a megabyte. A cap only the client
+// enforces is not a cap, and the iOS fields have none at all today.
+test("updateMyProfile refuses card fields longer than they can be drawn", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  await expect(
+    me.as.mutation(api.profiles.updateMyProfile, { name: "M".repeat(41) }),
+  ).rejects.toThrow("Keep your name under 40 characters");
+  await expect(
+    me.as.mutation(api.profiles.updateMyProfile, { company: "C".repeat(61) }),
+  ).rejects.toThrow("under 60 characters");
+  await expect(
+    me.as.mutation(api.profiles.updateMyProfile, { role: "R".repeat(61) }),
+  ).rejects.toThrow("under 60 characters");
+  await expect(
+    me.as.mutation(api.profiles.updateMyProfile, {
+      city: { name: "C".repeat(41) },
+    }),
+  ).rejects.toThrow("under 40 characters");
+  await expect(
+    me.as.mutation(api.profiles.updateMyProfile, {
+      handles: [{ platform: "x", value: "h".repeat(61), verified: false }],
+    }),
+  ).rejects.toThrow("under 60 characters");
+
+  // Nothing was half-written on the way to any of those throws.
+  const stored = await storedProfile(t, me.userId);
+  expect(stored?.name).toBe("Maya Chen");
+  expect(stored?.company).toBeUndefined();
+  expect(stored?.city).toBeUndefined();
+});
+
+test("a card field exactly at the cap is allowed", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  const saved = await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "M".repeat(40),
+    company: "C".repeat(60),
+  });
+
+  expect(saved.name).toHaveLength(40);
+  expect(saved.company).toHaveLength(60);
+});
+
+// Counted in code points rather than UTF-16 units: the cap exists so a value
+// fits a line, and one emoji is one thing on that line rather than two.
+test("the name cap counts characters, not UTF-16 units", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+
+  const saved = await me.as.mutation(api.profiles.updateMyProfile, {
+    name: "\u{1F680}".repeat(40),
+  });
+
+  expect(Array.from(saved.name ?? "")).toHaveLength(40);
 });
