@@ -371,6 +371,125 @@ async function ensureMeetPerson(args: {
   return personId;
 }
 
+// How many referencing rows one fan-out transaction refreshes. Smaller than
+// PURGE_PAGE because each refreshed row also schedules an embed.
+const SNAPSHOT_PAGE = 100;
+
+// The card fields a connection's directory row snapshots. A photo or a
+// handle edit changes nothing that lives on the other side's row, so it
+// schedules no fan-out.
+const SNAPSHOT_FIELDS = ["name", "company", "role", "city"] as const;
+
+function sameCity(a: CityInput | undefined, b: CityInput | undefined): boolean {
+  return (
+    a?.name === b?.name && a?.admin === b?.admin && a?.country === b?.country
+  );
+}
+
+// What one referencing row has to change to match the peer's current card.
+//
+// Mirrors projectConnectedPerson field for field, and that is the invariant:
+// the snapshot only exists to feed the search indexes, which cannot read
+// another table, so it has to hold exactly what the detail read renders or
+// search and card disagree about the same person. A field the peer does not
+// have is left alone for the same reason -- the read falls back to the
+// snapshot there, so clearing it would hide something still on screen.
+function snapshotPatch(
+  person: Doc<"people">,
+  profile: Doc<"profiles">,
+): Partial<Doc<"people">> {
+  const next: Partial<Doc<"people">> = {};
+  if (profile.name !== undefined) {
+    if (profile.name !== person.name) {
+      next.name = profile.name;
+      next.normalizedName = normalizeName(profile.name);
+    }
+  } else if (person.name === `@${person.handle}`) {
+    // A peer with no card name has only the handle fallback, and the owner
+    // may have relabelled the row since. The fallback refreshes only while
+    // it is still the fallback: a name the owner typed is theirs to keep.
+    const fallback = `@${profile.username}`;
+    if (fallback !== person.name) {
+      next.name = fallback;
+      next.normalizedName = normalizeName(profile.username);
+    }
+  }
+  if (profile.company !== undefined && profile.company !== person.company) {
+    next.company = profile.company;
+    next.companyKey = normalizeName(profile.company);
+  }
+  if (profile.role !== undefined && profile.role !== person.role) {
+    next.role = profile.role;
+    next.roleKey = normalizeName(profile.role);
+  }
+  const city = toCityInput(profile.city);
+  if (city !== undefined && !sameCity(city, person.city)) {
+    next.city = city;
+    next.cityKey = normalizeName(city.name);
+  }
+  const searchText = personSearchText({ ...person, ...next });
+  if (searchText !== person.searchText) {
+    next.searchText = searchText;
+  }
+  return next;
+}
+
+// One page of the fan-out that keeps every connection's directory row current
+// with the peer's card, rescheduling itself while more rows remain -- the
+// same shape purgeOwnedRows uses, except a refresh does not remove the rows
+// it visits, so progress needs a cursor rather than a shrinking head.
+//
+// updatedAt is deliberately not touched: the Directory pages
+// most-recently-touched first, and somebody else editing their own card is
+// not the owner touching this row.
+async function refreshSnapshotPage(
+  ctx: MutationCtx,
+  profile: Doc<"profiles">,
+  cursor: string | null,
+): Promise<void> {
+  const page = await ctx.db
+    .query("people")
+    .withIndex("by_havenContactUserId", (q) =>
+      q.eq("havenContactUserId", profile.userId),
+    )
+    .paginate({ numItems: SNAPSHOT_PAGE, cursor });
+  for (const person of page.page) {
+    const fields = snapshotPatch(person, profile);
+    if (Object.keys(fields).length === 0) {
+      continue;
+    }
+    await ctx.db.patch("people", person._id, fields);
+    // The row's searchable text moved, so its vector has to move with it or
+    // semantic search keeps answering with the card they used to have.
+    await ctx.scheduler.runAfter(0, internal.people.embed, {
+      personId: person._id,
+    });
+  }
+  if (!page.isDone) {
+    await ctx.scheduler.runAfter(
+      0,
+      internal.profiles.refreshConnectionSnapshots,
+      { userId: profile.userId, cursor: page.continueCursor },
+    );
+  }
+}
+
+// The continuation of a fan-out that did not fit in one transaction. Reads
+// the profile again rather than trusting the caller's copy: a card edited
+// twice in a row must not finish its first fan-out with the older card.
+export const refreshConnectionSnapshots = internalMutation({
+  args: { userId: v.string(), cursor: v.union(v.string(), v.null()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const profile = await getProfileByUser(ctx, args.userId);
+    if (profile === null) {
+      return null;
+    }
+    await refreshSnapshotPage(ctx, profile, args.cursor);
+    return null;
+  },
+});
+
 export const getMyProfile = query({
   args: {},
   returns: v.union(v.null(), myProfileValidator),
@@ -788,6 +907,15 @@ export const updateMyProfile = mutation({
     const updated = await ctx.db.get("profiles", existing._id);
     if (updated === null) {
       throw new Error("Could not save profile");
+    }
+    // Every connection holds a snapshot of this card so their search index has
+    // something to match on, and a snapshot nobody refreshes is exactly the
+    // stale contact Haven exists to abolish. The first page runs here, so the
+    // common card edit is current the moment this returns; the rest is
+    // scheduled. The insert branch above needs none: a profile that did not
+    // exist a moment ago cannot be referenced.
+    if (SNAPSHOT_FIELDS.some((field) => field in fields)) {
+      await refreshSnapshotPage(ctx, updated, null);
     }
     return await toMyCard(ctx, updated);
   },

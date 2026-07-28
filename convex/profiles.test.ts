@@ -1,11 +1,44 @@
 /// <reference types="vite/client" />
 import { convexTest, type TestConvex } from "convex-test";
-import { expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
 import { handleValueKey } from "./handleKeys";
 
 const modules = import.meta.glob("./**/*.ts");
+
+// Only the tests that drain the scheduler touch timers or the network, so
+// both are opt-in per test and restored here rather than set up globally.
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+// Stub only the embeddings endpoint, the way people.test.ts does: draining
+// the scheduler runs the embed action the snapshot fan-out re-queues, and a
+// test must not depend on a real key or a real network.
+function stubEmbeddings(vector: number[]) {
+  const realFetch = globalThis.fetch;
+  vi.stubGlobal(
+    "fetch",
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const raw = String(input);
+      let url: URL;
+      try {
+        url = new URL(raw);
+      } catch {
+        return realFetch(input, init);
+      }
+      if (
+        url.hostname === "api.openai.com" &&
+        url.pathname.includes("/embeddings")
+      ) {
+        return Response.json({ data: [{ embedding: vector }] });
+      }
+      return realFetch(input, init);
+    },
+  );
+}
 
 let nextSubject = 0;
 function asNewUser(t: ReturnType<typeof convexTest>) {
@@ -1341,4 +1374,159 @@ test("deleting an account takes that account's own memories with it", async () =
   // them behind is a deletion that did not delete everything.
   expect(await t.run((ctx) => ctx.db.query("memories").collect())).toEqual([]);
   expect(await t.run((ctx) => ctx.db.get("people", personId))).toBeNull();
+});
+
+// ---------------------------------------------- connection snapshot refresh
+
+test("a peer changing jobs becomes findable under their new company", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    name: "Bob Hopper",
+    company: "Analytical Engines",
+  });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  await alice.as.mutation(api.profiles.connect, { username: "bob" });
+
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    company: "Pixel Foundry",
+  });
+
+  // The detail read already merged the live card; search runs over the
+  // snapshot, so without a fan-out a connection who changes jobs is
+  // unfindable by the company they actually work at.
+  const found = await alice.as.query(api.people.searchDirectory, {
+    keyword: "pixel",
+  });
+  expect(found.map((person) => person.name)).toEqual(["Bob Hopper"]);
+  expect(
+    await alice.as.query(api.people.searchDirectory, { keyword: "analytical" }),
+  ).toEqual([]);
+});
+
+test("a peer's new name, role and city reach the connected row's keys", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, { name: "Bob Hopper" });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    name: "Bo Hopper",
+    role: "Designer",
+    city: { name: "Da Nang", country: "VN" },
+  });
+
+  const stored = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(stored).toMatchObject({
+    name: "Bo Hopper",
+    normalizedName: "bo hopper",
+    role: "Designer",
+    roleKey: "designer",
+    city: { name: "Da Nang", country: "VN" },
+    cityKey: "da nang",
+  });
+  // The chip filters equality-match on those keys, so a stale key is a
+  // person missing from a filter that should list them.
+  expect(
+    (
+      await alice.as.query(api.people.searchDirectory, { city: "da nang" })
+    ).map((person) => person.name),
+  ).toEqual(["Bo Hopper"]);
+});
+
+test("a peer's card edit does not reorder the owner's directory", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, { name: "Bob Hopper" });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+  const before = await t.run((ctx) => ctx.db.get("people", personId));
+
+  await bob.as.mutation(api.profiles.updateMyProfile, { company: "Pixel" });
+
+  // The Directory pages most-recently-touched first. Somebody else editing
+  // their own card is not the owner touching this row, so recency stays
+  // where the owner left it.
+  const after = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(after?.updatedAt).toBe(before?.updatedAt);
+});
+
+test("the owner's own label survives a peer's card edit", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  // Bob never set a name, so there is nothing of his to render and the label
+  // Alice chose is all this row has.
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+  await alice.as.mutation(api.people.editPerson, {
+    id: personId,
+    name: "Bob from the ferry",
+  });
+
+  await bob.as.mutation(api.profiles.updateMyProfile, { company: "Pixel" });
+
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.name).toBe("Bob from the ferry");
+  expect(person?.company).toBe("Pixel");
+});
+
+test("the fan-out finishes past the first page of connections", async () => {
+  vi.useFakeTimers();
+  stubEmbeddings([0.1, 0.2, 0.3]);
+  const t = convexTest(schema, modules);
+  const bob = asNewUser(t);
+  await bob.as.mutation(api.profiles.updateMyProfile, { name: "Bob Hopper" });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+
+  // More rows than one transaction's page, seeded directly: 105 real connects
+  // would test the scheduler, not the paging, and cost a minute to run.
+  const owners = 105;
+  await t.run(async (ctx) => {
+    for (let i = 0; i < owners; i++) {
+      await ctx.db.insert("people", {
+        userId: `owner_${i}`,
+        name: "Bob Hopper",
+        normalizedName: "bob hopper",
+        searchText: "bob hopper",
+        updatedAt: 1,
+        platform: "Haven",
+        handle: "bob",
+        contactHandles: [{ platform: "haven", value: "bob" }],
+        havenContactUserId: bob.userId,
+      });
+    }
+  });
+
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    company: "Pixel Foundry",
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const rows = await t.run((ctx) =>
+    ctx.db
+      .query("people")
+      .withIndex("by_havenContactUserId", (q) =>
+        q.eq("havenContactUserId", bob.userId),
+      )
+      .collect(),
+  );
+  expect(rows).toHaveLength(owners);
+  // A fan-out that stops at the page boundary leaves the tail of a popular
+  // user's connections frozen at their connect-time card forever.
+  expect(rows.every((row) => row.companyKey === "pixel foundry")).toBe(true);
 });
