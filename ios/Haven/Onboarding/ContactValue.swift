@@ -113,6 +113,7 @@ enum ContactValue {
     )
     // Instagram (30), X (15) and Telegram (32) all cap below the server's 60,
     // so their own rules already keep a stored handle inside it.
+
     private static let telegramCharacters = Set(
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
     )

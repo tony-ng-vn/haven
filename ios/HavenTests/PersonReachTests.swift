@@ -1,0 +1,105 @@
+import Foundation
+import Testing
+@testable import Haven
+
+@Suite("Reaching a saved person")
+struct PersonReachTests {
+    // The fourth stroke of the loop: a tap has to land in the app they are
+    // actually in, not on a page about them.
+    @Test("a handle on a platform Haven knows opens that platform")
+    func opensKnownPlatforms() {
+        #expect(
+            PersonReach.url(platform: "instagram", value: "mai.makes")?.absoluteString
+                == "https://instagram.com/mai.makes"
+        )
+        #expect(
+            PersonReach.url(platform: "linkedin", value: "mai-tran-8a91b2")?.absoluteString
+                == "https://linkedin.com/in/mai-tran-8a91b2"
+        )
+        #expect(
+            PersonReach.url(platform: "telegram", value: "mai_makes")?.absoluteString
+                == "https://t.me/mai_makes"
+        )
+    }
+
+    // Rows written before the rename still say twitter, and the person behind
+    // them has not moved.
+    @Test("a twitter handle opens X")
+    func twitterIsX() {
+        #expect(
+            PersonReach.url(platform: "twitter", value: "mai_makes")?.absoluteString
+                == "https://x.com/mai_makes"
+        )
+        #expect(PersonReach.label("twitter") == "X")
+    }
+
+    // A number is dialled rather than browsed, and the spaces somebody stored
+    // it with are not part of the number.
+    @Test("a phone number becomes a call")
+    func phoneDials() {
+        #expect(
+            PersonReach.url(platform: "phone", value: "+84 90 123 4567")?.absoluteString
+                == "tel:+84901234567"
+        )
+        #expect(
+            PersonReach.url(platform: "whatsapp", value: "+84901234567")?.absoluteString
+                == "https://wa.me/84901234567"
+        )
+    }
+
+    // The honest miss. A platform Haven has never heard of is still a real way
+    // to reach somebody, so it shows -- it just does not promise a tap.
+    @Test("an unknown platform has nowhere to open and says so")
+    func unknownPlatform() {
+        #expect(PersonReach.url(platform: "signal", value: "mai.99") == nil)
+        #expect(PersonReach.display(platform: "signal", value: "mai.99") == "mai.99")
+        #expect(PersonReach.label("signal") == "signal")
+    }
+
+    @Test("a blank handle opens nothing")
+    func blankHandle() {
+        #expect(PersonReach.url(platform: "instagram", value: "   ") == nil)
+        #expect(PersonReach.url(platform: "phone", value: "abc") == nil)
+    }
+
+    // Platform names arrive folded from the server, but a row written before
+    // that folding existed can still carry "Instagram ".
+    @Test("a platform name is folded before it is recognised")
+    func foldsPlatformNames() {
+        #expect(
+            PersonReach.url(platform: " Instagram ", value: "mai.makes")?.absoluteString
+                == "https://instagram.com/mai.makes"
+        )
+    }
+
+    @Test("a handle reads as the address it points at, or as itself")
+    func display() {
+        #expect(
+            PersonReach.display(platform: "instagram", value: "mai.makes")
+                == "instagram.com/mai.makes"
+        )
+        #expect(PersonReach.display(platform: "phone", value: "+84901234567") == "+84901234567")
+    }
+
+    // The offered list is longer than the four your own card carries, which is
+    // the asymmetry mvp-design names.
+    @Test("the offered platforms include the ones only a saved person can have")
+    func offerable() {
+        #expect(PersonReach.offerable.contains("whatsapp"))
+        #expect(PersonReach.offerable.contains("telegram"))
+        // The old name for X is readable but never offered.
+        #expect(!PersonReach.offerable.contains("twitter"))
+    }
+
+    @Test("a typed handle is parsed by its platform's own rules")
+    func parsing() {
+        #expect(PersonReach.parse(platform: "instagram", from: "instagram.com/mai.makes") == "mai.makes")
+        #expect(PersonReach.parse(platform: "x", from: "@mai_makes") == "mai_makes")
+        #expect(PersonReach.parse(platform: "phone", from: "+84 90 123 4567") == "+84901234567")
+        #expect(PersonReach.parse(platform: "instagram", from: "not a handle!") == nil)
+        // A platform with no rules Haven knows keeps what was typed rather than
+        // refusing it under a rule Haven does not have.
+        #expect(PersonReach.parse(platform: "signal", from: "  mai.99  ") == "mai.99")
+        #expect(PersonReach.parse(platform: "signal", from: "   ") == nil)
+    }
+}
