@@ -16,6 +16,10 @@ struct HavenTabs: View {
 
     @State private var tab: Tab = .people
     @State private var peopleRoute: [Destination] = []
+    /// The Search tab's own stack. Its own, not a share of People's: a person
+    /// opened from a result has to come back to the search that found them, and
+    /// a single stack would drop somebody back on the directory instead.
+    @State private var searchRoute: [Destination] = []
     /// Which side of the card is up.
     ///
     /// Here rather than inside My Card because the Lock Screen widget asks for
@@ -37,18 +41,18 @@ struct HavenTabs: View {
                     openPerson: { peopleRoute.append(.person(id: $0)) }
                 )
                     .toolbar { directoryToolbar }
-                    .navigationDestination(for: Destination.self) { destination in
-                        switch destination {
-                        case .card: MyCardScreen(showingCode: $showingCode)
-                        case .person(let id): PersonScreen(personId: id)
-                        }
-                    }
+                    .navigationDestination(for: Destination.self) { screen(for: $0) }
             }
             .tabItem { Label("People", systemImage: "person.2") }
             .tag(Tab.people)
 
-            NavigationStack {
-                SearchScreen()
+            NavigationStack(path: $searchRoute) {
+                // Handing back the person is the product's one job, so a result
+                // is not a place the road ends. The push lands in this tab's own
+                // stack, which is what lets Back return to the search that
+                // found them, chips and answer intact.
+                SearchScreen(openPerson: { searchRoute.append(.person(id: $0)) })
+                    .navigationDestination(for: Destination.self) { screen(for: $0) }
             }
             .tabItem { Label("Search", systemImage: "magnifyingglass") }
             .tag(Tab.search)
@@ -71,6 +75,19 @@ struct HavenTabs: View {
             guard HavenDeepLink(url: url) == .beacon else { return }
             tab = .people
             openCard(showingCode: true)
+        }
+    }
+
+    /// What a destination looks like, shared by both stacks.
+    ///
+    /// One builder rather than one per tab: a person opened from a search
+    /// result and a person opened from the directory are the same screen, and
+    /// two copies of that switch would be two places for them to drift apart.
+    @ViewBuilder
+    private func screen(for destination: Destination) -> some View {
+        switch destination {
+        case .card: MyCardScreen(showingCode: $showingCode)
+        case .person(let id): PersonScreen(personId: id)
         }
     }
 

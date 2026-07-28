@@ -108,7 +108,11 @@ extension HavenRow where Leading == EmptyView, Trailing == EmptyView {
 
 /// Rows highlight rather than scale: a row inside a list that shrinks drags its
 /// neighbours' separators with it.
-private struct RowPressStyle: ButtonStyle {
+/// Not private any more: a search result is a row that `HavenRow` cannot draw
+/// -- it needs a serif name with the matched part lit -- and a list row that
+/// pressed differently from every other list row would read as a different
+/// kind of thing.
+struct RowPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(configuration.isPressed ? HavenColor.rowHighlight : .clear)

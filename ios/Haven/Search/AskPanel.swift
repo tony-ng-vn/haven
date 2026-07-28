@@ -7,6 +7,9 @@ import SwiftUI
 /// bubbles would promise an open-ended conversation this is not.
 struct AskPanel: View {
     @ObservedObject var model: AskModel
+    /// Opens one person. An answer that named somebody and then made you go
+    /// and find them was the ask stopping one step short.
+    var openPerson: (String) -> Void = { _ in }
     /// Clears the answer and hands the screen back to search.
     let onDismiss: () -> Void
 
@@ -91,7 +94,7 @@ struct AskPanel: View {
     private func matches(_ matches: [AskMatch]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(matches) { match in
-                AskMatchRow(match: match)
+                AskMatchRow(match: match, open: { openPerson(match.personId) })
             }
             GhostButton(title: "Back to search", action: onDismiss)
                 .padding(.top, 14)
@@ -105,38 +108,44 @@ struct AskPanel: View {
 /// random, and this screen is spending a model call precisely to have one.
 struct AskMatchRow: View {
     let match: AskMatch
+    let open: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(match.name)
-                    .personName(.row)
-                    .foregroundStyle(HavenColor.ink)
-                if match.kind == .bridge {
-                    bridgeTag
+        Button(action: open) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(match.name)
+                        .personName(.row)
+                        .foregroundStyle(HavenColor.ink)
+                    if match.kind == .bridge {
+                        bridgeTag
+                    }
                 }
-            }
-            // The reason reads brighter than the placing line, not dimmer:
-            // spending a model call buys the "because you wrote ..." and that
-            // is what someone is here to read.
-            if let detail = match.detail {
-                Text(detail)
+                // The reason reads brighter than the placing line, not dimmer:
+                // spending a model call buys the "because you wrote ..." and
+                // that is what someone is here to read.
+                if let detail = match.detail {
+                    Text(detail)
+                        .havenSecondary()
+                        .foregroundStyle(HavenColor.faint)
+                }
+                Text(match.why)
                     .havenSecondary()
-                    .foregroundStyle(HavenColor.faint)
+                    .padding(.top, 2)
             }
-            Text(match.why)
-                .havenSecondary()
-                .padding(.top, 2)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(HavenColor.hairline)
+                    .frame(height: 1)
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        .padding(.vertical, 10)
+        .buttonStyle(RowPressStyle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(HavenColor.hairline)
-                .frame(height: 1)
-        }
+        .accessibilityAddTraits(.isButton)
     }
 
     /// A bridge is a different kind of answer, not a weaker one, so it is
