@@ -11,6 +11,7 @@ import SwiftUI
 /// which keeps this screen at one decision.
 struct WelcomeScreen: View {
     @Environment(Clerk.self) private var clerk
+    @Environment(\.openURL) private var openURL
     @HavenReduceMotion private var reduceMotion
 
     @State private var arrived = false
@@ -71,6 +72,15 @@ struct WelcomeScreen: View {
                 }
                 .disabled(isSigningIn)
                 .arriving(arrived, after: 1.32, still: reduceMotion)
+
+                // Guideline 5.1.1(i) wants the privacy policy reachable inside
+                // the app, and this screen is where someone decides whether to
+                // sign in at all, so the pages are offered before the account
+                // exists, not only after (My Card carries them too). Not
+                // disabled during sign-in: reading the policy is never the
+                // wrong moment.
+                legalLinks
+                    .arriving(arrived, after: 1.45, still: reduceMotion)
             }
         }
         .sheet(isPresented: $showingOtherOptions) {
@@ -78,6 +88,27 @@ struct WelcomeScreen: View {
         }
         .sensoryFeedback(.error, trigger: failureCount)
         .task { arrived = true }
+    }
+
+    /// Side by side while they fit, stacked at accessibility sizes, where two
+    /// titles this long cannot share a line without truncating.
+    private var legalLinks: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 22) { legalButtons }
+            VStack(spacing: 10) { legalButtons }
+        }
+        .padding(.top, 4)
+    }
+
+    private var legalButtons: some View {
+        ForEach(LegalDocument.allCases) { document in
+            Button {
+                openURL(document.url)
+            } label: {
+                Text(document.title)
+                    .havenSecondary()
+            }
+        }
     }
 
     private func signInWithApple() async {
