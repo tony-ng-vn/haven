@@ -6,6 +6,18 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.15.0
+
+2026-07-28
+
+**iOS**
+
+- Search results open the person. Tapping a name in the results, whether you got there by typing or by pinning a company, city or role chip, now opens their screen with their handles and your note. Until now a result was a dead line of text.
+- So do the people an ask names, direct matches and bridges alike.
+- Coming back leaves your search exactly as it was: the same words, the same chips, the same answer still on screen.
+
+---
+
 ## v0.14.0
 
 2026-07-28
