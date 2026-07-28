@@ -112,6 +112,16 @@
 		</dict>
 	</array>
 
+	<!--
+	  The camera is deliberately absent from both lists above and below, and
+	  that is the answer rather than an omission. It is not a required-reason
+	  API, so it declares nothing here; it is asked for with
+	  NSCameraUsageDescription in Info.plist instead. And nothing it sees is
+	  collected: the connect scanner reads one code out of the frames and keeps
+	  none of them, so there is no photo or video data type to declare. What the
+	  code turns into -- a connection to somebody who is already a Haven user --
+	  is the contact information already declared above.
+	-->
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
 		<!--

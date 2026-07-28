@@ -351,6 +351,8 @@ One session drives; this section is its operating loop, and the goal prompt poin
 - [ ] E3 address editor in My Card
 - [x] E4 server onboarding state and avatar import (PR 144)
 - [ ] F1 scan and connect
+- [ ] E4 server onboarding state and avatar import
+- [x] F1 scan and connect (PR 146)
 - [ ] F2 universal links
 - [ ] F3 connected-person state (needs backend B1)
 - [ ] G1 card review fixes
@@ -382,6 +384,7 @@ they are made so neither session acts on a stale claim.
   a `claimHandle` caller.
   Nothing was built for E2 beyond a test pinning the half the client owns
   (`MyCardTests.addressIsNotOptional`). E3 and E4 are unblocked.
+- [ ] I2 web spot-checks
 
 ## Contract requests for the backend
 

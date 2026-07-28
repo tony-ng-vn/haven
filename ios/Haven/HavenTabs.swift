@@ -28,6 +28,8 @@ struct HavenTabs: View {
     @State private var showingCode = false
     /// Which legal page the menu asked for, if any.
     @State private var legalDocument: LegalDocument?
+    /// Whether the connect scanner is open.
+    @State private var scanning = false
 
     var body: some View {
         TabView(selection: $tab) {
@@ -63,6 +65,14 @@ struct HavenTabs: View {
         // On the TabView rather than inside the People stack, so the page
         // covers the tab bar the way a sheet from anywhere else in Haven does.
         .legalSheet($legalDocument)
+        // On the TabView for the same reason the legal sheet is: the scanner
+        // covers the tab bar, which is what a sheet in Haven does.
+        .sheet(isPresented: $scanning) {
+            ConnectScreen { personId in
+                tab = .people
+                peopleRoute.append(.person(id: personId))
+            }
+        }
         .onAppear {
             if opensCard { openCard(showingCode: false) }
         }
@@ -137,6 +147,19 @@ struct HavenTabs: View {
                 Image(systemName: "ellipsis.circle")
             }
             .accessibilityLabel("More")
+        }
+
+        // Scanning is the other half of the card: one corner shows your code,
+        // the other reads somebody else's. Beside the card rather than in the
+        // menu, because it is a thing people do standing up in front of
+        // somebody, and a menu is two taps.
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                scanning = true
+            } label: {
+                Image(systemName: "qrcode.viewfinder")
+            }
+            .accessibilityLabel("Scan someone's card")
         }
 
         ToolbarItem(placement: .topBarTrailing) {

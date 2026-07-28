@@ -156,10 +156,18 @@ struct DirectoryScreen: View {
     }
 
     private var empty: some View {
-        Text("No one saved yet.")
-            .havenSecondary()
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 40)
+        // Says what to do now that there is something to do. Until scanning
+        // existed this line was one sentence, because naming a way in that the
+        // app did not have would have been worse than saying nothing.
+        VStack(spacing: 6) {
+            Text("No one saved yet.")
+                .havenSecondary()
+            Text("Scan the code on the back of somebody's card to connect.")
+                .havenSecondary()
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.top, 40)
     }
 
     private var unreachable: some View {
