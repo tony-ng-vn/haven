@@ -16,7 +16,7 @@ import SwiftUI
 /// How large a person's name is rendered. Names are the only serif text, so
 /// their sizes live together.
 enum PersonNameScale {
-    /// The card and the beacon: the name is the subject of the screen.
+    /// The card, front and back: the name is the subject of the screen.
     case card
     /// A search result or directory row.
     case row
@@ -89,7 +89,7 @@ extension View {
             .foregroundStyle(HavenColor.faint)
     }
 
-    /// Machine-shaped text: the beacon address, a phone number.
+    /// Machine-shaped text: the address on the card's back, a phone number.
     func havenMono() -> some View {
         font(.system(.footnote, design: .monospaced))
             .foregroundStyle(HavenColor.star)

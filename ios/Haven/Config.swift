@@ -57,7 +57,7 @@ enum Config {
         #endif
     }()
 
-    /// The site a beacon's QR sends a stranger to.
+    /// The site the card's QR sends a stranger to.
     ///
     /// Paired with `convexDeploymentUrl`, and the pairing is the whole point:
     /// the code encodes an address on this host, and whoever scans it gets
@@ -72,14 +72,13 @@ enum Config {
     // real people's data.
     //
     // Nothing on the web reads this deployment: every Vercel deployment,
-    // previews included, is built against production. So a card made in a
-    // debug build has no page anywhere, which is exactly why
-    // FeatureFlags.beaconEnabled is false in debug. A code that resolves to
-    // nobody is not worth showing.
+    // previews included, is built against production. So a card made in a debug
+    // build has no page anywhere, and the code on its back resolves to nobody.
+    // Expected rather than broken -- see `BeaconAddress`.
     static let convexDeploymentUrl = "https://brilliant-puma-925.convex.cloud"
     #else
     // What ships: the same database inhavens.com reads. That is what makes a
-    // scanned beacon land on the right person's card.
+    // scanned code land on the right person's card.
     static let convexDeploymentUrl = "https://third-hound-186.convex.cloud"
     #endif
 }

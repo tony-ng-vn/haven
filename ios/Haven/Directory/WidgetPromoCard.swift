@@ -11,7 +11,7 @@ struct WidgetPromoCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Your beacon, one tap from the Lock Screen")
+            Text("Your code, one tap from the Lock Screen")
                 .havenBody()
                 // Room for the dismiss target, which floats over the card
                 // rather than sitting in this stack: at 44pt it would set the

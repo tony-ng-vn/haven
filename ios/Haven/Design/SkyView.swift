@@ -17,10 +17,10 @@ struct SkyView: View {
     let majorIntensities: [Double]
     /// The band the figure may occupy, in this view's own coordinate space.
     ///
-    /// Nil fills the whole view, which is what the card and the beacon want:
-    /// they have no header competing for the top. A question screen passes the
-    /// gap between its header and its content, because a figure drawn over the
-    /// question is the one thing that reads as a mistake.
+    /// Nil fills the whole view, which is what the card wants: it has no header
+    /// competing for the top. A question screen passes the gap between its
+    /// header and its content, because a figure drawn over the question is the
+    /// one thing that reads as a mistake.
     let figureBand: CGRect?
 
     /// How far the generator's nebula alphas are pulled back. The alphas were
@@ -63,8 +63,7 @@ struct SkyView: View {
 
     /// The figure at rest, where a star is either lit or a faint dot. Use
     /// `StarSlot.litMajorIndices` to derive the set from filled fields; the
-    /// default is the complete figure, which is what the card and the beacon
-    /// show.
+    /// default is the complete figure, which is what the card shows.
     init(
         sky: Sky,
         litMajors: Set<Int>? = nil,

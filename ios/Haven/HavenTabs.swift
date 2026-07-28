@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The app once onboarding is over: People and Search, with the card and the
-/// beacon reachable from the People screen's toolbar.
+/// The app once onboarding is over: People and Search, with the card reachable
+/// from the People screen's toolbar.
 ///
 /// Two tabs rather than one screen whose search field expands, per the build
 /// plan's open question 3. The tab bar is also where Phase 2 grows.
@@ -16,6 +16,12 @@ struct HavenTabs: View {
 
     @State private var tab: Tab = .people
     @State private var peopleRoute: [Destination] = []
+    /// Which side of the card is up.
+    ///
+    /// Here rather than inside My Card because the Lock Screen widget asks for
+    /// the code as an event, not as a destination: it can arrive when the card
+    /// is already open and showing its front, and it can arrive twice.
+    @State private var showingCode = false
 
     var body: some View {
         TabView(selection: $tab) {
@@ -31,8 +37,7 @@ struct HavenTabs: View {
                     .toolbar { directoryToolbar }
                     .navigationDestination(for: Destination.self) { destination in
                         switch destination {
-                        case .card: MyCardScreen()
-                        case .beacon: BeaconScreen()
+                        case .card: MyCardScreen(showingCode: $showingCode)
                         case .person(let id): PersonScreen(personId: id)
                         }
                     }
@@ -50,30 +55,25 @@ struct HavenTabs: View {
         // accent is the one colour the palette does not contain.
         .tint(HavenColor.star)
         .onAppear {
-            if opensCard { peopleRoute = [.card] }
+            if opensCard { openCard(showingCode: false) }
         }
-        // The Lock Screen widget's tap arrives here. The beacon hangs off the
-        // People tab's stack, so the tab has to come along or the push lands
-        // on a stack nobody is looking at.
-        //
-        // Behind the same flag as the toolbar button: the widget is one more
-        // way into the beacon, and a second door governed by a second switch
-        // is how a flagged-off screen ends up reachable anyway.
+        // The Lock Screen widget's tap arrives here, and lands on the card
+        // already turned to its code, because the code is the whole of what
+        // that widget offers. The card hangs off the People tab's stack, so the
+        // tab has to come along or the push lands on a stack nobody is looking
+        // at.
         .onOpenURL { url in
-            guard Self.opensBeacon(url) else { return }
+            guard HavenDeepLink(url: url) == .beacon else { return }
             tab = .people
-            peopleRoute = [.beacon]
+            openCard(showingCode: true)
         }
     }
 
-    /// Whether a url should open the beacon.
-    ///
-    /// Separated from the view so the flag half can be tested. That half is the
-    /// safety-critical one: the widget is a door into the beacon that the
-    /// toolbar's own check does not cover, and a door governed by no switch is
-    /// how a flagged-off screen becomes reachable anyway.
-    static func opensBeacon(_ url: URL) -> Bool {
-        FeatureFlags.beaconEnabled && HavenDeepLink(url: url) == .beacon
+    /// Every way into My Card says which side of the card it wants, because
+    /// none of them can assume which side the last visit left it on.
+    private func openCard(showingCode: Bool) {
+        self.showingCode = showingCode
+        if peopleRoute != [.card] { peopleRoute = [.card] }
     }
 
     private enum Tab {
@@ -82,25 +82,27 @@ struct HavenTabs: View {
     }
 
     /// Where the People tab can go. A value rather than a view, so the reveal
-    /// can open one of them without holding the view that shows it.
+    /// and the widget can open it without holding the view that shows it.
     private enum Destination: Hashable {
         case card
-        case beacon
         case person(id: String)
     }
 
+    /// One door to the card, not two.
+    ///
+    /// There used to be a second button here for the beacon. The code is the
+    /// back of the card now, so a separate way in would be a second route to
+    /// the same object -- and the one that skipped the card would be the one
+    /// people learned.
+    ///
+    /// A button rather than a `NavigationLink`, because opening the card also
+    /// has to say which side is up: a link can only carry a destination.
     @ToolbarContentBuilder
     private var directoryToolbar: some ToolbarContent {
-        if FeatureFlags.beaconEnabled {
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink(value: Destination.beacon) {
-                    Image(systemName: "qrcode")
-                }
-                .accessibilityLabel("Your beacon")
-            }
-        }
         ToolbarItem(placement: .topBarTrailing) {
-            NavigationLink(value: Destination.card) {
+            Button {
+                openCard(showingCode: false)
+            } label: {
                 Image(systemName: "person.crop.circle")
             }
             .accessibilityLabel("Your card")

@@ -7,7 +7,12 @@ import Foundation
 /// both sides, so the link a widget carries cannot drift from the link the app
 /// is willing to answer.
 enum HavenDeepLink: Equatable {
-    /// Your own code, ready to be scanned.
+    /// Your own code, ready to be scanned. Opens My Card with the card already
+    /// turned over.
+    ///
+    /// Still named for the beacon, and the url still reads `haven://beacon`,
+    /// because widgets people have already added carry that url and nothing can
+    /// go back and rewrite them. The place it lands moved; the link cannot.
     case beacon
 
     private static let scheme = "haven"

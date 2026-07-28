@@ -42,8 +42,8 @@ code is waiting on any of it.
   - [x] 5. My Card / edit with unlit-star states, handle management, photo add.
     Photo upload and account deletion still need a signed-in session to exercise; the unsigned simulator cannot.
   - [x] 6. Directory and Search shells, widget promo card, Lock Screen explainer.
-  - [x] 7. Beacon screen with real QR and handle claim (flagged off until the web card page exists).
-    The QR is dark-on-light rather than inverted: an inverted code reads on an iPhone and not reliably elsewhere, and being scanned by a stranger's phone is the screen's whole job. Still unverified against a non-Apple scanner.
+  - [x] 7. Real QR with handle claim, now the back of the card rather than a screen of its own (2026-07-28). The feature flag retired with the screen.
+    The QR is dark-on-light rather than inverted: an inverted code reads on an iPhone and not reliably elsewhere, and being scanned by a stranger's phone is its whole job. Still unverified against a non-Apple scanner.
   - [x] 8. Lock Screen widget and deep link. `HavenWidget` target ships with the app.
   - [x] 9. Public web card page at `inhavens.com/<handle>` (`src/CardPage.tsx`), which is what unblocked the beacon flag.
   - [~] Answer the six open questions in the build plan. None block milestone 1. Question 5 is answered and implemented (2026-07-25): reuse `username` as the one handle, with `claimHandle` alongside `setUsername`. The handle UX question is due before milestone 4.

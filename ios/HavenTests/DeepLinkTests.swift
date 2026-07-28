@@ -13,6 +13,9 @@ struct DeepLinkTests {
         #expect(HavenDeepLink(url: HavenDeepLink.beacon.url) == .beacon)
     }
 
+    /// Widgets people have already added carry this exact url, and nothing can
+    /// go back and rewrite them. Where it lands is free to move; the string is
+    /// not.
     @Test("the beacon url reads as written")
     func beaconUrlIsStable() {
         #expect(HavenDeepLink.beacon.url.absoluteString == "haven://beacon")
@@ -36,18 +39,4 @@ struct DeepLinkTests {
         #expect(HavenDeepLink(url: URL(string: "HAVEN://BEACON")!) == .beacon)
     }
 
-    /// The widget is a second door into the beacon that the toolbar's own check
-    /// does not cover. Written against the flag rather than against `false` so
-    /// it keeps asserting the coupling after the flag flips, instead of just
-    /// becoming a failing test somebody deletes.
-    @Test("the widget's url opens the beacon exactly when the flag allows it")
-    func widgetUrlFollowsTheFlag() {
-        #expect(HavenTabs.opensBeacon(HavenDeepLink.beacon.url) == FeatureFlags.beaconEnabled)
-    }
-
-    @Test("a url Haven does not own is refused whatever the flag says")
-    func unknownUrlsNeverOpenTheBeacon() {
-        #expect(HavenTabs.opensBeacon(URL(string: "haven://nowhere")!) == false)
-        #expect(HavenTabs.opensBeacon(URL(string: "https://inhavens.com/beacon")!) == false)
-    }
 }

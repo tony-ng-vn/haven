@@ -4,13 +4,13 @@ import Foundation
 import Testing
 @testable import Haven
 
-// The beacon's pure parts: where a code points, and that the generator actually
+// The code's pure parts: where it points, and that the generator actually
 // produces one. Whether it scans is a physical question answered by pointing a
 // phone at a screen, not by an assertion.
 
 @Suite("Beacon")
 struct BeaconTests {
-    @Test("a beacon points at Haven's own address")
+    @Test("a code points at Haven's own address")
     func address() {
         #expect(BeaconAddress.url(for: "maya") == "https://inhavens.com/maya")
         // The scheme is in the code and not on the screen: a camera needs it
@@ -56,7 +56,7 @@ struct BeaconTests {
         return Data(referencing: data)
     }
 
-    // A beacon that redrew differently between two openings would be a
+    // A code that redrew differently between two turns of the card would be a
     // different code for the same person, and anyone who had scanned the first
     // one would have scanned something we no longer produce.
     @Test("the same address always makes the same code")
@@ -77,18 +77,14 @@ struct BeaconTests {
         #expect(maya != ada)
     }
 
-    /// The invariant the flag actually encodes: a beacon is only shown where the
-    /// app and the card page read the same database.
-    ///
-    /// Tests build in debug, so what can be asserted here is the development
-    /// half -- dev deployment, nothing on the web reading it, beacon off. The
-    /// release half is the mirror of it and is not reachable from a test run,
-    /// which is why both live behind one `#if` in the source rather than being
-    /// two values somebody keeps in step by hand.
-    @Test("the beacon is only on where the app and the card page agree")
-    func flagFollowsTheDeployment() {
+    /// Why a code made in a debug build does not resolve, asserted so it stays
+    /// the reason. The app writes here and the card page reads production, so
+    /// the two are deliberately different databases. If these ever became the
+    /// same one, a developer's throwaway test card would be a real person's
+    /// card and this test is what would notice.
+    @Test("a debug build writes somewhere the card page does not read")
+    func debugWritesToTheDevelopmentDeployment() {
         #expect(Config.convexDeploymentUrl.contains("brilliant-puma-925"))
-        #expect(FeatureFlags.beaconEnabled == false)
     }
 
     /// A code carries whatever host Config names, so the two cannot drift into
