@@ -31,18 +31,18 @@ private struct MirrorPage: Decodable {
 /// look for something that is already where it belongs.
 @MainActor
 final class CaptureSync: ObservableObject {
-    private let queue: CaptureQueue?
+    private let queues: [CaptureQueue]
     private let mirror: DirectoryMirrorStore?
     private let sink: CaptureSink
     private var isRunning = false
     private var cancellable: AnyCancellable?
 
     init(
-        queue: CaptureQueue? = CaptureQueue.inAppGroup(),
-        mirror: DirectoryMirrorStore? = DirectoryMirrorStore.inAppGroup(),
+        queues: [CaptureQueue] = CaptureQueue.drainable(),
+        mirror: DirectoryMirrorStore? = DirectoryMirrorStore.forApp(),
         sink: CaptureSink = ConvexCaptureSink()
     ) {
-        self.queue = queue
+        self.queues = queues
         self.mirror = mirror
         self.sink = sink
     }
@@ -61,7 +61,7 @@ final class CaptureSync: ObservableObject {
         isRunning = true
         defer { isRunning = false }
 
-        if let queue {
+        for queue in queues {
             _ = await CaptureDrain(queue: queue, sink: sink).run()
         }
         await refreshMirror()

@@ -13,6 +13,7 @@ struct QueuedCapture: Codable, Equatable, Identifiable, Sendable {
     enum Payload: Codable, Equatable, Sendable {
         case profile(Profile)
         case screenshot(Screenshot)
+        case manual(Manual)
     }
 
     /// A shared profile URL, already parsed. Everything `saveSharedProfile`
@@ -35,6 +36,30 @@ struct QueuedCapture: Codable, Equatable, Identifiable, Sendable {
     struct Screenshot: Codable, Equatable, Sendable {
         let fileName: String
         let note: String?
+    }
+
+    /// Somebody typed into the app rather than shared in from another one.
+    ///
+    /// Its own case rather than `Profile`, because `ProfileLink` names one of
+    /// the three platforms the share extension activates on, and a person you
+    /// save by hand can carry any handle you want to record -- WhatsApp and
+    /// Telegram included, per `mvp-design.md`.
+    struct Manual: Codable, Equatable, Sendable {
+        let name: String
+        /// Free-form, and trimmed and folded by the server the same way every
+        /// other handle write path is.
+        let platform: String
+        let handleValue: String
+        /// The page this handle points at, or "" for a platform that has no
+        /// web profile. The server keeps it as `link` and never overwrites one.
+        let profileUrl: String
+        /// Required at the moment of saving, unlike a share's note: a handle is
+        /// identity and this is the story, and a person with neither is a row
+        /// nobody ever retrieves.
+        let note: String
+        /// Who the user chose to add this to, when they chose. Same request,
+        /// same staleness, same server-side resolution as a shared profile.
+        let attachToPersonId: String?
     }
 }
 
@@ -60,6 +85,36 @@ struct CaptureQueue {
     static func inAppGroup() -> CaptureQueue? {
         guard let container = HavenAppGroup.containerURL else { return nil }
         return CaptureQueue(directory: container.appendingPathComponent("captures"))
+    }
+
+    /// Where the app writes a capture it made itself.
+    ///
+    /// The shared container when there is one, and the app's own otherwise.
+    /// The fallback is not a nicety: saving somebody by hand writes here before
+    /// it writes to Convex, and on a device where the group is missing from
+    /// either App ID `inAppGroup` answers nil -- which would make the one
+    /// operation the offline rule says can never fail, fail. The extension gets
+    /// no such fallback, because a container the app cannot read is a capture
+    /// nobody drains.
+    static func forApp() -> CaptureQueue {
+        inAppGroup() ?? inAppContainer()
+    }
+
+    /// Every queue the app should drain.
+    ///
+    /// The app's own container is always in the list, even when the group is
+    /// there. A capture written while the group was missing sits in the
+    /// private container, and would be stranded there for good once a later
+    /// build provisions the group.
+    static func drainable() -> [CaptureQueue] {
+        guard let shared = inAppGroup() else { return [inAppContainer()] }
+        return [shared, inAppContainer()]
+    }
+
+    private static func inAppContainer() -> CaptureQueue {
+        CaptureQueue(
+            directory: HavenAppGroup.appContainerURL.appendingPathComponent("captures")
+        )
     }
 
     private var imagesDirectory: URL {

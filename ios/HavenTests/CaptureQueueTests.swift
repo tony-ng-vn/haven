@@ -58,6 +58,31 @@ struct CaptureQueueTests {
         #expect(queue.pending() == [capture])
     }
 
+    // The add sheet writes here before it writes to Convex, so a payload that
+    // did not survive the file would be a person somebody typed out and lost.
+    @Test("a person added by hand survives the round trip whole")
+    func manualRoundTrip() throws {
+        let (queue, root) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let capture = QueuedCapture(
+            id: UUID(),
+            capturedAt: Date(timeIntervalSince1970: 0),
+            payload: .manual(
+                QueuedCapture.Manual(
+                    name: "Mai Tran",
+                    platform: "telegram",
+                    handleValue: "mai_makes",
+                    profileUrl: "https://t.me/mai_makes",
+                    note: "met at the Hanoi meetup, builds ceramics",
+                    attachToPersonId: "j5701"
+                )
+            )
+        )
+        try queue.enqueue(capture)
+        #expect(queue.pending() == [capture])
+    }
+
     // The drain replays captures in the order they were made, because the
     // order decides the outcome: a second share of one account appends its
     // note to the person the first one created.

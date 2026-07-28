@@ -17,6 +17,7 @@ struct SharedProfileOutcome: Decodable, Equatable, Sendable {
 protocol CaptureSink: Sendable {
     func saveProfile(_ profile: QueuedCapture.Profile) async throws -> SharedProfileOutcome
     func saveScreenshot(_ image: Data) async throws
+    func saveManual(_ manual: QueuedCapture.Manual) async throws -> SharedProfileOutcome
 }
 
 /// What one pass of the drain did.
@@ -58,6 +59,18 @@ struct CaptureDrain {
                     // Kept, not dropped: the usual reason is that there was no
                     // network, and losing the capture is the one outcome the
                     // whole queue exists to prevent.
+                    result.kept += 1
+                }
+            case .manual(let manual):
+                do {
+                    let outcome = try await sink.saveManual(manual)
+                    if outcome.noteTruncated { result.truncatedNotes += 1 }
+                    try? queue.remove(capture)
+                    result.sent += 1
+                } catch {
+                    // Kept for the same reason a shared profile is: the usual
+                    // reason is no network, and a person somebody typed out by
+                    // hand exists nowhere else yet.
                     result.kept += 1
                 }
             case .screenshot(let screenshot):

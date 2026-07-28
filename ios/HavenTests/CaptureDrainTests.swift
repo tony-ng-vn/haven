@@ -6,6 +6,7 @@ import Testing
 /// needs it to.
 private final class FakeSink: CaptureSink, @unchecked Sendable {
     var profiles: [QueuedCapture.Profile] = []
+    var manuals: [QueuedCapture.Manual] = []
     var screenshots: [Data] = []
     /// Handles whose save throws, standing in for anything the server refuses
     /// or the network never reaches.
@@ -19,6 +20,16 @@ private final class FakeSink: CaptureSink, @unchecked Sendable {
             status: "created",
             personId: "person-\(profile.link.handle)",
             noteTruncated: truncating.contains(profile.link.handle)
+        )
+    }
+
+    func saveManual(_ manual: QueuedCapture.Manual) async throws -> SharedProfileOutcome {
+        manuals.append(manual)
+        if failing.contains(manual.handleValue) { throw SinkError.refused }
+        return SharedProfileOutcome(
+            status: "created",
+            personId: "person-\(manual.handleValue)",
+            noteTruncated: truncating.contains(manual.handleValue)
         )
     }
 
@@ -56,8 +67,93 @@ private func profile(
     )
 }
 
+private func manual(
+    _ handleValue: String,
+    platform: String = "whatsapp",
+    at seconds: TimeInterval,
+    note: String = "met at the Hanoi meetup"
+) -> QueuedCapture {
+    QueuedCapture(
+        id: UUID(),
+        capturedAt: Date(timeIntervalSince1970: seconds),
+        payload: .manual(
+            QueuedCapture.Manual(
+                name: "Mai Tran",
+                platform: platform,
+                handleValue: handleValue,
+                profileUrl: "",
+                note: note,
+                attachToPersonId: nil
+            )
+        )
+    )
+}
+
 @Suite("Draining the capture queue")
 struct CaptureDrainTests {
+    // The offline rule for the in-app add: it writes to the queue and closes,
+    // and whether there was a network at that moment is the drain's problem.
+    @Test("a person added by hand is sent like any other capture")
+    func sendsManual() async throws {
+        let (queue, root) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try queue.enqueue(manual("+84901234567", at: 100))
+        let sink = FakeSink()
+
+        let result = await CaptureDrain(queue: queue, sink: sink).run()
+
+        #expect(sink.manuals.map(\.handleValue) == ["+84901234567"])
+        #expect(result.sent == 1)
+        #expect(queue.pending().isEmpty)
+    }
+
+    @Test("a person added by hand with no network stays for next time")
+    func keepsManual() async throws {
+        let (queue, root) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try queue.enqueue(manual("+84901234567", at: 100))
+        let sink = FakeSink()
+        sink.failing = ["+84901234567"]
+
+        let result = await CaptureDrain(queue: queue, sink: sink).run()
+
+        #expect(result.sent == 0)
+        #expect(result.kept == 1)
+        #expect(queue.pending().count == 1)
+    }
+
+    // Both kinds share one queue, and one kind failing must not strand the
+    // other.
+    @Test("manual adds and shares drain together, oldest first")
+    func manualAndSharesInterleave() async throws {
+        let (queue, root) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try queue.enqueue(profile("shared", at: 200))
+        try queue.enqueue(manual("+84901234567", at: 100))
+        let sink = FakeSink()
+
+        let result = await CaptureDrain(queue: queue, sink: sink).run()
+
+        #expect(sink.manuals.count == 1)
+        #expect(sink.profiles.map(\.link.handle) == ["shared"])
+        #expect(result.sent == 2)
+        #expect(queue.pending().isEmpty)
+    }
+
+    @Test("a clipped note on a manual add is reported")
+    func manualTruncation() async throws {
+        let (queue, root) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try queue.enqueue(manual("+84901234567", at: 100))
+        let sink = FakeSink()
+        sink.truncating = ["+84901234567"]
+
+        let result = await CaptureDrain(queue: queue, sink: sink).run()
+
+        #expect(result.sent == 1)
+        #expect(result.truncatedNotes == 1)
+    }
+
     @Test("everything waiting is sent, oldest first")
     func sendsEverything() async throws {
         let (queue, root) = makeQueue()
