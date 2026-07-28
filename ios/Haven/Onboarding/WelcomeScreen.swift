@@ -20,6 +20,7 @@ struct WelcomeScreen: View {
     /// Counts failures rather than triggering on the message, so a second
     /// identical failure still gets its haptic.
     @State private var failureCount = 0
+    @State private var legalDocument: LegalDocument?
 
     var body: some View {
         HavenScreen(sky: nil, ambient: .welcome) {
@@ -71,13 +72,44 @@ struct WelcomeScreen: View {
                 }
                 .disabled(isSigningIn)
                 .arriving(arrived, after: 1.32, still: reduceMotion)
+
+                // Guideline 5.1.1(i) wants the privacy policy reachable inside
+                // the app, and this screen is where someone decides whether to
+                // sign in at all, so the pages are offered before the account
+                // exists, not only after (My Card carries them too). Not
+                // disabled during sign-in: reading the policy is never the
+                // wrong moment.
+                legalLinks
+                    .arriving(arrived, after: 1.45, still: reduceMotion)
             }
         }
         .sheet(isPresented: $showingOtherOptions) {
             AuthView()
         }
+        .legalSheet($legalDocument)
         .sensoryFeedback(.error, trigger: failureCount)
         .task { arrived = true }
+    }
+
+    /// Side by side while they fit, stacked at accessibility sizes, where two
+    /// titles this long cannot share a line without truncating.
+    private var legalLinks: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 22) { legalButtons }
+            VStack(spacing: 10) { legalButtons }
+        }
+        .padding(.top, 4)
+    }
+
+    private var legalButtons: some View {
+        ForEach(LegalDocument.allCases) { document in
+            Button {
+                legalDocument = document
+            } label: {
+                Text(document.title)
+                    .havenSecondary()
+            }
+        }
     }
 
     private func signInWithApple() async {

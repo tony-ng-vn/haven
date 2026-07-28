@@ -27,6 +27,20 @@ struct LegalDocumentTests {
         #expect(LegalDocument.terms.rawValue == "terms")
     }
 
+    // These pages now open inside Haven, and `SFSafariViewController` only
+    // loads http and https: hand it anything else and it shows an empty sheet
+    // rather than refusing, so the break would reach a person before it reached
+    // a build. Nothing in the app can cause that, but a future edit to the
+    // address above can, which is why the scheme is pinned separately from the
+    // full string.
+    @Test("every document is a web page the in-app browser can open")
+    func openableInApp() {
+        for document in LegalDocument.allCases {
+            #expect(document.url.scheme == "https")
+            #expect(document.url.host?.isEmpty == false)
+        }
+    }
+
     @Test("every document is offered, and each reads as itself")
     func rows() {
         #expect(LegalDocument.allCases.count == 2)
