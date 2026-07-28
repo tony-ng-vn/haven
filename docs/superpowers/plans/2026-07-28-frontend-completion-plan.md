@@ -424,7 +424,7 @@ blocked on those merges rather than on any decision.
 - [x] F3 connected-person state (PR 155)
 - [x] G1 card review fixes (PR 156)
 - [x] G2 motion and haptics (PR 157)
-- [ ] G3 accessibility audit
+- [x] G3 accessibility audit (PR 158)
 - [ ] G4 copy convergence
 - [ ] H1 release readiness
 - [ ] H2 final checklist sweep

@@ -121,16 +121,18 @@ struct AskMatchRow: View {
                         bridgeTag
                     }
                 }
-                // The reason reads brighter than the placing line, not dimmer:
-                // spending a model call buys the "because you wrote ..." and
-                // that is what someone is here to read.
+                // The reason reads brighter than the placing line, and the
+                // hierarchy is made by lifting the reason rather than sinking
+                // the line: spending a model call buys the "because you wrote
+                // ..." and that is what someone is here to read. It used to be
+                // made by dropping this line to `faint`, which fails 4.5:1
+                // over the page's dusk end -- and this list reaches it.
                 if let detail = match.detail {
                     Text(detail)
                         .havenSecondary()
-                        .foregroundStyle(HavenColor.faint)
                 }
                 Text(match.why)
-                    .havenSecondary()
+                    .havenSecondary(HavenColor.ink)
                     .padding(.top, 2)
             }
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)

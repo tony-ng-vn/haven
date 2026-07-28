@@ -255,7 +255,10 @@ private struct ConnectionChip: View {
             Text(label)
                 .font(.footnote)
         }
-        .foregroundStyle(connection.state == .connected ? HavenColor.star : HavenColor.faint)
+        // Muted, not faint: the ended state is the one that has to be read,
+        // and it is also the one drawn dimmer. `faint` fails 4.5:1 over the
+        // page's dusk end.
+        .foregroundStyle(connection.state == .connected ? HavenColor.star : HavenColor.muted)
         .padding(.horizontal, 9)
         .frame(minHeight: 24)
         .background(

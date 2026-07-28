@@ -117,10 +117,14 @@ struct DirectoryScreen: View {
                 Image(systemName: "magnifyingglass")
                 Text("Search everyone")
                     .havenBody()
-                    .foregroundStyle(HavenColor.faint)
+                    .foregroundStyle(HavenColor.muted)
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(HavenColor.faint)
+            // Muted rather than faint: this is the label of the control, not a
+            // decoration on it, and `faint` fails 4.5:1 over the page's dusk
+            // end. It reads at the top of this screen today; a screen that
+            // grows a row above it would break that silently.
+            .foregroundStyle(HavenColor.muted)
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .background(HavenColor.fill, in: RoundedRectangle(cornerRadius: 12))
