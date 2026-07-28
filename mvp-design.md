@@ -179,7 +179,7 @@ The screen-by-screen spec is in `phase1-build-plan.md`.
 My Card: your profile as a card that you show people, editable field by field.
 This is also where unfilled fields read as unlit stars, which is the whole nudge to complete them.
 
-Your beacon: your QR, resolving to `inhavens.com/<handle>` rather than to any social profile.
+Your beacon: your QR, on the back of your card, resolving to `inhavens.com/<handle>` rather than to any social profile.
 
 Connect: start or accept a connection, and save a non-user manually.
 

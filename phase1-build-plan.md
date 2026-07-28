@@ -8,7 +8,7 @@ The visual source of truth is the interactive prototype at `design/onboarding-pr
 ## What Phase 1 ships
 
 A person installs Haven, signs in, answers three questions, and gets their card.
-After onboarding they land in an app with two main screens (Directory and Search, both mostly empty shells in this phase), a beacon screen showing their QR, an edit surface for their card, and an optional Lock Screen widget.
+After onboarding they land in an app with two main screens (Directory and Search, both mostly empty shells in this phase), an edit surface for their card with their QR on the back of it, and an optional Lock Screen widget.
 
 The hero moment is the card reveal: the person's constellation completing and settling.
 Per `mvp-design.md`, this is built first, to the full quality bar, to find the SwiftUI ceiling early.
@@ -43,7 +43,7 @@ Do not relitigate them during implementation.
 10. The QR resolves to a Haven-owned address, `inhavens.com/<handle>`, not to any social profile.
     Authorization proves identity but cannot construct social profile links in the general case (LinkedIn's OIDC subject is pairwise app-scoped; X's username read sits behind paid tiers; Instagram is Professional-accounts-only).
     A social handle is content on the destination, not the destination.
-11. The QR screen is named "Your beacon" ("Your tag" is the approved fallback name if beacon tests poorly).
+11. The QR is named "Your beacon" ("Your tag" is the approved fallback name if beacon tests poorly).
 12. The Lock Screen widget cannot be auto-added; iOS has no API for it.
     The widget pitch is a dismissible card on the Directory empty state, opening a mostly-visual explainer (a Lock Screen mockup picture, minimal words), never a wall in onboarding.
 13. Search is a main screen alongside Directory, not a field buried on the directory list.
@@ -147,10 +147,15 @@ Account deletion entry point lives behind a settings row here (guideline 5.1.1; 
 A picture, not a paragraph: a small Lock Screen mockup with the Haven widget under the clock, one line, "See what it opens" primary, "Not now" ghost.
 The three-step how-to lives one tap deeper.
 
-### 9. Your beacon
+### 9. Your beacon, on the back of the card
 
-Real QR encoding `https://inhavens.com/<handle>`, serif name, the address in mono under it, "Show this. They point a camera and land on your card."
+Real QR encoding `https://inhavens.com/<handle>`, serif name, the address in mono under it, "Show this. Their camera lands on your card."
 Boost brightness while visible.
+
+Built as a screen of its own and folded into the card afterwards (2026-07-28).
+It described the same object the card already was, so a separate screen meant two doors to one thing, and the one that skipped the card was the one people would learn.
+Tap the card on My Card and it turns over.
+`FeatureFlags.beaconEnabled` went with the screen: it kept the QR hidden in debug builds, where a code points at a site reading a different database, and a flag that hides the card's whole back is a feature nobody can develop.
 
 ## Design tokens
 
@@ -213,7 +218,7 @@ Functions:
 - City picker: MKLocalSearchCompleter constrained to city-level results (verify the exact resultTypes/filter combination in a spike; iOS 18 adds address filtering).
 - Phone: PhoneNumberKit for format and validation.
 - QR: CIQRCodeGenerator.
-- Widget: WidgetKit accessory family (accessoryCircular or accessoryRectangular), `widgetURL` deep link straight to the beacon screen.
+- Widget: WidgetKit accessory family (accessoryCircular or accessoryRectangular), `widgetURL` deep link straight to My Card with the card already turned to the code.
 - Deep links: register the `inhavens.com` universal link domain now (apple-app-site-association served from the Vercel app) so scanned beacons open the app when installed.
 - Onboarding state: persist progress locally so a killed app resumes at the first unanswered question; every commit is one small Convex mutation with a retry-on-failure affordance, never a dead end.
 
@@ -228,7 +233,7 @@ Named explicitly so the scope change is a decision, not a drift.
 3. Public web card page at `inhavens.com/<handle>` (web repo, not iOS).
    Minimum version: name, photo, constellation (reuse `src/sky.ts` and seed from the same user id), city, primary social handle, and a "Get Haven" link with a smart app banner.
    Privacy rule, non-negotiable: phone numbers and email are never rendered on the public page; if the primary contact is phone, the public page shows only a Connect call-to-action.
-   This page can trail the iOS milestones by a week without blocking anything; until it ships, the beacon screen is hidden behind a feature flag.
+   This page can trail the iOS milestones by a week without blocking anything; until it shipped, the QR was hidden behind a feature flag.
 4. Search as a separate main screen (shell now, wired in Phase 3).
 
 ## Build order (milestones, each with a definition of done)
@@ -259,7 +264,7 @@ Any Facebook or Snapchat integration (cut on 2026-07-24).
 
 Each has a recommendation; answer before the relevant milestone, none block milestone 1.
 
-1. Haven handle UX: auto-claim a suggestion during onboarding silently, or show a one-line "your address" confirm on the beacon screen the first time?
+1. Haven handle UX: auto-claim a suggestion during onboarding silently, or show a one-line "your address" confirm the first time the card is turned over?
    Recommendation: silent auto-claim at card creation, editable later in My Card; one less onboarding step.
 2. Public page privacy defaults beyond the phone rule: should city show publicly?
    Recommendation: yes to city, no to company and role until selective sharing exists.
