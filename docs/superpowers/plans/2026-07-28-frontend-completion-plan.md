@@ -342,7 +342,7 @@ One session drives; this section is its operating loop, and the goal prompt poin
 - [x] D1 manual add (PR 138)
 - [x] D2 person detail completion (PR 140)
 - [x] D3 search and ask navigation (PR 141)
-- [ ] D4 directory paging (PR 147, open)
+- [x] D4 directory paging (PR 147)
 - [x] D5 welcome legal links (PR 137)
 - [ ] E1 pin walkthrough and practice capture (PR 148, open)
 - [x] E2 handle claim at card creation -- void on inspection, see "Corrections to this plan's inventory" (PR 143)
@@ -380,6 +380,7 @@ they are made so neither session acts on a stale claim.
   a `claimHandle` caller.
   Nothing was built for E2 beyond a test pinning the half the client owns
   (`MyCardTests.addressIsNotOptional`). E3 and E4 are unblocked.
+- [ ] I2 web spot-checks
 
 ## Contract requests for the backend
 
