@@ -8,10 +8,15 @@ import SwiftUI
 /// falls through to the most recent people, so opening search shows who you
 /// saved last and typing narrows it.
 struct SearchScreen: View {
+    /// Opens one person. Search's whole job is handing back the person, so a
+    /// result that went nowhere was the screen stopping one step short.
+    var openPerson: (String) -> Void = { _ in }
+
     @StateObject private var model: SearchModel
     @StateObject private var ask: AskModel
 
-    init() {
+    init(openPerson: @escaping (String) -> Void = { _ in }) {
+        self.openPerson = openPerson
         _model = StateObject(wrappedValue: SearchModel())
         _ask = StateObject(wrappedValue: AskModel())
     }
@@ -110,7 +115,7 @@ struct SearchScreen: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             if isAsking {
-                AskPanel(model: ask, onDismiss: { ask.clear() })
+                AskPanel(model: ask, openPerson: openPerson, onDismiss: { ask.clear() })
             } else {
                 askInvitation
                 summary
@@ -192,7 +197,8 @@ struct SearchScreen: View {
                     SearchResultRow(
                         name: person.name,
                         detail: person.detail,
-                        query: model.query
+                        query: model.query,
+                        open: { openPerson(person.id) }
                     )
                 }
             }
@@ -273,32 +279,41 @@ private struct SearchChipView: View {
 
 /// One line of the results list: the person's name in serif with the matched
 /// part lit, and what places them under it.
+///
+/// The whole line opens the person. A result that showed you a name and went
+/// nowhere was search stopping one step short of its only job.
 struct SearchResultRow: View {
     let name: String
     var detail: String?
     let query: String
+    let open: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(MatchHighlight.attributed(name, matching: query))
-                .personName(.row)
-                .foregroundStyle(HavenColor.ink)
-            if let detail, !detail.isEmpty {
-                Text(MatchHighlight.attributed(detail, matching: query))
-                    .havenSecondary()
+        Button(action: open) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(MatchHighlight.attributed(name, matching: query))
+                    .personName(.row)
+                    .foregroundStyle(HavenColor.ink)
+                if let detail, !detail.isEmpty {
+                    Text(MatchHighlight.attributed(detail, matching: query))
+                        .havenSecondary()
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(HavenColor.hairline)
+                    .frame(height: 1)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        .padding(.vertical, 8)
+        .buttonStyle(RowPressStyle())
         // The highlight is colour and weight, which a screen reader gets
         // nothing from, so it reads the plain line.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([name, detail].compactMap { $0 }.joined(separator: ", "))
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(HavenColor.hairline)
-                .frame(height: 1)
-        }
+        .accessibilityAddTraits(.isButton)
     }
 }
 
