@@ -241,7 +241,8 @@ The form and the copy are unaffected: the lens is a canvas layer behind them and
 Star count is `min(300, w * h / 3600)`, so past roughly 1400x900 the cap binds and density falls as the window grows while the radius stays fixed.
 The formulas predict about 17 stars in the figure at 1090x830 and about 9 at 1800x1170; the 1800-wide window showed 7 to 8, which still reads as a constellation.
 Past roughly 2560 CSS pixels wide it would thin out to a handful.
-If that ever matters, the fix that preserves the look is to take the N nearest qualifying stars, not to raise the star cap or drop the brightness threshold, since both of those change the sky everywhere.
+That is now handled, the way this note said to handle it: `lensFigure` falls back to the nearest qualifying stars when fewer than seven fall inside the radius, and hands back the radius the fade should use so the stars it reached for are not lit with edges drawn at zero alpha.
+The star cap and the brightness threshold are untouched, because both of those change the sky on every screen rather than the figure on the few that need it.
 
 ## Open items
 

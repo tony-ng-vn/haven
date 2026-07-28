@@ -360,7 +360,7 @@ One session drives; this section is its operating loop, and the goal prompt poin
 - [ ] H1 release readiness
 - [ ] H2 final checklist sweep
 - [x] I1 CI signing-flag removal (PR 136)
-- [ ] I2 web spot-checks
+- [x] I2 web spot-checks (PR 145)
 
 ## Corrections to this plan's inventory
 

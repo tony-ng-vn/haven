@@ -4,6 +4,7 @@ import {
   edgeAlpha,
   falloff,
   figureStars,
+  lensFigure,
   isTouchPointer,
   magnify,
   wanderPoint,
@@ -165,5 +166,56 @@ describe("the figure", () => {
   test("draws no line for a lone star", () => {
     const points = [{ x: 100, y: 100 }];
     expect(spanningTree(points)).toEqual([]);
+  });
+});
+
+describe("lensFigure", () => {
+  // A dense sky is unchanged: the radius that went in is the radius that comes
+  // back, and the figure is exactly what fell inside it.
+  test("leaves a sky dense enough to fill the lens alone", () => {
+    const stars = Array.from({ length: LENS.minFigure + 3 }, (_, i) =>
+      star(100 + i * 5, 100, 1.6),
+    );
+    const figure = lensFigure(stars, CENTRE);
+    expect(figure.stars).toEqual(stars);
+    expect(figure.radius).toBe(LENS.radius);
+  });
+
+  // The 2560-wide case. The star cap makes the sky sparse, and the lens reaches
+  // out rather than showing two stars and a line.
+  test("reaches past the radius when the sky inside it is too thin", () => {
+    const near = star(105, 100, 1.6);
+    const far = Array.from({ length: LENS.minFigure }, (_, i) =>
+      star(100 + LENS.radius * (2 + i), 100, 1.6),
+    );
+    const figure = lensFigure([near, ...far], CENTRE);
+    expect(figure.stars.length).toBe(LENS.minFigure);
+    expect(figure.stars[0]).toBe(near);
+    // The fade reaches with it, or the stars it just lit would draw their edges
+    // at zero alpha and the thinning would be unchanged.
+    expect(figure.radius).toBeGreaterThan(LENS.radius);
+  });
+
+  test("never gives back a radius tighter than the one asked for", () => {
+    const stars = Array.from({ length: LENS.minFigure }, (_, i) =>
+      star(100 + i, 100, 1.6),
+    );
+    expect(lensFigure(stars, CENTRE).radius).toBe(LENS.radius);
+  });
+
+  // The brightness threshold is untouched: reaching further is about distance,
+  // never about admitting dust.
+  test("still refuses faint stars however far it has to reach", () => {
+    const faint = Array.from({ length: 20 }, (_, i) => star(100 + i * 40, 100, 0.6));
+    expect(lensFigure(faint, CENTRE).stars).toEqual([]);
+  });
+
+  test("keeps input order so a star still pairs with its point", () => {
+    const stars = [
+      star(100 + LENS.radius * 3, 100, 1.6),
+      star(105, 100, 1.6),
+      star(100 + LENS.radius * 2, 100, 1.6),
+    ];
+    expect(lensFigure(stars, CENTRE).stars).toEqual(stars);
   });
 });

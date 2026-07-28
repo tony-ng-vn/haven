@@ -3,7 +3,7 @@ import {
   LENS,
   edgeAlpha,
   falloff,
-  figureStars,
+  lensFigure,
   isTouchPointer,
   magnify,
   wanderPoint,
@@ -114,14 +114,17 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
 
   function drawFigure(time: number) {
     const centre = { x: lens.x, y: lens.y };
-    const inside = figureStars(stars, centre);
+    // The radius comes back from here rather than being LENS.radius: on a wide
+    // window the star cap makes the sky sparse, and the lens reaches out to
+    // find a figure instead of showing two stars and a line.
+    const { stars: inside, radius } = lensFigure(stars, centre);
     if (inside.length === 0) return;
     // The same minimum spanning tree that draws a person's own constellation,
     // so the landing page and the product speak one visual language.
     const points = inside.map((s) => magnify(s, centre));
 
     for (const [a, b] of spanningTree(points)) {
-      const f = edgeAlpha(points[a], points[b], centre) * lens.on;
+      const f = edgeAlpha(points[a], points[b], centre, radius) * lens.on;
       if (f <= 0.01) continue;
       // Two passes: a wide soft glow, then a hairline core on top of it.
       ctx!.strokeStyle = `rgba(255,217,160,${0.13 * f})`;
@@ -140,7 +143,7 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
 
     inside.forEach((s, i) => {
       const p = points[i];
-      const f = falloff(Math.hypot(p.x - centre.x, p.y - centre.y)) * lens.on;
+      const f = falloff(Math.hypot(p.x - centre.x, p.y - centre.y), radius) * lens.on;
       if (f <= 0.01) return;
       drawLit(p, s, Math.min(s.base * 2.6, 0.9) * f, time);
     });

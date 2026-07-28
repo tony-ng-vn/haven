@@ -6,6 +6,18 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.18.0
+
+2026-07-28
+
+**Web**
+
+- The constellation on the landing page still forms on a very wide screen. Haven caps how many stars it draws, so past about 2560 pixels the lens had fewer and fewer of them to join and the figure thinned to a line or two; it now reaches further out to find a constellation instead.
+- A long handle on a public card no longer pushes the platform name off its row. It truncates, which is what it was always meant to do.
+- A photo that will not load leaves an ordinary card behind rather than a broken-image icon, which was the first thing a stranger could have seen after scanning somebody's code.
+
+---
+
 ## v0.17.0
 
 2026-07-28
