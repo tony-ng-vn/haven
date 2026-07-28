@@ -42,8 +42,7 @@ struct HavenRow<Leading: View, Trailing: View>: View {
             leading
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .havenBody()
-                    .foregroundStyle(isDestructive ? HavenColor.ember : HavenColor.ink)
+                    .havenBody(isDestructive ? HavenColor.ember : HavenColor.ink)
                 if let detail {
                     Text(detail)
                         .havenSecondary()

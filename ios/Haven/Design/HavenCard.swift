@@ -45,6 +45,8 @@ struct HavenCard: View {
     @ScaledMetric(relativeTo: .footnote) private var markDiameter: CGFloat =
         CardMetrics.contactDiameter
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     @State private var footHeight: CGFloat = 0
 
     var body: some View {
@@ -63,7 +65,11 @@ struct HavenCard: View {
                 )
 
                 foot(inWidth: geo.size.width - 2 * CardMetrics.footInset)
-                    .frame(maxWidth: .infinity)
+                    .frame(
+                        maxWidth: .infinity,
+                        maxHeight: CardMetrics.maxFootHeight(cardHeight: geo.size.height),
+                        alignment: .bottom
+                    )
                     .background {
                         GeometryReader { text in
                             Color.clear.preference(
@@ -102,7 +108,13 @@ struct HavenCard: View {
     private func foot(inWidth width: CGFloat) -> some View {
         VStack(spacing: CardMetrics.lineGap) {
             identity
-            if let city = card.city?.line, !city.isEmpty {
+            // The city goes at accessibility sizes rather than shrinking,
+            // because text cannot shrink to fit a height -- `minimumScaleFactor`
+            // only ever fits a width -- so something has to actually leave. Of
+            // the three things on this card the city is the one the rows below
+            // already say, and dropping it is what keeps the name off the
+            // constellation.
+            if let city = card.city?.line, !city.isEmpty, !typeSize.isAccessibilitySize {
                 Text(city)
                     .havenSecondary()
                     .multilineTextAlignment(.center)
@@ -281,6 +293,17 @@ enum CardMetrics {
     static func figureBandHeight(cardHeight: CGFloat, footHeight: CGFloat) -> CGFloat {
         let taken = footHeight + footInset + figureGap
         return max(cardHeight - taken, figureBandFloor * cardHeight)
+    }
+
+    /// As tall as the text is allowed to get.
+    ///
+    /// The floor above only decides where the figure stops drawing; on its own
+    /// it lets the text carry on past that line and print over the
+    /// constellation, which is worse than the vanishing sky it was meant to
+    /// fix. This is the other half: the foot is held to the same boundary, so
+    /// the name and the city shrink rather than reaching into the figure.
+    static func maxFootHeight(cardHeight: CGFloat) -> CGFloat {
+        max((1 - figureBandFloor) * cardHeight - footInset - figureGap, 0)
     }
 }
 

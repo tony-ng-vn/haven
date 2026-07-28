@@ -70,9 +70,12 @@ extension View {
     }
 
     /// Default running text and row titles.
-    func havenBody() -> some View {
+    /// The tint is a parameter rather than something a caller layers on top,
+    /// because `foregroundStyle` applied closest to the text wins: an outer one
+    /// silently does nothing.
+    func havenBody(_ tint: Color = HavenColor.ink) -> some View {
         font(.subheadline)
-            .foregroundStyle(HavenColor.ink)
+            .foregroundStyle(tint)
     }
 
     /// Supporting text beside or beneath something else.

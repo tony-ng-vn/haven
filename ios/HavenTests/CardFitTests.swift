@@ -127,6 +127,15 @@ struct TextContrastTests {
         #expect(contrast(HavenColor.ink, on: HavenColor.dusk) >= Self.readable)
     }
 
+    /// Ember is a row title now -- "Delete your account" -- and not only the
+    /// colour of an error message, so it has to be readable rather than merely
+    /// alarming.
+    @Test("the warning colour reads as text, not just as a warning")
+    func warningText() {
+        #expect(contrast(HavenColor.ember, on: HavenColor.night) >= Self.readable)
+        #expect(contrast(HavenColor.ember, on: HavenColor.dusk) >= Self.readable)
+    }
+
     /// Why the group labels and row accessories moved off `faint`: it reads at
     /// the top of the page and fails at the bottom, and the ACCOUNT heading is
     /// at the bottom. Pinned so nobody moves them back.

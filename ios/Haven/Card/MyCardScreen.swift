@@ -50,11 +50,15 @@ struct MyCardScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         // The bar is transparent by default, so scrolling cut the card off
         // along a razor-straight line with nothing there to explain it, and an
-        // object sliced by an invisible plane stops reading as an object. Set
-        // here rather than on the shared skeleton: this is the only screen with
-        // something solid sliding under the bar.
+        // object sliced by an invisible plane stops reading as an object.
+        //
+        // Dusk rather than a system material: the materials resolve to a
+        // neutral grey that reads as foreign chrome against a blue-black page.
+        // Part-opaque so the card dims under the bar instead of ending at it.
+        // Set here rather than on the shared skeleton -- this is the only
+        // screen with something solid sliding under the bar.
         .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarBackground(HavenColor.dusk.opacity(0.72), for: .navigationBar)
         // The card and its sky are both ambient loops running at display rate.
         // A sheet covers them completely, so they carry on redrawing something
         // nobody can see until it is dismissed. The code is the other reason to
