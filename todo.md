@@ -63,7 +63,8 @@ code is waiting on any of it.
   - [x] iOS share extension, App Group queue and mirror, and the main-app drain (capture-pipeline plan milestones 2 and 3). Verified in the simulator; the share sheet's real activation from Instagram, LinkedIn and X still needs a device, and so does the App Group, which the simulator does not enforce.
   - [ ] Pin-onboarding walkthrough (capture-pipeline plan milestone 4): there is no API to pin or reorder a share extension, so the More -> Edit -> Favorites path has to be taught once, ending in a practice capture.
   - [ ] Register `group.com.inhavens.haven` in the developer portal and add it to both App IDs (`com.inhavens.haven` and `com.inhavens.haven.share`). The entitlement alone does not provision, and the simulator does not enforce it, so without this every capture is silently dropped on a real device.
-  - [ ] iOS screens and the local pending queue.
+  - [x] iOS screens and the local pending queue: person detail with the notes editor (PR 128), the share extension with its App Group queue and drain (PRs 127, 129).
+    Still open on iOS: the "Add someone" button is disabled (`people:addPerson` is ready and unused), and screenshot captures have no triage surface in the app (web-only; see decision gate D3 in `docs/superpowers/plans/2026-07-28-backend-completion-plan.md`).
   - [ ] Run `people:backfillLegacyHandles` to `isDone` on prod. This is capture-plan open question 4, and the code half is settled - the migration exists and is tested - but it has not been run: `people:reportDuplicateHandleOwners` returns `scanned: 0` against dev, and prod is unchecked because `CONVEX_DEPLOY_KEY` in `.env.local` pins to dev and overrides `--prod`.
     Until it runs, people saved from screenshot captures and meet exchanges carry only the legacy `platform`/`handle` scalars with no `personHandles` rows, so the first share of the same profile twins them.
     Adversarial review adds two requirements for that work: every direct `people` insert path (screenshot acceptance included) must maintain `personHandles` in the same transaction, and existing duplicate `(userId, platform, valueKey)` owners must be reconciled before the capture lookup can move from `.first()` to `.unique()`.
@@ -74,9 +75,13 @@ code is waiting on any of it.
   - [x] Network intelligence wave A: `memories` table, one vector per note line, per-memory embeddings, and `semanticSearch` returning the line that matched as `evidence`. Plan: `docs/superpowers/plans/2026-07-27-network-intelligence-plan.md`.
     Migration run against `brilliant-puma-925` on 2026-07-27: 0 patched, 0 skipped. Correct and empty -- no person has a note yet, because the only note field in the product is the web triage screen and it is skippable.
   - [x] Network intelligence wave B: `people.ask` over the whole network in one call, direct matches plus bridges with their reasoning, one clarifying question instead of a guess, and a checked-in eval set (`src/askFixtures.ts`, `scripts/eval-ask.ts`).
-  - [ ] Nothing calls `people.ask` yet, and nothing renders `evidence`. iOS search reads `searchDirectory`, which returns neither. Blocked behind Phase 2's notes editor by choice: a question box over a network with no notes has nothing to answer from.
+  - [x] iOS asks: the search screen's ask panel calls `people.ask` and renders matches, bridges, and the quoted evidence line (PR 130). This line previously said nothing called it; that went stale.
   - [ ] Run `scripts/eval-ask.ts` against a live key for a real recall number, and measure cost per ask. Both deliberately outside CI.
-- [ ] Phase 4: Connect. Mutual auto-connect between two Haven users.
+- [~] Phase 4: Connect. Mutual auto-connect between two Haven users.
+  - [x] Convex backend (PR 126): `profiles.connect`, the `connections` edge, both-side directory rows, live-card merge on the detail read, deletion collapsing to frozen snapshots.
+  - [ ] Backend follow-ups: snapshot fan-out refresh so search matches a peer's current card, connection state on the person payload, disconnect. Unit B1 of `docs/superpowers/plans/2026-07-28-backend-completion-plan.md`.
+  - [ ] iOS: nothing calls `profiles:connect`; no scanner, and no universal-link handler for `inhavens.com/<handle>`, so scanning a Haven QR lands in Safari.
+- [ ] Stripe subscription mirroring shipped (PR 123: webhook, `subscriptions` table, `hasProAccess`) but nothing reads it, there is no checkout, and App Store guideline 3.1.1 blocks Stripe-gated iOS features. Default decision: parked for v1 (gate D4 in the backend completion plan).
 - [ ] Phase 5: Polish pass. Haptics, transitions, gesture physics across the app.
 - [ ] Phase 6: Distribution. TestFlight to the waitlist cohort, then App Store.
   - [ ] Go through the full iOS App Launch Checklist before submitting (Cole Caccamise): https://colecaccamise.notion.site/The-iOS-App-Launch-Checklist-3786e16e7a578019a96ac84819de934a
