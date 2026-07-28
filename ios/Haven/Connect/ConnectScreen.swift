@@ -140,8 +140,14 @@ struct ConnectScreen: View {
     }
 
     private func preview(_ card: PublicCard) -> some View {
+        // The sky comes from the model, built once when the card arrived. Built
+        // here it would be regenerated on every render of this screen.
         CardObject {
-            HavenCard(card: card.asCard, sky: SkyGenerator.build(seed: card.handle), photo: photo)
+            HavenCard(
+                card: card.asCard,
+                sky: model.sky ?? SkyGenerator.build(seed: card.handle),
+                photo: photo
+            )
         }
         .frame(maxWidth: .infinity)
         .cardPhoto(card.photoURL, into: $photo)
@@ -181,6 +187,9 @@ struct ConnectScreen: View {
     }
 
     private func lookUpTyped() {
+        // Return on the field reaches here without passing the button's own
+        // disabled state, so the check lives here too.
+        guard model.canLookUpTyped else { return }
         Task { await model.look(at: model.typed) }
     }
 }
