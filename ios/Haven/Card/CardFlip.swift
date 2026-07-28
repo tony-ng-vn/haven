@@ -40,14 +40,11 @@ enum CardFlip {
 
     /// How opaque a face is at this angle.
     ///
-    /// Turning, this is a hard step: the far face is simply not drawn, because
-    /// fading it would print one side of the card through the other. Cross
-    /// fading -- the Reduce Motion path, where nothing turns -- it is a ramp,
-    /// and the two faces still only ever sum to one card's worth.
-    static func opacity(angle: Double, isBack: Bool, crossFading: Bool) -> Double {
-        guard crossFading else { return showsBack(angle: angle) == isBack ? 1 : 0 }
-        let progress = min(max(angle / backAngle, 0), 1)
-        return isBack ? progress : 1 - progress
+    /// A hard step, never a fade. Two opaque cards stacked do not dissolve into
+    /// each other -- they composite, so at half opacity each you see both, and
+    /// the name on the front prints straight through the code on the back.
+    static func opacity(angle: Double, isBack: Bool) -> Double {
+        showsBack(angle: angle) == isBack ? 1 : 0
     }
 }
 
@@ -62,20 +59,18 @@ struct TwoSidedCard<Front: View, Back: View>: View {
     @ViewBuilder var front: () -> Front
     @ViewBuilder var back: () -> Back
 
-    @HavenReduceMotion private var reduceMotion
-
     private var angle: Double { showingBack ? CardFlip.backAngle : 0 }
 
     var body: some View {
         ZStack {
-            front().modifier(CardFace(angle: angle, isBack: false, crossFading: reduceMotion))
-            back().modifier(CardFace(angle: angle, isBack: true, crossFading: reduceMotion))
+            front().modifier(CardFace(angle: angle, isBack: false))
+            back().modifier(CardFace(angle: angle, isBack: true))
         }
-        // Not `havenAnimation`, which drops the animation entirely under
-        // Reduce Motion. That is right for the drift, which nobody asked for,
-        // and wrong here: the flip is how a person reaches their own code, so
-        // it stays reachable and cross fades instead of turning.
-        .animation(reduceMotion ? HavenMotion.screen : HavenMotion.cardFlip, value: showingBack)
+        // Under Reduce Motion the card is simply already turned over: the flip
+        // stays reachable, which is the part that matters, and only the turn
+        // goes. A cross fade is not the alternative -- two opaque cards do not
+        // dissolve, they print through each other.
+        .havenAnimation(HavenMotion.cardFlip, value: showingBack)
         .contentShape(Rectangle())
         .onTapGesture { showingBack.toggle() }
         // Light. Turning a card over is a small physical act, not a commit.
@@ -99,7 +94,6 @@ struct TwoSidedCard<Front: View, Back: View>: View {
 private struct CardFace: ViewModifier, Animatable {
     var angle: Double
     let isBack: Bool
-    let crossFading: Bool
 
     var animatableData: Double {
         get { angle }
@@ -112,11 +106,11 @@ private struct CardFace: ViewModifier, Animatable {
         // VoiceOver still reads it.
         let facing = CardFlip.showsBack(angle: angle) == isBack
         return content
-            .opacity(CardFlip.opacity(angle: angle, isBack: isBack, crossFading: crossFading))
+            .opacity(CardFlip.opacity(angle: angle, isBack: isBack))
             .allowsHitTesting(facing)
             .accessibilityHidden(!facing)
             .rotation3DEffect(
-                .degrees(crossFading ? 0 : CardFlip.faceAngle(angle, isBack: isBack)),
+                .degrees(CardFlip.faceAngle(angle, isBack: isBack)),
                 axis: (x: 0, y: 1, z: 0),
                 perspective: CardFlip.perspective
             )

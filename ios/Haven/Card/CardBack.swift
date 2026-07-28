@@ -13,6 +13,8 @@ import SwiftUI
 struct CardBack: View {
     let card: MyCard
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         VStack(spacing: 16) {
             Spacer(minLength: 0)
@@ -23,19 +25,32 @@ struct CardBack: View {
             QRCodeView(text: BeaconAddress.url(for: card.username))
                 .frame(maxWidth: CardBackMetrics.codeWidth)
 
+            // A card is a fixed height, so at large text sizes there is not
+            // enough of it to go round and SwiftUI's answer is to truncate.
+            // Shrinking is the better failure here: a name cut to "Tony Ng..."
+            // is wrong about who this is, and a half an address is the one
+            // thing on this card that has to survive a code failing to scan.
             VStack(spacing: 4) {
                 if let name = card.name, !name.isEmpty {
                     Text(name)
                         .personName(.card)
                         .foregroundStyle(HavenColor.ink)
+                        .minimumScaleFactor(CardBackMetrics.minimumScale)
                 }
                 Text(BeaconAddress.display(for: card.username))
                     .havenMono()
+                    .minimumScaleFactor(CardBackMetrics.minimumScale)
             }
+            .multilineTextAlignment(.center)
 
-            Text("They point a camera and land on your card.")
-                .havenSecondary()
-                .multilineTextAlignment(.center)
+            // The one line that goes rather than shrinks. It is a hint for the
+            // first time somebody turns the card over, and at an accessibility
+            // size the room it wants is room the address needs more.
+            if !typeSize.isAccessibilitySize {
+                Text("Show this. Their camera lands on your card.")
+                    .havenSecondary()
+                    .multilineTextAlignment(.center)
+            }
 
             Spacer(minLength: 0)
         }
@@ -55,6 +70,11 @@ enum CardBackMetrics {
     /// The margin the QR spec asks for around a code. Without it a decoder has
     /// nothing to tell the code apart from whatever it is sitting on.
     static let quietZone: CGFloat = 16
+
+    /// How far the name and the address may shrink before they would rather
+    /// wrap. Not far: this exists to stop a truncation, not to undo somebody's
+    /// text size setting.
+    static let minimumScale: CGFloat = 0.7
 }
 
 /// The code itself, drawn square-edged.

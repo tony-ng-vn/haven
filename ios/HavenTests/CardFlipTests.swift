@@ -22,9 +22,22 @@ struct CardFlipTests {
     func oneFaceAtATime() {
         for step in 0...180 {
             let angle = Double(step)
-            let front = CardFlip.opacity(angle: angle, isBack: false, crossFading: false)
-            let back = CardFlip.opacity(angle: angle, isBack: true, crossFading: false)
+            let front = CardFlip.opacity(angle: angle, isBack: false)
+            let back = CardFlip.opacity(angle: angle, isBack: true)
             #expect(front + back == 1, "two faces are lit at \(angle) degrees")
+        }
+    }
+
+    /// The card is turning or it is not. A partly opaque face is the defect:
+    /// two opaque cards composite rather than dissolve, so the front's name
+    /// prints straight through the code on the back.
+    @Test("a face is never partly drawn, even past either end of the turn")
+    func neverPartlyDrawn() {
+        for angle in [-40.0, -0.5, 0, 45, 90, 135, 180, 180.5, 220.0] {
+            for isBack in [true, false] {
+                let value = CardFlip.opacity(angle: angle, isBack: isBack)
+                #expect(value == 0 || value == 1, "opacity \(value) at \(angle), back: \(isBack)")
+            }
         }
     }
 
@@ -45,41 +58,4 @@ struct CardFlipTests {
         #expect(CardFlip.faceAngle(0, isBack: false) == 0)
     }
 
-    // MARK: - Reduce Motion
-
-    // Reduce Motion cannot mean "no flip" the way it means "no drift": the
-    // drift is ambient and nobody asked for it, but the flip is how a person
-    // reaches their own code. It cross-fades instead of turning.
-
-    @Test("the cross-fade starts on the front and ends on the back")
-    func crossFadeEnds() {
-        #expect(CardFlip.opacity(angle: 0, isBack: false, crossFading: true) == 1)
-        #expect(CardFlip.opacity(angle: 0, isBack: true, crossFading: true) == 0)
-        #expect(CardFlip.opacity(angle: CardFlip.backAngle, isBack: false, crossFading: true) == 0)
-        #expect(CardFlip.opacity(angle: CardFlip.backAngle, isBack: true, crossFading: true) == 1)
-    }
-
-    /// A cross-fade that summed above one would show the two faces printed
-    /// through each other, which is the same defect the cull exists to stop.
-    @Test("the cross-fade never lights more than one card's worth")
-    func crossFadeNeverDoubles() {
-        for step in 0...180 {
-            let angle = Double(step)
-            let front = CardFlip.opacity(angle: angle, isBack: false, crossFading: true)
-            let back = CardFlip.opacity(angle: angle, isBack: true, crossFading: true)
-            #expect(abs(front + back - 1) < 0.0001, "the faces sum to \(front + back) at \(angle)")
-        }
-    }
-
-    /// The angle is animated, so it can be handed values past either end while
-    /// a spring settles. Neither face may go negative or above full.
-    @Test("an overshooting angle still asks for a drawable opacity")
-    func toleratesOvershoot() {
-        for angle in [-40.0, -0.5, 180.5, 220.0] {
-            for isBack in [true, false] {
-                let value = CardFlip.opacity(angle: angle, isBack: isBack, crossFading: true)
-                #expect(value >= 0 && value <= 1, "opacity \(value) at \(angle), back: \(isBack)")
-            }
-        }
-    }
 }
