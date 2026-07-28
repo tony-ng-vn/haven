@@ -82,7 +82,24 @@ struct MyCardScreen: View {
     }
 
     private func loaded(_ card: MyCard) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // Seeded the way it is everywhere else: from the identity that survives
+        // a name change.
+        //
+        // Built here rather than inside the drift closure below, which re-runs
+        // every frame. Generating a sky is cheap, but it allocates a fresh
+        // value each time, and SkyView's layers hold it as a stored property --
+        // so rebuilding it per frame would defeat the caching the whole sky is
+        // designed around.
+        let sky = SkyGenerator.build(seed: card.username)
+        let intensities = FigureIntensity.from(
+            litMajors: StarSlot.litMajorIndices(
+                filled: card.filledSlots,
+                majorCount: sky.majors.count
+            ),
+            majorCount: sky.majors.count
+        )
+
+        return VStack(alignment: .leading, spacing: 0) {
             // The card is an object here, not a bleed. It has a real edge now,
             // so the four-sided fade that used to dissolve it into the night is
             // gone: a sky that stops at a printed rule is a card, and only a sky
@@ -91,15 +108,15 @@ struct MyCardScreen: View {
             // The card barely moves and its sky moves the other way. The offset
             // goes outside the padding, so it shifts the card and not the space
             // it sits in: everything below stays exactly where it is.
-            CardDrift { drift in
+            CardDriftClock { drift in
                 CardObject {
                     HavenCard(
                         card: card,
-                        sky: sky(for: card),
-                        majorIntensities: intensities(for: card),
+                        sky: sky,
+                        majorIntensities: intensities,
                         photo: photo,
                         nebulaDamping: MyCardMetrics.cardNebulaDamping,
-                        backdropOffset: drift.backdrop
+                        sceneryOffset: drift.scenery
                     )
                 }
                 .padding(.horizontal, MyCardMetrics.cardInset)
@@ -217,22 +234,6 @@ struct MyCardScreen: View {
         }
     }
 
-    /// The figure, seeded the way it is everywhere else: from the identity that
-    /// survives a name change.
-    private func sky(for card: MyCard) -> Sky {
-        SkyGenerator.build(seed: card.username)
-    }
-
-    private func intensities(for card: MyCard) -> [Double] {
-        let sky = sky(for: card)
-        return FigureIntensity.from(
-            litMajors: StarSlot.litMajorIndices(
-                filled: card.filledSlots,
-                majorCount: sky.majors.count
-            ),
-            majorCount: sky.majors.count
-        )
-    }
 }
 
 enum MyCardMetrics {

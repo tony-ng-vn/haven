@@ -3,13 +3,11 @@ import SwiftUI
 /// A person's card as a thing rather than a page: a slab of dark glass lying
 /// flat, with a printed double rule around its edge.
 ///
-/// It used to be held at an angle, with its thickness faked by slabs stacked
-/// behind the face. That is gone. The angle was carrying the whole illusion,
-/// and a card you are meant to read square-on should not be turned away from
-/// you to prove it is an object. Worth knowing if the tilt is ever revisited:
-/// at zero degrees `rotation3DEffect` is the identity transform, so those slabs
-/// landed exactly under the opaque face and the gold edge vanished entirely.
-/// Flat needs its own depth cue; it is not the tilt set to nothing.
+/// If a tilt is ever tried again, read
+/// `docs/design/2026-07-27-card-review.md` first: at zero degrees
+/// `rotation3DEffect` is the identity transform, so a stack of slabs meant to
+/// fake thickness lands exactly under the opaque face and contributes nothing.
+/// Flat needs its own depth cue rather than a tilt set to zero.
 ///
 /// The face inside is an ordinary `HavenCard` -- a real view hierarchy, not a
 /// texture. That is the whole reason this is SwiftUI and not RealityKit: the
@@ -86,7 +84,8 @@ struct CardObject<Face: View>: View {
         )
     }
 
-    /// The hairline set inside it, with night between the two.
+    /// The hairline set inside it, with a strip of the person's own sky between
+    /// the two.
     ///
     /// A certificate border rather than a thicker rule. The pair does the work
     /// that weight would: two thin lines with a gap read as something printed
@@ -108,11 +107,18 @@ enum CardObjectMetrics {
     static let corner: CGFloat = 26
 
     /// How far the hairline sits inside the gold rule. Wide enough that the two
-    /// read as a pair with night between them rather than as one thick edge.
+    /// read as a pair with a strip of sky between them rather than as one thick
+    /// edge.
     static let innerRuleInset: CGFloat = 4
 
-    static let ruleTopOpacity: Double = 0.46
-    static let ruleBottomOpacity: Double = 0.22
+    /// The rule is brighter at the top because that is where the light is.
+    ///
+    /// The bottom stop is a floor, not a taste: the page runs toward dusk as it
+    /// descends, so down there the card face is only about 1.1:1 against its
+    /// surround and the rule is the only thing drawing the silhouette. Below
+    /// roughly 0.40 the bottom edge of the card stops existing.
+    static let ruleTopOpacity: Double = 0.52
+    static let ruleBottomOpacity: Double = 0.40
 }
 
 // MARK: - Previews
@@ -132,20 +138,20 @@ private let previewCard = MyCard(
     primaryPlatform: .x
 )
 
-private func previewFace(backdropOffset: CGFloat = 0) -> some View {
+private func previewFace(sceneryOffset: CGFloat = 0) -> some View {
     HavenCard(
         card: previewCard,
         sky: previewSky,
         nebulaDamping: 0.5,
-        backdropOffset: backdropOffset
+        sceneryOffset: sceneryOffset
     )
 }
 
-/// The card as My Card drives it: drifting, with its ground drifting against it.
+/// The card as My Card drives it: drifting, with its sky drifting against it.
 private struct DriftingPreview: View {
     var body: some View {
-        CardDrift { drift in
-            CardObject { previewFace(backdropOffset: drift.backdrop) }
+        CardDriftClock { drift in
+            CardObject { previewFace(sceneryOffset: drift.scenery) }
                 .padding(.horizontal, 68)
                 .offset(x: drift.card)
         }
@@ -183,11 +189,28 @@ private struct DriftingPreview: View {
     .havenReduceMotion()
 }
 
+// CardObject itself no longer reads Dynamic Type, so what this checks now is
+// the card face underneath: a long name at an accessibility size takes room
+// from the figure, and the failure is the constellation quietly collapsing to
+// nothing rather than any text clipping. A short name hides that entirely,
+// which is why this one is not "Tony Nguyen".
 #Preview("Card object, accessibility XXXL") {
     ZStack {
         NightBackground()
-        CardObject { previewFace() }
-            .padding(.horizontal, 68)
+        CardObject {
+            HavenCard(
+                card: MyCard(
+                    username: "mariafernanda",
+                    name: "Maria Fernanda Rodriguez",
+                    city: MyCard.City(name: "Ho Chi Minh City", country: "Vietnam"),
+                    handles: [MyCard.Handle(platform: .x, value: "mfr", verified: false)],
+                    primaryPlatform: .x
+                ),
+                sky: previewSky,
+                nebulaDamping: 0.5
+            )
+        }
+        .padding(.horizontal, 68)
     }
     .ignoresSafeArea()
     .environment(\.dynamicTypeSize, .accessibility3)

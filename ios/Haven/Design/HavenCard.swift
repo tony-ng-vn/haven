@@ -34,7 +34,7 @@ struct HavenCard: View {
     var nebulaDamping: Double = SkyView.fullScreenNebulaDamping
     /// Slides the sky's ground against the card, for My Card's parallax. The
     /// figure does not move: it is the person, not scenery.
-    var backdropOffset: CGFloat = 0
+    var sceneryOffset: CGFloat = 0
 
     /// Grows with the name it sits beside, or a large text size leaves a
     /// thumbnail floating against two lines of serif.
@@ -54,7 +54,7 @@ struct HavenCard: View {
                     majorIntensities: intensities,
                     figureBand: figureBand(in: geo.size),
                     nebulaDamping: nebulaDamping,
-                    backdropOffset: backdropOffset
+                    sceneryOffset: sceneryOffset
                 )
 
                 foot
