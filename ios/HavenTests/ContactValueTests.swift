@@ -101,6 +101,16 @@ struct ContactValueTests {
         #expect(ContactValue.telegramHandle(from: String(repeating: "a", count: 32)) != nil)
     }
 
+    // LinkedIn allows a 100-character slug; the server stores a handle only up
+    // to 60 and throws over it. A value refused here is an answer somebody can
+    // fix, and one accepted here is a queued capture that can never drain.
+    @Test("a LinkedIn slug longer than the server stores is refused, not queued")
+    func linkedInRespectsTheServerCap() {
+        let atCap = String(repeating: "a", count: HavenFieldCaps.handle)
+        #expect(ContactValue.linkedInHandle(from: atCap) == atCap)
+        #expect(ContactValue.linkedInHandle(from: atCap + "a") == nil)
+    }
+
     @Test("a LinkedIn address is reduced to the part that identifies the profile")
     func linkedInFromLinks() {
         let expected = "tony-nguyen"

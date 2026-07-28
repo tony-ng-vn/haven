@@ -31,7 +31,12 @@ enum ContactValue {
     /// anything.
     static func linkedInHandle(from raw: String) -> String? {
         let handle = handle(in: raw, after: ["linkedin.com/in/"])
-        guard !handle.isEmpty, handle.count <= 100 else { return nil }
+        // 60, not LinkedIn's own 100: the server caps a stored handle there
+        // (`HANDLE_MAX` in convex/fieldCaps.ts) and throws over it. Accepting
+        // a longer one here would queue a capture that can never drain, and
+        // refuse an onboarding answer with "check your connection".
+        guard !handle.isEmpty, HavenFieldCaps.fits(handle, within: HavenFieldCaps.handle)
+        else { return nil }
         guard handle.allSatisfy(Self.linkedInCharacters.contains) else { return nil }
         return handle
     }
@@ -106,6 +111,8 @@ enum ContactValue {
     private static let linkedInCharacters = Set(
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
     )
+    // Instagram (30), X (15) and Telegram (32) all cap below the server's 60,
+    // so their own rules already keep a stored handle inside it.
     private static let telegramCharacters = Set(
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
     )
