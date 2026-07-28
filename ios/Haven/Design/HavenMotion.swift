@@ -32,6 +32,16 @@ extension View {
         modifier(HavenAnimationModifier(animation: animation, value: value))
     }
 
+    /// Stops the ambient loops below this point.
+    ///
+    /// Set it while something covers the screen -- an editor sheet, an alert.
+    /// A `TimelineView` behind a presented sheet keeps waking at display rate
+    /// to redraw a sky nobody can see, and the card screen can have two of them
+    /// running at once.
+    func havenAmbientPaused(_ paused: Bool) -> some View {
+        environment(\.havenAmbientPaused, paused)
+    }
+
     /// Forces the Reduce Motion path on. This exists so previews can show the
     /// still version of a screen: SwiftUI's own `accessibilityReduceMotion` is
     /// read-only, so there is no other way to look at it.
@@ -56,10 +66,24 @@ extension EnvironmentValues {
         get { self[HavenReduceMotionOverrideKey.self] }
         set { self[HavenReduceMotionOverrideKey.self] = newValue }
     }
+
+    /// Whether ambient loops should stop. See `havenAmbientPaused(_:)`.
+    ///
+    /// Distinct from Reduce Motion: that is a person's standing preference and
+    /// removes the motion permanently, this is momentary and only means the
+    /// screen is covered.
+    fileprivate(set) var havenAmbientPaused: Bool {
+        get { self[HavenAmbientPausedKey.self] }
+        set { self[HavenAmbientPausedKey.self] = newValue }
+    }
 }
 
 private struct HavenReduceMotionOverrideKey: EnvironmentKey {
     static let defaultValue: Bool? = nil
+}
+
+private struct HavenAmbientPausedKey: EnvironmentKey {
+    static let defaultValue = false
 }
 
 private struct HavenAnimationModifier<V: Equatable>: ViewModifier {

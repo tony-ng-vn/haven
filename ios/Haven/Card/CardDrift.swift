@@ -70,6 +70,7 @@ struct CardDriftClock<Content: View>: View {
     @ViewBuilder var content: (CardDrift.Pose) -> Content
 
     @HavenReduceMotion private var reduceMotion
+    @Environment(\.havenAmbientPaused) private var paused
 
     var body: some View {
         if reduceMotion {
@@ -77,7 +78,10 @@ struct CardDriftClock<Content: View>: View {
             // this is the same card, simply not moving.
             content(.rest)
         } else {
-            TimelineView(.animation) { timeline in
+            // Paused rather than torn down while a sheet covers the screen, so
+            // the card is where it was when the sheet goes away rather than
+            // jumping back to centre.
+            TimelineView(.animation(paused: paused)) { timeline in
                 content(CardDrift.pose(at: timeline.date.timeIntervalSinceReferenceDate))
             }
         }

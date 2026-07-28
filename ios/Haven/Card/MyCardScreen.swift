@@ -37,6 +37,10 @@ struct MyCardScreen: View {
         )
         .navigationTitle("Your card")
         .navigationBarTitleDisplayMode(.inline)
+        // The card and its sky are both ambient loops running at display rate.
+        // A sheet covers them completely, so they carry on redrawing something
+        // nobody can see until it is dismissed.
+        .havenAmbientPaused(editing != nil || confirmingDelete)
         .sheet(item: $editing) { field in
             editor(for: field)
         }
@@ -115,7 +119,7 @@ struct MyCardScreen: View {
                         sky: sky,
                         majorIntensities: intensities,
                         photo: photo,
-                        nebulaDamping: MyCardMetrics.cardNebulaDamping,
+                        nebulaDamping: CardObjectMetrics.nebulaDamping,
                         sceneryOffset: drift.scenery
                     )
                 }
@@ -237,16 +241,14 @@ struct MyCardScreen: View {
 }
 
 enum MyCardMetrics {
-    /// How far the card object is held off the sides of the screen. Its height
-    /// follows from its aspect, so this is the only size the screen chooses.
-    static let cardInset: CGFloat = 44
-
-    /// A card crops far less of each nebula's core than a full screen, so it
-    /// can carry more of the wash than the full-screen 0.4. Not much more: at
-    /// 0.85 a person whose hues land on green and teal gets a card washed in
-    /// colours the dusk palette does not contain, which is the exact failure
-    /// the full-screen damping exists to prevent.
-    static let cardNebulaDamping: Double = 0.5
+    /// How far the card is held off the sides of this screen's own column.
+    ///
+    /// Sits on top of `HavenScreen`'s 24pt, so the card ends up
+    /// `CardObjectMetrics.screenInset` from the edge of the display -- the same
+    /// as the reveal, which has no column and applies that inset directly.
+    /// Change one and change the other, or the card resizes between the two
+    /// screens that show it.
+    static let cardInset: CGFloat = CardObjectMetrics.screenInset - 24
 }
 
 // MARK: - Previews

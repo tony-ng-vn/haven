@@ -111,6 +111,23 @@ enum CardObjectMetrics {
     /// edge.
     static let innerRuleInset: CGFloat = 4
 
+    /// How far the card is held off the edge of the screen.
+    ///
+    /// My Card reaches this by adding its own inset to the screen skeleton's;
+    /// the reveal has no skeleton and applies it directly. Both have to land on
+    /// the same number or the card changes width between the two screens that
+    /// show it.
+    static let screenInset: CGFloat = 68
+
+    /// How strongly the nebulae read on a card.
+    ///
+    /// A card crops far less of each nebula's core than a full screen, so it
+    /// can carry more of the wash than the full-screen 0.4. Not much more: at
+    /// 0.85 a person whose hues land on green and teal gets a card washed in
+    /// colours the dusk palette does not contain, which is the exact failure
+    /// the full-screen damping exists to prevent.
+    static let nebulaDamping: Double = 0.5
+
     /// The rule is brighter at the top because that is where the light is.
     ///
     /// The bottom stop is a floor, not a taste: the page runs toward dusk as it
@@ -142,7 +159,7 @@ private func previewFace(sceneryOffset: CGFloat = 0) -> some View {
     HavenCard(
         card: previewCard,
         sky: previewSky,
-        nebulaDamping: 0.5,
+        nebulaDamping: CardObjectMetrics.nebulaDamping,
         sceneryOffset: sceneryOffset
     )
 }
@@ -152,7 +169,7 @@ private struct DriftingPreview: View {
     var body: some View {
         CardDriftClock { drift in
             CardObject { previewFace(sceneryOffset: drift.scenery) }
-                .padding(.horizontal, 68)
+                .padding(.horizontal, CardObjectMetrics.screenInset)
                 .offset(x: drift.card)
         }
     }
@@ -165,7 +182,7 @@ private struct DriftingPreview: View {
     ZStack {
         NightBackground()
         CardObject { previewFace() }
-            .padding(.horizontal, 68)
+            .padding(.horizontal, CardObjectMetrics.screenInset)
     }
     .ignoresSafeArea()
 }
@@ -207,10 +224,10 @@ private struct DriftingPreview: View {
                     primaryPlatform: .x
                 ),
                 sky: previewSky,
-                nebulaDamping: 0.5
+                nebulaDamping: CardObjectMetrics.nebulaDamping
             )
         }
-        .padding(.horizontal, 68)
+        .padding(.horizontal, CardObjectMetrics.screenInset)
     }
     .ignoresSafeArea()
     .environment(\.dynamicTypeSize, .accessibility3)

@@ -206,9 +206,13 @@ private struct AnimatedSky: View {
     /// Applied to this canvas's scenery only. See `SkyView.sceneryOffset`.
     var sceneryOffset: CGFloat = 0
 
+    @Environment(\.havenAmbientPaused) private var paused
+
     var body: some View {
         if animating {
-            TimelineView(.animation) { timeline in
+            // Stops waking at display rate while a sheet covers the screen.
+            // Roughly 45 draw calls a frame for a sky nobody can see.
+            TimelineView(.animation(paused: paused)) { timeline in
                 canvas(time: timeline.date.timeIntervalSinceReferenceDate)
             }
         } else {
