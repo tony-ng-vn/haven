@@ -12,6 +12,17 @@ pull requests, which is where it is easiest to read anyway.
 
 **iOS**
 
+- Answering an onboarding question no longer pauses. The star came on in about four tenths of a second and the app then waited another four and a half tenths before moving, twice over, on the one moment the whole flow is built around.
+- Your address can be shared from your card. Turn the card over and the share button beside the title sends the page your code opens, for the times you are not standing in front of somebody.
+
+---
+
+## v0.25.0
+
+2026-07-28
+
+**iOS**
+
 - A person you connected to on Haven now says so, and their screen follows their card: change your job and everyone connected to you sees it, without either of you doing anything.
 - A connection that ended says that too. If somebody deletes their Haven account, or one of you disconnects, their screen keeps everything you wrote and says plainly that what it shows is the last thing their card said and will not change again -- rather than looking like somebody who simply never updates anything.
 - You can disconnect without deleting them. You keep them and your notes; their card stops updating here, and the note the two of you wrote together goes with the connection.

@@ -133,3 +133,26 @@ struct TextContrastTests {
         return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue)
     }
 }
+
+@Suite("The star ignition's two numbers")
+struct StarIgnitionTests {
+    // The finding this pins: the curve was 96 percent done at 0.40s and two
+    // separate sleeps held the app's signature moment for the full 0.85s. The
+    // curve keeps its shape; only the waiting was cut.
+    @Test("waiting on an ignition is shorter than drawing one")
+    func holdIsShorterThanTheCurve() {
+        #expect(HavenMotion.starIgnitionHold < HavenMotion.starIgnitionDuration)
+        // Long enough to read as a beat rather than a flicker. Below about a
+        // third of a second the star and the next question arrive together,
+        // which is the thing the hold exists to prevent.
+        #expect(HavenMotion.starIgnitionHold >= 0.3)
+    }
+
+    // Two sleeps, one constant. They are separate jobs -- one settles the
+    // figure, the other holds the next question back -- and the review's
+    // complaint was that they shared only a number that neither owned.
+    @Test("the hold is a token rather than a literal in two places")
+    func holdIsShared() {
+        #expect(HavenMotion.starIgnitionHold == 0.40)
+    }
+}

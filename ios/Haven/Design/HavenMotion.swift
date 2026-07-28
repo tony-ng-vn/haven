@@ -16,6 +16,19 @@ enum HavenMotion {
     static let screenDuration: TimeInterval = 0.24
     /// A star coming on when a field commits.
     static let starIgnitionDuration: TimeInterval = 0.85
+    /// How long anything waiting on that ignition actually waits.
+    ///
+    /// Not the same number, and the difference is the point. Sampled,
+    /// `timingCurve(0.23, 1, 0.32, 1)` over 0.85s is 89 percent done at 0.30s
+    /// and 96 percent at 0.40s: the last 0.45s is a curve asymptoting where
+    /// nobody can see it. Two separate sleeps -- `HavenScreen.ignite` and
+    /// `OnboardingModel.commit` -- were both holding the app's signature moment
+    /// for all of it, which is about half a second of dead air per answered
+    /// question.
+    ///
+    /// The curve keeps its shape; only the waiting is cut. Both sleeps read
+    /// this one constant, so the beat cannot drift between them.
+    static let starIgnitionHold: TimeInterval = 0.40
     /// The card reveal settling. The token lives here; the reveal itself is
     /// milestone 1 and is judged on a device.
     static let revealSettleDuration: TimeInterval = 1.1
