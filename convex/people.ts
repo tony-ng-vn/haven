@@ -561,6 +561,44 @@ export const directoryFacets = query({
   },
 });
 
+// A connected Haven user's card is theirs and stays current; the notes and
+// the photo you attached are yours. Reference rather than copy is the whole
+// point -- copying at connect time is what lets contacts go stale, which is
+// the problem Haven exists to solve (mvp-design).
+//
+// Only the detail read merges. A directory page would turn into one profile
+// read per row, and the snapshot written at connect time is what keeps lists
+// and search readable in the meantime.
+async function projectConnectedPerson(ctx: QueryCtx, person: Doc<"people">) {
+  const projected = await projectPerson(ctx, person);
+  if (person.havenContactUserId === undefined) {
+    return projected;
+  }
+  const profile = await ctx.db
+    .query("profiles")
+    .withIndex("by_user", (q) => q.eq("userId", person.havenContactUserId!))
+    .unique();
+  if (profile === null) {
+    // The account went before the sweep reached this row. Read it as the
+    // frozen snapshot it is about to become rather than as a live reference.
+    return projected;
+  }
+  return {
+    ...projected,
+    name: profile.name ?? projected.name,
+    city: profile.city ?? projected.city,
+    company: profile.company ?? projected.company,
+    role: profile.role ?? projected.role,
+    // Your own photo of them wins: that is your layer, not their card.
+    photoUrl:
+      person.photoStorageId !== undefined
+        ? projected.photoUrl
+        : profile.photoStorageId === undefined
+          ? projected.photoUrl
+          : await ctx.storage.getUrl(profile.photoStorageId),
+  };
+}
+
 export const getPerson = query({
   args: { id: v.id("people") },
   returns: v.union(v.null(), personValidator),
@@ -570,7 +608,7 @@ export const getPerson = query({
     if (person === null || person.userId !== userId) {
       return null;
     }
-    return await projectPerson(ctx, person);
+    return await projectConnectedPerson(ctx, person);
   },
 });
 

@@ -279,11 +279,18 @@ function definedFields(fields: CardFields): CardFields {
   ) as CardFields;
 }
 
+// One side's directory row for the other. Idempotent on the contact's user
+// id, so a repeat connection in person reuses the row rather than twinning
+// the human.
 async function ensureMeetPerson(args: {
   ctx: MutationCtx;
   ownerUserId: string;
   contactUserId: string;
   contactUsername: string;
+  contactName?: string;
+  contactCompany?: string;
+  contactRole?: string;
+  contactCity?: { name: string; lat?: number; lon?: number };
   now: number;
 }): Promise<Id<"people">> {
   const existing = await args.ctx.db
@@ -298,24 +305,53 @@ async function ensureMeetPerson(args: {
     return existing._id;
   }
 
-  const displayName = `@${args.contactUsername}`;
-  const meetContext = "Met in person through Haven Meet.";
+  // Their own name if they have set one. The handle is the fallback, not the
+  // default: a directory full of "@bob" is a directory nobody can read.
+  const displayName = args.contactName ?? `@${args.contactUsername}`;
   // A Haven username is a handle like any other, so the person gets one in
   // contactHandles and a matching index row. Without them a person met in
   // person is invisible to every handle lookup, and re-sharing their profile
   // later would create a second row for the same human.
   const havenHandle = { platform: "haven", value: args.contactUsername };
+  // Snapshotted so the row is findable by keyword the moment it lands. The
+  // live values still win on read (projectConnectedPerson) -- this copy only
+  // feeds the search indexes, which cannot query another table.
+  const snapshot = {
+    name: displayName,
+    company: args.contactCompany,
+    role: args.contactRole,
+    city: args.contactCity,
+    handle: args.contactUsername,
+    contactHandles: [havenHandle],
+  };
   const personId = await args.ctx.db.insert("people", {
     userId: args.ownerUserId,
     name: displayName,
-    normalizedName: normalizeName(args.contactUsername),
+    // From the underlying name, not the decorated display form: the "@" on a
+    // handle fallback is sugar, and normalizing it in would make searching
+    // "bob" miss the person shown as "@bob".
+    normalizedName: normalizeName(args.contactName ?? args.contactUsername),
     // This insert bypasses addPerson, so it feeds the keyword index itself.
-    searchText: personSearchText({
-      name: displayName,
-      handle: args.contactUsername,
-      context: meetContext,
-    }),
-    context: meetContext,
+    searchText: personSearchText(snapshot),
+    company: args.contactCompany,
+    companyKey:
+      args.contactCompany === undefined
+        ? undefined
+        : normalizeName(args.contactCompany),
+    role: args.contactRole,
+    roleKey:
+      args.contactRole === undefined
+        ? undefined
+        : normalizeName(args.contactRole),
+    city: args.contactCity,
+    cityKey:
+      args.contactCity === undefined
+        ? undefined
+        : normalizeName(args.contactCity.name),
+    // No context, and so no memory row: a synthetic "met through Haven" line
+    // would give every connection an identical, meaningless memory, and the
+    // edge already records the provenance. The first memory of this person
+    // should be one the user actually wrote.
     updatedAt: args.now,
     // The legacy scalars stay: the web meet UI reads them, and the index is
     // an addition rather than a replacement.
@@ -510,6 +546,24 @@ async function purgeOwnedRows(ctx: MutationCtx, userId: string): Promise<void> {
     await ctx.db.delete("captures", capture._id);
   }
   more ||= captures.length === PURGE_PAGE;
+
+  // Contacts in other people's directories that referenced this account
+  // collapse to a frozen snapshot they own, like a phone contact: the memory
+  // of a person is the directory owner's, but the live canonical card belongs
+  // to whoever is leaving and goes with them (mvp-design, deletion
+  // semantics). Dropping only the reference leaves the snapshot readable.
+  const referencing = await ctx.db
+    .query("people")
+    .withIndex("by_havenContactUserId", (q) =>
+      q.eq("havenContactUserId", userId),
+    )
+    .take(PURGE_PAGE);
+  for (const person of referencing) {
+    await ctx.db.patch("people", person._id, {
+      havenContactUserId: undefined,
+    });
+  }
+  more ||= referencing.length === PURGE_PAGE;
 
   // Both sides of a connection, and the shared note that hangs off it. A note
   // written together stops being reachable when one side leaves, so leaving
@@ -817,15 +871,31 @@ export const lookupByUsername = query({
   },
 });
 
-export const meetExchange = mutation({
+// Two Haven users become a mutual connection in one tap, with no request and
+// accept dance: connecting in person is the consent (mvp-design). One edge,
+// and a directory row on each side that references the other's live card
+// rather than copying it.
+//
+// Sorted, not caller-ordered: one pair must produce exactly one row whichever
+// side scans first, and sharedNotes resolves the edge with .unique(), so a
+// second row would throw rather than merely duplicate.
+function connectionPair(x: string, y: string) {
+  return x < y
+    ? { userAId: x, userBId: y, callerIsA: true }
+    : { userAId: y, userBId: x, callerIsA: false };
+}
+
+export const connect = mutation({
   args: { username: v.string() },
   returns: v.object({
+    // "already" when the pair was connected before, whichever side did it.
+    status: v.union(v.literal("connected"), v.literal("already")),
     personId: v.id("people"),
     peerUsername: v.string(),
   }),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    await checkRateLimit(ctx, userId, "meetExchange", 20, MINUTE_MS);
+    await checkRateLimit(ctx, userId, "connect", 20, MINUTE_MS);
     const myProfile = await getProfileByUser(ctx, userId);
     if (myProfile === null) {
       throw new Error("Choose your Haven username first");
@@ -849,16 +919,69 @@ export const meetExchange = mutation({
       ownerUserId: userId,
       contactUserId: peerProfile.userId,
       contactUsername: peerProfile.username,
+      contactName: peerProfile.name,
+      contactCompany: peerProfile.company,
+      contactRole: peerProfile.role,
+      contactCity: peerProfile.city,
       now,
     });
-    await ensureMeetPerson({
+    const peerPersonId = await ensureMeetPerson({
       ctx,
       ownerUserId: peerProfile.userId,
       contactUserId: userId,
       contactUsername: myProfile.username,
+      contactName: myProfile.name,
+      contactCompany: myProfile.company,
+      contactRole: myProfile.role,
+      contactCity: myProfile.city,
       now,
     });
 
-    return { personId, peerUsername: peerProfile.username };
+    const pair = connectionPair(userId, peerProfile.userId);
+    const [personAId, personBId] = pair.callerIsA
+      ? [personId, peerPersonId]
+      : [peerPersonId, personId];
+    const existing = await ctx.db
+      .query("connections")
+      .withIndex("by_userAId_and_userBId", (q) =>
+        q.eq("userAId", pair.userAId).eq("userBId", pair.userBId),
+      )
+      .unique();
+    if (existing !== null) {
+      // Self-heal a stale edge rather than leave it dangling: a person row
+      // deleted and remade by a later connection would otherwise leave the
+      // edge pointing at a row that no longer exists, and sharedNotes reads
+      // it through those ids.
+      if (
+        existing.personAId !== personAId ||
+        existing.personBId !== personBId
+      ) {
+        await ctx.db.patch("connections", existing._id, {
+          personAId,
+          personBId,
+          updatedAt: now,
+        });
+      }
+      return {
+        status: "already" as const,
+        personId,
+        peerUsername: peerProfile.username,
+      };
+    }
+
+    await ctx.db.insert("connections", {
+      userAId: pair.userAId,
+      userBId: pair.userBId,
+      personAId,
+      personBId,
+      status: "connected",
+      createdAt: now,
+      updatedAt: now,
+    });
+    return {
+      status: "connected" as const,
+      personId,
+      peerUsername: peerProfile.username,
+    };
   },
 });
