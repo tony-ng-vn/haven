@@ -22,7 +22,7 @@ struct MyCardScreen: View {
     /// `@State` seeded once never hears the second request.
     @Binding var showingCode: Bool
 
-    @State private var editing: CardField?
+    @State private var editing: CardEditor?
     @State private var photo: Image?
     @State private var confirmingDelete = false
     @State private var legalDocument: LegalDocument?
@@ -68,8 +68,8 @@ struct MyCardScreen: View {
         // message with nothing on it to tap: raising the brightness there would
         // pin the phone at full and leave no way to lower it.
         .brightScreen(while: showingCode && model.load.isReady)
-        .sheet(item: $editing) { field in
-            editor(for: field)
+        .sheet(item: $editing) { target in
+            sheet(for: target)
         }
         .alert("Delete your account?", isPresented: $confirmingDelete) {
             Button("Delete", role: .destructive) {
@@ -182,6 +182,22 @@ struct MyCardScreen: View {
                 row(field, card: card)
             }
 
+            // Its own group rather than a seventh field row. Every field
+            // above lights a star and describes the person; this is the page
+            // the card's code opens, and it is the one thing here somebody
+            // else can already be holding.
+            Text("Your address")
+                .havenGroupLabel()
+                .padding(.top, 26)
+                .padding(.bottom, 6)
+            HavenRow(
+                title: BeaconAddress.display(for: card.username),
+                accessibilityText: "Your address, \(BeaconAddress.display(for: card.username))",
+                action: { editing = .address }
+            ) {
+                RowMark.chevron
+            }
+
             Text("Account")
                 .havenGroupLabel()
                 .padding(.top, 26)
@@ -253,7 +269,7 @@ struct MyCardScreen: View {
             title: field.title,
             detail: value ?? field.placeholder,
             accessibilityText: spoken(field, value: value),
-            action: { editing = field }
+            action: { editing = .field(field) }
         ) {
             if value == nil {
                 RowAccessory(text: "Add")
@@ -268,6 +284,18 @@ struct MyCardScreen: View {
     private func spoken(_ field: CardField, value: String?) -> String {
         guard let value else { return "\(field.title), empty" }
         return "\(field.title), \(value)"
+    }
+
+    @ViewBuilder
+    private func sheet(for target: CardEditor) -> some View {
+        switch target {
+        case .address:
+            AddressEditor(current: model.card?.username ?? "") { handle in
+                await model.claimAddress(handle)
+            }
+        case .field(let field):
+            editor(for: field)
+        }
     }
 
     @ViewBuilder
@@ -309,6 +337,28 @@ struct MyCardScreen: View {
             } remove: {
                 await model.clear("photoStorageId")
             }
+        }
+    }
+}
+
+/// What this screen is editing right now.
+///
+/// One sheet for both rather than two `.sheet` modifiers on one view: the card
+/// already carries the legal sheet as well, and a screen stacking three
+/// presentations is a screen where one of them quietly stops opening.
+///
+/// The address is not a `CardField` because a field lights a star and describes
+/// the person. The address describes the page, and `StarSlot` is fixed on
+/// purpose -- adding a case with no star to it would be the first crack in the
+/// rule that makes an unlit star legible.
+private enum CardEditor: Identifiable {
+    case field(CardField)
+    case address
+
+    var id: String {
+        switch self {
+        case .field(let field): return field.id
+        case .address: return "address"
         }
     }
 }

@@ -3,6 +3,19 @@ import Combine
 import ConvexMobile
 import SwiftUI
 
+/// What `profiles:claimHandle` answers.
+///
+/// A status rather than a throw, because a taken address is an ordinary step
+/// and not a failure. The suggestions come from the caller's own name and are
+/// already checked free, so they are offered rather than merely listed.
+struct HandleClaim: Decodable, Equatable {
+    let status: String
+    let handle: String
+    let suggestions: [String]
+
+    var isClaimed: Bool { status == "claimed" }
+}
+
 /// Whether the card is on screen yet.
 enum MyCardLoad: Equatable {
     case loading
@@ -91,6 +104,28 @@ final class MyCardModel: ObservableObject {
                 with: ["photoStorageId": storageId]
             )
         }
+    }
+
+    /// Claims an address, and says what the server made of it.
+    ///
+    /// Not routed through `write`, which publishes a card: `claimHandle`
+    /// answers with a status and a ladder rather than with the card, and the
+    /// live subscription brings the new username a moment later. Nil means the
+    /// round trip never came back, which is the one outcome the editor must not
+    /// mistake for "taken".
+    func claimAddress(_ handle: String) async -> HandleClaim? {
+        guard !isSaving else { return nil }
+        isSaving = true
+        failure = nil
+        let work = Task { () throws -> HandleClaim in
+            try await convex.mutation("profiles:claimHandle", with: ["handle": handle])
+        }
+        let claim = await work.value(within: .seconds(HavenNetwork.deadline))
+        isSaving = false
+        if claim == nil {
+            failure = "That did not save. Check your connection and try again."
+        }
+        return claim
     }
 
     /// Deletes the account: the data first, then the identity that owned it.
