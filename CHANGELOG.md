@@ -6,6 +6,23 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.6.0
+
+2026-07-28
+
+**iOS**
+
+- Search can now be asked a question instead of given a keyword. Type what you actually need -- "anyone who knows databases" -- and Haven reads everyone you know and answers in their own words, quoting the note that made each person a match.
+- It also answers the harder question: when nobody fits directly, it names who could introduce you, marked as a bridge and with its reasoning shown, rather than quietly passing them off as a match.
+- If what you asked was too vague to answer, Haven asks you one question back instead of guessing, and you can answer it without starting over.
+- Asking is a button, not something that happens as you type. Searching is instant and free; asking reads your whole network through a model, so it only ever runs when you ask it to.
+
+**Backend**
+
+- An answer now says who each person is, not just which record they are, so nothing has to look them up one by one to show you a list.
+
+---
+
 ## v0.5.0
 
 2026-07-28

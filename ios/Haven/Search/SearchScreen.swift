@@ -9,9 +9,11 @@ import SwiftUI
 /// saved last and typing narrows it.
 struct SearchScreen: View {
     @StateObject private var model: SearchModel
+    @StateObject private var ask: AskModel
 
     init() {
         _model = StateObject(wrappedValue: SearchModel())
+        _ask = StateObject(wrappedValue: AskModel())
     }
 
     /// A loaded screen that never opens a socket, for previews.
@@ -19,13 +21,15 @@ struct SearchScreen: View {
         preview load: SearchLoad,
         facets: DirectoryFacets = .empty,
         query: String = "",
-        filters: SearchFilters = .any
+        filters: SearchFilters = .any,
+        ask: AskState = .idle
     ) {
         _model = StateObject(
             wrappedValue: SearchModel(
                 preview: load, facets: facets, query: query, filters: filters
             )
         )
+        _ask = StateObject(wrappedValue: AskModel(preview: ask))
     }
 
     var body: some View {
@@ -98,10 +102,43 @@ struct SearchScreen: View {
         .scrollIndicators(.hidden)
     }
 
+    /// Asking replaces the results rather than sitting beside them: it is an
+    /// answer to the same question, and two lists of people under one field
+    /// would leave nobody sure which one to read.
+    private var isAsking: Bool { ask.state != .idle }
+
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
-            summary
-            results
+            if isAsking {
+                AskPanel(model: ask, onDismiss: { ask.clear() })
+            } else {
+                askInvitation
+                summary
+                results
+            }
+        }
+    }
+
+    /// The way into asking. Deliberately a button and not something that fires
+    /// as you type: search is free and instant, an ask reads the whole network
+    /// through a model and costs real money per question.
+    @ViewBuilder
+    private var askInvitation: some View {
+        if SearchRequest.isNarrowed(model.key), !model.query.trimmed.isEmpty {
+            Button {
+                Task { await ask.ask(model.query) }
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "sparkle")
+                        .font(.footnote)
+                    Text("Ask Haven who fits")
+                        .font(.footnote)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(HavenColor.star)
+                .frame(minHeight: 44, alignment: .leading)
+            }
+            .accessibilityHint("Reads everyone you know and answers in their own words")
         }
     }
 

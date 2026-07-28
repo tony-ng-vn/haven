@@ -147,13 +147,23 @@ test("ask answers with the people behind the refs the model named", async () => 
     query: "anyone with database experience",
   });
 
+  // Named, not just identified: a client holding ids alone would have to read
+  // every match back one by one before it could draw a list.
   expect(result.matches).toEqual([
     {
       personId: ada,
+      name: "Ada Lovelace",
       kind: "direct",
       why: "you wrote that they work on a database",
     },
-    { personId: alan, kind: "bridge", why: "screens YC applications" },
+    {
+      personId: alan,
+      name: "Alan Turing",
+      company: "Y Combinator",
+      role: "Analyst",
+      kind: "bridge",
+      why: "screens YC applications",
+    },
   ]);
   expect(result.clarifyingQuestion).toBeNull();
   // Newest first, and the memory line rides along with its date.
@@ -236,7 +246,7 @@ test("ask drops refs the model was never shown", async () => {
   const result = await as.action(api.people.ask, { query: "anyone" });
 
   expect(result.matches).toEqual([
-    { personId: ada, kind: "direct", why: "real" },
+    { personId: ada, name: "Ada Lovelace", kind: "direct", why: "real" },
   ]);
 });
 
@@ -257,7 +267,7 @@ test("ask keeps one match per person and drops kinds outside the schema", async 
   const result = await as.action(api.people.ask, { query: "anyone" });
 
   expect(result.matches).toEqual([
-    { personId: ada, kind: "direct", why: "first" },
+    { personId: ada, name: "Ada Lovelace", kind: "direct", why: "first" },
   ]);
 });
 
@@ -414,7 +424,12 @@ test("a network too large for one prompt is chosen by the question", async () =>
   // Retrieval reordered the network, so the buried person is now #1.
   expect(provider.lastPrompt()).toContain("#1 Buried Match");
   expect(result.matches).toEqual([
-    { personId: wanted, kind: "direct", why: "the database note" },
+    {
+      personId: wanted,
+      name: "Buried Match",
+      kind: "direct",
+      why: "the database note",
+    },
   ]);
 });
 

@@ -1574,9 +1574,17 @@ export const ask = action({
     history: v.optional(v.array(askTurnValidator)),
   },
   returns: v.object({
+    // Carries who each match is, not just their id. The dossiers are already
+    // in memory here, so naming them costs nothing -- where a client holding
+    // only ids would have to read every matched person back one by one just
+    // to render a list.
     matches: v.array(
       v.object({
         personId: v.id("people"),
+        name: v.string(),
+        company: v.optional(v.string()),
+        role: v.optional(v.string()),
+        cityName: v.optional(v.string()),
         kind: v.union(v.literal("direct"), v.literal("bridge")),
         why: v.string(),
       }),
@@ -1644,16 +1652,24 @@ export const ask = action({
     const seen = new Set<number>();
     const matches: Array<{
       personId: Id<"people">;
+      name: string;
+      company?: string;
+      role?: string;
+      cityName?: string;
       kind: "direct" | "bridge";
       why: string;
     }> = [];
     for (const match of answer.matches) {
       const personId = refs[match.ref - 1];
+      // refs is built by walking `network` in order, so a ref indexes the same
+      // person in both.
+      const shown = network[match.ref - 1];
       // A ref nobody was shown, a repeat, or a kind outside the schema all
       // mean the model went off contract. Drop the match rather than answer
       // with a person the user never saved.
       if (
         personId === undefined ||
+        shown === undefined ||
         seen.has(match.ref) ||
         (match.kind !== "direct" && match.kind !== "bridge") ||
         typeof match.why !== "string"
@@ -1661,7 +1677,15 @@ export const ask = action({
         continue;
       }
       seen.add(match.ref);
-      matches.push({ personId, kind: match.kind, why: match.why });
+      matches.push({
+        personId,
+        name: shown.name,
+        company: shown.company,
+        role: shown.role,
+        cityName: shown.cityName,
+        kind: match.kind,
+        why: match.why,
+      });
       if (matches.length === MAX_ASK_MATCHES) {
         break;
       }
