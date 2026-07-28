@@ -40,4 +40,14 @@ crons.interval(
   {},
 );
 
+// Deletes Love Alarm presence rows past their expiry -- see
+// sweepExpiredPresence. Reads already filter them out, so this is about not
+// keeping a record of where somebody was for longer than they opted in to.
+crons.interval(
+  "sweep expired presence",
+  { minutes: 30 },
+  internal.loveAlarm.sweepExpiredPresence,
+  {},
+);
+
 export default crons;

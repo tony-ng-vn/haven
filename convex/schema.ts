@@ -254,7 +254,12 @@ export default defineSchema({
   })
     .index("by_userId_and_roomCode", ["userId", "roomCode"])
     .index("by_userId_and_expiresAt", ["userId", "expiresAt"])
-    .index("by_roomCode_and_expiresAt", ["roomCode", "expiresAt"]),
+    .index("by_roomCode_and_expiresAt", ["roomCode", "expiresAt"])
+    // The expiry sweep has to find expired rows across every user and every
+    // room at once, which is exactly what the two indexes above cannot
+    // answer: both need the leading key up front, and that leading key is
+    // what the sweep does not know.
+    .index("by_expiresAt", ["expiresAt"]),
 
   // Cursor state for paginated background sweeps: without a persisted
   // watermark a bounded sweep re-reads the same head of the table forever

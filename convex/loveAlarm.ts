@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { Doc } from "./_generated/dataModel";
 import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
@@ -184,5 +184,37 @@ export const myPresence = query({
       lastSeenAt: presence.lastSeenAt,
       expiresAt: presence.expiresAt,
     }));
+  },
+});
+
+// How many expired rows one sweep transaction deletes. Deliberately modest:
+// the rows it removes are gone for good, so a run that fills its batch just
+// means the next tick has work, and presence is bounded by however many
+// people are in a room at once rather than by the size of the table.
+const EXPIRY_SWEEP_BATCH_SIZE = 200;
+
+// Deletes presence rows past their expiry.
+//
+// Nothing was broken without this -- every read already filters on expiresAt,
+// so an expired row is invisible -- but invisible is not gone. The row still
+// records that a named person was in a named room, which is a fact about
+// where somebody was, kept long past the two minutes they opted in for. Love
+// Alarm is the one opt-in proximity feature in the product, and presence data
+// has to be declared in the App Store privacy labels; "we keep it until the
+// account is deleted" is a worse answer than "we delete it when it expires".
+export const sweepExpiredPresence = internalMutation({
+  // batchSize is for tests, which prove progress with a tiny batch.
+  args: { batchSize: v.optional(v.number()) },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const expired = await ctx.db
+      .query("loveAlarmPresence")
+      .withIndex("by_expiresAt", (q) => q.lt("expiresAt", now))
+      .take(args.batchSize ?? EXPIRY_SWEEP_BATCH_SIZE);
+    for (const row of expired) {
+      await ctx.db.delete("loveAlarmPresence", row._id);
+    }
+    return expired.length;
   },
 });

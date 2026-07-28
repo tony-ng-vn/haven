@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -78,4 +78,54 @@ test("Love Alarm rejects unauthenticated presence", async () => {
   await expect(
     t.mutation(api.loveAlarm.startPresence, { roomCode: "room" }),
   ).rejects.toThrow("Not signed in");
+});
+
+test("the sweep deletes presence rows that have expired and keeps the rest", async () => {
+  vi.useFakeTimers();
+  try {
+    const t = convexTest(schema, modules);
+    const gone = asNewUser(t);
+    const here = asNewUser(t);
+    await gone.mutation(api.loveAlarm.startPresence, {
+      roomCode: "stage",
+      displayName: "Left the room",
+    });
+
+    vi.advanceTimersByTime(121_000);
+    await here.mutation(api.loveAlarm.startPresence, {
+      roomCode: "stage",
+      displayName: "Still here",
+    });
+
+    const deleted = await t.mutation(internal.loveAlarm.sweepExpiredPresence, {});
+
+    expect(deleted).toBe(1);
+    const rows = await t.run((ctx) =>
+      ctx.db.query("loveAlarmPresence").collect(),
+    );
+    // Expired rows are filtered on read, so nobody sees them -- but the row
+    // still names a person and the room they were in, which is a fact about
+    // where somebody was, kept past the two minutes they opted in for.
+    expect(rows.map((row) => row.displayName)).toEqual(["Still here"]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("the sweep is a no-op when nothing has expired", async () => {
+  vi.useFakeTimers();
+  try {
+    const t = convexTest(schema, modules);
+    const me = asNewUser(t);
+    await me.mutation(api.loveAlarm.startPresence, { roomCode: "stage" });
+
+    expect(
+      await t.mutation(internal.loveAlarm.sweepExpiredPresence, {}),
+    ).toBe(0);
+    expect(
+      await t.run((ctx) => ctx.db.query("loveAlarmPresence").collect()),
+    ).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
 });
