@@ -23,12 +23,17 @@ struct HavenTabs: View {
                 // People's search field is not a field: it hands the whole
                 // interaction to the tab that owns searching, rather than
                 // imitating it and then having to keep the two in step.
-                DirectoryScreen(userId: userId, openSearch: { tab = .search })
+                DirectoryScreen(
+                    userId: userId,
+                    openSearch: { tab = .search },
+                    openPerson: { peopleRoute.append(.person(id: $0)) }
+                )
                     .toolbar { directoryToolbar }
                     .navigationDestination(for: Destination.self) { destination in
                         switch destination {
                         case .card: MyCardScreen()
                         case .beacon: BeaconScreen()
+                        case .person(let id): PersonScreen(personId: id)
                         }
                     }
             }
@@ -81,6 +86,7 @@ struct HavenTabs: View {
     private enum Destination: Hashable {
         case card
         case beacon
+        case person(id: String)
     }
 
     @ToolbarContentBuilder
