@@ -6,6 +6,20 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.17.0
+
+2026-07-28
+
+**iOS**
+
+- You can connect to somebody in person. A scanner in the top corner of People reads the code on the back of their card, shows you whose card it is, and one tap puts each of you in the other's directory. Haven's backend has done both sides since the connect work landed and nothing in the app ever asked it to.
+- If you were already connected it says so rather than pretending something happened.
+- Their address can be typed instead of scanned, for a phone whose camera you would rather not turn on and for reading one out across a table.
+- The camera is only ever asked for at the moment you point it at a card, and nothing it sees is kept.
+- The People screen's empty state now says how to fill it.
+
+---
+
 ## v0.16.0
 
 2026-07-28
