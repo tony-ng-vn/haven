@@ -152,8 +152,12 @@ struct DirectoryScreen: View {
     }
 
     /// Every row opens the person, which is where their note is written.
+    ///
+    /// Lazy, and that is load bearing rather than an optimisation: the last row
+    /// appearing is what asks for the next page, and in an eager stack every
+    /// row appears at once, so the whole directory would arrive on first paint.
     private var list: some View {
-        VStack(spacing: 0) {
+        LazyVStack(spacing: 0) {
             ForEach(model.people) { person in
                 HavenRow(
                     title: person.name,
@@ -162,6 +166,19 @@ struct DirectoryScreen: View {
                     leading: { EmptyView() },
                     trailing: { RowMark.chevron }
                 )
+                .onAppear {
+                    // The last row, not a scroll offset: rows here are as tall
+                    // as somebody's text size makes them, so an offset would be
+                    // guessing at a height that changes per person.
+                    if person.id == model.people.last?.id { model.loadMore() }
+                }
+            }
+            if model.isLoadingMore {
+                ProgressView()
+                    .tint(HavenColor.faint)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .accessibilityLabel("Loading more people")
             }
         }
     }
@@ -199,6 +216,21 @@ private let previewPeople = DirectoryPage(
 
 private let emptyDirectory = DirectoryPage(page: [], isDone: true)
 
+/// A first page that filled up, which is the state the count calls a floor and
+/// the one the foot of the list grows from.
+private let previewFirstPage = DirectoryPage(
+    page: (0..<12).map { index in
+        DirectoryPerson(
+            _id: "j57\(index)",
+            name: "Person \(index + 1)",
+            company: index.isMultiple(of: 2) ? "Haven" : nil,
+            role: nil,
+            city: nil
+        )
+    },
+    isDone: false
+)
+
 private func previewScreen(_ load: DirectoryLoad) -> some View {
     NavigationStack {
         DirectoryScreen(userId: "preview_user", openSearch: {}, preview: load)
@@ -211,6 +243,10 @@ private func previewScreen(_ load: DirectoryLoad) -> some View {
 
 #Preview("People, with people") {
     previewScreen(.ready(previewPeople))
+}
+
+#Preview("People, more to come") {
+    previewScreen(.ready(previewFirstPage))
 }
 
 #Preview("People, unreachable") {

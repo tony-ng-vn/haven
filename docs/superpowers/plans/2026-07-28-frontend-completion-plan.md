@@ -62,7 +62,7 @@ What is not built, verified the same way:
 ## Blocking graph at a glance
 
 ```
-frontier now:  D1  D2  D3  D5  E2  I1  I2
+frontier now:  D1  D2  D3  E2  I2
 D1 -> D4, E1
 D2 -> F3
 E2 -> E3, E4, F1
@@ -342,8 +342,8 @@ One session drives; this section is its operating loop, and the goal prompt poin
 - [ ] D1 manual add
 - [ ] D2 person detail completion
 - [ ] D3 search and ask navigation
-- [ ] D4 directory paging
-- [ ] D5 welcome legal links
+- [x] D4 directory paging (PR 147)
+- [x] D5 welcome legal links (PR 137)
 - [ ] E1 pin walkthrough and practice capture
 - [ ] E2 handle claim at card creation
 - [ ] E3 address editor in My Card
@@ -357,7 +357,7 @@ One session drives; this section is its operating loop, and the goal prompt poin
 - [ ] G4 copy convergence
 - [ ] H1 release readiness
 - [ ] H2 final checklist sweep
-- [ ] I1 CI signing-flag removal
+- [x] I1 CI signing-flag removal (PR 136)
 - [ ] I2 web spot-checks
 
 ## Contract requests for the backend

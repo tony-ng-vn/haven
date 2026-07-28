@@ -106,3 +106,74 @@ struct DirectoryTests {
         #expect(WidgetPromoDismissal.isDismissed(userId: mine))
     }
 }
+
+@MainActor
+@Suite("Paging the directory")
+struct DirectoryPagingTests {
+    private func page(_ names: [String], isDone: Bool) -> DirectoryPage {
+        DirectoryPage(
+            page: names.enumerated().map { DirectoryPerson(_id: "p\($0.offset)", name: $0.element) },
+            isDone: isDone
+        )
+    }
+
+    // The count was a floor that never resolved: somebody with three hundred
+    // people saw "People 50+" forever, because only fifty were ever asked for.
+    @Test("the count says it is a floor only while there is more to come")
+    func countIsAFloorUntilItIsNot() {
+        let more = DirectoryModel(preview: .ready(page(["Ada", "Mai"], isDone: false)))
+        #expect(more.count == 2)
+        #expect(more.countIsPartial)
+
+        let all = DirectoryModel(preview: .ready(page(["Ada", "Mai"], isDone: true)))
+        #expect(all.count == 2)
+        #expect(!all.countIsPartial)
+    }
+
+    // Nobody and could-not-read are different facts, and only one of them is
+    // "nobody". Unchanged by paging, and worth keeping that way.
+    @Test("a directory that could not be read has no count at all")
+    func noCountWithoutAnAnswer() {
+        #expect(DirectoryModel(preview: .loading).count == nil)
+        #expect(DirectoryModel(preview: .unreachable).count == nil)
+        #expect(!DirectoryModel(preview: .unreachable).countIsPartial)
+    }
+
+    // The window is what grows. A last page that asked for more would re-read
+    // the whole directory on every scroll to the bottom, forever.
+    @Test("the end of the list asks for nothing more")
+    func doneMeansDone() {
+        let model = DirectoryModel(preview: .ready(page(["Ada"], isDone: true)))
+        let before = model.window
+        model.loadMore()
+        #expect(model.window == before)
+        #expect(!model.isLoadingMore)
+    }
+
+    @Test("nothing is asked for before the first page has answered")
+    func nothingBeforeTheFirstPage() {
+        for state in [DirectoryLoad.loading, .unreachable] {
+            let model = DirectoryModel(preview: state)
+            let before = model.window
+            model.loadMore()
+            #expect(model.window == before, "\(state)")
+        }
+    }
+
+    // A list scrolled hard enough to pass its own end twice while one read is
+    // out must not open a second one, or the window jumps two pages for one
+    // scroll and the rows arrive out of step.
+    @Test("scrolling past the end twice asks once")
+    func asksOnceWhileAReadIsOut() {
+        let model = DirectoryModel(preview: .ready(page(["Ada"], isDone: false)))
+        let before = model.window
+
+        model.loadMore()
+        let afterOne = model.window
+        model.loadMore()
+
+        #expect(afterOne > before)
+        #expect(model.window == afterOne)
+        #expect(model.isLoadingMore)
+    }
+}
