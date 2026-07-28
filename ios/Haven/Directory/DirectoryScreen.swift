@@ -15,15 +15,12 @@ struct DirectoryScreen: View {
     let openPerson: (String) -> Void
 
     @StateObject private var model: DirectoryModel
-    @State private var showsExplainer = false
-    @State private var showsAdd = false
+    @State private var sheet: DirectorySheet?
     @State private var promoDismissed: Bool
+    @State private var sharePromoDismissed: Bool
     /// Sending what was just written is the app's job, not this screen's; it
     /// only asks. See `CaptureDrainRequest`.
     @Environment(\.requestCaptureDrain) private var requestCaptureDrain
-    @State private var showsPinWalkthrough = false
-    @State private var promoDismissed: Bool
-    @State private var sharePromoDismissed: Bool
 
     init(
         userId: String,
@@ -69,18 +66,27 @@ struct DirectoryScreen: View {
             actions: { actions }
         )
         .navigationTitle(title)
-        .sheet(isPresented: $showsExplainer) {
-            LockScreenExplainer()
-        }
-        // Both read at presentation time rather than held: the mirror is
-        // rewritten after every sync, and a sheet opened tomorrow should not
-        // offer yesterday's directory.
-        .sheet(isPresented: $showsAdd) {
-            AddPersonSheet(
-                mirror: DirectoryMirrorStore.forApp().load(),
-                queue: .forApp(),
-                onSaved: onPersonAdded
-            )
+        // One presenter, not one per sheet. Stacking `.sheet` modifiers on a
+        // single view is how one of them quietly stops opening -- `PhotoEditor`
+        // records that failure from the card screen, and My Card folded its own
+        // two into a single item for the same reason. This screen is about to
+        // have three.
+        .sheet(item: $sheet) { which in
+            switch which {
+            case .explainer:
+                LockScreenExplainer()
+            case .pinWalkthrough:
+                PinWalkthrough()
+            case .add:
+                // Both read at presentation time rather than held: the mirror
+                // is rewritten after every sync, and a sheet opened tomorrow
+                // should not offer yesterday's directory.
+                AddPersonSheet(
+                    mirror: DirectoryMirrorStore.forApp().load(),
+                    queue: .forApp(),
+                    onSaved: onPersonAdded
+                )
+            }
         }
     }
 
@@ -92,9 +98,6 @@ struct DirectoryScreen: View {
     /// send, and the next launch tries again.
     private func onPersonAdded() {
         Task { await requestCaptureDrain.run() }
-        .sheet(isPresented: $showsPinWalkthrough) {
-            PinWalkthrough()
-        }
     }
 
     /// "People", with a count once there is one worth giving.
@@ -144,7 +147,7 @@ struct DirectoryScreen: View {
                     title: "Put Haven at the front of the share sheet",
                     detail: "It starts at the back, behind More. Move it once and saving somebody is two taps.",
                     action: "Show me",
-                    open: { showsPinWalkthrough = true },
+                    open: { sheet = .pinWalkthrough },
                     dismiss: {
                         SharePromoDismissal.dismiss(userId: userId)
                         sharePromoDismissed = true
@@ -153,7 +156,7 @@ struct DirectoryScreen: View {
             }
             if !promoDismissed {
                 WidgetPromoCard(
-                    open: { showsExplainer = true },
+                    open: { sheet = .explainer },
                     dismiss: {
                         WidgetPromoDismissal.dismiss(userId: userId)
                         promoDismissed = true
@@ -246,8 +249,21 @@ struct DirectoryScreen: View {
     }
 
     private var actions: some View {
-        PrimaryButton(title: "Add someone") { showsAdd = true }
+        PrimaryButton(title: "Add someone") { sheet = .add }
     }
+}
+
+/// What the directory can put on top of itself.
+///
+/// An enum rather than a boolean each, because the count is going up: the Lock
+/// Screen explainer, the share-sheet walkthrough, and the add sheet that
+/// arrives with manual add. One `.sheet(item:)` presents whichever is set.
+private enum DirectorySheet: String, Identifiable {
+    case explainer
+    case pinWalkthrough
+    case add
+
+    var id: String { rawValue }
 }
 
 // MARK: - Previews

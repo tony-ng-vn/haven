@@ -344,21 +344,11 @@ One session drives; this section is its operating loop, and the goal prompt poin
 - [x] D3 search and ask navigation (PR 141)
 - [x] D4 directory paging (PR 147)
 - [x] D5 welcome legal links (PR 137)
-- [ ] E1 pin walkthrough and practice capture (PR 148, open)
+- [x] E1 pin walkthrough and practice capture (PR 148)
 - [x] E2 handle claim at card creation -- void on inspection, see "Corrections to this plan's inventory" (PR 143)
 - [x] E3 address editor in My Card (PR 143)
 - [x] E4 server onboarding state and avatar import (PR 144)
 - [x] F1 scan and connect (PR 146)
-- [ ] D1 manual add
-- [ ] D2 person detail completion
-- [ ] D3 search and ask navigation
-- [ ] D4 directory paging
-- [x] D5 welcome legal links (PR 137)
-- [x] E1 pin walkthrough and practice capture (PR 148)
-- [ ] E2 handle claim at card creation
-- [ ] E3 address editor in My Card
-- [ ] E4 server onboarding state and avatar import
-- [ ] F1 scan and connect
 - [ ] F2 universal links
 - [ ] F3 connected-person state (needs backend B1)
 - [ ] G1 card review fixes
@@ -391,7 +381,6 @@ they are made so neither session acts on a stale claim.
   Nothing was built for E2 beyond a test pinning the half the client owns
   (`MyCardTests.addressIsNotOptional`). E3 and E4 are unblocked.
 
-- [ ] I2 web spot-checks
 
 ## Contract requests for the backend
 
