@@ -1,6 +1,6 @@
 import SwiftUI
 
-// The four durations Phase 1 uses, and one rule about Reduce Motion.
+// The durations Phase 1 uses, and one rule about Reduce Motion.
 //
 // Reduce Motion does not mean "no state change". It means the change arrives
 // instantly instead of being animated. Use `havenAnimation(_:value:)` rather

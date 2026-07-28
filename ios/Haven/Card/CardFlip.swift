@@ -38,13 +38,21 @@ enum CardFlip {
         isBack ? angle + backAngle : angle
     }
 
+    /// Whether a given face is the one you are looking at.
+    static func isFacing(angle: Double, isBack: Bool) -> Bool {
+        showsBack(angle: angle) == isBack
+    }
+
     /// How opaque a face is at this angle.
     ///
     /// A hard step, never a fade. Two opaque cards stacked do not dissolve into
     /// each other -- they composite, so at half opacity each you see both, and
     /// the name on the front prints straight through the code on the back.
+    ///
+    /// Read off `isFacing` rather than deciding again, or a face could end up
+    /// invisible and still taking the taps meant for the other side.
     static func opacity(angle: Double, isBack: Bool) -> Double {
-        showsBack(angle: angle) == isBack ? 1 : 0
+        isFacing(angle: angle, isBack: isBack) ? 1 : 0
     }
 }
 
@@ -75,12 +83,10 @@ struct TwoSidedCard<Front: View, Back: View>: View {
         .onTapGesture { showingBack.toggle() }
         // Light. Turning a card over is a small physical act, not a commit.
         .sensoryFeedback(.impact(weight: .light), trigger: showingBack)
-        // The faces keep their own elements -- the name and city still read as
-        // themselves -- and the turn is offered as an action on the container.
-        .accessibilityElement(children: .contain)
-        .accessibilityAction(named: showingBack ? "Show your card" : "Show your code") {
-            showingBack.toggle()
-        }
+        // No accessibility action here on purpose. A custom action on this
+        // container would only ever be found by focusing the container, and a
+        // container whose children stay their own elements is not focusable.
+        // Whoever supplies the faces puts a focusable control on them.
     }
 }
 
@@ -104,7 +110,7 @@ private struct CardFace: ViewModifier, Animatable {
         // Culled three ways, because invisible is only one of them: a face at
         // zero opacity still takes the taps meant for the other side, and
         // VoiceOver still reads it.
-        let facing = CardFlip.showsBack(angle: angle) == isBack
+        let facing = CardFlip.isFacing(angle: angle, isBack: isBack)
         return content
             .opacity(CardFlip.opacity(angle: angle, isBack: isBack))
             .allowsHitTesting(facing)

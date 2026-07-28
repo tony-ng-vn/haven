@@ -8,6 +8,13 @@ enum MyCardLoad: Equatable {
     case loading
     case ready(MyCard)
     case unreachable
+
+    /// Whether there is a card on screen to look at, as opposed to a spinner or
+    /// an apology.
+    var isReady: Bool {
+        if case .ready = self { return true }
+        return false
+    }
 }
 
 /// The caller's own card, and every way to change it.

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Onboarding question 1. The only required one: a card with no name has
-/// nothing to show, and the beacon address is minted from it.
+/// nothing to show, and the address on its back is minted from it.
 struct NameScreen: View {
     @ObservedObject var model: OnboardingModel
 

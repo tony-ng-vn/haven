@@ -44,7 +44,7 @@ enum QRCode {
     }
 }
 
-/// Where a beacon points.
+/// Where the code on the card's back points.
 ///
 /// Haven's own address, never a social profile: authorization proves who
 /// someone is but cannot construct their profile link in the general case, and

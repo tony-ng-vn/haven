@@ -86,7 +86,7 @@ enum FigureIntensity {
         (0..<max(majorCount, 0)).map { litMajors.contains($0) ? 1 : 0 }
     }
 
-    /// Every star lit, which is what the card and the beacon show.
+    /// Every star lit, which is what the card shows.
     static func complete(majorCount: Int) -> [Double] {
         Array(repeating: 1, count: max(majorCount, 0))
     }

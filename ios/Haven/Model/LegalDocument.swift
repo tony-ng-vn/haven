@@ -7,7 +7,7 @@ import Foundation
 /// person looking for one is usually looking for both.
 ///
 /// The addresses are built from `Config.cardHost` rather than written out, for
-/// the same reason the beacon's are: one host, decided once. A literal here
+/// the same reason `BeaconAddress` is: one host, decided once. A literal here
 /// would be a second place to change and the first place to forget.
 enum LegalDocument: String, CaseIterable, Identifiable {
     case privacy

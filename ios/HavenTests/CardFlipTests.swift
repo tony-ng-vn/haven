@@ -57,5 +57,4 @@ struct CardFlipTests {
         #expect(CardFlip.faceAngle(CardFlip.backAngle, isBack: true) == 360)
         #expect(CardFlip.faceAngle(0, isBack: false) == 0)
     }
-
 }

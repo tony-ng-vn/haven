@@ -121,10 +121,10 @@ Everything in `Haven/Design` is milestone 2 of `../phase1-build-plan.md`, and ev
 
 - `HavenColor` is the committed dusk palette. The list is closed: a surface that seems to need a new hue almost always needs an existing one at a different opacity.
 - `HavenFont` holds the type rules as view modifiers, not raw fonts, for one reason: it keeps `.serif` inside that one file. Serif (New York) is reserved for people's names via `personName(_:)`, and everything else is SF Pro. A grep for "serif" anywhere else in `Haven/` should return nothing. Every style is built from a relative text style, so Dynamic Type scales all of it.
-- `HavenMotion` holds the four durations and the strong ease-out. Use `havenAnimation(_:value:)` instead of `.animation(_:value:)` and Reduce Motion is handled for you: the state change still happens, it just arrives instantly.
+- `HavenMotion` holds the durations and the strong ease-out. Use `havenAnimation(_:value:)` instead of `.animation(_:value:)` and Reduce Motion is handled for you: the state change still happens, it just arrives instantly.
 - `NightBackground` and `DustLayer` are the atmosphere. Neither ever responds to progress.
 - `SkyView` renders a `Sky` from `SkyGenerator`. Each figure star has its own brightness, from 0 for the unlit faint dot to 1 for fully lit. Everything attached to a star fades with it: an edge is drawn at the dimmer of its two stars, and a diffraction flare at its own star's, because both are signatures of brightness and neither can honestly outshine the star it comes from. The two-state figure is the `litMajors` initialiser, which is just intensities of 0 and 1. Brightness is a plain input: `SkyView` knows nothing about ignition order, and animating it is the caller's job.
-- `HavenCard` is a person's card as one component -- figure, serif name, optional inline photo, city line, primary contact chip -- shared by the reveal, My Card and the beacon, because a card that drifted between the three would stop reading as an identity. Empty fields render nothing; the unlit star is the nudge.
+- `HavenCard` is a person's card as one component -- figure, serif name, optional inline photo, city line, primary contact chip -- shared by the reveal and My Card, because a card that drifted between the two would stop reading as an identity. Empty fields render nothing; the unlit star is the nudge.
 - `StarSlot` fixes which figure star each profile field owns. Do not make it dynamic; the edit screen's unlit stars are only legible because a field's star never moves.
 - `HavenScreen`, `HavenField`, `PrimaryButton`, `GhostButton` and `HavenRow` are the shared controls.
 - `HavenScreen`'s `contentAlignment` is not cosmetic. Content that never changes height is centred; content that grows, such as a suggestion list or a panel that opens, is top-aligned, or answering the question moves the field out from under the person's finger. The figure follows: it takes the gap above centred content and the gap below top-aligned content, and disappears when neither is big enough to read as a figure.
@@ -157,15 +157,17 @@ Built so far: screens 0 to 3 (welcome, name, location, contact). The card reveal
 
 ## The app after onboarding
 
-`HavenTabs` is the shell: People and Search as two tabs, with the card and the beacon reachable from the People screen's toolbar, and the Lock Screen explainer presented as a sheet from People.
+`HavenTabs` is the shell: People and Search as two tabs, with the card reachable from the People screen's toolbar, and the Lock Screen explainer presented as a sheet from People.
 Two tabs rather than one screen whose search field expands, per `../phase1-build-plan.md`'s open question 3.
 
-`Haven/Model` holds types that are nobody's screen. `MyCard` lives there because the reveal, the edit screen and the beacon all read it, and a type three surfaces import should not live inside one of them.
+`Haven/Model` holds types that are nobody's screen. `MyCard` lives there because the reveal, the edit screen and the card's back all read it, and a type three surfaces import should not live inside one of them.
 
-`DirectoryScreen`, `SearchScreen`, `MyCardScreen`, `BeaconScreen` and `LockScreenExplainer` exist as placeholders so the routes between them are real and compiled while each screen is built.
+`DirectoryScreen`, `SearchScreen`, `MyCardScreen` and `LockScreenExplainer` exist as placeholders so the routes between them are real and compiled while each screen is built.
 Each says plainly that it is not built yet rather than dressing up as finished.
 
-`FeatureFlags.beaconEnabled` is false and hides the beacon's toolbar entry. It stays false until the public web card page at `inhavens.com/<handle>` exists, because the QR resolves there and a code that lands on a 404 is worse than no code.
+The card turns over on a tap to show its back: a QR pointing at the public web card page, `inhavens.com/<handle>`.
+There is no separate beacon screen and no toolbar button for it, because the code and the card were the same object described twice.
+A debug build points at the dev deployment, which nothing on the web reads, so a code made there resolves to nobody -- expected rather than broken, and argued out on `BeaconAddress`.
 
 Not yet built, and named here so it is a decision rather than a gap:
 

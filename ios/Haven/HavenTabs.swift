@@ -16,6 +16,12 @@ struct HavenTabs: View {
 
     @State private var tab: Tab = .people
     @State private var peopleRoute: [Destination] = []
+    /// Which side of the card is up.
+    ///
+    /// Here rather than inside My Card because the Lock Screen widget asks for
+    /// the code as an event, not as a destination: it can arrive when the card
+    /// is already open and showing its front, and it can arrive twice.
+    @State private var showingCode = false
 
     var body: some View {
         TabView(selection: $tab) {
@@ -27,7 +33,7 @@ struct HavenTabs: View {
                     .toolbar { directoryToolbar }
                     .navigationDestination(for: Destination.self) { destination in
                         switch destination {
-                        case .card(let showingCode): MyCardScreen(showingCode: showingCode)
+                        case .card: MyCardScreen(showingCode: $showingCode)
                         }
                     }
             }
@@ -44,7 +50,7 @@ struct HavenTabs: View {
         // accent is the one colour the palette does not contain.
         .tint(HavenColor.star)
         .onAppear {
-            if opensCard { peopleRoute = [.card(showingCode: false)] }
+            if opensCard { openCard(showingCode: false) }
         }
         // The Lock Screen widget's tap arrives here, and lands on the card
         // already turned to its code, because the code is the whole of what
@@ -54,8 +60,15 @@ struct HavenTabs: View {
         .onOpenURL { url in
             guard HavenDeepLink(url: url) == .beacon else { return }
             tab = .people
-            peopleRoute = [.card(showingCode: true)]
+            openCard(showingCode: true)
         }
+    }
+
+    /// Every way into My Card says which side of the card it wants, because
+    /// none of them can assume which side the last visit left it on.
+    private func openCard(showingCode: Bool) {
+        self.showingCode = showingCode
+        if peopleRoute != [.card] { peopleRoute = [.card] }
     }
 
     private enum Tab {
@@ -66,7 +79,7 @@ struct HavenTabs: View {
     /// Where the People tab can go. A value rather than a view, so the reveal
     /// and the widget can open it without holding the view that shows it.
     private enum Destination: Hashable {
-        case card(showingCode: Bool)
+        case card
     }
 
     /// One door to the card, not two.
@@ -75,10 +88,14 @@ struct HavenTabs: View {
     /// back of the card now, so a separate way in would be a second route to
     /// the same object -- and the one that skipped the card would be the one
     /// people learned.
+    /// A button rather than a `NavigationLink`, because opening the card also
+    /// has to say which side is up: a link can only carry a destination.
     @ToolbarContentBuilder
     private var directoryToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
-            NavigationLink(value: Destination.card(showingCode: false)) {
+            Button {
+                openCard(showingCode: false)
+            } label: {
                 Image(systemName: "person.crop.circle")
             }
             .accessibilityLabel("Your card")

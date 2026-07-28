@@ -10,7 +10,7 @@ import Testing
 
 @Suite("Beacon")
 struct BeaconTests {
-    @Test("a beacon points at Haven's own address")
+    @Test("a code points at Haven's own address")
     func address() {
         #expect(BeaconAddress.url(for: "maya") == "https://inhavens.com/maya")
         // The scheme is in the code and not on the screen: a camera needs it
@@ -56,7 +56,7 @@ struct BeaconTests {
         return Data(referencing: data)
     }
 
-    // A beacon that redrew differently between two openings would be a
+    // A code that redrew differently between two turns of the card would be a
     // different code for the same person, and anyone who had scanned the first
     // one would have scanned something we no longer produce.
     @Test("the same address always makes the same code")

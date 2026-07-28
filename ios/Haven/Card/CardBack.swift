@@ -82,7 +82,7 @@ enum CardBackMetrics {
 /// `.interpolation(.none)` is the whole trick: a QR scaled with smoothing turns
 /// every module boundary into a gradient, and a camera then has to decide where
 /// black stops. Nearest-neighbour keeps the edges where the generator put them.
-struct QRCodeView: View {
+private struct QRCodeView: View {
     let text: String
 
     var body: some View {
@@ -145,7 +145,11 @@ private struct BrightScreen: ViewModifier {
     }
 
     private func apply(_ raise: Bool) {
-        raise ? raiseBrightness() : restore()
+        if raise {
+            raiseBrightness()
+        } else {
+            restore()
+        }
     }
 
     /// Skipped in Low Power Mode, where someone has explicitly asked the phone
@@ -160,9 +164,17 @@ private struct BrightScreen: ViewModifier {
         screen.brightness = 1
     }
 
+    /// Only forgets the old brightness once it has actually been written back.
+    ///
+    /// The write can fail: there is no scene to write to while the app is being
+    /// torn down. Clearing `previous` regardless would leave the phone at full
+    /// brightness with nothing left that remembers what it was, and the next
+    /// raise would then record 1 as the value to go back to. Keeping it means
+    /// a later exit -- `onDisappear`, or turning the card back -- can still put
+    /// it right.
     private func restore() {
-        guard let previous else { return }
-        UIApplication.shared.havenScreen?.brightness = previous
+        guard let previous, let screen = UIApplication.shared.havenScreen else { return }
+        screen.brightness = previous
         self.previous = nil
     }
 }
@@ -171,41 +183,45 @@ private extension UIApplication {
     /// The screen this app is actually on. `UIScreen.main` is deprecated and
     /// wrong the moment the app is on an external display or in a second
     /// window.
+    ///
+    /// Foreground-inactive counts. That is what the scene is during the exact
+    /// moment this matters most: SwiftUI reports `scenePhase == .inactive` as
+    /// the phone locks or Control Center opens, and a lookup that insisted on
+    /// active would find nothing and leave the screen at full brightness.
     var havenScreen: UIScreen? {
-        connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first { $0.activationState == .foregroundActive }?
-            .screen
+        let windowScenes = connectedScenes.compactMap { $0 as? UIWindowScene }
+        let foreground = windowScenes.first { $0.activationState == .foregroundActive }
+            ?? windowScenes.first { $0.activationState == .foregroundInactive }
+        return foreground?.screen
     }
 }
 
 // MARK: - Previews
 
-private let previewCard = MyCard(
-    username: "tonybuildd",
-    name: "Tony Nguyen",
-    city: MyCard.City(name: "San Francisco", admin: "CA"),
-    handles: [MyCard.Handle(platform: .x, value: "tonybuildd", verified: false)],
-    primaryPlatform: .x
-)
+// Only the handle and the name, because those are the only two fields the back
+// reads. A fuller card here would suggest the city or the contact rows reach it.
+private let previewCard = MyCard(username: "tonybuildd", name: "Tony Nguyen")
 
-#Preview("Card back") {
+private func previewBack(_ card: MyCard = previewCard) -> some View {
     ZStack {
         NightBackground()
-        CardObject { CardBack(card: previewCard) }
+        CardObject { CardBack(card: card) }
             .padding(.horizontal, CardObjectMetrics.screenInset)
     }
     .ignoresSafeArea()
 }
 
+#Preview("Card back") {
+    previewBack()
+}
+
 // The size that decides whether the code or the address gets pushed off the
-// card. Neither should: the code gives up room and stays square.
+// card. Neither should: the code gives up room, the explainer goes, and the
+// name and the address shrink rather than truncate.
+//
+// A long name and a long handle on purpose. "Tony Nguyen" fits at any size, so
+// a preview using it would show this working when it was not.
 #Preview("Card back, accessibility XXXL") {
-    ZStack {
-        NightBackground()
-        CardObject { CardBack(card: previewCard) }
-            .padding(.horizontal, CardObjectMetrics.screenInset)
-    }
-    .ignoresSafeArea()
-    .environment(\.dynamicTypeSize, .accessibility3)
+    previewBack(MyCard(username: "mariafernandarodriguez", name: "Maria Fernanda Rodriguez"))
+        .environment(\.dynamicTypeSize, .accessibility3)
 }

@@ -74,10 +74,9 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
                 }
                 // Both conditions, and the second is not redundant. `SkyView`
                 // reads a nil band as "use the whole view", which is what the
-                // card and the beacon want because they have no header to
-                // cover. Here nil means the opposite -- there is no room -- and
-                // drawing the figure over the question is the one thing that
-                // reads as a mistake.
+                // card wants because it has no header to cover. Here nil means
+                // the opposite -- there is no room -- and drawing the figure
+                // over the question is the one thing that reads as a mistake.
                 if let sky, let figureBand {
                     SkyView(
                         sky: sky,
