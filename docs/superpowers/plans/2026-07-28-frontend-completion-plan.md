@@ -287,6 +287,19 @@ Two cheap items PR bodies left open:
 
 Each has a recommended default so an autonomous run can proceed; every applied default is flagged in the PR body that applies it, for the user to override at review.
 
+Where each one stands after the 2026-07-28 build. Three were flagged in the PRs
+that applied them; two are applied by nobody building anything, which is a
+decision that leaves no diff and so is recorded here instead; one waits on G1.
+
+| Gate | State |
+| --- | --- |
+| FD1 screenshot triage on iOS | **Default applied, recorded here.** No unit built an iOS triage surface, and none was proposed. A failed extraction stays visible on the web triage screen and invisible on iOS. Nothing in the app links to it -- somebody who shares a screenshot and never opens the web app never learns the extraction failed. Accepted for the cohort, and the honest place to revisit it is the first support question about a screenshot that "did nothing". |
+| FD2 shared-note surface on iOS | Default applied and flagged in PRs 140 and 146. Nothing renders `sharedNotes`; F3 leaves the affordance out. |
+| FD3 the onboarding sky figure | **Default applied, recorded here.** Edges render only between lit stars, so early onboarding reads as scattered dots. Nobody changed it, because it is a taste call that can only be made on a device -- it is item 4 on the ledger below, folded into the card reveal's feel. |
+| FD4 brand glyphs for platforms | Default applied and flagged in PRs 138, 140 and 146. Every platform is named in text; no marks anywhere. |
+| FD5 a share action on the card | **Not yet.** It is G1's to build, and G1 is gated. The only one of the six still open. |
+| FD6 semantic search and evidence in iOS search | Default applied and flagged in PR 141. Search is chips plus keyword; ask covers the intelligent path. |
+
 - FD1, screenshot triage on iOS (answers backend gate D3). Default: v1 keeps screenshot sharing and triage stays web-only; a failed extraction is visible on the web triage screen and invisible on iOS, accepted for the cohort scale. An iOS triage surface is a recorded post-v1 candidate.
   **Applied, by omission, and flagged here because no PR flagged it.** Nothing on iOS calls `captures:listCaptures`, `acceptCapture`, `discardCapture` or `retryExtract`, and nothing was built to. A screenshot shared into Haven whose extraction fails is invisible on the phone. Overridable: the surface is a new screen, not a change to a shipped one.
 - FD2, shared-note surface on iOS. Default: defer past v1. The backend keeps `sharedNotes` (its gate D2); iOS renders nothing for it in v1, and F3 leaves the affordance out.
@@ -342,48 +355,39 @@ New user-side setup this plan adds to the existing "Needs you" list: the Apple T
 - `test` and `ios-test` green on main; `xcodegen generate` clean; tracker current; the changelog telling the story.
 - `todo.md`'s "Needs you" plus the device ledger above are the complete remaining work, and every line in them is a dashboard, key, device, or store task no commit can do.
 
-## Exit criteria: where each line stands, 2026-07-28 evening
+## Exit criteria: where each line stands
 
-Audited against `ci/integration-check` (PR 150), which is all ten open frontend
-PRs merged together with `ios-test` and `test` green on the result. That branch
-is a test and is not for merging; it is what makes the evidence below about the
-end state rather than about ten separate trees.
+Rewritten as the merges landed. Waves D, E, F1 and I are on main; F2, F3, G and
+H are the remaining work. Unit H2 is this plan's exit audit and owns the final
+version of this section -- what is here is the running state, not that.
 
-1. **Every unit merged, or moved to a default or the ledger.** Not met. Twelve
-   of twenty are built with their PRs open and green; F2, F3, G1-G4, H1 and H2
-   are not built. F2 does not compile without F1's `ConnectScreen`, F3 rewrites
-   the two files D2 replaces, and wave G is gated on those merges by this plan
-   and strictly serial after it.
+1. **Every unit merged, or moved to a default or the ledger.** Fourteen of
+   twenty merged. F2, F3, G1-G4, H1 and H2 remain, and their gates are now
+   clear: F1 and D2 are on main, so F2 and F3 can compile, and wave G's gate
+   ("all of wave D, E1 through E3, and F1 merged") is satisfied.
 2. **All six gates resolved.** Five of six. FD1, FD2, FD3, FD4 and FD6 are
-   applied and now flagged above; FD5 is open because its default is a thing to
-   build and its unit is gated.
+   applied and flagged above; FD5's default is a thing to build, and G1 builds
+   it.
 3. **The core loop demonstrable on the simulator in one sitting.** Every step
-   traces to code on the integration branch -- sign-in on `WelcomeScreen`, the
-   three onboarding questions, the address the server mints and
-   `MyCardTests.addressIsNotOptional` pins, `AddPersonSheet` writing to the App
-   Group queue before the network, the note editor, `searchDirectory` with its
-   chips, `people.ask`, both result rows handing back a person id, `PersonReach`
-   opening the app a handle names, and `profiles:connect` behind the scanner.
-   **That is static evidence, not a walkthrough.** No simulator has run it, and
-   nothing signed-in has ever run on this server at all: the unsigned simulator
-   cannot configure Clerk, so every authenticated path is untested outside its
-   own unit tests. This criterion is the user's, and it is what the device
-   ledger below is for.
+   traces to code on main -- sign-in on `WelcomeScreen`, the three onboarding
+   questions, the address the server mints and `MyCardTests.addressIsNotOptional`
+   pins, `AddPersonSheet` writing to the App Group queue before the network, the
+   note editor, `searchDirectory` with its chips, `people.ask`, both result rows
+   handing back a person id, `PersonReach` opening the app a handle names, and
+   `profiles:connect` behind the scanner. **That is static evidence, not a
+   walkthrough.** No simulator has run it, and nothing signed-in has ever run on
+   this server: the unsigned simulator cannot configure Clerk, so every
+   authenticated path is tested only by its own unit tests. This criterion is
+   the user's, and it is what the device ledger below is for.
 4. **`test` and `ios-test` green on main; `xcodegen generate` clean; tracker
-   current; the changelog telling the story.** Green on the integration branch,
-   not yet on main, because nothing is merged. Sixteen files are added across
-   the ten PRs, so `xcodegen generate` is required before the first build on the
-   Mac; each PR body says so.
-5. **`todo.md`'s "Needs you" plus the ledger are the complete remaining work,
-   and every line is a dashboard, key, device or store task.** Not yet: G, H,
-   F2 and F3 are code, and they are named as code above rather than hidden in
-   the ledger. The ledger itself does hold this property -- all twenty-four
-   items need a phone, a dashboard or a judgement, and none of them can be
-   closed by a commit.
-
-The honest summary: the code half of waves D, E, F and I is done and proven to
-build together; waves G and H and two F units are not started; and the exit
-criteria cannot be met without the merges that unblock them.
+   current; the changelog telling the story.** Green on main after every merge.
+   Sixteen files were added across the merged units, so `xcodegen generate` is
+   required before the next build on the Mac.
+5. **`todo.md`'s "Needs you" plus the ledger are the complete remaining work.**
+   Not yet, and honestly so: F2, F3, G and H are code, and they are named as
+   code above rather than hidden in the ledger. The ledger itself does hold the
+   property -- every item on it needs a phone, a dashboard or a judgement, and
+   none can be closed by a commit.
 
 ## How to run this plan to completion (the orchestrator loop)
 
@@ -411,7 +415,6 @@ blocked on those merges rather than on any decision.
 - [x] D3 search and ask navigation (PR 141)
 - [x] D4 directory paging (PR 147)
 - [x] D5 welcome legal links (PR 137)
-- [x] D5 welcome legal links (PR 137, merged)
 - [x] E1 pin walkthrough and practice capture (PR 148)
 - [x] E2 handle claim at card creation -- void on inspection, see "Corrections to this plan's inventory" (PR 143)
 - [x] E3 address editor in My Card (PR 143)
@@ -426,7 +429,6 @@ blocked on those merges rather than on any decision.
 - [ ] H1 release readiness
 - [ ] H2 final checklist sweep
 - [x] I1 CI signing-flag removal (PR 136)
-- [x] I1 CI signing-flag removal (PR 136, merged)
 - [x] I2 web spot-checks (PR 145)
 
 ## Corrections to this plan's inventory
