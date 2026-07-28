@@ -8,7 +8,7 @@
 export const WAITLIST_COPY = {
   eyebrow: "Haven - private beta",
   headline: "Your people are a constellation.",
-  sub: "Every person you meet becomes a point of light - and Haven keeps them from drifting away.",
+  sub: "We keep everyone you meet in one place, and help you find them again when you forget their name.",
   cta: "Join",
   submitting: "Joining",
   fine: "Private beta",
