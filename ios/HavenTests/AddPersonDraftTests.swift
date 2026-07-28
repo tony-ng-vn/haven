@@ -129,3 +129,32 @@ private extension QueuedCapture {
         return manual
     }
 }
+
+@Suite("What a hand-typed handle may be")
+struct AddPersonCapTests {
+    // The queue's rule: a capture that the server would refuse must never be
+    // written, because the drain replays it with nobody there to be told. Every
+    // platform's own parser has to land inside the server's handle cap.
+    @Test("no platform can produce a handle the server would refuse")
+    func everyPlatformFitsTheCap() {
+        let long = String(repeating: "a", count: 200)
+        for platform in AddPersonPlatform.allCases {
+            guard let parsed = platform.parse(long) else { continue }
+            #expect(
+                HavenFieldCaps.fits(parsed, within: HavenFieldCaps.handle),
+                "\(platform.rawValue) produced \(parsed.count) characters"
+            )
+        }
+    }
+
+    // Code points, not grapheme clusters and not UTF-16 units, because that is
+    // how the server counts.
+    @Test("the cap is counted the way the server counts it")
+    func countsCodePoints() {
+        #expect(HavenFieldCaps.fits(String(repeating: "a", count: 60), within: 60))
+        #expect(!HavenFieldCaps.fits(String(repeating: "a", count: 61), within: 60))
+        // One composed Vietnamese vowel is one code point, and one emoji is
+        // one too. Neither costs two of the budget.
+        #expect(HavenFieldCaps.fits("\u{1ec5}", within: 1))
+    }
+}
