@@ -6,6 +6,21 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.9.0
+
+2026-07-28
+
+**Backend**
+
+- A connection who changes jobs, moves city or changes their name is now findable under the new details rather than the ones they had the day you met. Their row in your directory used to keep whatever their card said at that moment, so search and the filter chips answered with a version of them that no longer existed.
+- Their card now shows how to reach them: the handles they publish, under any you saved yourself, and the platform they said they prefer. Before this, a person you met in one tap showed only their Haven address.
+- Your directory can tell you which people are Haven connections, and which ones used to be. A contact that stopped following someone's card -- because they left Haven, or because one of you disconnected -- now says so instead of quietly going still.
+- You can end a connection without deleting the person. Disconnecting drops the live link and the note the two of you wrote together, and both of you keep your own notes, photo and memory of each other.
+- Deleting a contact you were connected to no longer leaves the other person's copy pointing at a connection that no longer exists.
+- Deleting your account still leaves your billing history behind, on purpose: it is the record of money that moved, and it answers refund questions after the account is gone.
+
+---
+
 ## v0.8.0
 
 2026-07-28
