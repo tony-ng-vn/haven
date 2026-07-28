@@ -24,6 +24,16 @@ export const LENS = {
   // After this long without a pointer move the lens detaches and wanders, so a
   // phone (or an idle desktop) still sees the constellation form.
   idleMs: 2000,
+  // The fewest stars that still read as a figure rather than as a line or two.
+  //
+  // Star count is capped at 300, so past roughly 1400x900 density falls as the
+  // window grows while the radius stays fixed: about 17 stars in the figure at
+  // 1090x830, about 9 at 1800x1170, and a handful past 2560. Below this the
+  // lens reaches further out rather than thinning, which is the fix
+  // waitlist-design.md prescribes -- raising the star cap or dropping the
+  // brightness threshold would change the sky on every screen instead of the
+  // figure on the few that need it.
+  minFigure: 7,
 } as const;
 
 // True for real fingers. Empty pointerType is treated as touch too: some
@@ -79,6 +89,42 @@ export function figureStars<T extends Point & { size: number }>(
 ): T[] {
   const reach = radius / LENS.zoom;
   return stars.filter((s) => s.size > LENS.minStarSize && distance(s, centre) < reach);
+}
+
+// The figure, and the radius its fade should use.
+//
+// The radius comes back because it is not always the one that went in. On a
+// sky too sparse to fill the lens, the lens reaches out to the nearest
+// qualifying stars instead of showing two of them, and the fade has to reach
+// with it -- keeping the fixed radius would light stars whose edges then drew
+// at zero alpha, which is the thinning it was meant to fix.
+//
+// The order is the input's, so the caller can still pair each star with its
+// magnified point.
+export function lensFigure<T extends Point & { size: number }>(
+  stars: readonly T[],
+  centre: Point,
+  radius: number = LENS.radius,
+): { stars: T[]; radius: number } {
+  const inside = figureStars(stars, centre, radius);
+  if (inside.length >= LENS.minFigure) return { stars: inside, radius };
+
+  const qualifying = stars.filter((s) => s.size > LENS.minStarSize);
+  // Nothing bright enough anywhere: an empty figure, and the radius it was
+  // asked for, because there is no furthest star to measure one from.
+  if (qualifying.length === 0) return { stars: [], radius };
+
+  const nearest = [...qualifying]
+    .sort((a, b) => distance(a, centre) - distance(b, centre))
+    .slice(0, LENS.minFigure);
+  const furthest = distance(nearest[nearest.length - 1], centre);
+  const picked = new Set<T>(nearest);
+  return {
+    stars: stars.filter((s) => picked.has(s)),
+    // Never smaller than the radius asked for: a dense sky that happens to
+    // hold its stars close must not get a tighter lens than a sparse one.
+    radius: Math.max(radius, furthest * LENS.zoom),
+  };
 }
 
 // A line fades by its weaker end, so it never stops dead at an invisible
