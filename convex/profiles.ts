@@ -13,6 +13,7 @@ import { checkRateLimit } from "./rateLimit";
 import { normalizeName, personSearchText } from "./nameSearch";
 import { requireImageBlob } from "./imageBlobs";
 import { deleteMemories } from "./memories";
+import { endConnection } from "./connections";
 import {
   cityInputValidator,
   cityValidator,
@@ -287,43 +288,53 @@ function definedFields(fields: CardFields): CardFields {
 async function ensureMeetPerson(args: {
   ctx: MutationCtx;
   ownerUserId: string;
-  contactUserId: string;
-  contactUsername: string;
-  contactName?: string;
-  contactCompany?: string;
-  contactRole?: string;
-  contactCity?: { name: string; admin?: string; country?: string };
+  contact: Doc<"profiles">;
   now: number;
 }): Promise<Id<"people">> {
+  const contactUsername = args.contact.username;
   const existing = await args.ctx.db
     .query("people")
     .withIndex("by_user_and_havenContactUserId", (q) =>
       q
         .eq("userId", args.ownerUserId)
-        .eq("havenContactUserId", args.contactUserId),
+        .eq("havenContactUserId", args.contact.userId),
     )
     .unique();
   if (existing !== null) {
+    // A pair who disconnected and met again thaws the row they already have.
+    // A second contact for the same human is the one thing this path exists
+    // to prevent, and the card they carry has moved on since the freeze.
+    if (existing.connectionEndedAt !== undefined) {
+      await args.ctx.db.patch("people", existing._id, {
+        ...snapshotPatch(existing, args.contact),
+        connectionEndedAt: undefined,
+      });
+      await args.ctx.scheduler.runAfter(0, internal.people.embed, {
+        personId: existing._id,
+      });
+    }
     return existing._id;
   }
 
   // Their own name if they have set one. The handle is the fallback, not the
   // default: a directory full of "@bob" is a directory nobody can read.
-  const displayName = args.contactName ?? `@${args.contactUsername}`;
+  const displayName = args.contact.name ?? `@${contactUsername}`;
   // A Haven username is a handle like any other, so the person gets one in
   // contactHandles and a matching index row. Without them a person met in
   // person is invisible to every handle lookup, and re-sharing their profile
   // later would create a second row for the same human.
-  const havenHandle = { platform: "haven", value: args.contactUsername };
+  const havenHandle = { platform: "haven", value: contactUsername };
+  const city = toCityInput(args.contact.city);
   // Snapshotted so the row is findable by keyword the moment it lands. The
   // live values still win on read (projectConnectedPerson) -- this copy only
-  // feeds the search indexes, which cannot query another table.
+  // feeds the search indexes, which cannot query another table, and
+  // refreshSnapshotPage keeps it current afterwards.
   const snapshot = {
     name: displayName,
-    company: args.contactCompany,
-    role: args.contactRole,
-    city: toCityInput(args.contactCity),
-    handle: args.contactUsername,
+    company: args.contact.company,
+    role: args.contact.role,
+    city,
+    handle: contactUsername,
     contactHandles: [havenHandle],
   };
   const personId = await args.ctx.db.insert("people", {
@@ -332,24 +343,21 @@ async function ensureMeetPerson(args: {
     // From the underlying name, not the decorated display form: the "@" on a
     // handle fallback is sugar, and normalizing it in would make searching
     // "bob" miss the person shown as "@bob".
-    normalizedName: normalizeName(args.contactName ?? args.contactUsername),
+    normalizedName: normalizeName(args.contact.name ?? contactUsername),
     // This insert bypasses addPerson, so it feeds the keyword index itself.
     searchText: personSearchText(snapshot),
-    company: args.contactCompany,
+    company: args.contact.company,
     companyKey:
-      args.contactCompany === undefined
+      args.contact.company === undefined
         ? undefined
-        : normalizeName(args.contactCompany),
-    role: args.contactRole,
+        : normalizeName(args.contact.company),
+    role: args.contact.role,
     roleKey:
-      args.contactRole === undefined
+      args.contact.role === undefined
         ? undefined
-        : normalizeName(args.contactRole),
-    city: toCityInput(args.contactCity),
-    cityKey:
-      args.contactCity === undefined
-        ? undefined
-        : normalizeName(args.contactCity.name),
+        : normalizeName(args.contact.role),
+    city,
+    cityKey: city === undefined ? undefined : normalizeName(city.name),
     // No context, and so no memory row: a synthetic "met through Haven" line
     // would give every connection an identical, meaningless memory, and the
     // edge already records the provenance. The first memory of this person
@@ -358,9 +366,9 @@ async function ensureMeetPerson(args: {
     // The legacy scalars stay: the web meet UI reads them, and the index is
     // an addition rather than a replacement.
     platform: "Haven",
-    handle: args.contactUsername,
+    handle: contactUsername,
     contactHandles: [havenHandle],
-    havenContactUserId: args.contactUserId,
+    havenContactUserId: args.contact.userId,
   });
   await args.ctx.db.insert("personHandles", {
     userId: args.ownerUserId,
@@ -454,6 +462,11 @@ async function refreshSnapshotPage(
     )
     .paginate({ numItems: SNAPSHOT_PAGE, cursor });
   for (const person of page.page) {
+    // A frozen row keeps naming the peer so a reconnection can thaw it, and
+    // refreshing it would undo the freeze one field at a time.
+    if (person.connectionEndedAt !== undefined) {
+      continue;
+    }
     const fields = snapshotPatch(person, profile);
     if (Object.keys(fields).length === 0) {
       continue;
@@ -1052,23 +1065,13 @@ export const connect = mutation({
     const personId = await ensureMeetPerson({
       ctx,
       ownerUserId: userId,
-      contactUserId: peerProfile.userId,
-      contactUsername: peerProfile.username,
-      contactName: peerProfile.name,
-      contactCompany: peerProfile.company,
-      contactRole: peerProfile.role,
-      contactCity: peerProfile.city,
+      contact: peerProfile,
       now,
     });
     const peerPersonId = await ensureMeetPerson({
       ctx,
       ownerUserId: peerProfile.userId,
-      contactUserId: userId,
-      contactUsername: myProfile.username,
-      contactName: myProfile.name,
-      contactCompany: myProfile.company,
-      contactRole: myProfile.role,
-      contactCity: myProfile.city,
+      contact: myProfile,
       now,
     });
 
@@ -1118,5 +1121,32 @@ export const connect = mutation({
       personId,
       peerUsername: peerProfile.username,
     };
+  },
+});
+
+// The way out of a connection. Until this existed the only exit was
+// deletePerson, which threw away the owner's own notes and photo to end a
+// relationship -- and connecting is one tap, so ending one should not cost
+// the memory of the person.
+//
+// Both sides keep their contact as the frozen snapshot they own; what ends
+// is the live reference and the note the two of them wrote together. It is
+// mutual because the edge is: there is no half of a connection to keep.
+export const disconnect = mutation({
+  args: { personId: v.id("people") },
+  returns: v.object({
+    // "notConnected" when there was no connection to end, which is the same
+    // answer a second tap deserves.
+    status: v.union(v.literal("disconnected"), v.literal("notConnected")),
+  }),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    await checkRateLimit(ctx, userId, "disconnect", 20, MINUTE_MS);
+    const person = await ctx.db.get("people", args.personId);
+    if (person === null || person.userId !== userId) {
+      throw new Error("Person not found");
+    }
+    const ended = await endConnection(ctx, userId, args.personId, Date.now());
+    return { status: ended ? ("disconnected" as const) : ("notConnected" as const) };
   },
 });

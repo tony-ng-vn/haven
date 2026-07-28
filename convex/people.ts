@@ -30,6 +30,7 @@ import {
 } from "./handleKeys";
 import { requireImageBlob } from "./imageBlobs";
 import { deleteMemories, syncMemories } from "./memories";
+import { endConnection } from "./connections";
 
 // Bound every list read so the query stays scalable as the table grows.
 const RESULT_LIMIT = 20;
@@ -106,10 +107,11 @@ const personValidator = v.object({
   // Resolved server-side: clients get a usable signed url, never a raw
   // storage id they cannot render.
   photoUrl: v.union(v.null(), v.string()),
-  // The Haven account this row references, when it still references one.
-  // Present so a client can tell "their card, kept current by them" from
-  // "my notes about them" before it decides what is editable.
-  havenContactUserId: v.optional(v.string()),
+  // Whether this row is somebody's live card or the owner's own notes, which
+  // is what a client needs before it decides what is editable. The peer's
+  // havenContactUserId stays server-side: it is their Clerk identity key,
+  // and no client has a reason to read it -- the same rule myCardValidator
+  // applies to the caller's own.
   connection: v.union(v.null(), connectionValidator),
   updatedAt: v.number(),
 });
@@ -125,11 +127,14 @@ function snapshotConnection(person: Doc<"people">) {
   if (peerUsername === undefined) {
     return null;
   }
-  if (person.havenContactUserId !== undefined) {
-    return { state: "connected" as const, peerUsername };
-  }
+  // Ended wins over the reference: a disconnect keeps havenContactUserId so
+  // that reconnecting later finds this row instead of making a second
+  // contact for the same human, and the row is frozen until it does.
   if (person.connectionEndedAt !== undefined) {
     return { state: "ended" as const, peerUsername };
+  }
+  if (person.havenContactUserId !== undefined) {
+    return { state: "connected" as const, peerUsername };
   }
   return null;
 }
@@ -155,7 +160,6 @@ async function projectPerson(ctx: QueryCtx, person: Doc<"people">) {
       person.photoStorageId === undefined
         ? null
         : await ctx.storage.getUrl(person.photoStorageId),
-    havenContactUserId: person.havenContactUserId,
     connection: snapshotConnection(person),
     updatedAt: person.updatedAt,
   };
@@ -638,7 +642,12 @@ function mergePeerHandles(
 
 async function projectConnectedPerson(ctx: QueryCtx, person: Doc<"people">) {
   const projected = await projectPerson(ctx, person);
-  if (person.havenContactUserId === undefined) {
+  // A frozen row still names the peer, so that a reconnection can thaw it,
+  // but freezing is exactly the promise that it has stopped following them.
+  if (
+    person.havenContactUserId === undefined ||
+    person.connectionEndedAt !== undefined
+  ) {
     return projected;
   }
   const profile = await ctx.db
@@ -871,40 +880,10 @@ export const editPerson = mutation({
   },
 });
 
-// The edge either side of a connection, plus the note that hangs off it.
-// Bounded: a person row can name at most one connection, from whichever side
-// the caller happens to be on.
-async function deleteConnectionFor(
-  ctx: MutationCtx,
-  userId: string,
-  personId: Id<"people">,
-): Promise<void> {
-  const edge =
-    (await ctx.db
-      .query("connections")
-      .withIndex("by_userAId_and_personAId", (q) =>
-        q.eq("userAId", userId).eq("personAId", personId),
-      )
-      .unique()) ??
-    (await ctx.db
-      .query("connections")
-      .withIndex("by_userBId_and_personBId", (q) =>
-        q.eq("userBId", userId).eq("personBId", personId),
-      )
-      .unique());
-  if (edge === null) {
-    return;
-  }
-  const notes = await ctx.db
-    .query("sharedNotes")
-    .withIndex("by_connectionId", (q) => q.eq("connectionId", edge._id))
-    .collect();
-  for (const note of notes) {
-    await ctx.db.delete("sharedNotes", note._id);
-  }
-  await ctx.db.delete("connections", edge._id);
-}
-
+// Throwing away a contact who is a connection ends the connection, through
+// the same teardown profiles.disconnect uses: the edge and the co-written
+// shared note go, and the other side's row freezes to the snapshot they own
+// rather than being left pointing at a connection that no longer exists.
 export const deletePerson = mutation({
   args: { personId: v.id("people") },
   returns: v.null(),
@@ -925,11 +904,7 @@ export const deletePerson = mutation({
     // for somebody the user deleted. Both go with the person.
     await deletePersonHandles(ctx, args.personId);
     await deleteMemories(ctx, args.personId);
-    // So does the connection, if this was a connected Haven user. Leaving the
-    // edge behind would strand its shared note: unreachable now, and silently
-    // reattached to a conversation neither side asked for if the two ever
-    // connect again.
-    await deleteConnectionFor(ctx, userId, args.personId);
+    await endConnection(ctx, userId, args.personId, Date.now());
     await ctx.db.delete("people", args.personId);
     return null;
   },

@@ -1545,11 +1545,13 @@ test("the person payload says a contact is a live connection", async () => {
   });
 
   const person = await alice.as.query(api.people.getPerson, { id: personId });
-  expect(person?.havenContactUserId).toBe(bob.userId);
   expect(person?.connection).toEqual({
     state: "connected",
     peerUsername: "bob",
   });
+  // Their Clerk identity key is not part of the answer: a client has no use
+  // for it, and this is somebody else's.
+  expect(person).not.toHaveProperty("havenContactUserId");
 
   // And on a list row, which cannot afford a profile read per person: the
   // Directory has to render the connected chip without one.
@@ -1573,7 +1575,6 @@ test("a contact the owner saved themselves is not a connection", async () => {
 
   const person = await alice.as.query(api.people.getPerson, { id: personId });
   expect(person?.connection).toBeNull();
-  expect(person?.havenContactUserId).toBeUndefined();
 });
 
 test("a peer leaving Haven leaves a row that says the connection ended", async () => {
@@ -1593,9 +1594,13 @@ test("a peer leaving Haven leaves a row that says the connection ended", async (
   // able to explain why it stopped updating rather than show a live chip
   // over a card that will never move again.
   const person = await alice.as.query(api.people.getPerson, { id: personId });
-  expect(person?.havenContactUserId).toBeUndefined();
   expect(person?.connection).toEqual({ state: "ended", peerUsername: "bob" });
   expect(person?.name).toBe("Bob Hopper");
+  // The reference goes with the account: their identity leaves with them,
+  // so there is nothing left to reconnect to.
+  const stored = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(stored?.havenContactUserId).toBeUndefined();
+  expect(stored?.connectionEndedAt).toEqual(expect.any(Number));
 });
 
 test("a connection's card shows how to reach them", async () => {
@@ -1669,4 +1674,137 @@ test("the owner's own handle for a connection wins over the peer's card", async 
   expect(person?.contactHandles).toEqual([
     { platform: "instagram", value: "bob.the.second" },
   ]);
+});
+
+// ------------------------------------------------------------- disconnecting
+
+async function onlyPerson(t: TestConvex<typeof schema>, userId: string) {
+  return await t.run(async (ctx) => {
+    const rows = await ctx.db
+      .query("people")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    expect(rows).toHaveLength(1);
+    return rows[0];
+  });
+}
+
+async function connectedPair(t: TestConvex<typeof schema>) {
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.updateMyProfile, { name: "Alice Ng" });
+  await alice.as.mutation(api.profiles.claimHandle, { handle: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, { name: "Bob Hopper" });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+  return { alice, bob, personId };
+}
+
+test("disconnect ends the edge, the shared note, and both live merges", async () => {
+  const t = convexTest(schema, modules);
+  const { alice, bob, personId } = await connectedPair(t);
+  await alice.as.mutation(api.sharedNotes.updateForPerson, {
+    personId,
+    content: "we said we would ship by Friday",
+  });
+
+  const outcome = await alice.as.mutation(api.profiles.disconnect, {
+    personId,
+  });
+
+  expect(outcome).toEqual({ status: "disconnected" });
+  expect(await connectionsBetween(t, alice.userId, bob.userId)).toEqual([]);
+  // The note was written by two people and is reachable through the edge;
+  // leaving it behind would silently reattach it if they connect again.
+  expect(await t.run((ctx) => ctx.db.query("sharedNotes").collect())).toEqual(
+    [],
+  );
+
+  // Both sides keep the contact as the frozen snapshot they own, and both
+  // stop rendering a card that will no longer move.
+  const mine = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(mine?.name).toBe("Bob Hopper");
+  expect(mine?.connection).toEqual({ state: "ended", peerUsername: "bob" });
+
+  const theirs = await onlyPerson(t, bob.userId);
+  const theirView = await bob.as.query(api.people.getPerson, {
+    id: theirs._id,
+  });
+  expect(theirView?.connection).toEqual({
+    state: "ended",
+    peerUsername: "alice",
+  });
+});
+
+test("a disconnected pair can connect again", async () => {
+  const t = convexTest(schema, modules);
+  const { alice, bob, personId } = await connectedPair(t);
+  await alice.as.mutation(api.profiles.disconnect, { personId });
+
+  const again = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  // The same rows, reconnected: a second contact for the same human is the
+  // one thing the meet path exists to prevent.
+  expect(again.status).toBe("connected");
+  expect(again.personId).toBe(personId);
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.connection).toEqual({
+    state: "connected",
+    peerUsername: "bob",
+  });
+  expect(await connectionsBetween(t, alice.userId, bob.userId)).toHaveLength(1);
+});
+
+test("disconnect says so when there was no connection to end", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const personId = await alice.as.mutation(api.people.addPerson, {
+    name: "Ada Lovelace",
+    contactHandles: [{ platform: "phone", value: "unlisted" }],
+    context: "met at the compiler meetup",
+  });
+
+  expect(
+    await alice.as.mutation(api.profiles.disconnect, { personId }),
+  ).toEqual({ status: "notConnected" });
+  // A contact the owner saved is not collateral: it stays exactly as it was.
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.connection).toBeNull();
+});
+
+test("disconnect refuses a person the caller does not own", async () => {
+  const t = convexTest(schema, modules);
+  const { bob, personId } = await connectedPair(t);
+
+  await expect(
+    bob.as.mutation(api.profiles.disconnect, { personId }),
+  ).rejects.toThrow("Person not found");
+});
+
+test("deleting a connected contact freezes the other side instead of stranding it", async () => {
+  const t = convexTest(schema, modules);
+  const { alice, bob, personId } = await connectedPair(t);
+
+  await alice.as.mutation(api.people.deletePerson, { personId });
+
+  // Bob's row kept pointing at a live card whose edge and shared note had
+  // been destroyed under him, so his screen said "connected" while nothing
+  // about the connection was left.
+  const theirs = await onlyPerson(t, bob.userId);
+  const theirView = await bob.as.query(api.people.getPerson, {
+    id: theirs._id,
+  });
+  expect(theirView?.connection).toEqual({
+    state: "ended",
+    peerUsername: "alice",
+  });
+  // The reference survives the freeze, unlike after an account deletion:
+  // it is what lets a later reconnection thaw this row rather than twin the
+  // human, and the peer still exists to reconnect to.
+  expect(theirs.havenContactUserId).toBe(alice.userId);
+  expect(theirs.connectionEndedAt).toEqual(expect.any(Number));
 });
