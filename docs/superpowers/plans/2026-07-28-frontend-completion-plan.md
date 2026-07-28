@@ -63,6 +63,7 @@ What is not built, verified the same way:
 
 ```
 frontier now:  D1  D2  D3  E2  I2
+frontier now:  nothing. Every open unit waits on a merge (see State)
 D1 -> D4, E1
 D2 -> F3
 E2 -> E3, E4, F1
@@ -313,6 +314,19 @@ Units above append to this list rather than claiming device facts.
 13. Small web check: waitlist constellation touch on a physical iPhone (PRs 63, 65).
 14. From PR 134: VoiceOver at accessibility sizes speaking the shed city line with the name, and the 340pt card cap on a real iPad.
 
+Added by the units built on 2026-07-28. Everything here is a fact about hardware
+or a signed session that no test on this server can establish.
+
+15. From PR 138 (manual add): add somebody in airplane mode, then open the app with signal and confirm they appear. Add somebody whose Instagram handle is already on a person saved from a share, and confirm the note lands on that person rather than creating a twin. Add somebody on WhatsApp and on Telegram and confirm both survive a reinstall, which is where the App Group fallback shows.
+16. From PR 140 (person detail): tap each kind of handle and confirm where it lands -- Instagram, X, LinkedIn and Telegram should open the app if installed, a phone number should raise the call sheet, a WhatsApp number should open the chat. `tel:` cannot be exercised in the simulator at all. Then edit each field and confirm it survives a relaunch, set and remove a photo, and delete a person.
+17. From PR 141 (search navigation): search a word that appears only in a note, open the result, and confirm Back leaves the search exactly as it was, chips and answer intact.
+18. From PR 143 (the address): change your address and confirm the QR on the card back encodes the new one and the old page stops resolving. Claim an address you know is taken and confirm the suggestions offered are actually free. Claim a reserved name (`privacy`, `haven`) and confirm it comes back as taken with a way forward.
+19. From PR 144 (onboarding state): skip the city question, delete Haven, reinstall, sign in, and confirm the question does not come back. Skip in airplane mode and confirm the skip reaches the server. Finish onboarding, clear your city on My Card, relaunch, and confirm you land on People rather than back in the questions. Connect X or LinkedIn on a card with no photo and confirm the provider's picture lands and lights the photo star, then repeat on a card that already has one and confirm nothing is replaced.
+20. From PR 145 (web): open the landing page on a monitor 2560 pixels wide or more and confirm the lens still forms something that reads as a constellation. Open a public card with a very long LinkedIn slug and confirm the row truncates.
+21. From PR 146 (connect): the two-phone connect, and the second scan of the same card saying you were already connected. Confirm the camera permission sheet appears when the scanner opens and never before, and that refusing it leaves a usable screen. Judge whether a 260pt viewfinder frames a card at arm's length. Scan a non-Haven code and confirm the screen stays quiet.
+22. From PR 147 (paging): with more than fifty people saved, scroll to the bottom and confirm the next page arrives and the count stops carrying its "+".
+23. From PR 148 (pin walkthrough): **follow the three steps on a real phone and confirm the wording matches what iOS actually shows.** This is the one ledger item that can invalidate a shipped unit -- the steps are written against what iOS 26 is believed to show and nobody here has seen that screen. Then confirm Haven appears in the sheet the walkthrough opens, that favouriting it sticks, and that the practice capture lands.
+
 New user-side setup this plan adds to the existing "Needs you" list: the Apple Team ID and associated-domains provisioning for F2, and enabling the X connection in Clerk (the existing note names Apple and LinkedIn only).
 
 ## Exit criteria: "frontend 100% for v1"
@@ -339,11 +353,17 @@ One session drives; this section is its operating loop, and the goal prompt poin
 
 ## State
 
+
+Checked means the work is done and the PR is open and green, not that it is on
+main. Nine PRs are open as of 2026-07-28 evening; F2, F3 and waves G and H are
+blocked on those merges rather than on any decision.
+
 - [x] D1 manual add (PR 138)
 - [x] D2 person detail completion (PR 140)
 - [x] D3 search and ask navigation (PR 141)
 - [x] D4 directory paging (PR 147)
 - [x] D5 welcome legal links (PR 137)
+- [x] D5 welcome legal links (PR 137, merged)
 - [x] E1 pin walkthrough and practice capture (PR 148)
 - [x] E2 handle claim at card creation -- void on inspection, see "Corrections to this plan's inventory" (PR 143)
 - [x] E3 address editor in My Card (PR 143)
@@ -358,12 +378,15 @@ One session drives; this section is its operating loop, and the goal prompt poin
 - [ ] H1 release readiness
 - [ ] H2 final checklist sweep
 - [x] I1 CI signing-flag removal (PR 136)
+- [x] I1 CI signing-flag removal (PR 136, merged)
 - [x] I2 web spot-checks (PR 145)
 
 ## Corrections to this plan's inventory
 
 Findings that contradict the "What is not built" section above, recorded as
 they are made so neither session acts on a stale claim.
+Findings that contradict the "What is not built" section above, recorded so
+neither session acts on a stale claim.
 
 - **E2 is void as written.** The plan says "Nothing ever claims a Haven handle
   from iOS: `profiles:claimHandle` has no caller anywhere, so an iOS-only user
@@ -381,6 +404,19 @@ they are made so neither session acts on a stale claim.
   Nothing was built for E2 beyond a test pinning the half the client owns
   (`MyCardTests.addressIsNotOptional`). E3 and E4 are unblocked.
 
+  three insert paths setting one. A fresh signup already ends with a username
+  on the card and a QR that resolves, which is E2's own definition of done.
+  Nothing was built for it beyond a test pinning the half the client owns
+  (`MyCardTests.addressIsNotOptional`), in PR 143.
+- **E1's practice capture goes through the real share sheet, not the in-app add
+  flow the plan named.** The subject of that walkthrough is the share sheet;
+  practising it by not using it teaches nothing, and milestone 4's own
+  definition of done is a person saved through the sheet. Recorded in PR 148,
+  where it can be overridden.
+- **D4 keeps the "N+" count form**, which the plan expected to die with paging.
+  It is a transient now rather than a permanent state -- it resolves to an exact
+  number when the last page lands -- and removing it would mean showing
+  "People 50" to somebody with three hundred. Recorded in PR 147.
 
 ## Contract requests for the backend
 
@@ -395,6 +431,7 @@ Kept current by every frontend PR that discovers a need; the backend session rea
   dependency rather than a logic one. Recorded rather than fixed, because that
   file is the backend track's.
 - Non-blocking, recorded for backend hygiene (from E3): `mintHandle` throws
+- Non-blocking, recorded for backend hygiene (found by E3): `mintHandle` throws
   "Could not pick an address for you -- choose one yourself" when every rung of
   the ladder is held, and its only caller is `updateMyProfile`'s create path --
   which is onboarding's name question. A person whose name exhausts the ladder
@@ -403,6 +440,9 @@ Kept current by every frontend PR that discovers a need; the backend session rea
   Check your connection and try again." It needs twelve collisions on one name
   to happen and is not a v1 blocker; the fix is server-side (a random suffix
   rung, or a fallback base) and belongs with whoever owns `profiles.ts`.
+  Check your connection and try again." It needs twelve collisions on one name,
+  so it is not a v1 blocker; the fix is server-side (a random-suffix rung, or a
+  fallback base) and belongs with whoever owns `profiles.ts`.
 - Non-blocking, recorded for backend hygiene: the `verified` flag on handles is client-asserted through `updateMyProfile` and published on the public card (PR 69 said it should become server-derived once OAuth landed); at cohort scale this is accepted for v1.
 
 ## Model guidance per unit

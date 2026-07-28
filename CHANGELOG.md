@@ -6,6 +6,16 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.22.0
+
+2026-07-28
+
+**Docs**
+
+- The frontend plan's tracker now says what is built and what is waiting, the device ledger names every check that needs a real phone and what each one is for, and three places where the plan's own inventory turned out to be wrong are written down rather than quietly worked around.
+
+---
+
 ## v0.21.0
 
 2026-07-28
