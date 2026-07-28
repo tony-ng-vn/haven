@@ -17,6 +17,8 @@ pull requests, which is where it is easiest to read anyway.
 - Someone you connected with now lands in your directory under their real name instead of their handle, and is findable by their company, role, and city straight away.
 - Connecting no longer writes a fake "met through Haven" note. That line was about to become a memory on every connection, which would have filled memory search with the same meaningless sentence over and over.
 - If someone deletes their Haven account, your contact for them stays, frozen at what you last saw, like a phone contact. Their live card leaves with them; your memory of them is yours.
+- Deleting a connected person now clears the connection and the note the two of you shared, instead of leaving them behind to reappear if you ever connect again.
+- Deleting your account now removes your notes as well. They were being left behind, which meant an account deletion that did not delete everything.
 
 **Web**
 

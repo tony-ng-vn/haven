@@ -1263,3 +1263,82 @@ test("deleting an account freezes the contact in the other directory", async () 
   const projected = await alice.as.query(api.people.getPerson, { id: personId });
   expect(projected?.name).toBe("Bob Hopper");
 });
+
+test("connecting works when either side has a city on their card", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+  // A profile city carries the accent-folded `normalized` key that a person's
+  // city has no field for. Copying it across whole passes typechecking and
+  // fails at runtime, so both directions need a case that has one.
+  await alice.as.mutation(api.profiles.updateMyProfile, {
+    city: { name: "Ha Noi", country: "VN" },
+  });
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    name: "Bob Hopper",
+    city: { name: "Sai Gon", country: "VN" },
+  });
+
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  const stored = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(stored?.city).toEqual({ name: "Sai Gon", country: "VN" });
+  expect(stored?.cityKey).toBe("sai gon");
+  // And the read side, which validates its own return shape.
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.city).toEqual({ name: "Sai Gon", country: "VN" });
+  // A city added after connecting still reads through the merge.
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    city: { name: "Da Nang", country: "VN" },
+  });
+  const later = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(later?.city).toEqual({ name: "Da Nang", country: "VN" });
+});
+
+test("deleting a connected contact takes the edge and its shared note", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+  await alice.as.mutation(api.sharedNotes.updateForPerson, {
+    personId,
+    content: "we said we would ship by Friday",
+  });
+
+  await alice.as.mutation(api.people.deletePerson, { personId });
+
+  // A surviving edge would be unreachable now and would silently reattach
+  // this note if the two ever connected again.
+  expect(await connectionsBetween(t, alice.userId, bob.userId)).toEqual([]);
+  expect(await t.run((ctx) => ctx.db.query("sharedNotes").collect())).toEqual(
+    [],
+  );
+});
+
+test("deleting an account takes that account's own memories with it", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const personId = await alice.as.mutation(api.people.addPerson, {
+    name: "Ada Lovelace",
+    contactHandles: [{ platform: "phone", value: "unlisted" }],
+    context: "met at the compiler meetup",
+  });
+  expect(
+    await t.run((ctx) => ctx.db.query("memories").collect()),
+  ).toHaveLength(1);
+
+  await alice.as.mutation(api.profiles.deleteMyAccount, {});
+
+  // Memory lines carry the userId and sit in the vector index, so leaving
+  // them behind is a deletion that did not delete everything.
+  expect(await t.run((ctx) => ctx.db.query("memories").collect())).toEqual([]);
+  expect(await t.run((ctx) => ctx.db.get("people", personId))).toBeNull();
+});

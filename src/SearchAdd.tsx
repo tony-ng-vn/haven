@@ -335,7 +335,11 @@ export function SearchAdd({
       const exchanged = await connect({ username: meetLookupUsername });
       setLastMeet(exchanged);
       setMeetUsername("");
-      setMeetStatus(`You and @${exchanged.peerUsername} are in each other's sky.`);
+      setMeetStatus(
+        exchanged.status === "already"
+          ? `You and @${exchanged.peerUsername} were already connected.`
+          : `You and @${exchanged.peerUsername} are in each other's sky.`,
+      );
     } catch (error) {
       setMeetError(error instanceof Error ? error.message : "Could not exchange");
     } finally {

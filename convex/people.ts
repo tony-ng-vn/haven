@@ -21,7 +21,7 @@ import { askNetwork, embedText } from "./openaiClient";
 import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
 import { normalizeName, personSearchText } from "./nameSearch";
-import { cityInputValidator } from "./profileFields";
+import { cityInputValidator, toCityInput } from "./profileFields";
 import { contactHandleValidator } from "./peopleFields";
 import {
   handleDisplayValue,
@@ -586,7 +586,7 @@ async function projectConnectedPerson(ctx: QueryCtx, person: Doc<"people">) {
   return {
     ...projected,
     name: profile.name ?? projected.name,
-    city: profile.city ?? projected.city,
+    city: toCityInput(profile.city) ?? projected.city,
     company: profile.company ?? projected.company,
     role: profile.role ?? projected.role,
     // Your own photo of them wins: that is your layer, not their card.
@@ -798,6 +798,40 @@ export const editPerson = mutation({
   },
 });
 
+// The edge either side of a connection, plus the note that hangs off it.
+// Bounded: a person row can name at most one connection, from whichever side
+// the caller happens to be on.
+async function deleteConnectionFor(
+  ctx: MutationCtx,
+  userId: string,
+  personId: Id<"people">,
+): Promise<void> {
+  const edge =
+    (await ctx.db
+      .query("connections")
+      .withIndex("by_userAId_and_personAId", (q) =>
+        q.eq("userAId", userId).eq("personAId", personId),
+      )
+      .unique()) ??
+    (await ctx.db
+      .query("connections")
+      .withIndex("by_userBId_and_personBId", (q) =>
+        q.eq("userBId", userId).eq("personBId", personId),
+      )
+      .unique());
+  if (edge === null) {
+    return;
+  }
+  const notes = await ctx.db
+    .query("sharedNotes")
+    .withIndex("by_connectionId", (q) => q.eq("connectionId", edge._id))
+    .collect();
+  for (const note of notes) {
+    await ctx.db.delete("sharedNotes", note._id);
+  }
+  await ctx.db.delete("connections", edge._id);
+}
+
 export const deletePerson = mutation({
   args: { personId: v.id("people") },
   returns: v.null(),
@@ -818,6 +852,11 @@ export const deletePerson = mutation({
     // for somebody the user deleted. Both go with the person.
     await deletePersonHandles(ctx, args.personId);
     await deleteMemories(ctx, args.personId);
+    // So does the connection, if this was a connected Haven user. Leaving the
+    // edge behind would strand its shared note: unreachable now, and silently
+    // reattached to a conversation neither side asked for if the two ever
+    // connect again.
+    await deleteConnectionFor(ctx, userId, args.personId);
     await ctx.db.delete("people", args.personId);
     return null;
   },

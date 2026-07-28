@@ -12,6 +12,7 @@ import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
 import { normalizeName, personSearchText } from "./nameSearch";
 import { requireImageBlob } from "./imageBlobs";
+import { deleteMemories } from "./memories";
 import {
   cityInputValidator,
   cityValidator,
@@ -21,6 +22,7 @@ import {
   onboardingValidator,
   platformValidator,
   publicHandleValidator,
+  toCityInput,
 } from "./profileFields";
 import { handleDisplayValue, handleIndexKeys } from "./handleKeys";
 import { HANDLE_PATTERN, isReservedHandle } from "./handleNames";
@@ -290,7 +292,7 @@ async function ensureMeetPerson(args: {
   contactName?: string;
   contactCompany?: string;
   contactRole?: string;
-  contactCity?: { name: string; lat?: number; lon?: number };
+  contactCity?: { name: string; admin?: string; country?: string };
   now: number;
 }): Promise<Id<"people">> {
   const existing = await args.ctx.db
@@ -320,7 +322,7 @@ async function ensureMeetPerson(args: {
     name: displayName,
     company: args.contactCompany,
     role: args.contactRole,
-    city: args.contactCity,
+    city: toCityInput(args.contactCity),
     handle: args.contactUsername,
     contactHandles: [havenHandle],
   };
@@ -343,7 +345,7 @@ async function ensureMeetPerson(args: {
       args.contactRole === undefined
         ? undefined
         : normalizeName(args.contactRole),
-    city: args.contactCity,
+    city: toCityInput(args.contactCity),
     cityKey:
       args.contactCity === undefined
         ? undefined
@@ -533,6 +535,10 @@ async function purgeOwnedRows(ctx: MutationCtx, userId: string): Promise<void> {
     for (const handle of handles) {
       await ctx.db.delete("personHandles", handle._id);
     }
+    // Same cascade deletePerson does. Without it a deleted account leaves its
+    // memory lines behind, still carrying its userId and still sitting in the
+    // vector index: an account deletion that does not delete everything.
+    await deleteMemories(ctx, person._id);
     await ctx.db.delete("people", person._id);
   }
   more ||= people.length === PURGE_PAGE;
