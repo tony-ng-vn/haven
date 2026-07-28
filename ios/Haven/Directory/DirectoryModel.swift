@@ -42,26 +42,45 @@ enum DirectoryLoad: Equatable {
     case unreachable
 }
 
-/// Reads the first page of the caller's directory.
+/// Reads the caller's directory, a page at a time as the list is scrolled.
 ///
-/// One page, not the whole list: Phase 1 needs a count and an empty state, and
-/// the listing UX that would justify paging arrives in Phase 2.
+/// The window grows rather than the cursors chaining, and that is the decision
+/// worth knowing. Every page has to stay live -- a person edited on another
+/// device, or one the drain just landed, should change in this list without a
+/// relaunch -- and a cursor chain means one subscription per page, N of them
+/// open, with the pages stitched back together in order on every update. Asking
+/// for more rows from the one subscription is the same data, live, with nothing
+/// to stitch. It re-reads what it already had, which for a directory measured in
+/// hundreds is cheaper than the machinery it replaces.
 @MainActor
 final class DirectoryModel: ObservableObject {
     @Published private(set) var load: DirectoryLoad = .loading
 
-    private var cancellable: AnyCancellable?
+    /// True from asking for more rows until they arrive. Published because the
+    /// list says so at its foot rather than ending on nothing, and read here to
+    /// stop a list that scrolls past its own end asking twice.
+    @Published private(set) var isLoadingMore = false
 
-    /// How many people the first page asks for. Comfortably more than a Phase 1
-    /// directory holds, so the count it drives is usually the whole truth.
+    /// How many rows the current subscription asks for.
+    private(set) var window = DirectoryModel.pageSize
+
+    private var cancellable: AnyCancellable?
+    /// False for the preview and test model, which has its pages handed to it.
+    /// Paging is decided here and only the reading of it needs a deployment.
+    private let isLive: Bool
+
+    /// How many more rows each scroll to the end asks for. Comfortably more
+    /// than most directories hold, so most people never page at all.
     private static let pageSize = 50
 
     init() {
+        isLive = true
         subscribe()
     }
 
-    /// A loaded directory that never opens a socket, for previews.
+    /// A loaded directory that never opens a socket, for previews and tests.
     init(preview load: DirectoryLoad) {
+        isLive = false
         self.load = load
     }
 
@@ -79,8 +98,12 @@ final class DirectoryModel: ObservableObject {
         return nil
     }
 
-    /// True when the first page filled up and there are more behind it, so the
-    /// count is a floor rather than a total.
+    /// True while there are more people behind what is loaded, so the count is
+    /// a floor rather than a total.
+    ///
+    /// A transient now rather than a permanent state: scrolling to the end
+    /// loads the rest and the number becomes exact. Before paging existed this
+    /// said "50+" to somebody with 300 people and never stopped saying it.
     var countIsPartial: Bool {
         if case .ready(let page) = load { return !page.isDone }
         return false
@@ -91,9 +114,25 @@ final class DirectoryModel: ObservableObject {
         subscribe()
     }
 
+    /// Asks for another page.
+    ///
+    /// Called by the last row appearing, which is the only honest trigger: a
+    /// scroll offset would have to guess at row heights, and rows here are as
+    /// tall as somebody's text size makes them.
+    func loadMore() {
+        guard case .ready(let page) = load, !page.isDone, !isLoadingMore else { return }
+        isLoadingMore = true
+        window += Self.pageSize
+        subscribe()
+    }
+
     private func subscribe() {
+        guard isLive else { return }
         let options: [String: ConvexEncodable?] = [
-            "numItems": Self.pageSize,
+            "numItems": window,
+            // Always the first page. The window is what grows; a cursor here
+            // would ask for the rows *after* it and lose the ones already on
+            // screen.
             "cursor": nil,
         ]
         cancellable = HavenNetwork.subscribe(
@@ -101,9 +140,15 @@ final class DirectoryModel: ObservableObject {
             with: ["paginationOpts": options],
             yielding: DirectoryPage.self
         ) { [weak self] page in
-            self?.load = .ready(page)
+            guard let self else { return }
+            self.isLoadingMore = false
+            self.load = .ready(page)
         } onSilence: { [weak self] in
-            guard let self, self.load == .loading else { return }
+            guard let self else { return }
+            self.isLoadingMore = false
+            // A read for more rows that never answers leaves the rows already
+            // on screen alone: the list is not broken, it just did not grow.
+            guard self.load == .loading else { return }
             self.load = .unreachable
         }
     }

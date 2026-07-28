@@ -6,6 +6,16 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.18.0
+
+2026-07-28
+
+**iOS**
+
+- Your directory no longer stops at fifty people. It loads more as you scroll, and the count at the top stops saying "50+" once it has them all -- before this it said "50+" to somebody with three hundred people and never stopped saying it.
+
+---
+
 ## v0.17.0
 
 2026-07-28
