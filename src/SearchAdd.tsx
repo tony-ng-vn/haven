@@ -16,7 +16,7 @@ import { composeAtlasField } from "./lib";
 import { LoveAlarmPanel } from "./LoveAlarmPanel";
 
 type SemanticResults = FunctionReturnType<typeof api.people.semanticSearch>;
-type MeetExchangeResult = FunctionReturnType<typeof api.profiles.meetExchange>;
+type ConnectResult = FunctionReturnType<typeof api.profiles.connect>;
 
 type MeetSpeechRecognitionEvent = Event & {
   results: {
@@ -134,7 +134,7 @@ export function SearchAdd({
   const addPerson = useMutation(api.people.addPerson);
   const profile = useQuery(api.profiles.getMyProfile, {});
   const setUsername = useMutation(api.profiles.setUsername);
-  const meetExchange = useMutation(api.profiles.meetExchange);
+  const connect = useMutation(api.profiles.connect);
   const semanticSearch = useAction(api.people.semanticSearch);
   const [adding, setAdding] = useState(false);
   // Manual add needs identity and a story (backend-required), so the one-tap
@@ -152,7 +152,7 @@ export function SearchAdd({
   const [meetError, setMeetError] = useState<string | null>(null);
   const [meetStatus, setMeetStatus] = useState<string | null>(null);
   const [exchanging, setExchanging] = useState(false);
-  const [lastMeet, setLastMeet] = useState<MeetExchangeResult | null>(null);
+  const [lastMeet, setLastMeet] = useState<ConnectResult | null>(null);
   const [listening, setListening] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const speechRef = useRef<MeetSpeechRecognition | null>(null);
@@ -332,10 +332,14 @@ export function SearchAdd({
     setMeetStatus(null);
     setLastMeet(null);
     try {
-      const exchanged = await meetExchange({ username: meetLookupUsername });
+      const exchanged = await connect({ username: meetLookupUsername });
       setLastMeet(exchanged);
       setMeetUsername("");
-      setMeetStatus(`You and @${exchanged.peerUsername} are in each other's sky.`);
+      setMeetStatus(
+        exchanged.status === "already"
+          ? `You and @${exchanged.peerUsername} were already connected.`
+          : `You and @${exchanged.peerUsername} are in each other's sky.`,
+      );
     } catch (error) {
       setMeetError(error instanceof Error ? error.message : "Could not exchange");
     } finally {

@@ -69,6 +69,11 @@ export default defineSchema({
     // The Directory screen pages most-recently-touched first.
     .index("by_user_and_updatedAt", ["userId", "updatedAt"])
     .index("by_user_and_havenContactUserId", ["userId", "havenContactUserId"])
+    // Account deletion has to find every contact row pointing AT the leaving
+    // user, across all directories, to collapse them to frozen snapshots.
+    // The by_user variant cannot answer that: it needs the owner up front,
+    // and the owners are exactly what is unknown.
+    .index("by_havenContactUserId", ["havenContactUserId"])
     // Same reasoning as captures.by_screenshotId: the orphaned-upload sweep
     // needs a sound, bounded way to check "is this blob referenced?".
     .index("by_screenshotId", ["screenshotId"])

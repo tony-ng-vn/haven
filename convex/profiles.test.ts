@@ -618,7 +618,7 @@ test("profile functions reject unauthenticated callers", async () => {
     t.query(api.profiles.lookupByUsername, { username: "maya" }),
   ).rejects.toThrow("Not signed in");
   await expect(
-    t.mutation(api.profiles.meetExchange, { username: "maya" }),
+    t.mutation(api.profiles.connect, { username: "maya" }),
   ).rejects.toThrow("Not signed in");
   await expect(
     t.mutation(api.profiles.updateMyProfile, { name: "Maya" }),
@@ -643,14 +643,14 @@ test("lookupByUsername returns only public username data", async () => {
   expect(found).toEqual({ username: "maya" });
 });
 
-test("meetExchange creates private people rows for both sides", async () => {
+test("connect creates private people rows for both sides", async () => {
   const t = convexTest(schema, modules);
   const alice = asNewUser(t);
   const bob = asNewUser(t);
   await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
   await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
 
-  const exchanged = await alice.as.mutation(api.profiles.meetExchange, {
+  const exchanged = await alice.as.mutation(api.profiles.connect, {
     username: "@bob",
   });
 
@@ -698,14 +698,14 @@ test("meetExchange creates private people rows for both sides", async () => {
   ).toEqual(["@alice"]);
 });
 
-test("a meetExchange person is findable by keyword search", async () => {
+test("a connected person is findable by keyword search", async () => {
   const t = convexTest(schema, modules);
   const alice = asNewUser(t);
   const bob = asNewUser(t);
   await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
   await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
 
-  await alice.as.mutation(api.profiles.meetExchange, { username: "bob" });
+  await alice.as.mutation(api.profiles.connect, { username: "bob" });
 
   // ensureMeetPerson bypasses addPerson, so it must feed the keyword index
   // itself -- the exchanged contact is findable by their handle.
@@ -718,14 +718,14 @@ test("a meetExchange person is findable by keyword search", async () => {
 // One of the three insert paths that used to write people invisible to the
 // identity index. A person met through Haven has to be findable by handle like
 // anyone else, or re-sharing their profile later twins them.
-test("a meetExchange person carries the handle index", async () => {
+test("a connected person carries the handle index", async () => {
   const t = convexTest(schema, modules);
   const alice = asNewUser(t);
   const bob = asNewUser(t);
   await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
   await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
 
-  const { personId } = await alice.as.mutation(api.profiles.meetExchange, {
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
     username: "bob",
   });
 
@@ -764,15 +764,15 @@ test("a meetExchange person carries the handle index", async () => {
 
 // The index row is inserted next to the person, so a repeat confirmation must
 // not stack a second one on the same person.
-test("a repeated meetExchange does not duplicate the index row", async () => {
+test("a repeated connect does not duplicate the index row", async () => {
   const t = convexTest(schema, modules);
   const alice = asNewUser(t);
   const bob = asNewUser(t);
   await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
   await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
 
-  await alice.as.mutation(api.profiles.meetExchange, { username: "bob" });
-  await alice.as.mutation(api.profiles.meetExchange, { username: "bob" });
+  await alice.as.mutation(api.profiles.connect, { username: "bob" });
+  await alice.as.mutation(api.profiles.connect, { username: "bob" });
 
   await t.run(async (ctx) => {
     const rows = await ctx.db
@@ -785,17 +785,17 @@ test("a repeated meetExchange does not duplicate the index row", async () => {
   });
 });
 
-test("meetExchange is idempotent for repeated in-person confirmations", async () => {
+test("connect is idempotent for repeated in-person confirmations", async () => {
   const t = convexTest(schema, modules);
   const alice = asNewUser(t);
   const bob = asNewUser(t);
   await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
   await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
 
-  const first = await alice.as.mutation(api.profiles.meetExchange, {
+  const first = await alice.as.mutation(api.profiles.connect, {
     username: "bob",
   });
-  const second = await alice.as.mutation(api.profiles.meetExchange, {
+  const second = await alice.as.mutation(api.profiles.connect, {
     username: "bob",
   });
 
@@ -814,17 +814,17 @@ test("meetExchange is idempotent for repeated in-person confirmations", async ()
   expect(counts.bob).toHaveLength(1);
 });
 
-test("meetExchange requires a username for self and rejects self exchange", async () => {
+test("connect requires a username for self and rejects self connection", async () => {
   const t = convexTest(schema, modules);
   const alice = asNewUser(t);
 
   await expect(
-    alice.as.mutation(api.profiles.meetExchange, { username: "bob" }),
+    alice.as.mutation(api.profiles.connect, { username: "bob" }),
   ).rejects.toThrow("Choose your Haven username first");
 
   await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
   await expect(
-    alice.as.mutation(api.profiles.meetExchange, { username: "alice" }),
+    alice.as.mutation(api.profiles.connect, { username: "alice" }),
   ).rejects.toThrow("Enter the other person's username");
 });
 
@@ -1090,4 +1090,255 @@ test("a suggested handle is never one the site needs for itself", async () => {
 
   expect(result.status).toBe("taken");
   expect(result.suggestions).not.toContain("privacy");
+});
+
+// ---------------------------------------------------------- phase 4 connect
+
+async function connectionsBetween(
+  t: TestConvex<typeof schema>,
+  x: string,
+  y: string,
+) {
+  return await t.run(async (ctx) => {
+    const all = await ctx.db.query("connections").collect();
+    return all.filter(
+      (row) =>
+        (row.userAId === x && row.userBId === y) ||
+        (row.userAId === y && row.userBId === x),
+    );
+  });
+}
+
+test("connect creates one edge whichever side scans first", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+
+  const first = await alice.as.mutation(api.profiles.connect, {
+    username: "@bob",
+  });
+  expect(first.status).toBe("connected");
+
+  // Bob scanning back must find the edge that already exists rather than
+  // making a second one: sharedNotes resolves it with .unique(), so a
+  // duplicate would throw rather than merely duplicate.
+  const second = await bob.as.mutation(api.profiles.connect, {
+    username: "alice",
+  });
+  expect(second.status).toBe("already");
+
+  const edges = await connectionsBetween(t, alice.userId, bob.userId);
+  expect(edges).toHaveLength(1);
+  expect(edges[0].status).toBe("connected");
+});
+
+test("the edge names each side's own person row", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+
+  await alice.as.mutation(api.profiles.connect, { username: "bob" });
+
+  const [edge] = await connectionsBetween(t, alice.userId, bob.userId);
+  const personA = await t.run((ctx) => ctx.db.get("people", edge.personAId));
+  const personB = await t.run((ctx) => ctx.db.get("people", edge.personBId));
+  // personAId belongs to userAId and personBId to userBId, or every read
+  // through the edge resolves to the wrong directory.
+  expect(personA?.userId).toBe(edge.userAId);
+  expect(personB?.userId).toBe(edge.userBId);
+  expect(personA?.havenContactUserId).toBe(edge.userBId);
+  expect(personB?.havenContactUserId).toBe(edge.userAId);
+});
+
+test("a connected contact carries the peer's real name, not their handle", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    name: "Bob Hopper",
+    company: "Analytical Engines",
+  });
+
+  await alice.as.mutation(api.profiles.connect, { username: "bob" });
+
+  const found = await alice.as.query(api.people.searchDirectory, {
+    keyword: "hopper",
+  });
+  expect(found.map((person) => person.name)).toEqual(["Bob Hopper"]);
+});
+
+test("connecting writes no memory, because nobody wrote one", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  // A synthetic "met through Haven" line would give every connection an
+  // identical, meaningless memory. The edge is the provenance; the first
+  // real memory should be one the user actually writes.
+  const memories = await t.run((ctx) =>
+    ctx.db
+      .query("memories")
+      .withIndex("by_person", (q) => q.eq("personId", personId))
+      .collect(),
+  );
+  expect(memories).toEqual([]);
+});
+
+test("a connected contact renders the peer's live card, not the snapshot", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+  await bob.as.mutation(api.profiles.updateMyProfile, { name: "Bob Hopper" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  // Bob changes jobs after they connected. Copying at connect time is what
+  // makes contacts go stale, which is the problem Haven exists to solve.
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    company: "Pixel Foundry",
+    role: "Designer",
+  });
+
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.company).toBe("Pixel Foundry");
+  expect(person?.role).toBe("Designer");
+});
+
+test("my own notes survive the merge with the peer's card", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  await alice.as.mutation(api.people.editPerson, {
+    id: personId,
+    context: "met at the Founder Inc dinner",
+  });
+  await bob.as.mutation(api.profiles.updateMyProfile, { name: "Bob Hopper" });
+
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  // Their card is theirs and stays current; my memory of them is mine.
+  expect(person?.name).toBe("Bob Hopper");
+  expect(person?.context).toBe("met at the Founder Inc dinner");
+});
+
+test("deleting an account freezes the contact in the other directory", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+  await bob.as.mutation(api.profiles.updateMyProfile, { name: "Bob Hopper" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  await bob.as.mutation(api.profiles.deleteMyAccount, {});
+
+  const person = await t.run((ctx) => ctx.db.get("people", personId));
+  // Alice keeps the contact, like a phone contact: the live reference goes
+  // with the account, the snapshot she can still read stays hers.
+  expect(person).not.toBeNull();
+  expect(person?.havenContactUserId).toBeUndefined();
+  expect(person?.name).toBe("Bob Hopper");
+  const projected = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(projected?.name).toBe("Bob Hopper");
+});
+
+test("connecting works when either side has a city on their card", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+  // A profile city carries the accent-folded `normalized` key that a person's
+  // city has no field for. Copying it across whole passes typechecking and
+  // fails at runtime, so both directions need a case that has one.
+  await alice.as.mutation(api.profiles.updateMyProfile, {
+    city: { name: "Ha Noi", country: "VN" },
+  });
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    name: "Bob Hopper",
+    city: { name: "Sai Gon", country: "VN" },
+  });
+
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  const stored = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(stored?.city).toEqual({ name: "Sai Gon", country: "VN" });
+  expect(stored?.cityKey).toBe("sai gon");
+  // And the read side, which validates its own return shape.
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.city).toEqual({ name: "Sai Gon", country: "VN" });
+  // A city added after connecting still reads through the merge.
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    city: { name: "Da Nang", country: "VN" },
+  });
+  const later = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(later?.city).toEqual({ name: "Da Nang", country: "VN" });
+});
+
+test("deleting a connected contact takes the edge and its shared note", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+  await alice.as.mutation(api.sharedNotes.updateForPerson, {
+    personId,
+    content: "we said we would ship by Friday",
+  });
+
+  await alice.as.mutation(api.people.deletePerson, { personId });
+
+  // A surviving edge would be unreachable now and would silently reattach
+  // this note if the two ever connected again.
+  expect(await connectionsBetween(t, alice.userId, bob.userId)).toEqual([]);
+  expect(await t.run((ctx) => ctx.db.query("sharedNotes").collect())).toEqual(
+    [],
+  );
+});
+
+test("deleting an account takes that account's own memories with it", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const personId = await alice.as.mutation(api.people.addPerson, {
+    name: "Ada Lovelace",
+    contactHandles: [{ platform: "phone", value: "unlisted" }],
+    context: "met at the compiler meetup",
+  });
+  expect(
+    await t.run((ctx) => ctx.db.query("memories").collect()),
+  ).toHaveLength(1);
+
+  await alice.as.mutation(api.profiles.deleteMyAccount, {});
+
+  // Memory lines carry the userId and sit in the vector index, so leaving
+  // them behind is a deletion that did not delete everything.
+  expect(await t.run((ctx) => ctx.db.query("memories").collect())).toEqual([]);
+  expect(await t.run((ctx) => ctx.db.get("people", personId))).toBeNull();
 });

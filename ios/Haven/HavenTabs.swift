@@ -29,11 +29,16 @@ struct HavenTabs: View {
                 // People's search field is not a field: it hands the whole
                 // interaction to the tab that owns searching, rather than
                 // imitating it and then having to keep the two in step.
-                DirectoryScreen(userId: userId, openSearch: { tab = .search })
+                DirectoryScreen(
+                    userId: userId,
+                    openSearch: { tab = .search },
+                    openPerson: { peopleRoute.append(.person(id: $0)) }
+                )
                     .toolbar { directoryToolbar }
                     .navigationDestination(for: Destination.self) { destination in
                         switch destination {
                         case .card: MyCardScreen(showingCode: $showingCode)
+                        case .person(let id): PersonScreen(personId: id)
                         }
                     }
             }
@@ -80,6 +85,7 @@ struct HavenTabs: View {
     /// and the widget can open it without holding the view that shows it.
     private enum Destination: Hashable {
         case card
+        case person(id: String)
     }
 
     /// One door to the card, not two.
@@ -88,6 +94,7 @@ struct HavenTabs: View {
     /// back of the card now, so a separate way in would be a second route to
     /// the same object -- and the one that skipped the card would be the one
     /// people learned.
+    ///
     /// A button rather than a `NavigationLink`, because opening the card also
     /// has to say which side is up: a link can only carry a destination.
     @ToolbarContentBuilder

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Partial plist: everything else is generated from build settings
+	  (GENERATE_INFOPLIST_FILE merges this file in), the same arrangement the
+	  app and the widget use.
+
+	  This exists for the NSExtension keys, which have no INFOPLIST_KEY_* form.
+	  Setting one is silently ignored rather than rejected: the build still
+	  succeeds, the extension is still embedded, and the app then fails to
+	  install with a placeholder error that names neither the extension nor the
+	  key.
+	-->
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.share-services</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<!--
+			  What makes Haven appear in the share sheet at all.
+
+			  Web URLs, because a shared profile is one, and images, so
+			  importing a screenshot works before the photo library has ever
+			  been asked for.
+
+			  Deliberately not text. Supporting it would put Haven in the sheet
+			  for every piece of text anybody shares anywhere, which is a lot
+			  of noise to buy one case. If a dev build shows that one of the
+			  three apps vends its profile as text rather than a URL, this is
+			  where that gets revisited -- the sheet itself already reads a
+			  scheme-less string correctly.
+			-->
+			<key>NSExtensionActivationRule</key>
+			<dict>
+				<key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
+				<integer>1</integer>
+				<key>NSExtensionActivationSupportsImageWithMaxCount</key>
+				<integer>1</integer>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>
