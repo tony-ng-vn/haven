@@ -12,6 +12,9 @@ struct HavenRow<Leading: View, Trailing: View>: View {
     var detail: String?
     /// Overrides what VoiceOver reads. Defaults to the title plus the detail.
     var accessibilityText: String?
+    /// Colours the title as a warning. For rows that take something away, so
+    /// deleting an account does not look like editing a job title.
+    var isDestructive = false
     var action: (() -> Void)?
     @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
@@ -39,7 +42,7 @@ struct HavenRow<Leading: View, Trailing: View>: View {
             leading
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .havenBody()
+                    .havenBody(isDestructive ? HavenColor.ember : HavenColor.ink)
                 if let detail {
                     Text(detail)
                         .havenSecondary()
@@ -67,6 +70,7 @@ extension HavenRow where Leading == EmptyView {
         title: String,
         detail: String? = nil,
         accessibilityText: String? = nil,
+        isDestructive: Bool = false,
         action: (() -> Void)? = nil,
         @ViewBuilder trailing: () -> Trailing
     ) {
@@ -74,6 +78,7 @@ extension HavenRow where Leading == EmptyView {
             title: title,
             detail: detail,
             accessibilityText: accessibilityText,
+            isDestructive: isDestructive,
             action: action,
             leading: { EmptyView() },
             trailing: trailing
@@ -86,12 +91,14 @@ extension HavenRow where Leading == EmptyView, Trailing == EmptyView {
         title: String,
         detail: String? = nil,
         accessibilityText: String? = nil,
+        isDestructive: Bool = false,
         action: (() -> Void)? = nil
     ) {
         self.init(
             title: title,
             detail: detail,
             accessibilityText: accessibilityText,
+            isDestructive: isDestructive,
             action: action,
             leading: { EmptyView() },
             trailing: { EmptyView() }
@@ -119,8 +126,38 @@ struct RowAccessory: View {
     var body: some View {
         Text(text)
             .font(.footnote)
-            .foregroundStyle(isSet ? HavenColor.star : HavenColor.faint)
+            // `muted` rather than `faint` for the same reason the group labels
+            // moved: `faint` is 3.40:1 over dusk, and these sit low on the page
+            // where the background is dusk-ward.
+            .foregroundStyle(isSet ? HavenColor.star : HavenColor.muted)
             .lineLimit(1)
+    }
+}
+
+/// The mark on a row that opens something.
+///
+/// `HavenRow` already hands VoiceOver the `.isButton` trait, so without one of
+/// these the screen reader is told more than the eye is: six rows that all open
+/// a sheet, and nothing but the press highlight saying so.
+///
+/// One type rather than one per symbol, so the styling every row accessory
+/// shares lives in one place: the last time this colour moved it had to be
+/// found twice.
+struct RowMark: View {
+    let symbol: String
+
+    /// Opens something inside Haven.
+    static let chevron = RowMark(symbol: "chevron.right")
+
+    /// Leaves for Safari. Not a chevron: a chevron promises a back button that
+    /// is not coming.
+    static let external = RowMark(symbol: "arrow.up.right")
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(HavenColor.muted)
+            .accessibilityHidden(true)
     }
 }
 
@@ -142,7 +179,13 @@ struct RowAccessory: View {
             HavenRow(title: "Phone", action: {}) {
                 RowAccessory(text: "Add")
             }
-            HavenRow(title: "Ho Chi Minh City", detail: "Vietnam", action: {})
+            HavenRow(title: "Ho Chi Minh City", detail: "Vietnam", action: {}) {
+                RowMark.chevron
+            }
+            HavenRow(title: "Privacy Policy", action: {}) {
+                RowMark.external
+            }
+            HavenRow(title: "Delete your account", isDestructive: true, action: {})
         }
         .padding(24)
     }

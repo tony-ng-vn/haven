@@ -48,6 +48,17 @@ struct MyCardScreen: View {
         )
         .navigationTitle("Your card")
         .navigationBarTitleDisplayMode(.inline)
+        // The bar is transparent by default, so scrolling cut the card off
+        // along a razor-straight line with nothing there to explain it, and an
+        // object sliced by an invisible plane stops reading as an object.
+        //
+        // Dusk rather than a system material: the materials resolve to a
+        // neutral grey that reads as foreign chrome against a blue-black page.
+        // Part-opaque so the card dims under the bar instead of ending at it.
+        // Set here rather than on the shared skeleton -- this is the only
+        // screen with something solid sliding under the bar.
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(HavenColor.dusk.opacity(0.72), for: .navigationBar)
         // The card and its sky are both ambient loops running at display rate.
         // A sheet covers them completely, so they carry on redrawing something
         // nobody can see until it is dismissed. The code is the other reason to
@@ -158,9 +169,12 @@ struct MyCardScreen: View {
             .cardPhoto(card.photoURL, into: $photo)
 
             if let failure = model.failure {
+                // Tinted through the helper, not layered over it: the ember
+                // used to sit outside `havenSecondary` and never reached the
+                // text, so a save that failed said so in the same grey as a
+                // hint.
                 Text(failure)
-                    .havenSecondary()
-                    .foregroundStyle(HavenColor.ember)
+                    .havenSecondary(HavenColor.ember)
                     .padding(.bottom, 8)
             }
 
@@ -172,13 +186,14 @@ struct MyCardScreen: View {
                 .havenGroupLabel()
                 .padding(.top, 26)
                 .padding(.bottom, 6)
-            HavenRow(title: "Delete your account") {
-                confirmingDelete = true
-            } leading: {
-                EmptyView()
-            } trailing: {
-                EmptyView()
-            }
+            // Warned rather than merely listed. It used to be one hairline
+            // below "Role", in the same colour, on a screen people open to fix
+            // a typo in their name.
+            HavenRow(
+                title: "Delete your account",
+                isDestructive: true,
+                action: { confirmingDelete = true }
+            )
 
             // Guideline 5.1.1(i) wants the privacy policy reachable from inside
             // the app, not only from the App Store listing, and this screen is
@@ -190,12 +205,8 @@ struct MyCardScreen: View {
                 .padding(.top, 26)
                 .padding(.bottom, 6)
             ForEach(LegalDocument.allCases) { document in
-                HavenRow(title: document.title) {
-                    openURL(document.url)
-                } leading: {
-                    EmptyView()
-                } trailing: {
-                    EmptyView()
+                HavenRow(title: document.title, action: { openURL(document.url) }) {
+                    RowMark.external
                 }
             }
         }
@@ -226,18 +237,26 @@ struct MyCardScreen: View {
             .accessibilityAction { showingCode.toggle() }
     }
 
+    /// A field, filled or not.
+    ///
+    /// The two used to look identical: "Where you work" and "San Francisco, CA"
+    /// were the same weight and the same colour, so a filled field read like a
+    /// prompt. VoiceOver was already told which was which -- it hears "Company,
+    /// empty" -- and the eye was not, which is backwards. An empty field now
+    /// says "Add" where a filled one shows the chevron.
     private func row(_ field: CardField, card: MyCard) -> some View {
         let value = card.value(for: field)
         return HavenRow(
             title: field.title,
             detail: value ?? field.placeholder,
-            accessibilityText: spoken(field, value: value)
+            accessibilityText: spoken(field, value: value),
+            action: { editing = field }
         ) {
-            editing = field
-        } leading: {
-            EmptyView()
-        } trailing: {
-            EmptyView()
+            if value == nil {
+                RowAccessory(text: "Add")
+            } else {
+                RowMark.chevron
+            }
         }
     }
 

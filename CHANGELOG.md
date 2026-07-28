@@ -6,6 +6,22 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.7.1
+
+2026-07-28
+
+**iOS**
+
+- The rows under your card now say what they do. Every one of them opens something and none of them showed it; a filled field has a chevron, and an empty one says "Add" where the value would be, so a field you have not filled in no longer looks like one you have.
+- The platform marks on the card fit it. They were sized like buttons they are not, and four of them were slightly too wide for the card they sit on, on every iPhone. They also grow with your text size now, which they never did.
+- Scrolling no longer slices the card off along an invisible line. It passes under the title bar instead.
+- The ACCOUNT and LEGAL headings are readable where they actually sit. The page darkens toward the bottom, which is exactly where those headings are, and they were failing contrast there.
+- "Delete your account" is coloured as the warning it is, rather than looking like one more field to edit.
+- When a change to your card fails to save, the message that says so is coloured as a warning. It was written to be one and rendered in the same grey as a hint.
+- A long name at a large text size no longer prints over your constellation or squeezes it out of existence. On an iPad the card stops growing instead of becoming taller than the screen.
+
+---
+
 ## v0.7.0
 
 2026-07-28

@@ -70,23 +70,32 @@ extension View {
     }
 
     /// Default running text and row titles.
-    func havenBody() -> some View {
+    /// The tint is a parameter rather than something a caller layers on top,
+    /// because `foregroundStyle` applied closest to the text wins: an outer one
+    /// silently does nothing.
+    func havenBody(_ tint: Color = HavenColor.ink) -> some View {
         font(.subheadline)
-            .foregroundStyle(HavenColor.ink)
+            .foregroundStyle(tint)
     }
 
-    /// Supporting text beside or beneath something else.
-    func havenSecondary() -> some View {
+    /// Supporting text beside or beneath something else. Tinted by parameter
+    /// for the same reason `havenBody` is.
+    func havenSecondary(_ tint: Color = HavenColor.muted) -> some View {
         font(.footnote)
-            .foregroundStyle(HavenColor.muted)
+            .foregroundStyle(tint)
     }
 
     /// A group heading over a list of rows ("Connect an account").
+    ///
+    /// `muted` rather than `faint`, because these sit low on the page and the
+    /// background runs toward dusk as it descends: `faint` measures 4.57:1 over
+    /// night and 3.40:1 over dusk, so the ACCOUNT heading failed exactly where
+    /// it renders. `TextContrastTests` pins both.
     func havenGroupLabel() -> some View {
         font(.system(.caption2, weight: .semibold))
             .tracking(HavenFont.wideTracking)
             .textCase(.uppercase)
-            .foregroundStyle(HavenColor.faint)
+            .foregroundStyle(HavenColor.muted)
     }
 
     /// Machine-shaped text: the address on the card's back, a phone number.

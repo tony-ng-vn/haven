@@ -160,11 +160,7 @@ struct DirectoryScreen: View {
                     detail: person.detail,
                     action: { openPerson(person.id) },
                     leading: { EmptyView() },
-                    trailing: {
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(HavenColor.faint)
-                    }
+                    trailing: { RowMark.chevron }
                 )
             }
         }
