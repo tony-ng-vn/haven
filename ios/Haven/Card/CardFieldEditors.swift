@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 /// One field of the card, edited on its own.
@@ -68,7 +69,7 @@ extension MyCard {
     func value(for field: CardField) -> String? {
         switch field {
         case .name: return name.flatMap { $0.isEmpty ? nil : $0 }
-        case .photo: return photoStorageId == nil ? nil : "Added"
+        case .photo: return hasPhoto ? "Added" : nil
         case .city: return city?.line
         case .handles:
             guard let handles, !handles.isEmpty else { return nil }
@@ -148,6 +149,87 @@ struct TextFieldEditor: View {
         guard !trimmed.isEmpty else { return }
         Task { working = true; await save(trimmed); dismiss() }
     }
+}
+
+/// The editor for the photo.
+///
+/// A sheet like every other field rather than a picker hung straight off the
+/// row, for two reasons. A system picker has no way to say "remove", and this
+/// was the one field with no way back. And a second sheet-style presentation on
+/// the same view as the editor sheet does not open at all: the request is
+/// swallowed, and the row reads as dead.
+struct PhotoEditor: View {
+    /// The photo as the card is drawing it, so the sheet shows the thing being
+    /// replaced rather than describing it.
+    let photo: Image?
+    let choose: (Data) async -> Void
+    let remove: () async -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var picked: PhotosPickerItem?
+    @State private var working = false
+
+    var body: some View {
+        HavenScreen(question: CardField.photo.title) {
+            preview
+        } actions: {
+            VStack(spacing: 8) {
+                PhotosPicker(selection: $picked, matching: .images) {
+                    PrimaryLabel(
+                        title: photo == nil ? "Choose a photo" : "Choose a different photo",
+                        isLoading: working
+                    )
+                }
+                .buttonStyle(PressScaleStyle())
+                .disabled(working)
+                if photo != nil {
+                    GhostButton(title: "Remove") {
+                        Task {
+                            working = true
+                            await remove()
+                            dismiss()
+                        }
+                    }
+                }
+            }
+        }
+        .onChange(of: picked) { _, item in
+            guard let item else { return }
+            Task {
+                working = true
+                // Loaded as data rather than an Image: what goes to storage is
+                // the file, and re-encoding a SwiftUI Image would lose the
+                // original and its orientation.
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    await choose(data)
+                }
+                dismiss()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var preview: some View {
+        if let photo {
+            photo
+                .resizable()
+                .scaledToFill()
+                .frame(width: PhotoEditorMetrics.diameter, height: PhotoEditorMetrics.diameter)
+                .clipShape(Circle())
+                .overlay(Circle().strokeBorder(HavenColor.hairline))
+                // The buttons below say what can be done with it; announcing
+                // "photo" twice adds nothing.
+                .accessibilityHidden(true)
+        } else {
+            Text(CardField.photo.placeholder)
+                .havenSecondary()
+        }
+    }
+}
+
+private enum PhotoEditorMetrics {
+    /// Big enough to judge a crop by, which is the only reason to show it here.
+    static let diameter: CGFloat = 132
 }
 
 /// The editor for the city, which is a picker rather than a field: the card

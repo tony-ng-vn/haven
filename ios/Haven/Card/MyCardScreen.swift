@@ -1,6 +1,5 @@
 import ClerkKit
 import ConvexMobile
-import PhotosUI
 import SwiftUI
 
 /// Screen 7 of `../../phase1-build-plan.md`: the card plus every field, filled
@@ -15,7 +14,7 @@ struct MyCardScreen: View {
     @StateObject private var model: MyCardModel
 
     @State private var editing: CardField?
-    @State private var photoItem: PhotosPickerItem?
+    @State private var photo: Image?
     @State private var confirmingDelete = false
 
     init() {
@@ -38,18 +37,6 @@ struct MyCardScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $editing) { field in
             editor(for: field)
-        }
-        .onChange(of: photoItem) { _, item in
-            guard let item else { return }
-            Task {
-                // Loaded as data rather than an Image: what goes to storage is
-                // the file, and re-encoding a SwiftUI Image would lose the
-                // original and its orientation.
-                if let data = try? await item.loadTransferable(type: Data.self) {
-                    await model.setPhoto(data)
-                }
-                photoItem = nil
-            }
         }
         .alert("Delete your account?", isPresented: $confirmingDelete) {
             Button("Delete", role: .destructive) {
@@ -100,12 +87,14 @@ struct MyCardScreen: View {
                     card: card,
                     sky: sky(for: card),
                     majorIntensities: intensities(for: card),
+                    photo: photo,
                     nebulaDamping: MyCardMetrics.cardNebulaDamping
                 )
             }
             .padding(.horizontal, MyCardMetrics.cardInset)
             .padding(.bottom, 24)
             .frame(maxWidth: .infinity)
+            .cardPhoto(card.photoURL, into: $photo)
 
             if let failure = model.failure {
                 Text(failure)
@@ -132,39 +121,19 @@ struct MyCardScreen: View {
         }
     }
 
-    @ViewBuilder
     private func row(_ field: CardField, card: MyCard) -> some View {
         let value = card.value(for: field)
-        if field == .photo {
-            // The only row that opens a system picker rather than a sheet of
-            // ours, so it is a PhotosPicker rather than a HavenRow action.
-            PhotosPicker(selection: $photoItem, matching: .images) {
-                rowContent(field, value: value)
-            }
-            .buttonStyle(PressScaleStyle())
-        } else {
-            HavenRow(
-                title: field.title,
-                detail: value ?? field.placeholder,
-                accessibilityText: spoken(field, value: value)
-            ) {
-                editing = field
-            } leading: {
-                EmptyView()
-            } trailing: {
-                EmptyView()
-            }
-        }
-    }
-
-    private func rowContent(_ field: CardField, value: String?) -> some View {
-        HavenRow(
+        return HavenRow(
             title: field.title,
             detail: value ?? field.placeholder,
-            accessibilityText: spoken(field, value: value),
-            leading: { EmptyView() },
-            trailing: { EmptyView() }
-        )
+            accessibilityText: spoken(field, value: value)
+        ) {
+            editing = field
+        } leading: {
+            EmptyView()
+        } trailing: {
+            EmptyView()
+        }
     }
 
     /// An empty field says so out loud. The unlit star carries it visually and
@@ -208,8 +177,11 @@ struct MyCardScreen: View {
                 ])
             }
         case .photo:
-            // Handled by the PhotosPicker on the row itself.
-            EmptyView()
+            PhotoEditor(photo: photo) { data in
+                await model.setPhoto(data)
+            } remove: {
+                await model.clear("photoStorageId")
+            }
         }
     }
 

@@ -7,6 +7,10 @@ struct MyCard: Decodable, Equatable {
     let username: String
     var name: String?
     var photoStorageId: String?
+    /// Where the photo actually is. The server resolves it, because a storage
+    /// id is not something a client can fetch. Absent on a card built in a test
+    /// or a preview, which is the same as having no photo.
+    var photoUrl: String?
     var city: City?
     var handles: [Handle]?
     var primaryPlatform: Platform?
@@ -91,6 +95,22 @@ extension MyCard.City {
 }
 
 extension MyCard {
+    /// The photo, ready to hand to a loader. Nil covers both "no photo" and a
+    /// url the server sent that does not parse, because the card shows the same
+    /// thing either way.
+    var photoURL: URL? {
+        photoUrl.flatMap(URL.init(string:))
+    }
+
+    /// Whether there is a photo at all.
+    ///
+    /// The stored id decides this, not the url: the id is what the row, the
+    /// star and the remove option all key off, and a url that failed to resolve
+    /// does not mean the photo is gone.
+    var hasPhoto: Bool {
+        photoStorageId != nil
+    }
+
     /// Which figure stars this card has earned. The slot mapping is fixed in
     /// `StarSlot`, so a field always lights the same star.
     var filledSlots: Set<StarSlot> {
@@ -98,7 +118,7 @@ extension MyCard {
         if name?.isEmpty == false { slots.insert(.name) }
         if city != nil { slots.insert(.city) }
         if handles?.isEmpty == false { slots.insert(.primaryContact) }
-        if photoStorageId != nil { slots.insert(.photo) }
+        if hasPhoto { slots.insert(.photo) }
         if company?.isEmpty == false { slots.insert(.company) }
         if role?.isEmpty == false { slots.insert(.role) }
         return slots

@@ -64,6 +64,24 @@ struct MyCardFieldTests {
         #expect(card.value(for: .handles) == "2 ways")
     }
 
+    // Photo was the one field with no way back: the row opened a picker, and a
+    // picker cannot say "remove". The row now asks first when there is
+    // something to remove, and this is the flag it asks.
+    //
+    // The stored id, not the url: a photo whose url failed to resolve is still
+    // a photo the person can remove.
+    @Test("a card knows it has a photo from the stored id alone")
+    func hasPhoto() {
+        var card = MyCard(username: "maya", name: "Maya Chen")
+        #expect(!card.hasPhoto)
+
+        card.photoUrl = "https://example.convex.cloud/api/storage/kg700xyz"
+        #expect(!card.hasPhoto)
+
+        card.photoStorageId = "kg700xyz"
+        #expect(card.hasPhoto)
+    }
+
     // Only the fields that are literally one string share the text editor. A
     // key here for city or handles would write the wrong shape to the server.
     @Test("only the plain text fields carry a stored key")
