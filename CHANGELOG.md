@@ -6,6 +6,20 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.12.0
+
+2026-07-28
+
+**iOS**
+
+- A person's screen finally shows how to reach them. Their handles are listed with the one you marked primary first, and tapping any of them opens that app: Instagram, X, LinkedIn and Telegram open the profile, a phone number starts a call, a WhatsApp number opens the chat. Haven was already being sent all of this and was throwing it away.
+- Their photo is on the screen too, next to their name.
+- You can change any of it. An Edit button opens their details: name, photo, city, company, role, and every way to reach them, each edited on its own the way your own card already worked.
+- You can delete somebody. It is behind a confirmation that says what goes with them, because what you wrote about them is the part nobody else has a copy of.
+- A page a capture recorded for them is shown only when it is not already one of their handles, so one way to reach somebody is never listed twice.
+
+---
+
 ## v0.10.0
 
 2026-07-28
