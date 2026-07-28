@@ -6,6 +6,16 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.14.0
+
+2026-07-28
+
+**Web**
+
+- Pull request previews no longer deploy the backend. Every preview build ran `convex deploy` against the shared deployment, so several pull requests updated at once raced each other and some deploys simply failed -- including one that changed nothing but documentation. Only production deploys Convex now, which is what the repo's own rules already said.
+
+---
+
 ## v0.13.0
 
 2026-07-28
