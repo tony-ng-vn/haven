@@ -12,6 +12,24 @@ private func decode(_ json: String) throws -> MyCard? {
 
 @Suite("My card")
 struct MyCardTests {
+    // Unit E2 of the frontend completion plan said an iOS-only user never gets
+    // a Haven address. That was already false when the plan was written:
+    // updateMyProfile mints one silently when it creates the row, so the name
+    // question -- the one answer nothing offers to skip -- is what claims it,
+    // and profiles.username is required by the schema besides.
+    //
+    // This test pins the half the client owns: a card that decoded has an
+    // address, so the code on its back, its public page and connect never have
+    // to handle one that is missing. If the server ever made it optional, this
+    // fails rather than a QR quietly pointing at nobody.
+    @Test("a card with no address is not a card")
+    func addressIsNotOptional() {
+        let withoutUsername = """
+        {"_id":"p1","_creationTime":1,"updatedAt":1,"name":"Maya Chen","photoUrl":null}
+        """
+        #expect((try? decode(withoutUsername)) == nil)
+    }
+
     // The exact shape myCardValidator returns, including the two keys the app
     // has no use for and the stored city's private Phase 3 filter key. An
     // unknown key must stay harmless: the server is free to add fields.
