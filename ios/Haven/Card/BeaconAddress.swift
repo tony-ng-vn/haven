@@ -2,10 +2,10 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 
-/// The QR code behind the beacon.
+/// The QR code on the back of the card.
 ///
 /// Generation only. What colour it is drawn in and how big it gets are the
-/// screen's business; this hands back the code at its true resolution, one
+/// card's business; this hands back the code at its true resolution, one
 /// pixel per module, so the screen can scale it with no interpolation and keep
 /// the edges square. A blurred module is a module a camera has to guess at.
 enum QRCode {
@@ -27,8 +27,8 @@ enum QRCode {
     /// bitmap in SwiftUI can only tint the whole thing at once, and the two
     /// tones have to move independently. Dark on light, which is the polarity
     /// every decoder expects: an inverted code reads on an iPhone and not
-    /// reliably anywhere else, and this is the one screen whose entire job is
-    /// being read by somebody else's phone.
+    /// reliably anywhere else, and being read by somebody else's phone is this
+    /// thing's entire job.
     static func image(for text: String) -> CGImage? {
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(text.utf8)
@@ -49,6 +49,13 @@ enum QRCode {
 /// Haven's own address, never a social profile: authorization proves who
 /// someone is but cannot construct their profile link in the general case, and
 /// a handle is content on the destination rather than the destination itself.
+///
+/// A debug build makes codes that do not resolve, and that is expected rather
+/// than broken: `Config.convexDeploymentUrl` points at the dev deployment while
+/// the host below is the site reading production, so a card made in debug has
+/// no page. This used to be hidden behind a feature flag. Showing it is better
+/// -- the only person holding a debug build is the one who built it, and a flag
+/// that hides the card's whole back is a feature nobody can develop.
 enum BeaconAddress {
     /// Read from Config, not written here, so the address a code carries always
     /// names the site reading the database this build talks to.
@@ -60,7 +67,7 @@ enum BeaconAddress {
         "https://\(host)/\(handle)"
     }
 
-    /// What the screen shows under the name.
+    /// What the card shows under the name.
     static func display(for handle: String) -> String {
         "\(host)/\(handle)"
     }

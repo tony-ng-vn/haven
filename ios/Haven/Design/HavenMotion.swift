@@ -19,11 +19,16 @@ enum HavenMotion {
     /// The card reveal settling. The token lives here; the reveal itself is
     /// milestone 1 and is judged on a device.
     static let revealSettleDuration: TimeInterval = 1.1
+    /// Turning the card over. Slower than a screen transition because the card
+    /// is an object with a thickness rather than a panel being swapped, and
+    /// half of it is spent edge-on where there is nothing to look at.
+    static let cardFlipDuration: TimeInterval = 0.5
 
     static let press = easeOut(pressDuration)
     static let screen = easeOut(screenDuration)
     static let starIgnition = easeOut(starIgnitionDuration)
     static let revealSettle = easeOut(revealSettleDuration)
+    static let cardFlip = easeOut(cardFlipDuration)
 }
 
 extension View {

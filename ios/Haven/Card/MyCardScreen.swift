@@ -18,14 +18,20 @@ struct MyCardScreen: View {
     @State private var editing: CardField?
     @State private var photo: Image?
     @State private var confirmingDelete = false
+    @State private var showingCode: Bool
 
-    init() {
+    /// `showingCode` opens the card already turned over, which is what the Lock
+    /// Screen widget asks for: the whole promise of that widget is the code, so
+    /// landing on the front and making someone tap again would break it.
+    init(showingCode: Bool = false) {
         _model = StateObject(wrappedValue: MyCardModel())
+        _showingCode = State(initialValue: showingCode)
     }
 
     /// A loaded screen that never opens a socket, for previews.
-    init(preview load: MyCardLoad) {
+    init(preview load: MyCardLoad, showingCode: Bool = false) {
         _model = StateObject(wrappedValue: MyCardModel(preview: load))
+        _showingCode = State(initialValue: showingCode)
     }
 
     var body: some View {
@@ -39,8 +45,10 @@ struct MyCardScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         // The card and its sky are both ambient loops running at display rate.
         // A sheet covers them completely, so they carry on redrawing something
-        // nobody can see until it is dismissed.
-        .havenAmbientPaused(editing != nil || confirmingDelete)
+        // nobody can see until it is dismissed. The code is the other reason to
+        // stop: something being read by a camera should hold still.
+        .havenAmbientPaused(editing != nil || confirmingDelete || showingCode)
+        .brightScreen(while: showingCode)
         .sheet(item: $editing) { field in
             editor(for: field)
         }
@@ -113,15 +121,20 @@ struct MyCardScreen: View {
             // goes outside the padding, so it shifts the card and not the space
             // it sits in: everything below stays exactly where it is.
             CardDriftClock { drift in
-                CardObject {
-                    HavenCard(
-                        card: card,
-                        sky: sky,
-                        majorIntensities: intensities,
-                        photo: photo,
-                        nebulaDamping: CardObjectMetrics.nebulaDamping,
-                        sceneryOffset: drift.scenery
-                    )
+                TwoSidedCard(showingBack: $showingCode) {
+                    CardObject {
+                        HavenCard(
+                            card: card,
+                            sky: sky,
+                            majorIntensities: intensities,
+                            photo: photo,
+                            nebulaDamping: CardObjectMetrics.nebulaDamping,
+                            sceneryOffset: drift.scenery
+                        )
+                    }
+                    .overlay(alignment: .topTrailing) { codeHint }
+                } back: {
+                    CardObject { CardBack(card: card) }
                 }
                 .padding(.horizontal, MyCardMetrics.cardInset)
                 .padding(.bottom, 24)
@@ -172,6 +185,21 @@ struct MyCardScreen: View {
                 }
             }
         }
+    }
+
+    /// The only sign the card has a back.
+    ///
+    /// Retiring the toolbar's QR button took away the one place that said a
+    /// code exists, and a card that flips with nothing to suggest it is a
+    /// secret. Small and dim on purpose: it is a hint, not a control, and the
+    /// target is the whole card. Its label lives on the card's own flip action,
+    /// so VoiceOver hears "show your code" once rather than twice.
+    private var codeHint: some View {
+        Image(systemName: "qrcode")
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(HavenColor.faint)
+            .padding(MyCardMetrics.codeHintInset)
+            .accessibilityHidden(true)
     }
 
     private func row(_ field: CardField, card: MyCard) -> some View {
@@ -249,6 +277,10 @@ enum MyCardMetrics {
     /// Change one and change the other, or the card resizes between the two
     /// screens that show it.
     static let cardInset: CGFloat = CardObjectMetrics.screenInset - 24
+
+    /// Clears the card's double rule, so the hint reads as printed on the card
+    /// rather than as something caught in its edge.
+    static let codeHintInset: CGFloat = 12
 }
 
 // MARK: - Previews

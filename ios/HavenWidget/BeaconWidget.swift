@@ -7,8 +7,8 @@ import WidgetKit
 /// A shortcut, not a display. An accessory-circular widget is around 38pt
 /// across, which is far below what a scannable QR needs, so drawing the real
 /// code here would produce something that looks right and cannot be read. It
-/// carries a mark and a deep link instead, and the scanning happens on the
-/// beacon screen where the code has room to be legible.
+/// carries a mark and a deep link instead, and the scanning happens on the back
+/// of the card, where the code has room to be legible.
 ///
 /// That also means the widget needs nothing from the app: no App Group, no
 /// shared container, no copy of the card kept in step across two processes.

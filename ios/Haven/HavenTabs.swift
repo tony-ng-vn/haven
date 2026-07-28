@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The app once onboarding is over: People and Search, with the card and the
-/// beacon reachable from the People screen's toolbar.
+/// The app once onboarding is over: People and Search, with the card reachable
+/// from the People screen's toolbar.
 ///
 /// Two tabs rather than one screen whose search field expands, per the build
 /// plan's open question 3. The tab bar is also where Phase 2 grows.
@@ -27,8 +27,7 @@ struct HavenTabs: View {
                     .toolbar { directoryToolbar }
                     .navigationDestination(for: Destination.self) { destination in
                         switch destination {
-                        case .card: MyCardScreen()
-                        case .beacon: BeaconScreen()
+                        case .card(let showingCode): MyCardScreen(showingCode: showingCode)
                         }
                     }
             }
@@ -45,30 +44,18 @@ struct HavenTabs: View {
         // accent is the one colour the palette does not contain.
         .tint(HavenColor.star)
         .onAppear {
-            if opensCard { peopleRoute = [.card] }
+            if opensCard { peopleRoute = [.card(showingCode: false)] }
         }
-        // The Lock Screen widget's tap arrives here. The beacon hangs off the
-        // People tab's stack, so the tab has to come along or the push lands
-        // on a stack nobody is looking at.
-        //
-        // Behind the same flag as the toolbar button: the widget is one more
-        // way into the beacon, and a second door governed by a second switch
-        // is how a flagged-off screen ends up reachable anyway.
+        // The Lock Screen widget's tap arrives here, and lands on the card
+        // already turned to its code, because the code is the whole of what
+        // that widget offers. The card hangs off the People tab's stack, so the
+        // tab has to come along or the push lands on a stack nobody is looking
+        // at.
         .onOpenURL { url in
-            guard Self.opensBeacon(url) else { return }
+            guard HavenDeepLink(url: url) == .beacon else { return }
             tab = .people
-            peopleRoute = [.beacon]
+            peopleRoute = [.card(showingCode: true)]
         }
-    }
-
-    /// Whether a url should open the beacon.
-    ///
-    /// Separated from the view so the flag half can be tested. That half is the
-    /// safety-critical one: the widget is a door into the beacon that the
-    /// toolbar's own check does not cover, and a door governed by no switch is
-    /// how a flagged-off screen becomes reachable anyway.
-    static func opensBeacon(_ url: URL) -> Bool {
-        FeatureFlags.beaconEnabled && HavenDeepLink(url: url) == .beacon
     }
 
     private enum Tab {
@@ -77,24 +64,21 @@ struct HavenTabs: View {
     }
 
     /// Where the People tab can go. A value rather than a view, so the reveal
-    /// can open one of them without holding the view that shows it.
+    /// and the widget can open it without holding the view that shows it.
     private enum Destination: Hashable {
-        case card
-        case beacon
+        case card(showingCode: Bool)
     }
 
+    /// One door to the card, not two.
+    ///
+    /// There used to be a second button here for the beacon. The code is the
+    /// back of the card now, so a separate way in would be a second route to
+    /// the same object -- and the one that skipped the card would be the one
+    /// people learned.
     @ToolbarContentBuilder
     private var directoryToolbar: some ToolbarContent {
-        if FeatureFlags.beaconEnabled {
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink(value: Destination.beacon) {
-                    Image(systemName: "qrcode")
-                }
-                .accessibilityLabel("Your beacon")
-            }
-        }
         ToolbarItem(placement: .topBarTrailing) {
-            NavigationLink(value: Destination.card) {
+            NavigationLink(value: Destination.card(showingCode: false)) {
                 Image(systemName: "person.crop.circle")
             }
             .accessibilityLabel("Your card")
