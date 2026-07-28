@@ -6,6 +6,20 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.5.0
+
+2026-07-28
+
+**iOS**
+
+- Haven is now in the iOS share sheet. Open somebody's profile in Instagram, LinkedIn or X, tap Share, tap Haven, and they are saved -- with one line about how you met, asked right there while you still remember it, rather than later when you have to go and find them first.
+- Sharing works with no signal, and before you have even signed in. The sheet writes to the phone and closes; the next time you open Haven it sends everything that was waiting. There is no queue screen and no badge, because a capture that landed is just a person in your directory.
+- The sheet knows who you already know. Share somebody already on file and it says so and adds your note to them rather than making a second copy of them. Share a second platform for somebody and it offers to add it to them, and asks rather than assuming, because two people really can share a name.
+- A LinkedIn share fills the name in for you from the profile link. Instagram and X do not hand over a name, so that field stays empty rather than being filled with a handle, which looks like a name without being one.
+- You can share a screenshot to Haven too, which means importing one works before Haven has ever asked for your photo library.
+
+---
+
 ## v0.4.0
 
 2026-07-28

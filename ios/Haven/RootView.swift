@@ -6,7 +6,9 @@ import SwiftUI
 // Authenticated: onboarding, which decides for itself which question is next.
 struct RootView: View {
     @StateObject private var auth = AuthModel()
+    @StateObject private var captures = CaptureSync()
     @Environment(Clerk.self) private var clerk
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         // Split into `screen` and one modifier deliberately: with the switch
@@ -41,7 +43,18 @@ struct RootView: View {
     @ViewBuilder
     private var signedIn: some View {
         if let userId = clerk.user?.id {
-            OnboardingFlow(userId: userId).id(userId)
+            OnboardingFlow(userId: userId)
+                .id(userId)
+                // Once signed in, and again on every return to the foreground:
+                // coming back from another app is exactly the moment somebody
+                // has just shared somebody to Haven. The extension writes
+                // offline and never talks to Convex, so this is the only thing
+                // that ever moves a capture into the directory.
+                .task { await captures.run() }
+                .onChange(of: scenePhase) { _, phase in
+                    guard phase == .active else { return }
+                    Task { await captures.run() }
+                }
         } else {
             loading
         }

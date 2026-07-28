@@ -57,6 +57,9 @@ targets:
       # never ships inside the bundle, so it never appears in the widget
       # gallery and the whole feature is invisible.
       - target: HavenWidget
+      # Same for the share extension: unembedded, Haven never appears in
+      # anybody's share sheet.
+      - target: HavenShare
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.inhavens.haven
@@ -92,6 +95,47 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Haven
         # Carries NSExtensionPointIdentifier, which has no build-setting form.
         INFOPLIST_FILE: HavenWidget/Info.plist
+
+  HavenShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: HavenShare
+      # The offline core, compiled into this process too. One directory rather
+      # than a growing list of named files, and it imports nothing but
+      # Foundation on purpose: a share extension is killed if it is slow to
+      # launch, and pulling Clerk and Convex in here would be both.
+      - path: Haven/Shared
+      # Named files, not the Design directory: HavenCard is built on MyCard,
+      # which is the app's Convex-decoded model, and globbing would pull that
+      # whole side in through one file.
+      #
+      # The sheet draws on the first seven. The last two are here because
+      # #Preview blocks compile like any other code and reach across files:
+      # NightBackground's preview composes DustLayer, which seeds itself from
+      # SkyGenerator. Neither is drawn in this process.
+      - path: Haven/Design/HavenColor.swift
+      - path: Haven/Design/ColorMath.swift
+      - path: Haven/Design/HavenFont.swift
+      - path: Haven/Design/HavenMotion.swift
+      - path: Haven/Design/HavenField.swift
+      - path: Haven/Design/HavenButtons.swift
+      - path: Haven/Design/NightBackground.swift
+      - path: Haven/Design/DustLayer.swift
+      - path: Haven/SkyGenerator.swift
+    dependencies: []
+    settings:
+      base:
+        # Must be a child of the app's identifier. A sibling builds fine and
+        # then fails at install, which reads as a runtime mystery.
+        PRODUCT_BUNDLE_IDENTIFIER: com.inhavens.haven.share
+        # The name on the icon in the share sheet.
+        INFOPLIST_KEY_CFBundleDisplayName: Haven
+        # Carries the NSExtension dict, which has no build-setting form.
+        INFOPLIST_FILE: HavenShare/Info.plist
+        # The App Group. Without it the extension writes into its own private
+        # container and the app drains an empty queue forever.
+        CODE_SIGN_ENTITLEMENTS: HavenShare/HavenShare.entitlements
 
   HavenTests:
     type: bundle.unit-test
