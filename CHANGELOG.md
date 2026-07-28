@@ -13,6 +13,8 @@ pull requests, which is where it is easiest to read anyway.
 **Docs**
 
 - The frontend plan's tracker now says what is built and what is waiting, the device ledger names every check that needs a real phone and what each one is for, and three places where the plan's own inventory turned out to be wrong are written down rather than quietly worked around.
+- Two decisions that had been made by simply not building anything -- no screenshot triage on the phone, and the onboarding sky staying as it is -- are written down as decisions, so they can be argued with rather than discovered later.
+- The plan now says where each of its own exit criteria actually stands, and what the evidence for each one is worth.
 
 ---
 

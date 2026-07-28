@@ -288,10 +288,13 @@ Two cheap items PR bodies left open:
 Each has a recommended default so an autonomous run can proceed; every applied default is flagged in the PR body that applies it, for the user to override at review.
 
 - FD1, screenshot triage on iOS (answers backend gate D3). Default: v1 keeps screenshot sharing and triage stays web-only; a failed extraction is visible on the web triage screen and invisible on iOS, accepted for the cohort scale. An iOS triage surface is a recorded post-v1 candidate.
+  **Applied, by omission, and flagged here because no PR flagged it.** Nothing on iOS calls `captures:listCaptures`, `acceptCapture`, `discardCapture` or `retryExtract`, and nothing was built to. A screenshot shared into Haven whose extraction fails is invisible on the phone. Overridable: the surface is a new screen, not a change to a shipped one.
 - FD2, shared-note surface on iOS. Default: defer past v1. The backend keeps `sharedNotes` (its gate D2); iOS renders nothing for it in v1, and F3 leaves the affordance out.
 - FD3, the onboarding sky figure (PRs 73, 90: edges only render between lit stars, so early onboarding reads as scattered dots). Default: leave for v1; it is a taste call the user makes on device, recorded on the ledger.
+  **Applied, by omission, and flagged here because no PR flagged it.** `SkyView` still draws an edge at the dimmer of its two stars, so the first onboarding question shows one lit dot and no figure. Nothing built today changed it. It is ledger item 24 below.
 - FD4, brand glyphs for platforms (PRs 84, 115). Default: text-only stays for v1; real marks are a trademark-usage decision, not a code task.
 - FD5, a share action on the card (PR 115 deferred it). Default: build it in G1 as one `ShareLink` on the card back sharing the beacon URL; smallest possible version, cut on any friction.
+  **Not resolved.** It is the one gate of the six still open, because its default is a thing to build and G1 is gated on the wave D, E and F merges. There is no `ShareLink` anywhere under `ios/Haven/Card/` today.
 - FD6, semantic search and evidence in iOS search. Default: not in v1. The MVP search contract is chips plus keyword, ask covers the intelligent path, and `semanticSearch` with evidence stays the recorded first fast-follow per `mvp-design.md` and the network-intelligence plan.
 
 ## The device ledger (only the user can run these)
@@ -327,6 +330,8 @@ or a signed session that no test on this server can establish.
 22. From PR 147 (paging): with more than fifty people saved, scroll to the bottom and confirm the next page arrives and the count stops carrying its "+".
 23. From PR 148 (pin walkthrough): **follow the three steps on a real phone and confirm the wording matches what iOS actually shows.** This is the one ledger item that can invalidate a shipped unit -- the steps are written against what iOS 26 is believed to show and nobody here has seen that screen. Then confirm Haven appears in the sheet the walkthrough opens, that favouriting it sticks, and that the practice capture lands.
 
+24. Gate FD3, and the only ledger item that is a taste call rather than a check: look at the first onboarding question on a device. Edges render only between lit stars, so one answered question is one dot and no figure. Decide whether that reads as a constellation being built or as a bug.
+
 New user-side setup this plan adds to the existing "Needs you" list: the Apple Team ID and associated-domains provisioning for F2, and enabling the X connection in Clerk (the existing note names Apple and LinkedIn only).
 
 ## Exit criteria: "frontend 100% for v1"
@@ -336,6 +341,49 @@ New user-side setup this plan adds to the existing "Needs you" list: the Apple T
 - The core loop demonstrable on the simulator in one sitting: fresh signup, onboarding to a card with a claimed address, manual add offline, a note, recall by keyword, chip, and ask, opening the person from the result, a reach tap, and a connect between two accounts.
 - `test` and `ios-test` green on main; `xcodegen generate` clean; tracker current; the changelog telling the story.
 - `todo.md`'s "Needs you" plus the device ledger above are the complete remaining work, and every line in them is a dashboard, key, device, or store task no commit can do.
+
+## Exit criteria: where each line stands, 2026-07-28 evening
+
+Audited against `ci/integration-check` (PR 150), which is all ten open frontend
+PRs merged together with `ios-test` and `test` green on the result. That branch
+is a test and is not for merging; it is what makes the evidence below about the
+end state rather than about ten separate trees.
+
+1. **Every unit merged, or moved to a default or the ledger.** Not met. Twelve
+   of twenty are built with their PRs open and green; F2, F3, G1-G4, H1 and H2
+   are not built. F2 does not compile without F1's `ConnectScreen`, F3 rewrites
+   the two files D2 replaces, and wave G is gated on those merges by this plan
+   and strictly serial after it.
+2. **All six gates resolved.** Five of six. FD1, FD2, FD3, FD4 and FD6 are
+   applied and now flagged above; FD5 is open because its default is a thing to
+   build and its unit is gated.
+3. **The core loop demonstrable on the simulator in one sitting.** Every step
+   traces to code on the integration branch -- sign-in on `WelcomeScreen`, the
+   three onboarding questions, the address the server mints and
+   `MyCardTests.addressIsNotOptional` pins, `AddPersonSheet` writing to the App
+   Group queue before the network, the note editor, `searchDirectory` with its
+   chips, `people.ask`, both result rows handing back a person id, `PersonReach`
+   opening the app a handle names, and `profiles:connect` behind the scanner.
+   **That is static evidence, not a walkthrough.** No simulator has run it, and
+   nothing signed-in has ever run on this server at all: the unsigned simulator
+   cannot configure Clerk, so every authenticated path is untested outside its
+   own unit tests. This criterion is the user's, and it is what the device
+   ledger below is for.
+4. **`test` and `ios-test` green on main; `xcodegen generate` clean; tracker
+   current; the changelog telling the story.** Green on the integration branch,
+   not yet on main, because nothing is merged. Sixteen files are added across
+   the ten PRs, so `xcodegen generate` is required before the first build on the
+   Mac; each PR body says so.
+5. **`todo.md`'s "Needs you" plus the ledger are the complete remaining work,
+   and every line is a dashboard, key, device or store task.** Not yet: G, H,
+   F2 and F3 are code, and they are named as code above rather than hidden in
+   the ledger. The ledger itself does hold this property -- all twenty-four
+   items need a phone, a dashboard or a judgement, and none of them can be
+   closed by a commit.
+
+The honest summary: the code half of waves D, E, F and I is done and proven to
+build together; waves G and H and two F units are not started; and the exit
+criteria cannot be met without the merges that unblock them.
 
 ## How to run this plan to completion (the orchestrator loop)
 
