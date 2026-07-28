@@ -80,3 +80,17 @@ export const cityValidator = v.object({
   country: v.optional(v.string()),
   normalized: v.string(),
 });
+
+// A profile's city carries the accent-folded `normalized` key; a person's
+// does not, and Convex object validators reject unknown fields. Anything
+// copying one onto the other has to drop it here rather than spread the
+// whole object -- which fails at runtime, not at compile time, because
+// structural typing is happy to pass the wider shape.
+export function toCityInput(
+  city: { name: string; admin?: string; country?: string } | undefined,
+): { name: string; admin?: string; country?: string } | undefined {
+  if (city === undefined) {
+    return undefined;
+  }
+  return { name: city.name, admin: city.admin, country: city.country };
+}
