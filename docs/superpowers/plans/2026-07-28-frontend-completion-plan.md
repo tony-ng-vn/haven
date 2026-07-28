@@ -63,6 +63,7 @@ What is not built, verified the same way:
 
 ```
 frontier now:  D1  D2  D3  E2  I2
+frontier now:  nothing. Every open unit waits on a merge (see State)
 D1 -> D4, E1
 D2 -> F3
 E2 -> E3, E4, F1
@@ -286,11 +287,27 @@ Two cheap items PR bodies left open:
 
 Each has a recommended default so an autonomous run can proceed; every applied default is flagged in the PR body that applies it, for the user to override at review.
 
+Where each one stands after the 2026-07-28 build. Three were flagged in the PRs
+that applied them; two are applied by nobody building anything, which is a
+decision that leaves no diff and so is recorded here instead; one waits on G1.
+
+| Gate | State |
+| --- | --- |
+| FD1 screenshot triage on iOS | **Default applied, recorded here.** No unit built an iOS triage surface, and none was proposed. A failed extraction stays visible on the web triage screen and invisible on iOS. Nothing in the app links to it -- somebody who shares a screenshot and never opens the web app never learns the extraction failed. Accepted for the cohort, and the honest place to revisit it is the first support question about a screenshot that "did nothing". |
+| FD2 shared-note surface on iOS | Default applied and flagged in PRs 140 and 146. Nothing renders `sharedNotes`; F3 leaves the affordance out. |
+| FD3 the onboarding sky figure | **Default applied, recorded here.** Edges render only between lit stars, so early onboarding reads as scattered dots. Nobody changed it, because it is a taste call that can only be made on a device -- it is item 4 on the ledger below, folded into the card reveal's feel. |
+| FD4 brand glyphs for platforms | Default applied and flagged in PRs 138, 140 and 146. Every platform is named in text; no marks anywhere. |
+| FD5 a share action on the card | **Not yet.** It is G1's to build, and G1 is gated. The only one of the six still open. |
+| FD6 semantic search and evidence in iOS search | Default applied and flagged in PR 141. Search is chips plus keyword; ask covers the intelligent path. |
+
 - FD1, screenshot triage on iOS (answers backend gate D3). Default: v1 keeps screenshot sharing and triage stays web-only; a failed extraction is visible on the web triage screen and invisible on iOS, accepted for the cohort scale. An iOS triage surface is a recorded post-v1 candidate.
+  **Applied, by omission, and flagged here because no PR flagged it.** Nothing on iOS calls `captures:listCaptures`, `acceptCapture`, `discardCapture` or `retryExtract`, and nothing was built to. A screenshot shared into Haven whose extraction fails is invisible on the phone. Overridable: the surface is a new screen, not a change to a shipped one.
 - FD2, shared-note surface on iOS. Default: defer past v1. The backend keeps `sharedNotes` (its gate D2); iOS renders nothing for it in v1, and F3 leaves the affordance out.
 - FD3, the onboarding sky figure (PRs 73, 90: edges only render between lit stars, so early onboarding reads as scattered dots). Default: leave for v1; it is a taste call the user makes on device, recorded on the ledger.
+  **Applied, by omission, and flagged here because no PR flagged it.** `SkyView` still draws an edge at the dimmer of its two stars, so the first onboarding question shows one lit dot and no figure. Nothing built today changed it. It is ledger item 24 below.
 - FD4, brand glyphs for platforms (PRs 84, 115). Default: text-only stays for v1; real marks are a trademark-usage decision, not a code task.
 - FD5, a share action on the card (PR 115 deferred it). Default: build it in G1 as one `ShareLink` on the card back sharing the beacon URL; smallest possible version, cut on any friction.
+  **Not resolved.** It is the one gate of the six still open, because its default is a thing to build and G1 is gated on the wave D, E and F merges. There is no `ShareLink` anywhere under `ios/Haven/Card/` today.
 - FD6, semantic search and evidence in iOS search. Default: not in v1. The MVP search contract is chips plus keyword, ask covers the intelligent path, and `semanticSearch` with evidence stays the recorded first fast-follow per `mvp-design.md` and the network-intelligence plan.
 
 ## The device ledger (only the user can run these)
@@ -313,6 +330,21 @@ Units above append to this list rather than claiming device facts.
 13. Small web check: waitlist constellation touch on a physical iPhone (PRs 63, 65).
 14. From PR 134: VoiceOver at accessibility sizes speaking the shed city line with the name, and the 340pt card cap on a real iPad.
 
+Added by the units built on 2026-07-28. Everything here is a fact about hardware
+or a signed session that no test on this server can establish.
+
+15. From PR 138 (manual add): add somebody in airplane mode, then open the app with signal and confirm they appear. Add somebody whose Instagram handle is already on a person saved from a share, and confirm the note lands on that person rather than creating a twin. Add somebody on WhatsApp and on Telegram and confirm both survive a reinstall, which is where the App Group fallback shows.
+16. From PR 140 (person detail): tap each kind of handle and confirm where it lands -- Instagram, X, LinkedIn and Telegram should open the app if installed, a phone number should raise the call sheet, a WhatsApp number should open the chat. `tel:` cannot be exercised in the simulator at all. Then edit each field and confirm it survives a relaunch, set and remove a photo, and delete a person.
+17. From PR 141 (search navigation): search a word that appears only in a note, open the result, and confirm Back leaves the search exactly as it was, chips and answer intact.
+18. From PR 143 (the address): change your address and confirm the QR on the card back encodes the new one and the old page stops resolving. Claim an address you know is taken and confirm the suggestions offered are actually free. Claim a reserved name (`privacy`, `haven`) and confirm it comes back as taken with a way forward.
+19. From PR 144 (onboarding state): skip the city question, delete Haven, reinstall, sign in, and confirm the question does not come back. Skip in airplane mode and confirm the skip reaches the server. Finish onboarding, clear your city on My Card, relaunch, and confirm you land on People rather than back in the questions. Connect X or LinkedIn on a card with no photo and confirm the provider's picture lands and lights the photo star, then repeat on a card that already has one and confirm nothing is replaced.
+20. From PR 145 (web): open the landing page on a monitor 2560 pixels wide or more and confirm the lens still forms something that reads as a constellation. Open a public card with a very long LinkedIn slug and confirm the row truncates.
+21. From PR 146 (connect): the two-phone connect, and the second scan of the same card saying you were already connected. Confirm the camera permission sheet appears when the scanner opens and never before, and that refusing it leaves a usable screen. Judge whether a 260pt viewfinder frames a card at arm's length. Scan a non-Haven code and confirm the screen stays quiet.
+22. From PR 147 (paging): with more than fifty people saved, scroll to the bottom and confirm the next page arrives and the count stops carrying its "+".
+23. From PR 148 (pin walkthrough): **follow the three steps on a real phone and confirm the wording matches what iOS actually shows.** This is the one ledger item that can invalidate a shipped unit -- the steps are written against what iOS 26 is believed to show and nobody here has seen that screen. Then confirm Haven appears in the sheet the walkthrough opens, that favouriting it sticks, and that the practice capture lands.
+
+24. Gate FD3, and the only ledger item that is a taste call rather than a check: look at the first onboarding question on a device. Edges render only between lit stars, so one answered question is one dot and no figure. Decide whether that reads as a constellation being built or as a bug.
+
 New user-side setup this plan adds to the existing "Needs you" list: the Apple Team ID and associated-domains provisioning for F2, and enabling the X connection in Clerk (the existing note names Apple and LinkedIn only).
 
 ## Exit criteria: "frontend 100% for v1"
@@ -322,6 +354,40 @@ New user-side setup this plan adds to the existing "Needs you" list: the Apple T
 - The core loop demonstrable on the simulator in one sitting: fresh signup, onboarding to a card with a claimed address, manual add offline, a note, recall by keyword, chip, and ask, opening the person from the result, a reach tap, and a connect between two accounts.
 - `test` and `ios-test` green on main; `xcodegen generate` clean; tracker current; the changelog telling the story.
 - `todo.md`'s "Needs you" plus the device ledger above are the complete remaining work, and every line in them is a dashboard, key, device, or store task no commit can do.
+
+## Exit criteria: where each line stands
+
+Rewritten as the merges landed. Waves D, E, F1 and I are on main; F2, F3, G and
+H are the remaining work. Unit H2 is this plan's exit audit and owns the final
+version of this section -- what is here is the running state, not that.
+
+1. **Every unit merged, or moved to a default or the ledger.** Fourteen of
+   twenty merged. F2, F3, G1-G4, H1 and H2 remain, and their gates are now
+   clear: F1 and D2 are on main, so F2 and F3 can compile, and wave G's gate
+   ("all of wave D, E1 through E3, and F1 merged") is satisfied.
+2. **All six gates resolved.** Five of six. FD1, FD2, FD3, FD4 and FD6 are
+   applied and flagged above; FD5's default is a thing to build, and G1 builds
+   it.
+3. **The core loop demonstrable on the simulator in one sitting.** Every step
+   traces to code on main -- sign-in on `WelcomeScreen`, the three onboarding
+   questions, the address the server mints and `MyCardTests.addressIsNotOptional`
+   pins, `AddPersonSheet` writing to the App Group queue before the network, the
+   note editor, `searchDirectory` with its chips, `people.ask`, both result rows
+   handing back a person id, `PersonReach` opening the app a handle names, and
+   `profiles:connect` behind the scanner. **That is static evidence, not a
+   walkthrough.** No simulator has run it, and nothing signed-in has ever run on
+   this server: the unsigned simulator cannot configure Clerk, so every
+   authenticated path is tested only by its own unit tests. This criterion is
+   the user's, and it is what the device ledger below is for.
+4. **`test` and `ios-test` green on main; `xcodegen generate` clean; tracker
+   current; the changelog telling the story.** Green on main after every merge.
+   Sixteen files were added across the merged units, so `xcodegen generate` is
+   required before the next build on the Mac.
+5. **`todo.md`'s "Needs you" plus the ledger are the complete remaining work.**
+   Not yet, and honestly so: F2, F3, G and H are code, and they are named as
+   code above rather than hidden in the ledger. The ledger itself does hold the
+   property -- every item on it needs a phone, a dashboard or a judgement, and
+   none can be closed by a commit.
 
 ## How to run this plan to completion (the orchestrator loop)
 
@@ -338,6 +404,11 @@ One session drives; this section is its operating loop, and the goal prompt poin
 9. Stop and report only when the exit criteria hold, or when every remaining unit is blocked on the user; in that second case, list exactly what is waited on.
 
 ## State
+
+
+Checked means the work is done and the PR is open and green, not that it is on
+main. Nine PRs are open as of 2026-07-28 evening; F2, F3 and waves G and H are
+blocked on those merges rather than on any decision.
 
 - [x] D1 manual add (PR 138)
 - [x] D2 person detail completion (PR 140)
@@ -364,6 +435,8 @@ One session drives; this section is its operating loop, and the goal prompt poin
 
 Findings that contradict the "What is not built" section above, recorded as
 they are made so neither session acts on a stale claim.
+Findings that contradict the "What is not built" section above, recorded so
+neither session acts on a stale claim.
 
 - **E2 is void as written.** The plan says "Nothing ever claims a Haven handle
   from iOS: `profiles:claimHandle` has no caller anywhere, so an iOS-only user
@@ -381,6 +454,19 @@ they are made so neither session acts on a stale claim.
   Nothing was built for E2 beyond a test pinning the half the client owns
   (`MyCardTests.addressIsNotOptional`). E3 and E4 are unblocked.
 
+  three insert paths setting one. A fresh signup already ends with a username
+  on the card and a QR that resolves, which is E2's own definition of done.
+  Nothing was built for it beyond a test pinning the half the client owns
+  (`MyCardTests.addressIsNotOptional`), in PR 143.
+- **E1's practice capture goes through the real share sheet, not the in-app add
+  flow the plan named.** The subject of that walkthrough is the share sheet;
+  practising it by not using it teaches nothing, and milestone 4's own
+  definition of done is a person saved through the sheet. Recorded in PR 148,
+  where it can be overridden.
+- **D4 keeps the "N+" count form**, which the plan expected to die with paging.
+  It is a transient now rather than a permanent state -- it resolves to an exact
+  number when the last page lands -- and removing it would mean showing
+  "People 50" to somebody with three hundred. Recorded in PR 147.
 
 ## Contract requests for the backend
 
@@ -395,6 +481,7 @@ Kept current by every frontend PR that discovers a need; the backend session rea
   dependency rather than a logic one. Recorded rather than fixed, because that
   file is the backend track's.
 - Non-blocking, recorded for backend hygiene (from E3): `mintHandle` throws
+- Non-blocking, recorded for backend hygiene (found by E3): `mintHandle` throws
   "Could not pick an address for you -- choose one yourself" when every rung of
   the ladder is held, and its only caller is `updateMyProfile`'s create path --
   which is onboarding's name question. A person whose name exhausts the ladder
@@ -403,6 +490,9 @@ Kept current by every frontend PR that discovers a need; the backend session rea
   Check your connection and try again." It needs twelve collisions on one name
   to happen and is not a v1 blocker; the fix is server-side (a random suffix
   rung, or a fallback base) and belongs with whoever owns `profiles.ts`.
+  Check your connection and try again." It needs twelve collisions on one name,
+  so it is not a v1 blocker; the fix is server-side (a random-suffix rung, or a
+  fallback base) and belongs with whoever owns `profiles.ts`.
 - Non-blocking, recorded for backend hygiene: the `verified` flag on handles is client-asserted through `updateMyProfile` and published on the public card (PR 69 said it should become server-derived once OAuth landed); at cohort scale this is accepted for v1.
 
 ## Model guidance per unit
