@@ -6,6 +6,20 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.23.0
+
+2026-07-28
+
+**iOS**
+
+- A Haven code scanned with the phone's own camera, or a Haven link tapped in a message, now opens Haven instead of Safari -- straight onto the card it names, with Connect one tap away. Your own address opens your code instead, because offering to connect you to yourself is a dead end.
+
+**Web**
+
+- The site now tells iOS which of its addresses belong to the app. Its own pages -- the landing page, privacy, terms, and every name held back for the site -- are excluded by name, so tapping those still opens the web page they are.
+
+---
+
 ## v0.22.0
 
 2026-07-28

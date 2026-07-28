@@ -16,6 +16,22 @@
 	<array>
 		<string>Default</string>
 	</array>
+	<!--
+	  What makes a tap on inhavens.com/<handle> open Haven instead of Safari.
+	  iOS fetches https://inhavens.com/.well-known/apple-app-site-association on
+	  install and honours whatever that file claims; the file lives in `public/`
+	  and a test keeps it from claiming the site's own pages.
+
+	  Needs the Associated Domains capability on the App ID in the developer
+	  portal, and the file needs the real Team ID in place of its placeholder.
+	  Neither is something a commit can do, and until both are done a scanned
+	  code still lands in Safari -- which is what it does today, so nothing
+	  regresses while they are outstanding.
+	-->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:inhavens.com</string>
+	</array>
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)com.inhavens.haven</string>

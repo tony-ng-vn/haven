@@ -15,13 +15,17 @@ struct ConnectScreen: View {
     /// this screen is a sheet, and the directory it came from is what holds the
     /// stack the person is pushed onto.
     var openPerson: (String) -> Void = { _ in }
+    /// A handle the screen was opened on, from a universal link. Nil when
+    /// somebody opened the scanner themselves and the camera is the way in.
+    var initialHandle: String?
 
     @StateObject private var model: ConnectModel
     @Environment(\.dismiss) private var dismiss
     @State private var photo: Image?
 
-    init(openPerson: @escaping (String) -> Void = { _ in }) {
+    init(openPerson: @escaping (String) -> Void = { _ in }, initialHandle: String? = nil) {
         self.openPerson = openPerson
+        self.initialHandle = initialHandle
         _model = StateObject(wrappedValue: ConnectModel())
     }
 
@@ -41,6 +45,12 @@ struct ConnectScreen: View {
             actions
         }
         .presentationDragIndicator(.visible)
+        // A link arrives with the person already named, so the camera never
+        // opens: the screen goes straight to whoever the address points at.
+        .task {
+            guard let initialHandle else { return }
+            await model.look(at: initialHandle)
+        }
     }
 
     private var question: String {

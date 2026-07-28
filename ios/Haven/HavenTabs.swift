@@ -9,6 +9,10 @@ struct HavenTabs: View {
     /// The Clerk user id. The directory keys its dismissed suggestions by it,
     /// so a second account on the same phone starts clean.
     let userId: String
+    /// The caller's own Haven address, when their card has loaded one. Used
+    /// for exactly one decision: a link to your own card opens your code
+    /// rather than offering to connect you to yourself.
+    var myHandle: String?
     /// Opens straight onto My Card. The reveal's "Add another way to reach me"
     /// arrives here, and landing on People first would make that ghost button
     /// feel like it had not worked.
@@ -30,6 +34,9 @@ struct HavenTabs: View {
     @State private var legalDocument: LegalDocument?
     /// Whether the connect scanner is open.
     @State private var scanning = false
+    /// A handle a universal link arrived with, so the scanner opens on the
+    /// person rather than on the camera.
+    @State private var linkedHandle: String?
 
     var body: some View {
         TabView(selection: $tab) {
@@ -67,11 +74,14 @@ struct HavenTabs: View {
         .legalSheet($legalDocument)
         // On the TabView for the same reason the legal sheet is: the scanner
         // covers the tab bar, which is what a sheet in Haven does.
-        .sheet(isPresented: $scanning) {
-            ConnectScreen { personId in
-                tab = .people
-                peopleRoute.append(.person(id: personId))
-            }
+        .sheet(isPresented: $scanning, onDismiss: { linkedHandle = nil }) {
+            ConnectScreen(
+                openPerson: { personId in
+                    tab = .people
+                    peopleRoute.append(.person(id: personId))
+                },
+                initialHandle: linkedHandle
+            )
         }
         .onAppear {
             if opensCard { openCard(showingCode: false) }
@@ -82,9 +92,27 @@ struct HavenTabs: View {
         // tab has to come along or the push lands on a stack nobody is looking
         // at.
         .onOpenURL { url in
-            guard HavenDeepLink(url: url) == .beacon else { return }
+            if HavenDeepLink(url: url) == .beacon {
+                tab = .people
+                openCard(showingCode: true)
+                return
+            }
+            // A universal link: somebody scanned a Haven code with the system
+            // camera, or tapped one in a message. `ConnectAddress` is the same
+            // reader the in-app scanner uses, so a code cannot mean one thing
+            // to the camera and another to a link.
+            guard let handle = ConnectAddress.handle(in: url.absoluteString) else { return }
             tab = .people
-            openCard(showingCode: true)
+            if let myHandle, handle.lowercased() == myHandle.lowercased() {
+                // Your own address. Offering to connect you to yourself is a
+                // dead end the server refuses anyway; showing your code is what
+                // somebody pointing a phone at your own card actually wants.
+                linkedHandle = nil
+                openCard(showingCode: true)
+            } else {
+                linkedHandle = handle
+                scanning = true
+            }
         }
     }
 
@@ -155,6 +183,9 @@ struct HavenTabs: View {
         // somebody, and a menu is two taps.
         ToolbarItem(placement: .topBarTrailing) {
             Button {
+                // Opened by hand, so the camera is the way in: a handle left
+                // over from a link would otherwise reopen on that person.
+                linkedHandle = nil
                 scanning = true
             } label: {
                 Image(systemName: "qrcode.viewfinder")

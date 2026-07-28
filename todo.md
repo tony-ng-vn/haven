@@ -17,6 +17,7 @@ code is waiting on any of it.
 - [ ] **Vercel: is `CONVEX_DEPLOY_KEY` a production or a preview key?** Settings -> Environment Variables. Less urgent now that only production deploys Convex, but still worth knowing: if it is a production key it is the key deploying prod on every merge to main, which is what you want; if it is a preview key, production is being deployed by a preview key, which is not.
 - [ ] **App Store Connect: reserve the name.** Longest lead time of anything on this list, and "Haven" is crowded.
 - [ ] **Apple Developer: enable Sign in with Apple on the App ID.** The entitlement is in the repo; the capability is not something a commit can turn on.
+- [ ] **Apple Developer: enable Associated Domains on the App ID, and put the real Team ID in `public/.well-known/apple-app-site-association`.** It ships with `TEAMIDXXXX` because a Team ID is issued to the account that ships the app and cannot live in the repo until somebody puts it there. Until both are done, a scanned Haven code still opens Safari -- which is what it does today, so nothing is worse in the meantime, it is just not yet better.
 
 **Your phone** (an unsigned simulator build cannot configure Clerk, so none of these can be checked without a device)
 

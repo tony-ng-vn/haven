@@ -420,7 +420,7 @@ blocked on those merges rather than on any decision.
 - [x] E3 address editor in My Card (PR 143)
 - [x] E4 server onboarding state and avatar import (PR 144)
 - [x] F1 scan and connect (PR 146)
-- [ ] F2 universal links
+- [x] F2 universal links (PR 154)
 - [ ] F3 connected-person state (needs backend B1)
 - [ ] G1 card review fixes
 - [ ] G2 motion and haptics
