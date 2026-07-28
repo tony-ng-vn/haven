@@ -22,6 +22,14 @@ code is waiting on any of it.
 - [ ] Write a note on someone, then search a word that appears only in that note.
 - [ ] Share a profile from Instagram, X and LinkedIn into Haven, and confirm the person lands in the directory.
 - [ ] Ask search a question and see whether the answer is any good.
+- [ ] **Follow the share-sheet walkthrough's three steps on a real phone and check the wording is what iOS actually shows.** The one device check that can invalidate shipped code rather than merely confirm it: the steps were written against what iOS 26 is believed to show, and nobody has seen that screen.
+- [ ] Connect two phones by scanning a card back, and confirm the second scan says you were already connected.
+- [ ] Tap each kind of handle on a saved person and confirm where it lands, including a phone number, which the simulator cannot dial at all.
+- [ ] Change your Haven address and confirm the code on your card back opens the new page and the old one stops resolving.
+
+The full list, with what each one is for and which change it came from, is the
+device ledger in `docs/superpowers/plans/2026-07-28-frontend-completion-plan.md`.
+Twenty-three items; these are the ones worth doing first.
 
 **A key**
 
