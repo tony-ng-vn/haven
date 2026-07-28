@@ -206,7 +206,10 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
         ignitingMajors = newly
         ignition = 0
         withAnimation(HavenMotion.starIgnition) { ignition = 1 }
-        try? await Task.sleep(for: .seconds(HavenMotion.starIgnitionDuration))
+        // The hold, not the duration: the curve is still formally running when
+        // this returns, and the four percent of brightness it has left is not
+        // something anybody is waiting to see.
+        try? await Task.sleep(for: .seconds(HavenMotion.starIgnitionHold))
         // Cancelled means the screen went away mid-ignition, and the state
         // below belongs to a screen nobody is looking at.
         guard !Task.isCancelled else { return }

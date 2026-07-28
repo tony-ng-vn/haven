@@ -47,6 +47,7 @@ struct MyCardScreen: View {
         )
         .navigationTitle("Your card")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { shareToolbar }
         // The bar is transparent by default, so scrolling cut the card off
         // along a razor-straight line with nothing there to explain it, and an
         // object sliced by an invisible plane stops reading as an object.
@@ -227,6 +228,35 @@ struct MyCardScreen: View {
                 HavenRow(title: document.title, action: { legalDocument = document }) {
                     RowMark.chevron
                 }
+            }
+        }
+    }
+
+    /// Sending your address to somebody who is not in front of you.
+    ///
+    /// Gate FD5, at the smallest size it comes in. It is deliberately *not* on
+    /// the card: the whole card already owns a tap for the flip, and the corner
+    /// mark next door records why a second tap handler on the same pixels is
+    /// how one turn becomes two. The toolbar is chrome rather than the object,
+    /// so it can carry a control without competing for the card's own gesture.
+    ///
+    /// Only while the code is up, because that is when somebody is thinking
+    /// about giving their address to someone, and a share button over the front
+    /// of the card would be a second answer to a question the code already
+    /// answers better in person.
+    @ToolbarContentBuilder
+    private var shareToolbar: some ToolbarContent {
+        if showingCode, let card = model.card {
+            ToolbarItem(placement: .topBarTrailing) {
+                ShareLink(
+                    item: URL(string: BeaconAddress.url(for: card.username))
+                        ?? URL(string: "https://\(Config.cardHost)")!,
+                    subject: Text(card.name ?? "My Haven card"),
+                    message: Text("My Haven card")
+                ) {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .accessibilityLabel("Share your address")
             }
         }
     }

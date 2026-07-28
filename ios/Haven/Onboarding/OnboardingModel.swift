@@ -404,7 +404,11 @@ final class OnboardingModel: ObservableObject {
         // field changed: an answer and the question it answers are the same
         // event, and a later edit to the same field is not.
         if let answered = step { record(answered, as: "answered") }
-        try? await Task.sleep(for: .seconds(HavenMotion.starIgnitionDuration))
+        // The same beat `HavenScreen.ignite` waits, from the same constant.
+        // Two sleeps because they are two different jobs -- one settles the
+        // figure, this one holds the next question back -- but they must not
+        // drift, so neither owns the number.
+        try? await Task.sleep(for: .seconds(HavenMotion.starIgnitionHold))
         step = OnboardingStep.first(unansweredIn: saved, skipped: skipped)
     }
 }
