@@ -24,6 +24,9 @@ struct AddPersonSheet: View {
     @State private var draft = AddPersonDraft()
     @State private var attachTo: MirrorPerson?
     @State private var didFail = false
+    /// Counts saves, so the haptic fires for a person who landed and never for
+    /// state that merely arrived.
+    @State private var saves = 0
 
     private var alreadyKnown: MirrorPerson? { draft.alreadyKnown(in: mirror) }
     private var nameMatches: [MirrorPerson] { draft.nameMatches(in: mirror) }
@@ -54,6 +57,10 @@ struct AddPersonSheet: View {
             }
         }
         .presentationDragIndicator(.visible)
+        // Light on commit, per the design tokens. Writing somebody down is a
+        // commit; the sheet closing is the receipt, and this is what the
+        // receipt feels like.
+        .sensoryFeedback(.impact(weight: .light), trigger: saves)
     }
 
     private var nameField: some View {
@@ -151,6 +158,7 @@ struct AddPersonSheet: View {
             didFail = true
             return
         }
+        saves += 1
         onSaved()
         dismiss()
     }

@@ -15,6 +15,9 @@ struct PersonScreen: View {
     @Environment(\.openURL) private var openURL
     @State private var photo: Image?
     @State private var isEditing = false
+    /// Counts notes written, for the commit haptic. A count rather than a
+    /// flag, because writing a second note is a second commit.
+    @State private var notesSaved = 0
 
     init(personId: String) {
         _model = StateObject(wrappedValue: PersonModel(personId: personId))
@@ -34,6 +37,9 @@ struct PersonScreen: View {
         // No navigation title: the header below is the name, and setting both
         // renders it twice on one screen.
         .navigationBarTitleDisplayMode(.inline)
+        // Light on commit. The note is the one thing on this screen that only
+        // exists because somebody wrote it.
+        .sensoryFeedback(.impact(weight: .light), trigger: notesSaved)
         .toolbar { toolbar }
         .cardPhoto(model.person?.photoURL, into: $photo)
         .sheet(isPresented: $isEditing) {
@@ -223,7 +229,10 @@ struct PersonScreen: View {
     private var actions: some View {
         if model.person != nil {
             PrimaryButton(title: model.isSaving ? "Saving..." : "Save note") {
-                Task { await model.saveNote() }
+                Task {
+                    await model.saveNote()
+                    if model.failure == nil { notesSaved += 1 }
+                }
             }
             .disabled(!model.canSave)
         }

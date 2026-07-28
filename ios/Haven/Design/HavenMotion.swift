@@ -32,16 +32,31 @@ enum HavenMotion {
     /// The card reveal settling. The token lives here; the reveal itself is
     /// milestone 1 and is judged on a device.
     static let revealSettleDuration: TimeInterval = 1.1
-    /// Turning the card over. Slower than a screen transition because the card
-    /// is an object with a thickness rather than a panel being swapped, and
-    /// half of it is spent edge-on where there is nothing to look at.
-    static let cardFlipDuration: TimeInterval = 0.5
+
+    /// The one spring in Haven, and the audit that says why there is one.
+    ///
+    /// A timing curve restarts at zero velocity when it is interrupted, which
+    /// reads as a hitch mid-gesture. That only matters where a finger can catch
+    /// something already moving, so every animation in the app was checked:
+    /// the reveal, the star ignition, the sky's shimmer, every screen
+    /// transition, the promo cards, the focus rings and the press scales are
+    /// all one-shot or gesture-free, and a curve is the right shape for them.
+    /// The card flip is the exception -- it is a tap that toggles, so a second
+    /// tap lands while the first is still turning.
+    ///
+    /// The review that asked for springs asked for them everywhere, against a
+    /// tilted card that could be grabbed and spun. That card went in PR 134, so
+    /// this is re-derived from the interactions that exist rather than adopted
+    /// from the finding. Response and damping are the numbers the reviewers
+    /// converged on.
+    static let interruptible = Animation.spring(response: 0.4, dampingFraction: 0.8)
 
     static let press = easeOut(pressDuration)
     static let screen = easeOut(screenDuration)
     static let starIgnition = easeOut(starIgnitionDuration)
     static let revealSettle = easeOut(revealSettleDuration)
-    static let cardFlip = easeOut(cardFlipDuration)
+    /// Interruptible, unlike everything else here: see `interruptible`.
+    static let cardFlip = interruptible
 }
 
 extension View {
