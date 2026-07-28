@@ -1597,3 +1597,76 @@ test("a peer leaving Haven leaves a row that says the connection ended", async (
   expect(person?.connection).toEqual({ state: "ended", peerUsername: "bob" });
   expect(person?.name).toBe("Bob Hopper");
 });
+
+test("a connection's card shows how to reach them", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    name: "Bob Hopper",
+    handles: [
+      { platform: "instagram", value: "bobshots", verified: true },
+      { platform: "phone", value: "+84 90 000 0000", verified: false },
+    ],
+    primaryPlatform: "instagram",
+  });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.contactHandles).toEqual([
+    { platform: "haven", value: "bob" },
+    { platform: "instagram", value: "bobshots" },
+    { platform: "phone", value: "+84 90 000 0000" },
+  ]);
+  // Their card says how they would rather be reached, and the merged list
+  // is useless without it.
+  expect(person?.preferredPlatform).toBe("instagram");
+
+  // Display only. Writing their handles into the owner's row would put rows
+  // in the identity index the owner never saved, and a peer who drops a
+  // handle could never take them back out.
+  const stored = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(stored?.contactHandles).toEqual([{ platform: "haven", value: "bob" }]);
+  expect(
+    await t.run((ctx) =>
+      ctx.db
+        .query("personHandles")
+        .withIndex("by_user_and_platform_and_valueKey", (q) =>
+          q.eq("userId", alice.userId),
+        )
+        .collect(),
+    ),
+  ).toHaveLength(1);
+});
+
+test("the owner's own handle for a connection wins over the peer's card", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, {
+    name: "Bob Hopper",
+    handles: [{ platform: "instagram", value: "bobshots", verified: true }],
+  });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  await alice.as.mutation(api.people.editPerson, {
+    id: personId,
+    contactHandles: [{ platform: "instagram", value: "bob.the.second" }],
+    preferredPlatform: "instagram",
+  });
+
+  // Their card is theirs, but a handle the owner typed is their layer, and
+  // the overlay puts the owner's layer on top.
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.contactHandles).toEqual([
+    { platform: "instagram", value: "bob.the.second" },
+  ]);
+});

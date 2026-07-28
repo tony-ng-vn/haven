@@ -609,6 +609,33 @@ export const directoryFacets = query({
 // Only the detail read merges. A directory page would turn into one profile
 // read per row, and the snapshot written at connect time is what keeps lists
 // and search readable in the meantime.
+// The peer's own ways to be reached, under the owner's layer. Display only:
+// writing them into contactHandles would put rows in the identity index the
+// owner never saved, and a handle the peer later drops could never be taken
+// back out of the owner's row.
+//
+// Nothing is withheld. The public web card strips phone because getByHandle
+// answers strangers; a connection is someone who confirmed this person in
+// person, and mvp-design's contacts overlay renders "their canonical data
+// plus your layer" whole. Per-field control is the roadmap's selective card
+// sharing, deliberately post-v1.
+function mergePeerHandles(
+  own: ContactHandleInput[] | undefined,
+  peer: { platform: string; value: string }[] | undefined,
+): ContactHandleInput[] | undefined {
+  if (peer === undefined || peer.length === 0) {
+    return own;
+  }
+  const mine = own ?? [];
+  const held = new Set(mine.map((handle) => handle.platform));
+  return [
+    ...mine,
+    ...peer
+      .filter((handle) => !held.has(handle.platform))
+      .map((handle) => ({ platform: handle.platform, value: handle.value })),
+  ];
+}
+
 async function projectConnectedPerson(ctx: QueryCtx, person: Doc<"people">) {
   const projected = await projectPerson(ctx, person);
   if (person.havenContactUserId === undefined) {
@@ -633,6 +660,8 @@ async function projectConnectedPerson(ctx: QueryCtx, person: Doc<"people">) {
     // row's copy current is scheduled work: on this read the live one is
     // free and cannot lag.
     connection: { state: "connected" as const, peerUsername: profile.username },
+    contactHandles: mergePeerHandles(person.contactHandles, profile.handles),
+    preferredPlatform: person.preferredPlatform ?? profile.primaryPlatform,
     // Your own photo of them wins: that is your layer, not their card.
     photoUrl:
       person.photoStorageId !== undefined
