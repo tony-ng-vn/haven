@@ -1530,3 +1530,70 @@ test("the fan-out finishes past the first page of connections", async () => {
   // user's connections frozen at their connect-time card forever.
   expect(rows.every((row) => row.companyKey === "pixel foundry")).toBe(true);
 });
+
+// -------------------------------------------------- connection state on read
+
+test("the person payload says a contact is a live connection", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, { name: "Bob Hopper" });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.havenContactUserId).toBe(bob.userId);
+  expect(person?.connection).toEqual({
+    state: "connected",
+    peerUsername: "bob",
+  });
+
+  // And on a list row, which cannot afford a profile read per person: the
+  // Directory has to render the connected chip without one.
+  const listed = await alice.as.query(api.people.searchDirectory, {
+    keyword: "hopper",
+  });
+  expect(listed[0].connection).toEqual({
+    state: "connected",
+    peerUsername: "bob",
+  });
+});
+
+test("a contact the owner saved themselves is not a connection", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const personId = await alice.as.mutation(api.people.addPerson, {
+    name: "Ada Lovelace",
+    contactHandles: [{ platform: "phone", value: "unlisted" }],
+    context: "met at the compiler meetup",
+  });
+
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.connection).toBeNull();
+  expect(person?.havenContactUserId).toBeUndefined();
+});
+
+test("a peer leaving Haven leaves a row that says the connection ended", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.updateMyProfile, { name: "Bob Hopper" });
+  await bob.as.mutation(api.profiles.claimHandle, { handle: "bob" });
+  const { personId } = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+  });
+
+  await bob.as.mutation(api.profiles.deleteMyAccount, {});
+
+  // Alice keeps the contact, like a phone contact, but the client has to be
+  // able to explain why it stopped updating rather than show a live chip
+  // over a card that will never move again.
+  const person = await alice.as.query(api.people.getPerson, { id: personId });
+  expect(person?.havenContactUserId).toBeUndefined();
+  expect(person?.connection).toEqual({ state: "ended", peerUsername: "bob" });
+  expect(person?.name).toBe("Bob Hopper");
+});

@@ -686,6 +686,7 @@ async function purgeOwnedRows(ctx: MutationCtx, userId: string): Promise<void> {
   for (const person of referencing) {
     await ctx.db.patch("people", person._id, {
       havenContactUserId: undefined,
+      connectionEndedAt: Date.now(),
     });
   }
   more ||= referencing.length === PURGE_PAGE;

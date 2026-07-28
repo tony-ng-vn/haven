@@ -72,6 +72,19 @@ const BACKFILL_BATCH_SIZE = 500;
 // attempt 1, index 1 before attempt 2. After that we give up.
 const EMBED_RETRY_DELAYS_MS = [30_000, 5 * 60_000];
 
+// Whether this row is a Haven connection, and which one.
+//
+// "connected": the peer's card merges into this row on the detail read, the
+// shared note is reachable, and profiles.disconnect can end it.
+// "ended": the row began as a connection and no longer references a live
+// card -- the peer deleted their account, or one side disconnected. What is
+// left is the snapshot the owner keeps, like a phone contact.
+// null: an ordinary contact the owner saved themselves.
+const connectionValidator = v.object({
+  state: v.union(v.literal("connected"), v.literal("ended")),
+  peerUsername: v.string(),
+});
+
 // What the client is ever allowed to see for a person. Never embedding,
 // embeddedText, or userId -- those stay server-side.
 const personValidator = v.object({
@@ -93,8 +106,33 @@ const personValidator = v.object({
   // Resolved server-side: clients get a usable signed url, never a raw
   // storage id they cannot render.
   photoUrl: v.union(v.null(), v.string()),
+  // The Haven account this row references, when it still references one.
+  // Present so a client can tell "their card, kept current by them" from
+  // "my notes about them" before it decides what is editable.
+  havenContactUserId: v.optional(v.string()),
+  connection: v.union(v.null(), connectionValidator),
   updatedAt: v.number(),
 });
+
+// Connection state read off the row alone, with no profile lookup: a
+// directory page renders one of these per row, and a lookup each would turn
+// a list read into a read per person.
+function snapshotConnection(person: Doc<"people">) {
+  // ensureMeetPerson is the only writer of havenContactUserId and always
+  // writes the peer's username beside it, so a row with no handle names
+  // nobody and is not renderable as a connection.
+  const peerUsername = person.handle;
+  if (peerUsername === undefined) {
+    return null;
+  }
+  if (person.havenContactUserId !== undefined) {
+    return { state: "connected" as const, peerUsername };
+  }
+  if (person.connectionEndedAt !== undefined) {
+    return { state: "ended" as const, peerUsername };
+  }
+  return null;
+}
 
 async function projectPerson(ctx: QueryCtx, person: Doc<"people">) {
   return {
@@ -117,6 +155,8 @@ async function projectPerson(ctx: QueryCtx, person: Doc<"people">) {
       person.photoStorageId === undefined
         ? null
         : await ctx.storage.getUrl(person.photoStorageId),
+    havenContactUserId: person.havenContactUserId,
+    connection: snapshotConnection(person),
     updatedAt: person.updatedAt,
   };
 }
@@ -589,6 +629,10 @@ async function projectConnectedPerson(ctx: QueryCtx, person: Doc<"people">) {
     city: toCityInput(profile.city) ?? projected.city,
     company: profile.company ?? projected.company,
     role: profile.role ?? projected.role,
+    // Their address is theirs too, and the snapshot fan-out that keeps the
+    // row's copy current is scheduled work: on this read the live one is
+    // free and cannot lag.
+    connection: { state: "connected" as const, peerUsername: profile.username },
     // Your own photo of them wins: that is your layer, not their card.
     photoUrl:
       person.photoStorageId !== undefined
