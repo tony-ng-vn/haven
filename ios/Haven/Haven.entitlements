@@ -2,6 +2,20 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!--
+	  Clerk's signInWithApple() is native ASAuthorization, not a web sheet, and
+	  ASAuthorizationAppleIDProvider needs this entitlement to answer at all.
+	  The simulator does not enforce it, so the welcome screen's primary button
+	  works in development and fails on a real device with error 1000, which
+	  reads as "Apple is down" rather than "the entitlement is missing".
+
+	  Needs the matching Sign In with Apple capability on the App ID in the
+	  developer portal; the entitlement alone does not provision.
+	-->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)com.inhavens.haven</string>

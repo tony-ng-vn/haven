@@ -13,6 +13,8 @@ import SwiftUI
 struct MyCardScreen: View {
     @StateObject private var model: MyCardModel
 
+    @Environment(\.openURL) private var openURL
+
     @State private var editing: CardField?
     @State private var photo: Image?
     @State private var confirmingDelete = false
@@ -48,7 +50,10 @@ struct MyCardScreen: View {
             }
             Button("Keep it", role: .cancel) {}
         } message: {
-            Text("Your card, everyone you have saved, and everything attached to them. This cannot be undone.")
+            // Says "your Haven account" now that the sign-in goes with it: the
+            // old copy described the data only, and someone who read it as
+            // "my login survives this" would have read it correctly.
+            Text("Your card, everyone you have saved, and your Haven account itself. This cannot be undone.")
         }
     }
 
@@ -117,6 +122,25 @@ struct MyCardScreen: View {
                 EmptyView()
             } trailing: {
                 EmptyView()
+            }
+
+            // Guideline 5.1.1(i) wants the privacy policy reachable from inside
+            // the app, not only from the App Store listing, and this screen is
+            // where an account already lives. Built from Config.cardHost rather
+            // than a literal, so the pages and the beacon can never point at
+            // different sites.
+            Text("Legal")
+                .havenGroupLabel()
+                .padding(.top, 26)
+                .padding(.bottom, 6)
+            ForEach(LegalDocument.allCases) { document in
+                HavenRow(title: document.title) {
+                    openURL(document.url)
+                } leading: {
+                    EmptyView()
+                } trailing: {
+                    EmptyView()
+                }
             }
         }
     }

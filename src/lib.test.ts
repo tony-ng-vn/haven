@@ -15,6 +15,7 @@ import {
   isClerkFlowHash,
   isJoinHash,
   isValidEmail,
+  legalDocFromPath,
   DEFAULT_ADMIN_EMAILS,
   nameGuessFromSlug,
   normalizeEmail,
@@ -774,13 +775,72 @@ describe("resolveView with a card path", () => {
 
   test("every other path routes exactly as it did before", () => {
     expect(resolveView({ ...base, pathname: "/" })).toBe("waitlist");
-    expect(resolveView({ ...base, pathname: "/privacy" })).toBe("waitlist");
+    // Hyphenated, so it is not a claimable handle and not a card.
+    expect(resolveView({ ...base, pathname: "/sign-in" })).toBe("waitlist");
     expect(
       resolveView({ ...base, pathname: "/", isAuthenticated: true }),
     ).toBe("home");
     expect(
       resolveView({ ...base, pathname: "/", hash: "#/sign-in" }),
     ).toBe("signin");
+  });
+});
+
+describe("legalDocFromPath", () => {
+  test("names the two documents the App Store asks for", () => {
+    expect(legalDocFromPath("/privacy")).toBe("privacy");
+    expect(legalDocFromPath("/terms")).toBe("terms");
+  });
+
+  // A link typed by hand, or pasted with the trailing slash a browser adds,
+  // has to land on the policy. App Review follows the url from App Store
+  // Connect, and a 404 there is a rejection.
+  test("forgives a trailing slash and any casing", () => {
+    expect(legalDocFromPath("/privacy/")).toBe("privacy");
+    expect(legalDocFromPath("/Privacy")).toBe("privacy");
+    expect(legalDocFromPath("/TERMS/")).toBe("terms");
+  });
+
+  test("only the top level, and nothing else", () => {
+    expect(legalDocFromPath("/")).toBeNull();
+    expect(legalDocFromPath("/privacy/extra")).toBeNull();
+    expect(legalDocFromPath("/maya")).toBeNull();
+    expect(legalDocFromPath("/legal")).toBeNull();
+  });
+});
+
+describe("resolveView with a legal path", () => {
+  const base = {
+    isAuthenticated: false,
+    isLoading: false,
+    hash: "",
+    hasSessionHint: false,
+  };
+
+  // Same reasoning as the card route above: the reviewer opening this url is
+  // signed out, and a signed-in visitor who taps "Privacy" wants the policy
+  // rather than a bounce to their own home.
+  test("a legal path wins over every auth state", () => {
+    expect(resolveView({ ...base, pathname: "/privacy" })).toBe("legal");
+    expect(
+      resolveView({ ...base, pathname: "/terms", isAuthenticated: true }),
+    ).toBe("legal");
+    expect(
+      resolveView({
+        ...base,
+        pathname: "/privacy",
+        isLoading: true,
+        hasSessionHint: true,
+      }),
+    ).toBe("legal");
+  });
+
+  // The two routes cannot both own "/privacy", and the handle list is what
+  // keeps them apart. If somebody ever unreserves the word, this fails here
+  // rather than by quietly serving a stranger's card as the privacy policy.
+  test("no one can claim these paths as a handle", () => {
+    expect(handleFromPath("/privacy")).toBeNull();
+    expect(handleFromPath("/terms")).toBeNull();
   });
 });
 
