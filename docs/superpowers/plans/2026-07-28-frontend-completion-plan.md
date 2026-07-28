@@ -345,8 +345,8 @@ One session drives; this section is its operating loop, and the goal prompt poin
 - [ ] D4 directory paging
 - [x] D5 welcome legal links (PR 137)
 - [ ] E1 pin walkthrough and practice capture
-- [ ] E2 handle claim at card creation
-- [ ] E3 address editor in My Card
+- [x] E2 handle claim at card creation -- void on inspection, see "Corrections to this plan's inventory" (PR 143)
+- [x] E3 address editor in My Card (PR 143)
 - [ ] E4 server onboarding state and avatar import
 - [ ] F1 scan and connect
 - [ ] F2 universal links
@@ -360,11 +360,41 @@ One session drives; this section is its operating loop, and the goal prompt poin
 - [x] I1 CI signing-flag removal (PR 136)
 - [ ] I2 web spot-checks
 
+## Corrections to this plan's inventory
+
+Findings that contradict the "What is not built" section above, recorded as
+they are made so neither session acts on a stale claim.
+
+- **E2 is void as written.** The plan says "Nothing ever claims a Haven handle
+  from iOS: `profiles:claimHandle` has no caller anywhere, so an iOS-only user
+  has no username". The first clause is true and the second does not follow.
+  `profiles.updateMyProfile` mints a handle itself when it creates the row
+  (`mintHandle`, `convex/profiles.ts`), the name question is the write that
+  creates it, name is the one answer nothing offers to skip
+  (`OnboardingStep.first` returns `.name` until it is filled, and `NameScreen`
+  has no Skip), and `profiles.username` is required by the schema with all
+  three insert paths setting one. So a fresh signup already ends with a
+  username on the card and a QR that resolves, which is E2's own definition of
+  done. The silent auto-claim that Phase 1 open question 1 recommended was
+  built, on the server side, and the inventory missed it because it looked for
+  a `claimHandle` caller.
+  Nothing was built for E2 beyond a test pinning the half the client owns
+  (`MyCardTests.addressIsNotOptional`). E3 and E4 are unblocked.
+
 ## Contract requests for the backend
 
 Kept current by every frontend PR that discovers a need; the backend session reads this section, not our diffs.
 
 - None blocking today: every unit above builds against functions already on main, plus the two PLANNED items the backend plan already carries for F3 (`havenContactUserId` and `connection` on the person payload; `profiles.disconnect`).
+- Non-blocking, recorded for backend hygiene (from E3): `mintHandle` throws
+  "Could not pick an address for you -- choose one yourself" when every rung of
+  the ladder is held, and its only caller is `updateMyProfile`'s create path --
+  which is onboarding's name question. A person whose name exhausts the ladder
+  therefore cannot get past the first onboarding screen at all, and the client
+  cannot tell that failure from a dead network, so it says "That did not save.
+  Check your connection and try again." It needs twelve collisions on one name
+  to happen and is not a v1 blocker; the fix is server-side (a random suffix
+  rung, or a fallback base) and belongs with whoever owns `profiles.ts`.
 - Non-blocking, recorded for backend hygiene: the `verified` flag on handles is client-asserted through `updateMyProfile` and published on the public card (PR 69 said it should become server-derived once OAuth landed); at cohort scale this is accepted for v1.
 
 ## Model guidance per unit
