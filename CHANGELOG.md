@@ -6,6 +6,18 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.10.0
+
+2026-07-28
+
+**Backend**
+
+- Love Alarm now forgets you were in a room. Presence expired after two minutes and stopped being visible, but the record that you had been there stayed until you deleted your account; it is now deleted when it expires.
+- A screenshot capture no longer files someone's linked account as their job title. On Instagram and TikTok, which have no headline, that line is read as the bio it actually is -- so searching a company name stops turning up people whose only connection to it was a link in their bio.
+- Your name, city, company, role and handles now have a length the server agrees with, on your own card and on people you save. The limits are the ones the design settled on; before this the app capped nothing and the server accepted anything.
+
+---
+
 ## v0.9.0
 
 2026-07-28

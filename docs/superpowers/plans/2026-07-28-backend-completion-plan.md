@@ -93,6 +93,11 @@ Branch `chore/convex-hygiene`.
   Nothing client-facing is stale meanwhile: `connection.peerUsername` is served live on the detail read.
 - A peer clearing a card field (company, role, city) leaves the connection's snapshot holding the old value, because `projectConnectedPerson` falls back to the snapshot when the profile has none, and the fan-out matches that fallback so search and card agree. Reading a cleared field as a clear is a change to the overlay's merge rule, not to the fan-out, and it is unspecced in `mvp-design.md`.
 
+### Findings recorded while building B2, not built
+
+- `saveSharedProfile` and the capture-acceptance path still accept unbounded strings for name and handles. B2.5 caps only the interactive mutations, on the rule this file's own code already states: the capture paths run without the user present, so a queued share nobody can shorten must not fail on a length. Capping them means truncating rather than throwing, and truncating an identity value silently is its own decision -- it changes what handle a person dedups on.
+- `D1` cannot be closed by this unit. The sweep is built and the table stays, but keep-or-cut is a product call due before the Phase 6 privacy labels, because presence data has to be declared either way.
+
 ### B3: the .unique() flip (gated on wave C step 4; owns one line of convex/people.ts)
 
 Branch `fix/convex-unique-handle-lookup`, its own tiny PR.

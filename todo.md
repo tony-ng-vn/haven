@@ -48,9 +48,11 @@ code is waiting on any of it.
   - [x] 9. Public web card page at `inhavens.com/<handle>` (`src/CardPage.tsx`), which is what unblocked the beacon flag.
   - [~] Answer the six open questions in the build plan. None block milestone 1. Question 5 is answered and implemented (2026-07-25): reuse `username` as the one handle, with `claimHandle` alongside `setUsername`. The handle UX question is due before milestone 4.
   - [x] Confirmed `ios/` builds green from a clean checkout, and added the `HavenTests` target. Run `xcodegen generate` in `ios/` first: the `.xcodeproj` is git-ignored and generated from `project.yml`, so a stale local copy can look broken when nothing is wrong.
+- [x] Backend hygiene and hardening (unit B2, PR 142): a test that catches a cron pointing at a renamed function, an expiry sweep for `loveAlarmPresence`, every deployment env var documented in `.env.local.example`, a definition of "headline" for platforms that have none, and server-side caps on the free-text card fields.
 - [~] Decide the fate of the orphaned web product surface.
   Decided 2026-07-25 for `people` and `captures`: promoted, not parked -- `people` is the iOS directory table, extended in place (single-player contacts are standalone owned rows).
   Still open for `loveAlarm` and `sharedNotes`, and for the web UI itself.
+  `loveAlarm` keeps its table and gains an expiry sweep (backend gate D1, default applied in PR 142); keep-or-cut is still yours to call, and it is due before the Phase 6 privacy labels because presence data has to be declared either way. `sharedNotes` is decided: keep (gate D2), and PR 139 made it load-bearing on the connections edge.
   `profiles.username` is settled by question 5 (reused as the one handle).
 - [x] Housekeeping: pull `main` into the working checkout, then remove the leftover `.worktrees/feat-ios-foundations` worktree and its branch so there is one copy.
 
