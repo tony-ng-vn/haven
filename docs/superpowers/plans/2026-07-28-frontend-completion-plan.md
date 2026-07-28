@@ -365,6 +365,13 @@ One session drives; this section is its operating loop, and the goal prompt poin
 Kept current by every frontend PR that discovers a need; the backend session reads this section, not our diffs.
 
 - None blocking today: every unit above builds against functions already on main, plus the two PLANNED items the backend plan already carries for F3 (`havenContactUserId` and `connection` on the person payload; `profiles.disconnect`).
+- Non-blocking, for the backend track rather than a request: `convex/captures.test.ts`
+  > "acceptCapture creates an owned person and consumes the capture" failed once
+  on 2026-07-28 on a branch that touches no `convex/` or `src/` file at all, and
+  passed on a rerun of the same commit. It took 431ms in the failing run against
+  single-digit milliseconds for its neighbours, which reads like a timing
+  dependency rather than a logic one. Recorded rather than fixed, because that
+  file is the backend track's.
 - Non-blocking, recorded for backend hygiene: the `verified` flag on handles is client-asserted through `updateMyProfile` and published on the public card (PR 69 said it should become server-derived once OAuth landed); at cohort scale this is accepted for v1.
 
 ## Model guidance per unit

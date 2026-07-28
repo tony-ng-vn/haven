@@ -16,6 +16,27 @@ on:
       - "ios/**"
       - ".github/workflows/ios.yml"
 
+# One simulator run at a time, across every branch.
+#
+# There is one self-hosted Mac and one simulator on it. Two `xcodebuild test`
+# runs landing together do not queue politely -- they fight over the same
+# CoreSimulator device and one of them dies during bootstrap with "Early
+# unexpected exit, operation never finished bootstrapping ... Test crashed with
+# signal kill", which reads exactly like a real failure and is not one. It cost
+# two false reds on 2026-07-28, on branches whose Swift compiled perfectly.
+#
+# The group is a fixed string rather than the usual `${{ github.ref }}`, because
+# the contention is between branches, not within one. `cancel-in-progress` stays
+# false: every queued run is a real pull request waiting for an answer, and the
+# whole point is that it gets a true one.
+#
+# The cost is wall clock. Runs are a minute or two each and now go one after
+# another rather than at once, which is the right trade against a red that means
+# nothing.
+concurrency:
+  group: ios-simulator
+  cancel-in-progress: false
+
 jobs:
   ios-test:
     runs-on: self-hosted-mac
