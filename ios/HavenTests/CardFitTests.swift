@@ -1,6 +1,5 @@
-import SwiftUI
+import CoreGraphics
 import Testing
-import UIKit
 
 @testable import Haven
 
@@ -35,7 +34,7 @@ struct CardFitTests {
         // Roughly the range `@ScaledMetric` spans from the smallest text size
         // to accessibility 5.
         for scaled in stride(from: 20.0, through: 120.0, by: 4.0) {
-            let diameter = CardMetrics.fittedContactDiameter(scaled: scaled, fitting: face, count: 4)
+            let diameter = CardMetrics.fittedContactDiameter(scaled: scaled, fitting: face)
             let row = 4 * diameter + 3 * CardMetrics.contactGap
             #expect(row <= face, "a \(diameter)pt mark needs \(row)pt of \(face)pt")
         }
@@ -44,7 +43,7 @@ struct CardFitTests {
     /// Shrinking to fit has a floor: below it the marks are no longer marks.
     @Test("the marks never shrink to nothing, however tight the card")
     func contactsHaveAFloor() {
-        let diameter = CardMetrics.fittedContactDiameter(scaled: 100, fitting: 40, count: 4)
+        let diameter = CardMetrics.fittedContactDiameter(scaled: 100, fitting: 40)
         #expect(diameter >= CardMetrics.contactDiameterFloor)
     }
 
@@ -55,10 +54,21 @@ struct CardFitTests {
         let face = Self.cardWidth(screen: Self.smallPhoneWidth) - 2 * CardMetrics.footInset
         let diameter = CardMetrics.fittedContactDiameter(
             scaled: CardMetrics.contactDiameter,
-            fitting: face,
-            count: 4
+            fitting: face
         )
         #expect(diameter == CardMetrics.contactDiameter)
+    }
+
+    /// A mark is a mark. Sizing it by how many this person happens to have gave
+    /// a card with one handle a circle three times the size of the same circle
+    /// on a card with four, at accessibility sizes a 90pt one -- and onboarding
+    /// collects exactly one platform, so that is the common card, not the odd
+    /// one.
+    @Test("a mark is the same size however few of them there are")
+    func markSizeIgnoresCount() {
+        let face = Self.cardWidth(screen: Self.smallPhoneWidth) - 2 * CardMetrics.footInset
+        let designed = CardMetrics.fittedContactDiameter(scaled: 90, fitting: face)
+        #expect(designed * 4 + 3 * CardMetrics.contactGap <= face)
     }
 
     // MARK: - The card itself
@@ -102,64 +112,5 @@ struct CardFitTests {
     func figureTakesWhatIsLeft() {
         let band = CardMetrics.figureBandHeight(cardHeight: 400, footHeight: 80)
         #expect(band == 400 - 80 - CardMetrics.footInset - CardMetrics.figureGap)
-    }
-}
-
-// MARK: - Contrast
-
-/// The page runs from night at the top toward dusk as it descends, so a colour
-/// that reads at the top of a scroll can fail at the bottom. Every one of these
-/// is measured against both ends rather than against the one that flatters it.
-@Suite("Text contrast")
-struct TextContrastTests {
-    /// What WCAG asks of text below roughly 18pt, which is all of Haven's.
-    static let readable: Double = 4.5
-
-    @Test("supporting text reads against both ends of the page")
-    func secondaryText() {
-        #expect(contrast(HavenColor.muted, on: HavenColor.night) >= Self.readable)
-        #expect(contrast(HavenColor.muted, on: HavenColor.dusk) >= Self.readable)
-    }
-
-    @Test("body text reads against both ends of the page")
-    func bodyText() {
-        #expect(contrast(HavenColor.ink, on: HavenColor.night) >= Self.readable)
-        #expect(contrast(HavenColor.ink, on: HavenColor.dusk) >= Self.readable)
-    }
-
-    /// Ember is a row title now -- "Delete your account" -- and not only the
-    /// colour of an error message, so it has to be readable rather than merely
-    /// alarming.
-    @Test("the warning colour reads as text, not just as a warning")
-    func warningText() {
-        #expect(contrast(HavenColor.ember, on: HavenColor.night) >= Self.readable)
-        #expect(contrast(HavenColor.ember, on: HavenColor.dusk) >= Self.readable)
-    }
-
-    /// Why the group labels and row accessories moved off `faint`: it reads at
-    /// the top of the page and fails at the bottom, and the ACCOUNT heading is
-    /// at the bottom. Pinned so nobody moves them back.
-    @Test("faint is not a colour for text")
-    func faintIsNotForText() {
-        #expect(contrast(HavenColor.faint, on: HavenColor.night) >= Self.readable)
-        #expect(contrast(HavenColor.faint, on: HavenColor.dusk) < Self.readable)
-    }
-
-    /// WCAG 2.1 relative luminance and contrast ratio, on the resolved colours
-    /// rather than on the hex literals, so this measures what actually draws.
-    private func contrast(_ a: Color, on b: Color) -> Double {
-        let first = luminance(a), second = luminance(b)
-        let lighter = max(first, second), darker = min(first, second)
-        return (lighter + 0.05) / (darker + 0.05)
-    }
-
-    private func luminance(_ color: Color) -> Double {
-        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
-        UIColor(color).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-        func channel(_ value: CGFloat) -> Double {
-            let v = Double(value)
-            return v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
-        }
-        return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue)
     }
 }

@@ -31,7 +31,7 @@ struct MyCard: Decodable, Equatable {
 
     /// Mirrors `platformValidator` in `convex/profileFields.ts`. Email is absent
     /// on purpose: it was cut as a platform and nothing reintroduces it.
-    enum Platform: String, Decodable, Equatable {
+    enum Platform: String, Decodable, Equatable, CaseIterable {
         case instagram, x, linkedin, phone
     }
 }

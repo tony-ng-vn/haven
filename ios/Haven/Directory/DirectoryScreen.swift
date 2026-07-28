@@ -160,7 +160,7 @@ struct DirectoryScreen: View {
                     detail: person.detail,
                     action: { openPerson(person.id) },
                     leading: { EmptyView() },
-                    trailing: { RowChevron() }
+                    trailing: { RowMark.chevron }
                 )
             }
         }

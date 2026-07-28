@@ -169,9 +169,12 @@ struct MyCardScreen: View {
             .cardPhoto(card.photoURL, into: $photo)
 
             if let failure = model.failure {
+                // Tinted through the helper, not layered over it: the ember
+                // used to sit outside `havenSecondary` and never reached the
+                // text, so a save that failed said so in the same grey as a
+                // hint.
                 Text(failure)
-                    .havenSecondary()
-                    .foregroundStyle(HavenColor.ember)
+                    .havenSecondary(HavenColor.ember)
                     .padding(.bottom, 8)
             }
 
@@ -202,14 +205,8 @@ struct MyCardScreen: View {
                 .padding(.top, 26)
                 .padding(.bottom, 6)
             ForEach(LegalDocument.allCases) { document in
-                // Leaves the app, so not a chevron: these open Safari rather
-                // than pushing a screen, and a chevron would promise a back
-                // button that is not coming.
                 HavenRow(title: document.title, action: { openURL(document.url) }) {
-                    Image(systemName: "arrow.up.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(HavenColor.muted)
-                        .accessibilityHidden(true)
+                    RowMark.external
                 }
             }
         }
@@ -258,7 +255,7 @@ struct MyCardScreen: View {
             if value == nil {
                 RowAccessory(text: "Add")
             } else {
-                RowChevron()
+                RowMark.chevron
             }
         }
     }

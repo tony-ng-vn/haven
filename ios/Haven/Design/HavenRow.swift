@@ -136,12 +136,25 @@ struct RowAccessory: View {
 
 /// The mark on a row that opens something.
 ///
-/// `HavenRow` already hands VoiceOver the `.isButton` trait, so without this
-/// the screen reader is told more than the eye is: six rows that all open a
-/// sheet, and nothing but the press highlight saying so.
-struct RowChevron: View {
+/// `HavenRow` already hands VoiceOver the `.isButton` trait, so without one of
+/// these the screen reader is told more than the eye is: six rows that all open
+/// a sheet, and nothing but the press highlight saying so.
+///
+/// One type rather than one per symbol, so the styling every row accessory
+/// shares lives in one place: the last time this colour moved it had to be
+/// found twice.
+struct RowMark: View {
+    let symbol: String
+
+    /// Opens something inside Haven.
+    static let chevron = RowMark(symbol: "chevron.right")
+
+    /// Leaves for Safari. Not a chevron: a chevron promises a back button that
+    /// is not coming.
+    static let external = RowMark(symbol: "arrow.up.right")
+
     var body: some View {
-        Image(systemName: "chevron.right")
+        Image(systemName: symbol)
             .font(.footnote.weight(.semibold))
             .foregroundStyle(HavenColor.muted)
             .accessibilityHidden(true)
@@ -166,7 +179,13 @@ struct RowChevron: View {
             HavenRow(title: "Phone", action: {}) {
                 RowAccessory(text: "Add")
             }
-            HavenRow(title: "Ho Chi Minh City", detail: "Vietnam", action: {})
+            HavenRow(title: "Ho Chi Minh City", detail: "Vietnam", action: {}) {
+                RowMark.chevron
+            }
+            HavenRow(title: "Privacy Policy", action: {}) {
+                RowMark.external
+            }
+            HavenRow(title: "Delete your account", isDestructive: true, action: {})
         }
         .padding(24)
     }

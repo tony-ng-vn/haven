@@ -1,9 +1,13 @@
 import Foundation
+import SwiftUI
 import Testing
+import UIKit
+
 @testable import Haven
 
-// Colour parsing and conversion behind the palette. Everything visual about
-// the tokens is judged by a human against the SwiftUI previews.
+// Colour parsing and conversion behind the palette, and the contrast a token
+// has to hold to be text. Everything else visual about the tokens is judged by
+// a human against the SwiftUI previews.
 
 private let tolerance = 1e-9
 
@@ -68,5 +72,64 @@ struct ColorMathTests {
         expectClose(at360.r, at0.r, "wrapped.r")
         expectClose(at360.g, at0.g, "wrapped.g")
         expectClose(at360.b, at0.b, "wrapped.b")
+    }
+}
+
+// MARK: - Contrast
+
+/// The page runs from night at the top toward dusk as it descends, so a colour
+/// that reads at the top of a scroll can fail at the bottom. Every one of these
+/// is measured against both ends rather than against the one that flatters it.
+@Suite("Text contrast")
+struct TextContrastTests {
+    /// What WCAG asks of text below roughly 18pt, which is all of Haven's.
+    static let readable: Double = 4.5
+
+    @Test("supporting text reads against both ends of the page")
+    func secondaryText() {
+        #expect(contrast(HavenColor.muted, on: HavenColor.night) >= Self.readable)
+        #expect(contrast(HavenColor.muted, on: HavenColor.dusk) >= Self.readable)
+    }
+
+    @Test("body text reads against both ends of the page")
+    func bodyText() {
+        #expect(contrast(HavenColor.ink, on: HavenColor.night) >= Self.readable)
+        #expect(contrast(HavenColor.ink, on: HavenColor.dusk) >= Self.readable)
+    }
+
+    /// Ember is a row title now -- "Delete your account" -- and not only the
+    /// colour of an error message, so it has to be readable rather than merely
+    /// alarming.
+    @Test("the warning colour reads as text, not just as a warning")
+    func warningText() {
+        #expect(contrast(HavenColor.ember, on: HavenColor.night) >= Self.readable)
+        #expect(contrast(HavenColor.ember, on: HavenColor.dusk) >= Self.readable)
+    }
+
+    /// Why the group labels and row accessories moved off `faint`: it reads at
+    /// the top of the page and fails at the bottom, and the ACCOUNT heading is
+    /// at the bottom. Pinned so nobody moves them back.
+    @Test("faint is not a colour for text")
+    func faintIsNotForText() {
+        #expect(contrast(HavenColor.faint, on: HavenColor.night) >= Self.readable)
+        #expect(contrast(HavenColor.faint, on: HavenColor.dusk) < Self.readable)
+    }
+
+    /// WCAG 2.1 relative luminance and contrast ratio, on the resolved colours
+    /// rather than on the hex literals, so this measures what actually draws.
+    private func contrast(_ a: Color, on b: Color) -> Double {
+        let first = luminance(a), second = luminance(b)
+        let lighter = max(first, second), darker = min(first, second)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    private func luminance(_ color: Color) -> Double {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        UIColor(color).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        func channel(_ value: CGFloat) -> Double {
+            let v = Double(value)
+            return v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue)
     }
 }

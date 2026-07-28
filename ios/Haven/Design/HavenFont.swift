@@ -78,10 +78,11 @@ extension View {
             .foregroundStyle(tint)
     }
 
-    /// Supporting text beside or beneath something else.
-    func havenSecondary() -> some View {
+    /// Supporting text beside or beneath something else. Tinted by parameter
+    /// for the same reason `havenBody` is.
+    func havenSecondary(_ tint: Color = HavenColor.muted) -> some View {
         font(.footnote)
-            .foregroundStyle(HavenColor.muted)
+            .foregroundStyle(tint)
     }
 
     /// A group heading over a list of rows ("Connect an account").
