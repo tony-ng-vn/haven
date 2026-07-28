@@ -1,0 +1,200 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "TEAMIDXXXX.com.inhavens.haven"
+        ],
+        "components": [
+          {
+            "/": "/",
+            "exclude": true,
+            "comment": "The landing page is a web page, not a card."
+          },
+          {
+            "/": "/*.*",
+            "exclude": true,
+            "comment": "Anything with a dot is a file: assets, icons, this file."
+          },
+          {
+            "/": "/api/*",
+            "exclude": true,
+            "comment": "Not a person."
+          },
+          {
+            "/": "/about",
+            "exclude": true
+          },
+          {
+            "/": "/account",
+            "exclude": true
+          },
+          {
+            "/": "/admin",
+            "exclude": true
+          },
+          {
+            "/": "/api",
+            "exclude": true
+          },
+          {
+            "/": "/app",
+            "exclude": true
+          },
+          {
+            "/": "/assets",
+            "exclude": true
+          },
+          {
+            "/": "/auth",
+            "exclude": true
+          },
+          {
+            "/": "/beacon",
+            "exclude": true
+          },
+          {
+            "/": "/blog",
+            "exclude": true
+          },
+          {
+            "/": "/callback",
+            "exclude": true
+          },
+          {
+            "/": "/card",
+            "exclude": true
+          },
+          {
+            "/": "/cdn",
+            "exclude": true
+          },
+          {
+            "/": "/contact",
+            "exclude": true
+          },
+          {
+            "/": "/docs",
+            "exclude": true
+          },
+          {
+            "/": "/haven",
+            "exclude": true
+          },
+          {
+            "/": "/havens",
+            "exclude": true
+          },
+          {
+            "/": "/health",
+            "exclude": true
+          },
+          {
+            "/": "/help",
+            "exclude": true
+          },
+          {
+            "/": "/home",
+            "exclude": true
+          },
+          {
+            "/": "/inhaven",
+            "exclude": true
+          },
+          {
+            "/": "/inhavens",
+            "exclude": true
+          },
+          {
+            "/": "/join",
+            "exclude": true
+          },
+          {
+            "/": "/legal",
+            "exclude": true
+          },
+          {
+            "/": "/login",
+            "exclude": true
+          },
+          {
+            "/": "/logout",
+            "exclude": true
+          },
+          {
+            "/": "/mail",
+            "exclude": true
+          },
+          {
+            "/": "/people",
+            "exclude": true
+          },
+          {
+            "/": "/privacy",
+            "exclude": true
+          },
+          {
+            "/": "/profile",
+            "exclude": true
+          },
+          {
+            "/": "/public",
+            "exclude": true
+          },
+          {
+            "/": "/root",
+            "exclude": true
+          },
+          {
+            "/": "/search",
+            "exclude": true
+          },
+          {
+            "/": "/security",
+            "exclude": true
+          },
+          {
+            "/": "/settings",
+            "exclude": true
+          },
+          {
+            "/": "/signin",
+            "exclude": true
+          },
+          {
+            "/": "/signup",
+            "exclude": true
+          },
+          {
+            "/": "/static",
+            "exclude": true
+          },
+          {
+            "/": "/status",
+            "exclude": true
+          },
+          {
+            "/": "/support",
+            "exclude": true
+          },
+          {
+            "/": "/terms",
+            "exclude": true
+          },
+          {
+            "/": "/waitlist",
+            "exclude": true
+          },
+          {
+            "/": "/www",
+            "exclude": true
+          },
+          {
+            "/": "/*",
+            "comment": "Everything else at the root is somebody's card."
+          }
+        ]
+      }
+    ]
+  }
+}

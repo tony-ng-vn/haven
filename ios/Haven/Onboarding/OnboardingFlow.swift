@@ -61,7 +61,9 @@ struct OnboardingFlow: View {
                 }
             )
         } else {
-            HavenTabs(userId: userId, opensCard: opensCard)
+            // The card is already loaded here, so the tabs get the address
+            // rather than opening a second subscription to find it.
+            HavenTabs(userId: userId, myHandle: model.card?.username, opensCard: opensCard)
         }
     }
 }
