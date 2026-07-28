@@ -36,6 +36,20 @@ enum ContactValue {
         return handle
     }
 
+    /// The same for Telegram, which serves profiles from two addresses.
+    ///
+    /// Never asked for on your own card -- Clerk has no Telegram connection and
+    /// the card offers four platforms. It is here because a person you save by
+    /// hand can carry any handle you want to record, Telegram included
+    /// (`mvp-design.md`), and the rules are Telegram's own: five to
+    /// thirty-two characters, letters, digits and underscores.
+    static func telegramHandle(from raw: String) -> String? {
+        let handle = handle(in: raw, after: ["t.me/", "telegram.me/"])
+        guard handle.count >= 5, handle.count <= 32 else { return nil }
+        guard handle.allSatisfy(Self.telegramCharacters.contains) else { return nil }
+        return handle
+    }
+
     /// A first guess at someone's LinkedIn address, for them to correct.
     ///
     /// LinkedIn's authorization proves who a person is and never sends their
@@ -91,6 +105,9 @@ enum ContactValue {
     )
     private static let linkedInCharacters = Set(
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
+    )
+    private static let telegramCharacters = Set(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
     )
 
     // Both carry libphonenumber's metadata, so they are built once rather than
