@@ -29,6 +29,29 @@ enum Config {
     ///   1. Vercel's VITE_CLERK_PUBLISHABLE_KEY for production.
     ///   2. CLERK_JWT_ISSUER_DOMAIN on the third-hound-186 Convex deployment.
     ///   3. The Clerk domains in vercel.json's Content-Security-Policy.
+    /// The swap, as a procedure rather than a promise. Four edits, and they
+    /// have to land together or the build is broken in a way that only shows
+    /// once somebody tries to sign in:
+    ///
+    ///   1. `clerkProductionKey` below, to the `pk_live_` key from the
+    ///      production instance's API keys page.
+    ///   2. `VITE_CLERK_PUBLISHABLE_KEY` on Vercel, Production environment, to
+    ///      the same key.
+    ///   3. `CLERK_JWT_ISSUER_DOMAIN` on the `third-hound-186` Convex
+    ///      deployment, to the production instance's Frontend API URL.
+    ///   4. The three `valued-bonefish-64` entries in `vercel.json`'s
+    ///      Content-Security-Policy, to the production Clerk domain. They are
+    ///      in `script-src`, `connect-src` and `frame-src`; miss one and
+    ///      sign-in fails silently in the browser with a console error nobody
+    ///      is watching.
+    ///
+    /// Do it before real users rather than after. The issuer is half of
+    /// `tokenIdentifier`, so every row written against the development
+    /// instance is orphaned by the swap -- not lost, but owned by an identity
+    /// that no longer signs in.
+    ///
+    /// The backend track's wave C8 owns the timing; this side is two of the
+    /// four edits and neither is safe on its own.
     private static let clerkProductionPlaceholder = "pk_live_REPLACE_BEFORE_SHIPPING"
     private static let clerkProductionKey = clerkProductionPlaceholder
 

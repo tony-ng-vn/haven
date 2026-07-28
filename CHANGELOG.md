@@ -6,6 +6,20 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.30.0
+
+2026-07-28
+
+**Docs**
+
+- Everything the App Store asks for in words is drafted and in the repo: subtitle, description, keywords, category, age rating, the privacy answers, and the five screenshots to capture, in the order that makes the argument. It can be argued with in a diff now instead of typed into a web form at submission time.
+
+**iOS**
+
+- The Clerk production swap is written down as a procedure beside the key it changes: four edits that have to land together, and what breaks if one is missed.
+
+---
+
 ## v0.29.0
 
 2026-07-28
