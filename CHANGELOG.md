@@ -6,6 +6,16 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.28.0
+
+2026-07-28
+
+**iOS**
+
+- A name, company or role that is too long now says so while you are typing it, naming the limit. It used to save, fail on the server, and come back as "check your connection" -- which was a lie about a problem sitting in front of you.
+
+---
+
 ## v0.27.0
 
 2026-07-28

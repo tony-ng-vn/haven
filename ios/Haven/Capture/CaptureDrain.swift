@@ -28,6 +28,17 @@ struct DrainResult: Equatable, Sendable {
     /// Could never be sent, so keeping it would mean retrying forever.
     var dropped = 0
     /// Saves whose note was clipped at the cap.
+    ///
+    /// Counted and, for v1, deliberately not shown -- settled in wave G4 of the
+    /// frontend completion plan. The drain is the only thing that ever learns a
+    /// note was clipped, and it learns it long after the sheet closed, often on
+    /// a launch the person did not connect to the capture. There is no queue
+    /// screen to carry the news to, and inventing one to deliver it would be a
+    /// second place to look for something that already landed. The person did
+    /// land, with four thousand characters of what was written about them.
+    ///
+    /// It stays counted rather than dropped because the day there is a surface
+    /// -- a triage screen, a capture log -- this is what it reads.
     var truncatedNotes = 0
 }
 

@@ -41,6 +41,21 @@ enum PersonField: String, CaseIterable, Identifiable {
         }
     }
 
+    /// How much the server will store, and what it is called when it says so.
+    ///
+    /// The caps are `convex/fieldCaps.ts`, mirrored in `HavenFieldCaps`. They
+    /// are enforced here rather than left to the server because the server
+    /// throws, and a throw arrives as "check your connection" -- which is a lie
+    /// about a problem sitting in front of somebody.
+    var cap: (label: String, max: Int)? {
+        switch self {
+        case .name: return ("a name", HavenFieldCaps.name)
+        case .company: return ("a company", HavenFieldCaps.line)
+        case .role: return ("a role", HavenFieldCaps.line)
+        case .photo, .city, .handles: return nil
+        }
+    }
+
     /// The `editPerson` field name, for the three fields that are just words.
     var storedKey: String? {
         switch self {
@@ -95,22 +110,36 @@ struct PersonTextEditor: View {
 
     private var trimmed: String { text.trimmed }
 
+    /// What is wrong with what is typed, or nil while nothing is.
+    private var complaint: String? {
+        guard let cap = field.cap, !HavenFieldCaps.fits(trimmed, within: cap.max) else {
+            return nil
+        }
+        return HavenFieldCaps.tooLong(cap.label, max: cap.max)
+    }
+
     var body: some View {
         HavenScreen(question: field.title) {
-            HavenField(
-                label: field.title,
-                placeholder: field.placeholder,
-                text: $text,
-                contentType: field == .name ? .name : nil,
-                capitalization: .words,
-                submitLabel: .done,
-                autofocus: true,
-                onSubmit: commit
-            )
+            VStack(alignment: .leading, spacing: 8) {
+                HavenField(
+                    label: field.title,
+                    placeholder: field.placeholder,
+                    text: $text,
+                    contentType: field == .name ? .name : nil,
+                    capitalization: .words,
+                    submitLabel: .done,
+                    autofocus: true,
+                    onSubmit: commit
+                )
+                if let complaint {
+                    Text(complaint)
+                        .havenSecondary(HavenColor.ember)
+                }
+            }
         } actions: {
             VStack(spacing: 8) {
                 PrimaryButton(title: "Save", isLoading: working, action: commit)
-                    .disabled(field == .name && trimmed.isEmpty)
+                    .disabled(complaint != nil || (field == .name && trimmed.isEmpty))
                 if field != .name, !initial.isEmpty {
                     GhostButton(title: "Remove") {
                         Task {
@@ -125,7 +154,7 @@ struct PersonTextEditor: View {
     }
 
     private func commit() {
-        guard !working else { return }
+        guard !working, complaint == nil else { return }
         // Emptying an optional field is removing it, which is a different
         // mutation from saving a blank the server would refuse.
         if field != .name, trimmed.isEmpty {

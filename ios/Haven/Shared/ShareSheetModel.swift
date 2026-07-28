@@ -69,6 +69,14 @@ struct ShareSheetModel {
     /// prefilled with a handle looks like a name without being one -- a fast
     /// tap-through would save a person named after their account. The handle
     /// goes in `identityLine` instead, where it is true.
+    ///
+    /// Re-examined in wave G4 and left exactly as PR 129 shipped it. The case
+    /// for prefilling is that most people's Instagram handle is close to their
+    /// name; the case against is the one that decides it -- a field prefilled
+    /// with a handle looks like a name without being one, and the whole point
+    /// of the sheet is that it is answered in two seconds by somebody
+    /// mid-conversation. The fast tap-through is the normal path, not the
+    /// careless one.
     var namePrefill: String {
         if let known = alreadyKnown { return known.name }
         guard case .profile(let link, _) = subject, link.platform == .linkedin else {
