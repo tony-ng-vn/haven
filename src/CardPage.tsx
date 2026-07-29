@@ -2,16 +2,7 @@ import { useQuery } from "convex/react";
 import { useEffect, useState } from "react";
 import { api } from "../convex/_generated/api";
 import { PersonSky } from "./PersonSky";
-
-// Where each platform's handle actually lives, so the page can link out rather
-// than print a string somebody has to retype.
-const PLATFORM_HOME = {
-  instagram: { label: "Instagram", prefix: "https://instagram.com/" },
-  x: { label: "X", prefix: "https://x.com/" },
-  linkedin: { label: "LinkedIn", prefix: "https://linkedin.com/in/" },
-} as const;
-
-type Platform = keyof typeof PLATFORM_HOME;
+import { isPhoneNumber, reachLabel, reachUrl } from "./reach";
 
 // The public card behind inhavens.com/<handle>: what a stranger sees after
 // pointing a camera at somebody's beacon.
@@ -96,22 +87,27 @@ export function CardPage({ handle }: { handle: string }) {
         {card.handles.length > 0 && (
           <ul className="card-handles">
             {card.handles.map((entry) => {
-              const home = PLATFORM_HOME[entry.platform as Platform];
+              // A number never leaves Haven. publicHandleValidator has no
+              // phone member, so this cannot fire today; it is what keeps that
+              // promise if the list ever grows one.
+              if (isPhoneNumber(entry.platform)) return null;
+              const href = reachUrl(entry.platform, entry.value);
               // A platform this page has no address for is skipped rather than
-              // crashed on. The validator closes the list today, so this can
-              // only fire if one grows a fourth member and this table is not
-              // updated with it -- and a stranger's first sight of Haven must
-              // not be a white screen because of that.
-              if (home === undefined) return null;
+              // crashed on, and rather than printed as a string a stranger
+              // would have to retype. A stranger's first sight of Haven must
+              // not be a white screen.
+              if (href === null) return null;
               return (
                 <li key={`${entry.platform}:${entry.value}`}>
                   <a
                     className="card-handle"
-                    href={`${home.prefix}${entry.value}`}
+                    href={href}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <span className="card-handle-label">{home.label}</span>
+                    <span className="card-handle-label">
+                      {reachLabel(entry.platform)}
+                    </span>
                     <span className="card-handle-value">{entry.value}</span>
                   </a>
                 </li>
