@@ -6,6 +6,10 @@ options:
   createIntermediateGroups: true
 settings:
   base:
+    # Versions what people install from the App Store, and moves only when an
+    # iOS build ships -- not with package.json, which versions the codebase.
+    # Still 0.1.0 because no build has shipped: the submission build is when
+    # this changes, and not before.
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     GENERATE_INFOPLIST_FILE: "YES"
@@ -72,6 +76,15 @@ targets:
         # keychain-access-group entitlement it fails with OSStatus -34018 and
         # sign-in returns 401 "signed out".
         CODE_SIGN_ENTITLEMENTS: Haven/Haven.entitlements
+    # ConvexMobile ships no x86_64 simulator slice, so `-configuration Release`
+    # for the simulator fails with undefined UniFFI symbols on an Intel Mac,
+    # and would fail in CI the day CI built Release without pinning the
+    # architecture. Device and App Store builds are arm64 and unaffected.
+    #
+    # Found in PR 110 on unmodified main, so it is a fact about the dependency
+    # rather than about anything Haven does. Recorded here, next to the build
+    # settings, because a note in a merged pull request body is not somewhere
+    # anybody looks when a build breaks.
     scheme:
       testTargets:
         - HavenTests

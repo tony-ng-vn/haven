@@ -426,7 +426,7 @@ blocked on those merges rather than on any decision.
 - [x] G2 motion and haptics (PR 157)
 - [x] G3 accessibility audit (PR 158)
 - [x] G4 copy convergence (PR 159)
-- [ ] H1 release readiness
+- [x] H1 release readiness (PR 160)
 - [ ] H2 final checklist sweep
 - [x] I1 CI signing-flag removal (PR 136)
 - [x] I2 web spot-checks (PR 145)
