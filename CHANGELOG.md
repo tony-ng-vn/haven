@@ -6,6 +6,18 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.31.0
+
+2026-07-28
+
+**Docs**
+
+- The frontend plan is closed out: every unit ticked, the exit criteria audited line by line with the evidence for each, and the three places the plan's own inventory turned out to be wrong recorded rather than quietly worked around.
+- The tracker's "Needs you" is now the whole of what is left, and says so: a dashboard, a key, a device, or App Store Connect. Anything in it that could be written in code is in the wrong section.
+- The App Store compliance checklist stops saying Haven has no camera code. It has, since connect scanning landed, and the permission string and the privacy manifest's deliberate silence about it are both recorded where a reviewer would look.
+
+---
+
 ## v0.30.0
 
 2026-07-28
