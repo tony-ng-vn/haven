@@ -6,6 +6,18 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.40.0
+
+2026-07-29
+
+**Web**
+
+- The web is now clearly the place you go to look at your network, not a second copy of the app. Meet, which exchanged contact with someone standing next to you, and the Love Alarm radar have both left the website: those are things you do with a phone in your hand, and they belong in the iPhone app. What the web is for stays exactly as it was and now has room to breathe -- your sky, search, adding someone by typing their name, your public card, and the sign-in and legal pages.
+- The add form no longer borrows the Meet panel's look. It has its own, so changing one can never quietly redraw the other.
+- Nothing was deleted from your account. Every username, connection, and radar setting is untouched on the server, and the iPhone app still uses all of it.
+
+---
+
 ## v0.39.0
 
 2026-07-29

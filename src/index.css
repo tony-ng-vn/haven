@@ -1394,8 +1394,8 @@ textarea.field {
   font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  /* 0.55, not lower: this caption renders on deep space, atlas glass, and the
-     meet sheet, and 0.55 is the first stop that holds 4.5:1 on all three. */
+  /* 0.55, not lower: this caption renders on deep space and on atlas glass,
+     and 0.55 is the first stop that holds 4.5:1 on both. */
   color: rgba(255, 255, 255, 0.55);
 }
 
@@ -1492,12 +1492,12 @@ textarea.field {
    input matches :focus-visible even on pointer focus, so without this the
    global ring draws a hard rectangle inside the rounded glass. */
 .atlas-input:focus-visible,
-.meet-input:focus-visible {
+.atlas-add-input:focus-visible {
   box-shadow: none;
 }
 
 .atlas-pill:focus-within,
-.meet-input-row:focus-within {
+.atlas-add-row:focus-within {
   border-color: rgba(255, 255, 255, 0.55);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.4),
@@ -1521,12 +1521,71 @@ textarea.field {
   transform: scale(0.92);
 }
 
-/* The inline add form under the search field reuses the meet sheet's input
-   idioms; it only needs its own breathing room and width. */
+/* The inline add form under the search field: naming somebody by hand is the
+   web's own way in, so it owns its inputs rather than borrowing another
+   surface's. Glass wells over the sky, in the same idiom as the search pill. */
 .atlas-add-form {
-  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* 16px, matching what this form actually rendered with before it owned its
+     own rules: the search pill above it needs the extra air. */
+  margin-top: 16px;
   width: 100%;
   text-align: left;
+}
+
+.atlas-add-label {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.atlas-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 6px 10px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.atlas-add-at {
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.atlas-add-input {
+  flex: 1;
+  min-width: 0;
+  color: #fff;
+  caret-color: #fff;
+  background: none;
+  border: none;
+  outline: none;
+  /* 16px, not smaller: iOS Safari zooms the page on focus below this. */
+  font-size: 16px;
+}
+
+.atlas-add-input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.atlas-add-error {
+  /* Set apart from the field it is about, rather than sitting in the form's
+     even rhythm as if it were another row. */
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--danger-text);
+}
+
+/* The form's own submit sits left with its label, not centered like the
+   floating one. */
+.atlas-add-form .atlas-add {
+  align-self: flex-start;
 }
 
 .atlas-add {
@@ -1563,179 +1622,14 @@ textarea.field {
   opacity: 0.6;
 }
 
-.atlas-meet-fab {
-  position: absolute;
-  z-index: 4;
-  right: max(20px, env(safe-area-inset-right));
-  bottom: max(28px, env(safe-area-inset-bottom));
-  padding: 11px 20px;
-  border-radius: 980px;
-  font-size: 15px;
-  font-weight: 600;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  transition:
-    transform var(--t-fast) var(--ease-out),
-    background var(--t-fast) var(--ease-out);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .atlas-meet-fab:hover {
-    background: rgba(255, 255, 255, 0.18);
-  }
-}
-
-/* The feedback widget is a third-party custom element that defaults to the
-   bottom-right corner -- the same spot as the Meet FAB, so the two stack on
-   top of each other. Lift it just above the FAB. The element selector plus a
-   class outweighs the widget's own :host rule, so no !important is needed;
-   position:fixed still comes from the widget. */
+/* The feedback widget is a custom element that pins itself to the bottom-right
+   corner. The capture pill is centered, but on a narrow screen it nearly
+   reaches that corner, so the widget is lifted a row clear of it. The element
+   selector plus a class outweighs the widget's own :host rule, so no
+   !important is needed; position:fixed still comes from the widget. */
 feedback-widget.feedback-fab {
   right: max(20px, env(safe-area-inset-right));
   bottom: calc(max(28px, env(safe-area-inset-bottom)) + 56px);
-}
-
-.atlas-meet-fab:active {
-  transform: scale(0.97);
-}
-
-.meet-sheet {
-  position: absolute;
-  z-index: 5;
-  right: max(20px, env(safe-area-inset-right));
-  bottom: calc(max(28px, env(safe-area-inset-bottom)) + 58px);
-  width: min(360px, calc(100vw - 40px));
-  padding: 18px;
-  color: #fff;
-  background: rgba(12, 16, 34, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-float);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  backdrop-filter: blur(18px) saturate(140%);
-}
-
-.meet-sheet-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.meet-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  color: rgba(255, 255, 255, 0.72);
-  background: none;
-  border: none;
-  border-radius: 50%;
-}
-
-.meet-title {
-  margin: 8px 0 4px;
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-}
-
-.meet-copy {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.78);
-  text-wrap: pretty;
-}
-
-.meet-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.meet-label,
-.meet-muted,
-.meet-status,
-.meet-error,
-.meet-found {
-  margin: 0;
-  font-size: 13px;
-}
-
-.meet-label,
-.meet-muted {
-  color: rgba(255, 255, 255, 0.62);
-}
-
-.meet-input-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 46px;
-  padding: 6px 10px;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  border-radius: var(--radius);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
-}
-
-.meet-at {
-  color: rgba(255, 255, 255, 0.58);
-}
-
-.meet-input {
-  flex: 1;
-  min-width: 0;
-  color: #fff;
-  caret-color: #fff;
-  background: none;
-  border: none;
-  outline: none;
-  font-size: 16px;
-}
-
-.meet-input::placeholder {
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.meet-speech,
-.meet-open {
-  padding: 7px 10px;
-  color: rgba(255, 255, 255, 0.86);
-  background: transparent;
-  border: none;
-  border-radius: 980px;
-  font-size: 13px;
-}
-
-.meet-primary {
-  width: fit-content;
-}
-
-.meet-open {
-  width: fit-content;
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-}
-
-.meet-status,
-.meet-found {
-  margin-top: 12px;
-  color: rgba(255, 255, 255, 0.86);
-}
-
-.meet-error {
-  margin-top: 12px;
-  color: #ffb4ad;
 }
 
 /* The constellation field sits behind the glass controls; only the cluster
@@ -1857,179 +1751,10 @@ feedback-widget.feedback-fab {
   transform: translateX(-50%);
 }
 
-/* ----------------------------------------------------------- love alarm */
-
-.love-alarm {
-  position: absolute;
-  z-index: 4;
-  left: max(20px, env(safe-area-inset-left));
-  bottom: max(28px, env(safe-area-inset-bottom));
-}
-
-.love-alarm-toggle,
-.love-alarm-card {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-}
-
-.love-alarm-toggle {
-  padding: 11px 18px;
-  border-radius: 980px;
-  font-size: 15px;
-  font-weight: 600;
-  transition:
-    transform var(--t-fast) var(--ease-out),
-    background var(--t-fast) var(--ease-out);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .love-alarm-toggle:hover {
-    background: rgba(255, 255, 255, 0.18);
-  }
-}
-
-.love-alarm-toggle:active {
-  transform: scale(0.97);
-}
-
-.love-alarm-card {
-  width: min(340px, calc(100vw - 40px));
-  padding: 16px;
-  border-radius: var(--radius-lg);
-}
-
-.love-alarm-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px;
-}
-
-.love-alarm-head h2 {
-  margin: 3px 0 0;
-  font-size: 20px;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
-}
-
-.love-alarm-close,
-.love-alarm-secondary {
-  padding: 0;
-  color: rgba(255, 255, 255, 0.72);
-  background: none;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-}
-
-.love-alarm-form,
-.love-alarm-active {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.love-alarm-copy,
-.love-alarm-muted,
-.love-alarm-error {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.love-alarm-copy {
-  color: rgba(255, 255, 255, 0.86);
-}
-
-.love-alarm-muted {
-  color: rgba(255, 255, 255, 0.58);
-}
-
-.love-alarm-error {
-  color: #ff9a9a;
-}
-
-.love-alarm-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.58);
-}
-
-.love-alarm-input {
-  width: 100%;
-  padding: 10px 12px;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 12px;
-  outline: none;
-}
-
-.love-alarm-input::placeholder {
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.love-alarm-input:focus {
-  border-color: rgba(255, 255, 255, 0.55);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.14);
-}
-
-.love-alarm-primary {
-  align-self: flex-start;
-  padding: 9px 16px;
-  border-radius: 980px;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-.love-alarm-primary:disabled {
-  opacity: 0.6;
-}
-
-.love-alarm-peers {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.love-alarm-peers li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-
-.love-alarm-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 0 14px rgba(255, 255, 255, 0.78);
-}
-
 @media (max-width: 480px) {
   .atlas-search {
     top: 76px;
     width: min(440px, 90vw);
-  }
-
-  .love-alarm {
-    left: 50%;
-    bottom: calc(max(28px, env(safe-area-inset-bottom)) + 62px);
-    transform: translateX(-50%);
   }
 
   .atlas-cluster-name {
@@ -2106,9 +1831,7 @@ feedback-widget.feedback-fab {
   .atlas-clear:active,
   .atlas-add:active:not(:disabled),
   .sky-cta:active,
-  .atlas-meet-fab:active,
   .error-boundary-retry:active,
-  .love-alarm-toggle:active,
   .wl-go:active {
     transform: none;
   }
