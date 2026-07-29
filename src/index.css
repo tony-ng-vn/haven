@@ -1667,6 +1667,24 @@ textarea.field {
 feedback-widget.feedback-fab {
   right: max(20px, env(safe-area-inset-right));
   bottom: calc(max(28px, env(safe-area-inset-bottom)) + 56px);
+
+  /* The widget draws in a shadow root, so none of the rules above reach inside
+     it -- but custom properties inherit through, and it reads these. Left
+     unset it renders its own white pill and white sheet with a purple submit,
+     which is the one thing on the screen that does not belong to Haven.
+     --fw-z is left alone: its default already clears the app chrome. */
+  --fw-surface: var(--night);
+  --fw-surface-strong: var(--surface);
+  --fw-text: var(--text);
+  --fw-muted: var(--muted);
+  --fw-border: var(--border);
+  --fw-radius: var(--radius);
+  /* NOT cream, which is Haven's primary fill everywhere else: the widget's
+     submit rule pairs this background with a hardcoded white label, and white
+     on cream measures 1.22:1. This slate is the one value that clears 4.5:1
+     under a white label AND stays visible as the selected chip's border
+     against the sheet, which is the same variable's other job. */
+  --fw-accent: #5560a0;
 }
 
 /* The constellation field sits behind the glass controls; only the cluster
