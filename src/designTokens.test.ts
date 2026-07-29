@@ -108,7 +108,7 @@ describe("focus", () => {
       /\.atlas-input:focus-visible[^{]*\{[^}]*box-shadow: none/,
     );
     expect(css).toContain(".atlas-pill:focus-within");
-    expect(css).toContain(".meet-input-row:focus-within");
+    expect(css).toContain(".atlas-add-row:focus-within");
   });
 });
 
