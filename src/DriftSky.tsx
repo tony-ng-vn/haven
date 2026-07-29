@@ -90,8 +90,9 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
     ctx!.beginPath();
     ctx!.arc(s.x, s.y, s.size, 0, 6.2832);
     if (s.hot) {
-      ctx!.fillStyle = `rgba(10,132,255,${s.base + 0.2})`;
-      ctx!.shadowColor = "rgba(10,132,255,.8)";
+      // Star amber, the accent from HavenColor -- a lit star is this colour.
+      ctx!.fillStyle = `rgba(255,217,160,${s.base + 0.2})`;
+      ctx!.shadowColor = "rgba(255,217,160,.8)";
       ctx!.shadowBlur = 6;
     } else {
       ctx!.fillStyle = `rgba(255,255,255,${s.base * tw})`;
