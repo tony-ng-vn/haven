@@ -1,5 +1,6 @@
 {
   "buildCommand": "if [ \"$VERCEL_ENV\" = production ]; then npx convex deploy --cmd 'npm run build'; else : \"${VITE_CONVEX_URL:?Preview builds no longer deploy Convex, so set VITE_CONVEX_URL for the Preview environment in Vercel}\" && npm run build; fi",
+  "ignoreCommand": "if [ \"$VERCEL_ENV\" = production ]; then exit 1; fi; git fetch origin main --depth=100 >/dev/null 2>&1 || exit 1; git diff --quiet origin/main...HEAD -- src/ public/ index.html vite.config.ts vercel.json package.json package-lock.json",
   "framework": "vite",
   "outputDirectory": "dist",
   "headers": [
@@ -32,8 +33,8 @@
           "value": "camera=(), microphone=(), geolocation=()"
         },
         {
-          "key": "Content-Security-Policy-Report-Only",
-          "value": "default-src 'self'; script-src 'self' https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com; connect-src 'self' https://third-hound-186.convex.cloud wss://third-hound-186.convex.cloud https://brilliant-puma-925.convex.cloud wss://brilliant-puma-925.convex.cloud https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com; img-src 'self' data: blob: https://third-hound-186.convex.cloud https://brilliant-puma-925.convex.cloud https://img.clerk.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; frame-src https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com https://challenges.cloudflare.com; base-uri 'self'; form-action 'self'"
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com; connect-src 'self' https://third-hound-186.convex.cloud wss://third-hound-186.convex.cloud https://brilliant-puma-925.convex.cloud wss://brilliant-puma-925.convex.cloud https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com https://glorious-gerbil-332.convex.site; img-src 'self' data: blob: https://third-hound-186.convex.cloud https://brilliant-puma-925.convex.cloud https://img.clerk.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; frame-src https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com https://challenges.cloudflare.com; base-uri 'self'; form-action 'self'"
         }
       ]
     }

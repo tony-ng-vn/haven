@@ -12,6 +12,12 @@ pull requests, which is where it is easiest to read anyway.
 
 **Web**
 
+- The site's content security policy is now enforced rather than merely reported. It had been in report-only mode since it was written, which means it had never actually blocked anything -- a missing entry showed up as a console message nobody was watching instead of as a problem.
+- The feedback widget can reach its own service. It posts to a hosted service on a different Convex deployment, which the policy had never named; under report-only that broke nothing, and turning enforcement on without this would have broken it silently for the only people who can see the widget.
+
+**CI**
+
+- Pull requests that cannot change the website no longer build one. Most changes here are to the iOS app or the backend, and each was still producing a full web deployment: of the last forty merges, thirty-three built a bundle that had not changed, and those builds were three quarters of the account's daily deployment budget -- which is what ran it out. Production still builds every time, because that build is what ships the backend.
 - Signing in on the web works again. It had been bouncing between Haven and a Clerk-hosted page forever, never showing the form -- Clerk was told sign-in lived somewhere else and kept sending people there, and that page kept sending them back. Haven now tells Clerk where its own sign-in is.
 - inhavens.com/signin, /sign-in, /signup, /sign-up and /login all reach the sign-in screen. Every one of them used to show the waitlist, so typing the most obvious address suggested Haven had no way in.
 
@@ -71,6 +77,17 @@ pull requests, which is where it is easiest to read anyway.
 **Docs**
 
 - The App Store Support URL now points at that page instead of the marketing site, which is what a reviewer expects to find behind it.
+
+---
+
+## v0.33.0
+
+2026-07-29
+
+**Web**
+
+- The site's content security policy is now enforced rather than merely reported. It has been in report-only mode since it was written, which means it has never actually blocked anything -- a missing entry showed up as a console message nobody was watching instead of as a problem. Two entries were missing when this was turned on, and both were found by the audit rather than by anyone noticing.
+- The feedback widget can reach its own service again. It posts to a hosted service on a different Convex deployment, which the policy had never named; under report-only that broke nothing, and enforcing it without this would have broken it silently for the only people who can see the widget.
 
 ---
 
