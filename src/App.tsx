@@ -18,6 +18,7 @@ import {
 } from "./lib";
 import { CardPage } from "./CardPage";
 import { LegalPage } from "./LegalPage";
+import { SupportPage } from "./SupportPage";
 
 function ChevronLeft() {
   return (
@@ -282,6 +283,7 @@ export default function App() {
     // Non-null whenever resolveView says legal, by the same check.
     return <LegalPage doc={legalDocFromPath(pathname)!} />;
   }
+  if (view === "support") return <SupportPage />;
   if (view === "home") return <Home />;
   if (view === "signin") return <SignIn />;
   if (view === "splash") return <Splash />;
