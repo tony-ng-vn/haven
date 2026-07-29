@@ -34,6 +34,8 @@ function directive(name: string): string[] {
 const CLERK_PRODUCTION = "https://clerk.inhavens.com";
 const CLERK_DEVELOPMENT = "https://valued-bonefish-64.clerk.accounts.dev";
 const CONVEX_PRODUCTION = "https://third-hound-186.convex.cloud";
+// VITE_FEEDBACK_ENDPOINT, compiled into the bundle at build time.
+const FEEDBACK_SERVICE = "https://glorious-gerbil-332.convex.site";
 
 describe("the content security policy", () => {
   test("is served on every path", () => {
@@ -74,6 +76,14 @@ describe("the content security policy", () => {
     expect(directive("connect-src")).toContain("wss://third-hound-186.convex.cloud");
   });
 
+  // The feedback widget posts to its own hosted service, a different Convex
+  // deployment from ours. It is admin-only, so under Report-Only a missing
+  // entry here broke nothing anyone would notice and nothing anyone would see
+  // -- the exact shape of bug that makes enforcing worth doing.
+  test("allows the feedback widget to reach its own service", () => {
+    expect(directive("connect-src")).toContain(FEEDBACK_SERVICE);
+  });
+
   // Card photos and capture screenshots are Convex storage urls.
   test("allows the images the product actually renders", () => {
     expect(directive("img-src")).toContain(CONVEX_PRODUCTION);
@@ -87,13 +97,12 @@ describe("the content security policy", () => {
     expect(directive("form-action")).toEqual(["'self'"]);
   });
 
-  // Deliberately Report-Only, and this test is where that decision is written
-  // down rather than inferred from a header nobody reads. Flipping it to the
-  // enforcing name is a one-word change; it has not been made because no one
-  // has yet loaded the site and confirmed the console is clean, and getting it
-  // wrong breaks sign-in in production. Update this test in the same commit
-  // that flips it.
-  test("is Report-Only until somebody has watched it report nothing", () => {
-    expect(csp?.key).toBe("Content-Security-Policy-Report-Only");
+  // Enforced as of 2026-07-29. Report-Only protected nothing: a missing host
+  // was a console message nobody was watching, which is how img.clerk.com and
+  // the feedback endpoint below both went missing while the policy looked
+  // maintained. Flipping it back is a one-word change if something turns out
+  // to be missing, and this test is where that decision lives.
+  test("is enforced, not merely reported", () => {
+    expect(csp?.key).toBe("Content-Security-Policy");
   });
 });

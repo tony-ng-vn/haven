@@ -6,6 +6,17 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.37.0
+
+2026-07-29
+
+**Web**
+
+- The site's content security policy is now enforced rather than merely reported. It had been in report-only mode since it was written, which means it had never actually blocked anything -- a missing entry showed up as a console message nobody was watching instead of as a problem.
+- The feedback widget can reach its own service. It posts to a hosted service on a different Convex deployment, which the policy had never named; under report-only that broke nothing, and turning enforcement on without this would have broken it silently for the only people who can see the widget.
+
+---
+
 ## v0.36.0
 
 2026-07-29
@@ -56,6 +67,17 @@ pull requests, which is where it is easiest to read anyway.
 **Docs**
 
 - The App Store Support URL now points at that page instead of the marketing site, which is what a reviewer expects to find behind it.
+
+---
+
+## v0.33.0
+
+2026-07-29
+
+**Web**
+
+- The site's content security policy is now enforced rather than merely reported. It has been in report-only mode since it was written, which means it has never actually blocked anything -- a missing entry showed up as a console message nobody was watching instead of as a problem. Two entries were missing when this was turned on, and both were found by the audit rather than by anyone noticing.
+- The feedback widget can reach its own service again. It posts to a hosted service on a different Convex deployment, which the policy had never named; under report-only that broke nothing, and enforcing it without this would have broken it silently for the only people who can see the widget.
 
 ---
 
