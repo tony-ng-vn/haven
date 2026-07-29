@@ -355,39 +355,59 @@ New user-side setup this plan adds to the existing "Needs you" list: the Apple T
 - `test` and `ios-test` green on main; `xcodegen generate` clean; tracker current; the changelog telling the story.
 - `todo.md`'s "Needs you" plus the device ledger above are the complete remaining work, and every line in them is a dashboard, key, device, or store task no commit can do.
 
-## Exit criteria: where each line stands
+## Exit criteria: where each line stands, at the end of the plan
 
-Rewritten as the merges landed. Waves D, E, F1 and I are on main; F2, F3, G and
-H are the remaining work. Unit H2 is this plan's exit audit and owns the final
-version of this section -- what is here is the running state, not that.
+Unit H2's audit, which this plan names as its own exit audit. Evidence per line
+rather than a claim per line.
 
-1. **Every unit merged, or moved to a default or the ledger.** Fourteen of
-   twenty merged. F2, F3, G1-G4, H1 and H2 remain, and their gates are now
-   clear: F1 and D2 are on main, so F2 and F3 can compile, and wave G's gate
-   ("all of wave D, E1 through E3, and F1 merged") is satisfied.
-2. **All six gates resolved.** Five of six. FD1, FD2, FD3, FD4 and FD6 are
-   applied and flagged above; FD5's default is a thing to build, and G1 builds
-   it.
-3. **The core loop demonstrable on the simulator in one sitting.** Every step
-   traces to code on main -- sign-in on `WelcomeScreen`, the three onboarding
-   questions, the address the server mints and `MyCardTests.addressIsNotOptional`
-   pins, `AddPersonSheet` writing to the App Group queue before the network, the
-   note editor, `searchDirectory` with its chips, `people.ask`, both result rows
-   handing back a person id, `PersonReach` opening the app a handle names, and
-   `profiles:connect` behind the scanner. **That is static evidence, not a
-   walkthrough.** No simulator has run it, and nothing signed-in has ever run on
-   this server: the unsigned simulator cannot configure Clerk, so every
-   authenticated path is tested only by its own unit tests. This criterion is
-   the user's, and it is what the device ledger below is for.
-4. **`test` and `ios-test` green on main; `xcodegen generate` clean; tracker
-   current; the changelog telling the story.** Green on main after every merge.
-   Sixteen files were added across the merged units, so `xcodegen generate` is
-   required before the next build on the Mac.
-5. **`todo.md`'s "Needs you" plus the ledger are the complete remaining work.**
-   Not yet, and honestly so: F2, F3, G and H are code, and they are named as
-   code above rather than hidden in the ledger. The ledger itself does hold the
-   property -- every item on it needs a phone, a dashboard or a judgement, and
-   none can be closed by a commit.
+**1. Every unit in waves D, E, F, G, H and I merged, or explicitly moved to a
+gate's default or the ledger.** Met. Twenty of twenty, all on main. Two are
+worth naming because they are not what the plan expected: E2 was found to be
+already built server-side and is recorded in the corrections below rather than
+implemented, and G1's preview-width item was already true and needed no change.
+
+**2. All six decision gates resolved.** Met. FD1 and FD3 applied by building
+nothing, recorded in the gate table above because a default applied by inaction
+leaves no diff. FD2, FD4 and FD6 applied and flagged in the PRs that applied
+them. FD5 built in PR 156, deliberately in the toolbar rather than on the card
+face, with the reasoning in that PR for overriding.
+
+**3. The core loop demonstrable on the simulator in one sitting.** **Not met by
+this session, and it cannot be.** Every step traces to code on main: sign-in on
+`WelcomeScreen`, the three onboarding questions, the address `updateMyProfile`
+mints and `MyCardTests.addressIsNotOptional` pins, `AddPersonSheet` writing to
+the App Group queue before the network, the note editor, `searchDirectory` with
+its chips, `people.ask`, both result rows handing back a person id,
+`PersonReach` opening the app a handle names, and `profiles:connect` behind the
+scanner. Thirteen backend functions have iOS callers where five of them had
+none this morning. **That is static evidence, not a walkthrough.** No simulator
+has run it and nothing signed-in has ever run on this server -- the unsigned
+simulator cannot configure Clerk. This criterion is the user's, and the device
+ledger below is what it is for.
+
+**4. `test` and `ios-test` green on main; `xcodegen generate` clean; tracker
+current; the changelog telling the story.** Met, with one action. Both checks
+are green on main as of the last merge. Sixteen Swift files were added across
+the plan, so **`xcodegen generate` must be run in `ios/` before the next build
+on the Mac** -- every PR that added a file said so. The tracker is this
+document and `todo.md`, both current as of this unit. The changelog gained an
+entry per merged unit.
+
+**5. `todo.md`'s "Needs you" plus the ledger are the complete remaining work,
+and every line is a dashboard, key, device or store task.** Met. `todo.md`'s
+"Needs you" was rewritten in this unit and says so at the top: if anything in
+it looks like it could be written in Swift or TypeScript, it is in the wrong
+section. Eighteen items across four groups, plus the twenty-four-item ledger
+below.
+
+### What is not in scope of these criteria, and is still true
+
+- The Convex production deployment has never had a signed iOS client talk to
+  it. That is the largest untested surface in the product and no criterion here
+  covers it.
+- The accessibility pass computed ratios and read code; nobody has swiped a
+  screen with VoiceOver on.
+- Springs and haptics are structurally justified and have never been felt.
 
 ## How to run this plan to completion (the orchestrator loop)
 
@@ -427,7 +447,7 @@ blocked on those merges rather than on any decision.
 - [x] G3 accessibility audit (PR 158)
 - [x] G4 copy convergence (PR 159)
 - [x] H1 release readiness (PR 160)
-- [ ] H2 final checklist sweep
+- [x] H2 final checklist sweep (PR 162)
 - [x] I1 CI signing-flag removal (PR 136)
 - [x] I2 web spot-checks (PR 145)
 

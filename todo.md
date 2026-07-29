@@ -7,36 +7,78 @@ Checkbox convention: `[ ]` not started, `[~]` in progress, `[x]` done.
 
 ## Needs you
 
-Everything here is blocked on a dashboard, a physical device, or a key. No
-code is waiting on any of it.
+The frontend is code-complete for v1. Everything below is a dashboard, a key, a
+device, or App Store Connect, and none of it is something a commit can do. That
+is the whole remaining list -- if something here looks like it could be written
+in Swift or TypeScript, it is in the wrong section and should be moved.
 
-**Dashboards**
+The full device ledger, with what each check is for and which change produced
+it, is in `docs/superpowers/plans/2026-07-28-frontend-completion-plan.md`.
+Twenty-four items. What follows is the short list, ordered by what blocks what.
 
-- [ ] **Clerk production instance.** Turn off SMS code under Multi-factor first (that is the only thing blocking the free plan). Then create it on `inhavens.com`, set up Apple and LinkedIn OAuth with your own credentials -- production instances do not use Clerk's shared ones -- and recreate the JWT template named exactly `convex`. Then swap the key in four places: `ios/Haven/Config.swift`, `VITE_CLERK_PUBLISHABLE_KEY` on Vercel, `CLERK_JWT_ISSUER_DOMAIN` on the Convex prod deployment, and the three `valued-bonefish-64` entries in `vercel.json`'s CSP. Do it before real users: the issuer is half of `tokenIdentifier`, so every existing row orphans.
-- [ ] **Vercel: set `VITE_CONVEX_URL` for the Preview environment.** Settings -> Environment Variables. Preview builds no longer run `npx convex deploy`, so they no longer get that variable handed to them by the deploy step; without it a preview builds but has no database to talk to. Point it at the dev deployment (`https://brilliant-puma-925.convex.cloud`) unless you want previews reading production. The build says exactly this if it is missing rather than shipping a preview that looks fine and does nothing.
-- [ ] **Vercel: is `CONVEX_DEPLOY_KEY` a production or a preview key?** Settings -> Environment Variables. Less urgent now that only production deploys Convex, but still worth knowing: if it is a production key it is the key deploying prod on every merge to main, which is what you want; if it is a preview key, production is being deployed by a preview key, which is not.
-- [ ] **App Store Connect: reserve the name.** Longest lead time of anything on this list, and "Haven" is crowded. Fallbacks worth checking in order if it is gone, each of which keeps the address and the word: Haven: Your People, Haven Contacts, inHaven. The full metadata draft -- subtitle, description, keywords, category, age rating, screenshot shot list -- is `docs/2026-07-28-app-store-metadata.md`.
-- [ ] **A support page.** App Store Connect wants a support URL and the draft currently points at the landing page, which reads badly on review.
-- [ ] **Apple Developer: enable Sign in with Apple on the App ID.** The entitlement is in the repo; the capability is not something a commit can turn on.
-- [ ] **Apple Developer: enable Associated Domains on the App ID, and put the real Team ID in `public/.well-known/apple-app-site-association`.** It ships with `TEAMIDXXXX` because a Team ID is issued to the account that ships the app and cannot live in the repo until somebody puts it there. Until both are done, a scanned Haven code still opens Safari -- which is what it does today, so nothing is worse in the meantime, it is just not yet better.
+**Blocking a submission, longest lead first**
 
-**Your phone** (an unsigned simulator build cannot configure Clerk, so none of these can be checked without a device)
+- [ ] **App Store Connect: reserve the name.** "Haven" is crowded and nothing
+  else on this list matters if it is gone. Fallbacks that keep the address and
+  the word: Haven: Your People, Haven Contacts, inHaven.
+- [ ] **Apple Developer: enable Sign in with Apple on the App ID**, and verify
+  sign-in on a physical device. The entitlement is in the repo; the capability
+  is not something a commit can turn on, and the simulator does not enforce it,
+  so this fails only on real hardware.
+- [ ] **Apple Developer: register `group.com.inhavens.haven`** and add it to
+  both App IDs (`com.inhavens.haven` and `com.inhavens.haven.share`). Without
+  it every share capture is silently dropped on a device. The simulator does
+  not enforce this either.
+- [ ] **Apple Developer: enable Associated Domains**, and put the real Team ID
+  in `public/.well-known/apple-app-site-association` in place of `TEAMIDXXXX`.
+  Until then a scanned Haven code opens Safari.
+- [ ] **Finish the Clerk production swap.** `VITE_CLERK_PUBLISHABLE_KEY` and
+  the CSP are done; `Config.clerkProductionKey` is still the placeholder, and a
+  release build traps on it by design. `CLERK_JWT_ISSUER_DOMAIN` on the
+  production Convex deployment is the backend track's half.
+- [ ] **A support page.** App Store Connect wants a support URL and the draft
+  points at the landing page, which reads badly on review.
+- [ ] **Store metadata and five screenshots.** Text drafted in
+  `docs/2026-07-28-app-store-metadata.md`; copying it in and capturing the
+  screenshots on a Mac are yours.
+- [ ] **App Privacy answers in App Store Connect**, which have to match
+  `ios/Haven/PrivacyInfo.xcprivacy`. The manifest is current.
 
-- [ ] Write a note on someone, then search a word that appears only in that note.
-- [ ] Share a profile from Instagram, X and LinkedIn into Haven, and confirm the person lands in the directory.
-- [ ] Ask search a question and see whether the answer is any good.
-- [ ] **Follow the share-sheet walkthrough's three steps on a real phone and check the wording is what iOS actually shows.** The one device check that can invalidate shipped code rather than merely confirm it: the steps were written against what iOS 26 is believed to show, and nobody has seen that screen.
-- [ ] Connect two phones by scanning a card back, and confirm the second scan says you were already connected.
-- [ ] Tap each kind of handle on a saved person and confirm where it lands, including a phone number, which the simulator cannot dial at all.
-- [ ] Change your Haven address and confirm the code on your card back opens the new page and the old one stops resolving.
+**Your phone** (an unsigned simulator cannot configure Clerk, so nothing
+authenticated has ever run outside its own unit tests)
 
-The full list, with what each one is for and which change it came from, is the
-device ledger in `docs/superpowers/plans/2026-07-28-frontend-completion-plan.md`.
-Twenty-three items; these are the ones worth doing first.
+- [ ] **Follow the share-sheet walkthrough's three steps and check the wording
+  against what iOS actually shows.** The one device check that can invalidate
+  shipped code rather than confirm it: the steps were written against what iOS
+  26 is believed to show, and nobody has seen that screen.
+- [ ] Connect two phones by scanning a card back, and confirm the second scan
+  says you were already connected.
+- [ ] Walk every screen with VoiceOver on, and again at the largest text size.
+  The accessibility pass was static -- ratios computed, code read, nothing
+  swiped.
+- [ ] Judge the card reveal and the new star-ignition beat, the card flip's
+  spring, and whether three light taps in a session read as meaningful.
+- [ ] Add somebody in airplane mode and confirm they appear once there is
+  signal. Tap each kind of handle and confirm where it lands, including a phone
+  number, which the simulator cannot dial.
+- [ ] Change your Haven address and confirm the code opens the new page.
 
 **A key**
 
-- [ ] `OPENAI_API_KEY=sk-... node scripts/eval-ask.ts` for a real recall number, and one ask against a real network to measure cost per question. Worth doing only once there are notes to read -- before that it measures nothing.
+- [ ] `OPENAI_API_KEY=sk-... node scripts/eval-ask.ts` for a real recall number,
+  and one ask against a real network to measure cost per question. Worth doing
+  only once there are notes to read.
+
+**Decisions only you can make**
+
+- [ ] **Turn the Content-Security-Policy on.** It has been `Report-Only` since
+  it was written, so it has never protected anything. Making it enforcing is a
+  real change with real risk of breaking something invisible.
+- [ ] **Does the card flip deserve a haptic?** It is the most frequent gesture
+  in the app, and the design tokens say light on commit, nothing elsewhere.
+- [ ] **Is the store description right?** It is written in the house voice,
+  which deliberately does not sell, and a store listing is the one place that
+  might be the wrong instinct.
 
 ## Now / next
 

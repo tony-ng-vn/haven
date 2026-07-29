@@ -341,9 +341,13 @@ Done in code:
 - Sign in with Apple offered alongside any third-party login (guideline 4.8), with the `com.apple.developer.applesignin` entitlement it needs on a real device.
 - Privacy policy and terms at `inhavens.com/privacy` and `/terms`.
 - Apple's privacy manifest (`ios/Haven/PrivacyInfo.xcprivacy`), declaring the UserDefaults required-reason API and the data the app collects.
+  The camera declares nothing there, and that is the answer rather than an omission: it is not a required-reason API, and no frame it sees is kept, so there is no photo or video data type to declare either.
+  The manifest says so in place, so a reviewer does not have to infer it.
 - The export-compliance answer in `Info.plist`, so uploads stop asking.
-- Permission strings: none needed yet.
-  `PhotosPicker` runs out of process, so the photo library needs no usage string, and no camera code exists until connect scanning lands.
+- Permission strings: the camera, and only the camera.
+  `NSCameraUsageDescription` in `ios/Haven/Info.plist`, asked for at the moment somebody points the phone at a card and never before -- `DataScannerViewController` requests it when scanning starts, and the connect screen only starts scanning when it is open.
+  `PhotosPicker` still needs none: it runs out of process.
+  This line used to say "none needed yet, and no camera code exists until connect scanning lands"; it landed.
 
 Outside code, and none of it is a commit:
 
@@ -357,7 +361,11 @@ Outside code, and none of it is a commit:
   The entitlement alone does not provision it, and the simulator does not enforce it.
 - App Privacy answers in App Store Connect, which have to match the privacy manifest.
 - Store metadata: screenshots, description, keywords, category, age rating, support URL.
-  These wait for Phase 5, because polish changes what the screenshots show.
+  Phase 5 is done, so these no longer wait: the text is drafted in `docs/2026-07-28-app-store-metadata.md` and the screenshots are a shot list in it.
+  Copying the text into App Store Connect and capturing the five screenshots on a Mac are the parts no commit can do.
+- Associated Domains on the App ID, and the real Team ID in `public/.well-known/apple-app-site-association`.
+  Added by universal links, which ship with a `TEAMIDXXXX` placeholder because a Team ID is issued to the account that ships the app.
+  Until both are done a scanned Haven code opens Safari, which is what it did before, so nothing regresses while they are outstanding.
 
 ## Testing strategy
 
