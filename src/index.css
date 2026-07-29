@@ -26,6 +26,11 @@
   --accent-fill-text: #1a1730;
   --accent-text: #ffd9a0;
   --danger: #ff453a;
+  /* Danger AS TEXT. The base red holds 4.5:1 on night but not at the bottom
+     of the page gradient, where dusk plus the ember glow drop it to 3:1 --
+     and danger text (Remove, form errors) renders exactly there. Same trap
+     HavenFont.swift documents for faint-over-dusk. */
+  --danger-text: #ff9a9a;
   /* Derived from white so they read over any part of the gradient. These are
      opacities, not new hues, which is why they are allowed. */
   --border: rgba(255, 255, 255, 0.1);
@@ -413,7 +418,7 @@ textarea.field {
 .form-error {
   margin: 0;
   font-size: 13px;
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .shared-note-card {
@@ -479,7 +484,7 @@ textarea.field {
 .person-remove {
   padding: 4px 0;
   font-size: 14px;
-  color: var(--danger);
+  color: var(--danger-text);
   background: none;
   border: none;
   border-radius: 6px;
@@ -513,6 +518,13 @@ textarea.field {
   align-items: center;
 }
 
+/* This row sits at the page bottom, where the ember glow costs muted its
+   4.5:1. Cancel steps up to ink -- which is also the safer hierarchy: the
+   way out reads clearer than the destructive act beside it. */
+.person-remove-actions .btn-ghost {
+  color: var(--text);
+}
+
 /* The committed destructive action. Mirrors .btn-ghost's shape and hit
    target, but reads danger: red and a touch bolder than Cancel, never a
    filled red slab (Apple action-sheet register: destructive is red text). */
@@ -524,7 +536,7 @@ textarea.field {
   margin: -8px -12px; /* text-like size, big hit target -- same as btn-ghost */
   font-size: 17px;
   font-weight: 600;
-  color: var(--danger);
+  color: var(--danger-text);
   background: transparent;
   border: none;
   border-radius: 980px;
@@ -1374,7 +1386,9 @@ textarea.field {
   font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.38);
+  /* 0.55, not lower: this caption renders on deep space, atlas glass, and the
+     meet sheet, and 0.55 is the first stop that holds 4.5:1 on all three. */
+  color: rgba(255, 255, 255, 0.55);
 }
 
 /* Fixed to the viewport (like the prototype's stage), with its own stacking
@@ -1682,7 +1696,7 @@ feedback-widget.feedback-fab {
 }
 
 .meet-input::placeholder {
-  color: rgba(255, 255, 255, 0.42);
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .meet-speech,
@@ -1769,7 +1783,7 @@ feedback-widget.feedback-fab {
 
 .atlas-cluster-when {
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.42);
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .atlas-cluster-tag {
@@ -1951,7 +1965,7 @@ feedback-widget.feedback-fab {
 }
 
 .love-alarm-input::placeholder {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .love-alarm-input:focus {
@@ -2317,7 +2331,8 @@ feedback-widget.feedback-fab {
 .wl-fine {
   margin-top: 18px;
   font-size: 13px;
-  color: var(--faint);
+  /* muted, not faint: this is read text, and faint is placeholders only. */
+  color: var(--muted);
 }
 
 .wl-error {
