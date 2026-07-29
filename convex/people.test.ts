@@ -2308,3 +2308,32 @@ test("editPerson refuses the same fields the same way", async () => {
   const person = await me.as.query(api.people.getPerson, { id });
   expect(person?.name).toBe("Ada Lovelace");
 });
+
+// The capture lookup used .first(), which silently picked one owner when a
+// handle had two -- arbitrary, and it hid the corruption. Production reported
+// zero duplicate handle owners (2026-07-28), so the lookup can insist.
+test("a shared profile refuses to guess between two owners of one handle", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  // addPerson imposes no global uniqueness (capture plan), so the same
+  // account genuinely can end up on two people.
+  await as.mutation(api.people.addPerson, {
+    ...manualAdd,
+    name: "Mai Tran",
+    contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+  });
+  await as.mutation(api.people.addPerson, {
+    ...manualAdd,
+    name: "Mai T.",
+    contactHandles: [{ platform: "Instagram", value: "@Mai.Makes" }],
+  });
+
+  await expect(
+    as.mutation(api.people.saveSharedProfile, {
+      platform: "instagram",
+      handleValue: "mai.makes",
+      profileUrl: "https://instagram.com/mai.makes",
+      name: "Mai Tran",
+    }),
+  ).rejects.toThrow();
+});

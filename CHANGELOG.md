@@ -6,6 +6,16 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.32.1
+
+2026-07-29
+
+**Backend**
+
+- Sharing a profile for someone whose handle you have saved on two different people now says so instead of quietly filing the share under whichever one you saved first.
+
+---
+
 ## v0.32.0
 
 2026-07-28

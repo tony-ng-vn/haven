@@ -989,6 +989,12 @@ export const saveSharedProfile = mutation({
       trimmedNote === undefined || trimmedNote === "" ? undefined : trimmedNote;
     const profileUrl = args.profileUrl.trim();
 
+    // .unique(), not .first(): two owners of one handle is corruption, and
+    // picking the older one silently is how it stays invisible. Production
+    // reported zero duplicate handle owners on 2026-07-28 (wave C step 3 of
+    // the backend completion plan), which is what unblocked this. addPerson
+    // still imposes no global uniqueness, so this can throw on a directory
+    // the owner built by hand -- see that plan's B3 for the trade.
     const indexed = await ctx.db
       .query("personHandles")
       .withIndex("by_user_and_platform_and_valueKey", (q) =>
@@ -997,7 +1003,7 @@ export const saveSharedProfile = mutation({
           .eq("platform", platform)
           .eq("valueKey", valueKey),
       )
-      .first();
+      .unique();
     const owner =
       indexed === null ? null : await ctx.db.get("people", indexed.personId);
     if (indexed !== null && owner === null) {

@@ -32,10 +32,13 @@ Twenty-four items. What follows is the short list, ordered by what blocks what.
 - [ ] **Apple Developer: enable Associated Domains**, and put the real Team ID
   in `public/.well-known/apple-app-site-association` in place of `TEAMIDXXXX`.
   Until then a scanned Haven code opens Safari.
-- [ ] **Finish the Clerk production swap.** `VITE_CLERK_PUBLISHABLE_KEY` and
-  the CSP are done; `Config.clerkProductionKey` is still the placeholder, and a
-  release build traps on it by design. `CLERK_JWT_ISSUER_DOMAIN` on the
-  production Convex deployment is the backend track's half.
+- [ ] **Finish the Clerk production swap.** `VITE_CLERK_PUBLISHABLE_KEY`, the
+  CSP, and `CLERK_JWT_ISSUER_DOMAIN` on the production Convex deployment are
+  all done -- the last set to `https://clerk.inhavens.com` on 2026-07-29, which
+  is the backend track's half. Left: `Config.clerkProductionKey` is still the
+  placeholder and a release build traps on it by design, sign-in on
+  inhavens.com has not been confirmed by a human since the swap, and the dev
+  Clerk entry can come out of the policy once it is.
 - [ ] **A support page.** App Store Connect wants a support URL and the draft
   points at the landing page, which reads badly on review.
 - [ ] **Store metadata and five screenshots.** Text drafted in
@@ -121,9 +124,8 @@ authenticated has ever run outside its own unit tests)
   - [x] iOS screens and the local pending queue: person detail with the notes editor (PR 128), completed into the money screen with reach, per-field editing and delete (PR 140), the share extension with its App Group queue and drain (PRs 127, 129), and manual add through the same queue (PR 138).
     Still open on iOS: screenshot captures have no triage surface in the app (web-only; see decision gate D3 in `docs/superpowers/plans/2026-07-28-backend-completion-plan.md`).
     `people:addPerson` stays unused on purpose: a queued write has to be replayable, and `saveSharedProfile` is the mutation that is idempotent on (platform, handle).
-  - [ ] Run `people:backfillLegacyHandles` to `isDone` on prod. This is capture-plan open question 4, and the code half is settled - the migration exists and is tested - but it has not been run: `people:reportDuplicateHandleOwners` returns `scanned: 0` against dev, and prod is unchecked because `CONVEX_DEPLOY_KEY` in `.env.local` pins to dev and overrides `--prod`.
-    Until it runs, people saved from screenshot captures and meet exchanges carry only the legacy `platform`/`handle` scalars with no `personHandles` rows, so the first share of the same profile twins them.
-    Adversarial review adds two requirements for that work: every direct `people` insert path (screenshot acceptance included) must maintain `personHandles` in the same transaction, and existing duplicate `(userId, platform, valueKey)` owners must be reconciled before the capture lookup can move from `.first()` to `.unique()`.
+  - [x] Run `people:backfillLegacyHandles` to `isDone` on prod. Done 2026-07-28 against `third-hound-186` with a scoped production deploy key: 0 patched, 0 skipped, and `people:reportDuplicateHandleOwners` returned `duplicates: []` over `scanned: 0`. Capture-plan open question 4 is closed.
+    The zero is an empty one -- production holds almost no data -- so it means "nothing to break" rather than "reconciliation proved out at scale". Both of adversarial review's requirements are met: every direct `people` insert path maintains `personHandles` in the same transaction, and with no duplicate owners the capture lookup moved from `.first()` to `.unique()` (PR 152).
 - [~] Phase 3: Search. Filter chips (company / city / role) plus keyword over notes. See the search contract in `mvp-design.md`.
   - [x] Convex backend: `searchDirectory` (keyword + chips, accent-folded) and `directoryFacets` (chip values). Run `npx convex run people:backfillSearchText` once after deploy so pre-existing people join the keyword index.
   - [x] iOS search screen wiring.
@@ -146,7 +148,7 @@ authenticated has ever run outside its own unit tests)
     The code half is done ahead of this phase on purpose: those items hold still while the product changes, unlike store metadata, which the Phase 5 polish pass invalidates.
     What is left there is dashboard and portal work, and three items are worth starting now rather than at submission.
   - [ ] Reserve the app name in App Store Connect. Longest lead time of anything on the list, and "Haven" is crowded.
-  - [ ] Create the Clerk production instance. Web and iOS both run on a development instance today, which caps its user count and cannot be migrated off, so every day of signups makes it worse.
+  - [x] Create the Clerk production instance. It already existed: `clerk.inhavens.com` was serving OIDC discovery with a `convex` JWT template, and a `pk_live_` key was sitting commented out in `.env.local`. The work was the swap, not the creation -- see "Finish the Clerk production swap" above for what is left of it.
   - [ ] Enable Sign In with Apple on the App ID and verify sign-in on a physical device. The entitlement is in the repo; the capability is not something a commit can turn on.
 
 ## Prototype checkpoints

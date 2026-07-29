@@ -104,6 +104,9 @@ Branch `fix/convex-unique-handle-lookup`, its own tiny PR.
 Only after production reports zero duplicate handle owners: flip `saveSharedProfile`'s identity lookup from `.first()` to `.unique()`.
 Until then `.first()` tolerating duplicates is the documented decision.
 
+SHIPPED 2026-07-28. Wave C step 3 reported `duplicates: [], scanned: 0` against `third-hound-186`, which is a true zero but an empty one: production holds almost no data, so this is "nothing to break" rather than "reconciliation proved out at scale".
+The trade the flip accepts, recorded because nothing else records it: `addPerson` still imposes no global uniqueness, so an owner can put one handle on two people by hand, and a later share of that handle now throws where it used to attach to the older row. That throw lands on the capture drain, the path this repo otherwise keeps lenient, and the message is Convex's own rather than a written sentence.
+
 ## Decision gates
 
 Each has a recommended default so an autonomous run can proceed; every applied default must be flagged in the PR body that applies it, so the user can override at review.
@@ -136,6 +139,27 @@ Run in this order from a tree current with main.
    The issuer is half of `tokenIdentifier`, there is no re-keying migration, and none is planned; every existing row orphans at the swap, which is why it happens before real signups or not at all.
    This track runs only the two env halves (Vercel and prod Convex); `Config.swift` and `vercel.json` are frontend-owned and its unit H1 prepares them. Coordinate the timing with the user.
 9. Ask quality, once real notes exist: `OPENAI_API_KEY=sk-... node scripts/eval-ask.ts` for a recall number, one real ask for cost, and recalibrate the 0.3 semantic-search floor against the eval set instead of feel.
+
+## Wave C results (2026-07-28)
+
+Run against `third-hound-186` with an explicitly scoped production deploy key.
+
+- C1 answered. Vercel sets `CONVEX_DEPLOY_KEY` per environment: Production holds a `prod:third-hound-186` key, so PR previews never deployed to production -- the feared case is not what was happening. Preview holds a `dev:brilliant-puma-925` key, and since `vercel.json` builds with `npx convex deploy --cmd`, every PR preview deploys that branch's backend over the shared dev deployment. That is the "never deploy from a feature branch" hazard, automated. The fix is a Convex *preview* key (prefix `preview:`) on the Preview environment, giving each branch its own throwaway backend. Open, and owned by whoever holds the Vercel dashboard.
+- C2 done. `backfillPersonHandles` 0, `backfillSearchText` 0, `backfillNormalizedNames` 0, `backfillMemories` 1 patched (re-run: 0 patched, 1 skipped). All `isDone`.
+- C3 done. `backfillLegacyHandles` 0 patched, 0 skipped, `isDone`. `reportDuplicateHandleOwners`: `duplicates: []`, `scanned: 0`.
+- C4 answered: zero duplicates, so B3 shipped. See the caveat under B3 -- the zero is an empty one.
+- C5 open. `STRIPE_WEBHOOK_SECRET` is the only variable the deployment still lacks; it needs the endpoint created in the Stripe dashboard first.
+- C6 already done before this plan ran: `RESEND_API_KEY` and `WAITLIST_FROM_EMAIL` (`Tony from Haven <tony@inhavens.com>`) are both set.
+- C7 open, optional. No `EXTRACTION_*` or `ASK_*` set; extraction runs on `OPENAI_API_KEY`.
+- C8 backend half done 2026-07-29. `CLERK_JWT_ISSUER_DOMAIN` on prod is now `https://clerk.inhavens.com`, matching the `convex` JWT template on the production Clerk instance and `auth.config.ts`'s `applicationID: "convex"`.
+  The production Clerk instance already existed, which this plan did not know: `clerk.inhavens.com` was already serving OIDC discovery, and a `pk_live_` key was sitting commented out in `.env.local`. So "create the instance" was never the work; the swap was.
+  The frontend halves landed first (`vercel.json` CSP naming both Clerk instances, PR 161). `ios/Haven/Config.swift` still holds the `pk_live_REPLACE...` placeholder, which blocks iOS release builds only.
+  Note for whoever reads this next: the CSP header is `Content-Security-Policy-Report-Only`, so it has never enforced anything. This track briefed the frontend session that a mismatched CSP would break sign-in; that was wrong, and the frontend session caught it. Whether to enforce that policy at all is an open decision nobody has made.
+- C9 open, needs real notes.
+
+Found while running it, not in the plan:
+
+- `SITE_URL`, `JWKS` and `JWT_PRIVATE_KEY` are still set on prod, left by the `@convex-dev/auth` scaffolding the project no longer uses -- nothing reads them, and `SITE_URL` still says `https://euno.vercel.app`. Harmless but stale; `JWT_PRIVATE_KEY` is an unused signing key, which is the one worth removing.
 
 ## Definition of done for "backend 100% for v1"
 
