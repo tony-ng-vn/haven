@@ -98,8 +98,8 @@ export function PersonDetail({
 
   // Read off the live doc alone: the search snapshot carries a name and a date
   // and nothing else, so the rows land when the authoritative doc arrives
-  // rather than flashing an empty list first. Same reason the sky above is
-  // seeded by name only.
+  // rather than flashing an empty list first. Unlike the sky above, which is
+  // seeded by the document id and so is already right on the snapshot.
   const handles = live?.contactHandles ?? [];
   const preferredPlatform = live?.preferredPlatform;
 

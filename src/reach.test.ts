@@ -149,7 +149,9 @@ describe("what gets stored", () => {
   test("a number is kept as it was written", () => {
     expect(reachValue("phone", "  +84 90 123 4567 ")).toBe("+84 90 123 4567");
     expect(reachValue("whatsapp", "+84 90 123 4567")).toBe("+84 90 123 4567");
-    expect(reachUrl("phone", reachValue("phone", "+84 90 123 4567"))).toBe(
+    // Non-null asserted deliberately: a number is never refused, and the
+    // assertion above this line is what proves it.
+    expect(reachUrl("phone", reachValue("phone", "+84 90 123 4567")!)).toBe(
       "tel:+84901234567",
     );
   });
@@ -161,7 +163,11 @@ describe("what gets stored", () => {
       "@mai.makes",
       "mai.makes",
     ]) {
-      expect(reachUrl("instagram", reachValue("instagram", raw))).toBe(
+      const stored = reachValue("instagram", raw);
+      // Checked rather than asserted away: a refusal here would be the bug,
+      // and toBe(null) reads clearer in the failure than a thrown TypeError.
+      expect(stored).not.toBeNull();
+      expect(reachUrl("instagram", stored as string)).toBe(
         "https://instagram.com/mai.makes",
       );
     }
@@ -302,5 +308,70 @@ describe("samePlatform", () => {
 
   test("nothing preferred marks nothing", () => {
     expect(samePlatform("instagram", undefined)).toBe(false);
+  });
+});
+
+describe("reachValue refuses an address it cannot read a handle out of", () => {
+  // Every one of these used to store the literal handle "https:", which is not
+  // a dead link but an identity collision: handleValueKey folds it to the same
+  // key for every unreadable paste, so two unrelated people would land on one
+  // (userId, platform, valueKey) row in personHandles. iOS refuses all of them.
+  const unreadable: Array<[string, string]> = [
+    ["linkedin", "https://www.linkedin.com/pub/mai-nguyen/1/2a/3b"],
+    ["linkedin", "https://www.linkedin.com/mwlite/in/mai-nguyen"],
+    ["instagram", "https://instagram.com/https://instagram.com/mai.makes"],
+    ["instagram", "https://instagram.com"],
+    ["instagram", "instagram.com"],
+    ["instagram", "www.instagram.com"],
+    ["instagram", "https://instagram.com/"],
+    ["instagram", ""],
+    ["instagram", "   "],
+  ];
+  for (const [platform, raw] of unreadable) {
+    test(`${platform} refuses ${JSON.stringify(raw)}`, () => {
+      expect(reachValue(platform, raw)).toBeNull();
+    });
+  }
+
+  test("what it refuses can never reach reachUrl as a doubled address", () => {
+    for (const [platform, raw] of unreadable) {
+      const stored = reachValue(platform, raw);
+      if (stored === null) continue;
+      expect(reachUrl(platform, stored)).not.toMatch(/https:\/\/[^/]+\/(https?:|[^/]*\.(com|me)\/)/);
+    }
+  });
+
+  test("a handle it can read still round-trips", () => {
+    // The guard must not become a wall: these are the ordinary pastes.
+    expect(reachValue("instagram", "https://www.instagram.com/mai.makes/")).toBe("mai.makes");
+    expect(reachValue("instagram", "@mai.makes")).toBe("mai.makes");
+    expect(reachValue("instagram", "mai.makes")).toBe("mai.makes");
+    expect(reachValue("instagram", "INSTAGRAM.COM/Mai")).toBe("Mai");
+    expect(reachValue("x", "https://twitter.com/ada_l")).toBe("ada_l");
+    expect(reachValue("linkedin", "https://www.linkedin.com/in/ada-lovelace-123/")).toBe("ada-lovelace-123");
+    expect(reachValue("telegram", "https://t.me/ada")).toBe("ada");
+    expect(reachValue("telegram", "t.me/+invite")).toBe("+invite");
+    // Unknown platform and numbers pass through: Haven does not know a rule.
+    expect(reachValue("signal", "whatever they typed")).toBe("whatever they typed");
+    expect(reachValue("phone", "+84 90 123 4567")).toBe("+84 90 123 4567");
+  });
+
+  test("a length-changing fold does not shift where the handle starts", () => {
+    // toLowerCase can lengthen a string (U+0130), so an index taken from the
+    // lowercased copy cannot be sliced out of the original.
+    expect(reachValue("instagram", "İ instagram.com/mai.makes")).not.toBe("ai.makes");
+  });
+});
+
+describe("reachUrl escaping", () => {
+  test("a colon is escaped, because Swift escapes it too", () => {
+    // Measured against Foundation's .urlPathAllowed rather than read off a
+    // table: both sides escape ":", so leaving it raw here would have made the
+    // two platforms open different addresses for one handle.
+    expect(reachUrl("instagram", "mai:co")).toBe("https://instagram.com/mai%3Aco");
+  });
+
+  test("is total, even on a lone surrogate", () => {
+    expect(reachUrl("instagram", "mai\uD83D")).toBeNull();
   });
 });

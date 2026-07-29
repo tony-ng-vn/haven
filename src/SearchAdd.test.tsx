@@ -7,6 +7,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { useState } from "react";
 import type { Id } from "../convex/_generated/dataModel";
 
 // The sky reads one query twice (the stable field, and the live name search)
@@ -140,5 +141,76 @@ describe("one thing to do at a time", () => {
     expect(screen.getByText("Capture someone new")).toBeTruthy();
     openAddForm();
     expect(screen.queryByText("Capture someone new")).toBeNull();
+  });
+});
+
+// A host that actually owns the query, which is the only way to see what a
+// keystroke does. The shipped harness passes a fixed query and a no-op
+// onQueryChange, so it cannot express this at all -- and the bug it hides is
+// the worst kind: not a broken screen, a handle filed under the wrong person.
+function HostedSearchAdd({ initial }: { initial: string }) {
+  const [query, setQuery] = useState(initial);
+  return (
+    <>
+      <input
+        aria-label="name"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      <SearchAdd
+        query={query}
+        onQueryChange={setQuery}
+        onOpen={() => {}}
+        onOpenCapture={() => {}}
+        morphId={null as Id<"people"> | null}
+      />
+    </>
+  );
+}
+
+describe("retyping the name does not carry the old form over", () => {
+  test("a filled form empties when the name changes", () => {
+    people.current = [];
+    render(<HostedSearchAdd initial="Mai" />);
+    fireEvent.click(screen.getByText('Add "Mai" to your sky'));
+    fireEvent.change(screen.getByLabelText("Their handle there"), {
+      target: { value: "mai.makes" },
+    });
+    fireEvent.change(screen.getByLabelText("How you met"), {
+      target: { value: "ceramics market" },
+    });
+
+    // Correct the name. The form was about Mai, so it must not come back
+    // holding Mai's handle ready to be filed under Bob.
+    fireEvent.change(screen.getByLabelText("name"), { target: { value: "Bob" } });
+
+    expect(screen.queryByLabelText("How you met")).toBeNull();
+    fireEvent.click(screen.getByText('Add "Bob" to your sky'));
+    expect((screen.getByLabelText("Their handle there") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("How you met") as HTMLInputElement).value).toBe("");
+  });
+});
+
+describe("a paste Haven cannot read a handle out of", () => {
+  test("is refused rather than stored as wreckage", async () => {
+    people.current = [];
+    saved.args = null;
+    show([]);
+    openAddForm();
+    fireEvent.change(screen.getByLabelText("Where you know them"), {
+      target: { value: "linkedin" },
+    });
+    fireEvent.change(screen.getByLabelText("Their handle there"), {
+      target: { value: "https://www.linkedin.com/mwlite/in/mai-nguyen" },
+    });
+    fireEvent.change(screen.getByLabelText("How you met"), {
+      target: { value: "ceramics market" },
+    });
+    fireEvent.click(screen.getByText('Add "Mai" to your sky'));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toContain("LinkedIn handle");
+    });
+    expect(saved.args).toBeNull();
   });
 });

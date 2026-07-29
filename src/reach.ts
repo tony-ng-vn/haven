@@ -105,10 +105,16 @@ function dialable(value: string): string {
 }
 
 // Swift escapes a handle with CharacterSet.urlPathAllowed, which keeps these
-// nine characters that encodeURIComponent escapes. Putting them back is what
+// eight characters that encodeURIComponent escapes. Putting them back is what
 // makes a handle saved on a phone and the same handle opened from the web
 // resolve to the same address, character for character.
-const KEPT_BY_URL_PATH_ALLOWED = /%(24|26|2B|2C|2F|3A|3B|3D|40)/g;
+//
+// Verified by running both sides over printable ASCII rather than read off a
+// table: a colon is escaped by BOTH and must not be listed here. This pins
+// another platform's runtime behaviour, and it was checked against Foundation
+// 26 only -- ios/project.yml still targets iOS 17, whose older encoding table
+// may differ. PersonReachTests carries the matching case on the Swift side.
+const KEPT_BY_URL_PATH_ALLOWED = /%(24|26|2B|2C|2F|3B|3D|40)/g;
 
 function escapeForPath(value: string): string {
   return encodeURIComponent(value).replace(
@@ -130,7 +136,15 @@ export function reachUrl(platform: string, value: string): string | null {
 
   const [address] = entry.addresses;
   if (address !== undefined) {
-    return `https://${address}${escapeForPath(trimmed)}`;
+    // encodeURIComponent throws on a lone surrogate. Convex cannot store one,
+    // so this is only reachable from a value built in the browser -- but this
+    // function promises a url or null, and a throw from inside render is
+    // neither.
+    try {
+      return `https://${address}${escapeForPath(trimmed)}`;
+    } catch {
+      return null;
+    }
   }
 
   // The two platforms with no address hold a number instead of a handle.
@@ -161,26 +175,71 @@ export function reachUrl(platform: string, value: string): string | null {
 /// is nothing to disable -- the server caps the length, and Haven does not know
 /// a platform's naming rules better than the person writing the handle down.
 ///
+/// Null means "that is not a handle I can read", which is an answer, not a
+/// failure: iOS's parse returns nil for the same inputs and saves nothing.
+/// Returning wreckage instead would be worse than refusing, because this value
+/// is an identity key -- handleValueKey trims, strips @ and lowercases it, so
+/// every unreadable paste for one platform would collapse onto the SAME key and
+/// two unrelated people would collide in personHandles.
+///
 /// A number is kept as typed. iOS folds one to E.164 with libphonenumber, which
-/// takes that whole library to do honestly, and reading a number back is
-/// already handled where it matters, in reachUrl.
-export function reachValue(platform: string, raw: string): string {
-  let value = raw.trim();
+/// takes that whole library to do honestly. Reading a number back is handled in
+/// reachUrl, but the two platforms do still disagree on the stored string, so a
+/// person saved on both makes two keys rather than one. That is a real gap and
+/// closing it needs a phone library here, not a regex.
+export function reachValue(platform: string, raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
   const entry = known(platform);
-  if (entry === undefined || isPhoneNumber(platform)) return value;
+  if (entry === undefined || isPhoneNumber(platform)) return trimmed;
 
-  // Each address is looked for in the whole string before anything is cut, so
-  // a platform with a second one still finds it. Cutting first would leave
-  // "https:" and match neither.
-  const lowered = value.toLowerCase();
-  for (const address of entry.addresses) {
-    const at = lowered.indexOf(address);
-    if (at === -1) continue;
-    value = value.slice(at + address.length);
-    break;
+  // Whether this reads as a web address at all. A handle cannot hold a colon or
+  // a slash, and a bare host is an address somebody stopped typing.
+  const looksLikeAddress =
+    /[:/]/.test(trimmed) ||
+    entry.addresses.some((address) => {
+      const host = address.split("/")[0];
+      return startsWithFolded(trimmed, host) || startsWithFolded(trimmed, `www.${host}`);
+    });
+
+  // Searched in the whole string before anything is cut, so a platform with a
+  // second address still finds it. Indexed on the original rather than a
+  // lowercased copy: toLowerCase can change a string's length, and the two
+  // would then disagree about where the handle starts.
+  let value = trimmed;
+  const cut = foldPastAddress(trimmed, entry.addresses);
+  if (cut !== null) {
+    value = cut;
+  } else if (looksLikeAddress) {
+    // An address on this platform that Haven does not recognize the shape of --
+    // linkedin.com/pub/..., a /mwlite/ share link. There is no handle in here
+    // that Haven can name, so it says so.
+    return null;
   }
+
   // Everything up to the first separator: a second path segment, a query or a
   // fragment on a profile link is nobody's handle.
-  value = value.split(/[/?#]/)[0];
-  return value.replace(/^@+/, "").replace(/@+$/, "");
+  value = value.split(/[/?#]/)[0].replace(/^@+/, "").replace(/@+$/, "");
+  // Whatever survived has to be a handle now. Anything still carrying address
+  // punctuation means the fold did not reach the end of the address -- a link
+  // pasted into a link does this -- and a handle is not what is left.
+  if (value === "" || /[:/?#\s]/.test(value)) return null;
+  return value;
+}
+
+function startsWithFolded(value: string, prefix: string): boolean {
+  return value.slice(0, prefix.length).toLowerCase() === prefix.toLowerCase();
+}
+
+/// What follows the first of these addresses in the string, or null if none of
+/// them is in it.
+function foldPastAddress(value: string, addresses: string[]): string | null {
+  for (const address of addresses) {
+    const at = value.toLowerCase().indexOf(address);
+    // Guard the one case where the lowercased copy cannot be indexed back into
+    // the original: a fold that changes length (U+0130 becomes two characters).
+    if (at === -1 || value.toLowerCase().length !== value.length) continue;
+    return value.slice(at + address.length);
+  }
+  return null;
 }

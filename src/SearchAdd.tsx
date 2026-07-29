@@ -269,11 +269,21 @@ export function SearchAdd({
   // something that never had one.
   const addWantsNumber = isPhoneNumber(addPlatform);
 
-  // Clearing the search takes the form away with it, so the name it was filling
-  // in cannot come back attached to the next one somebody types.
+  // Changing the name empties the form, because the form was about the old one.
+  //
+  // Gated on the typed name rather than on showAdd: showAdd rides searchLoaded,
+  // which goes false on every keystroke while the query subscription re-resolves
+  // (the same flicker the isLit comment below is about). Gating on that yanked
+  // an open form away mid-edit -- and because it only closed the form and left
+  // the three fields standing, the form came back prefilled, so one more click
+  // filed the previous person's handle under the new name. The fields go with
+  // it now, and a transient loading flip no longer touches an open form.
   useEffect(() => {
-    if (!showAdd) setAddOpen(false);
-  }, [showAdd]);
+    setAddOpen(false);
+    setAddHandle("");
+    setAddNote("");
+    setAddError(null);
+  }, [trimmed]);
 
   // The trigger somebody just pressed is the element the form replaces, so
   // focus would land on the body and the next Tab would restart at the top of
@@ -291,8 +301,17 @@ export function SearchAdd({
     const note = addNote.trim();
     // The platform comes from a list now, so it is never blank; the two fields
     // somebody types still can be.
-    if (handle === "" || note === "") {
+    if (addHandle.trim() === "" || note === "") {
       setAddError("A handle and a note are both required");
+      return;
+    }
+    // Null means the paste was an address Haven could not find a handle in.
+    // Saying so beats storing the wreckage: this value is how Haven recognizes
+    // the same person again.
+    if (handle === null) {
+      setAddError(
+        `That does not look like a ${reachLabel(addPlatform)} handle. Paste their profile link, or type just the handle.`,
+      );
       return;
     }
     setAdding(true);
