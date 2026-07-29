@@ -151,7 +151,10 @@ Run against `third-hound-186` with an explicitly scoped production deploy key.
 - C5 open. `STRIPE_WEBHOOK_SECRET` is the only variable the deployment still lacks; it needs the endpoint created in the Stripe dashboard first.
 - C6 already done before this plan ran: `RESEND_API_KEY` and `WAITLIST_FROM_EMAIL` (`Tony from Haven <tony@inhavens.com>`) are both set.
 - C7 open, optional. No `EXTRACTION_*` or `ASK_*` set; extraction runs on `OPENAI_API_KEY`.
-- C8 open, and confirmed not done from two directions: `CLERK_JWT_ISSUER_DOMAIN` on prod is `https://valued-bonefish-64.clerk.accounts.dev`, and the live bundle at inhavens.com ships a `pk_test_` key. Production runs entirely on a Clerk development instance.
+- C8 backend half done 2026-07-29. `CLERK_JWT_ISSUER_DOMAIN` on prod is now `https://clerk.inhavens.com`, matching the `convex` JWT template on the production Clerk instance and `auth.config.ts`'s `applicationID: "convex"`.
+  The production Clerk instance already existed, which this plan did not know: `clerk.inhavens.com` was already serving OIDC discovery, and a `pk_live_` key was sitting commented out in `.env.local`. So "create the instance" was never the work; the swap was.
+  The frontend halves landed first (`vercel.json` CSP naming both Clerk instances, PR 161). `ios/Haven/Config.swift` still holds the `pk_live_REPLACE...` placeholder, which blocks iOS release builds only.
+  Note for whoever reads this next: the CSP header is `Content-Security-Policy-Report-Only`, so it has never enforced anything. This track briefed the frontend session that a mismatched CSP would break sign-in; that was wrong, and the frontend session caught it. Whether to enforce that policy at all is an open decision nobody has made.
 - C9 open, needs real notes.
 
 Found while running it, not in the plan:
