@@ -92,10 +92,9 @@ export function CardPage({ handle }: { handle: string }) {
               // promise if the list ever grows one.
               if (isPhoneNumber(entry.platform)) return null;
               const href = reachUrl(entry.platform, entry.value);
-              // A platform this page has no address for is skipped rather than
-              // crashed on, and rather than printed as a string a stranger
-              // would have to retype. A stranger's first sight of Haven must
-              // not be a white screen.
+              // A platform this page has no address for is dropped, not printed
+              // as a string a stranger would have to retype: every handle on a
+              // card is one they can tap.
               if (href === null) return null;
               return (
                 <li key={`${entry.platform}:${entry.value}`}>

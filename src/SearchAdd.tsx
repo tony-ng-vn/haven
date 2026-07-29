@@ -264,6 +264,10 @@ export function SearchAdd({
   // so nothing but removing one of them keeps them off each other at every
   // width.
   const addFormOpen = showAdd && addOpen;
+  // Phone and WhatsApp hold a number rather than a handle, which is the whole
+  // difference the field shows: the number keypad, and no at-sign in front of
+  // something that never had one.
+  const addWantsNumber = isPhoneNumber(addPlatform);
 
   // Clearing the search takes the form away with it, so the name it was filling
   // in cannot come back attached to the next one somebody types.
@@ -424,16 +428,13 @@ export function SearchAdd({
               Their handle there
             </label>
             <div className="atlas-add-row">
-              {/* A number has no at-sign in front of it. */}
-              {!isPhoneNumber(addPlatform) && (
-                <span className="atlas-add-at">@</span>
-              )}
+              {!addWantsNumber && <span className="atlas-add-at">@</span>}
               <input
                 id="add-handle"
                 className="atlas-add-input"
                 value={addHandle}
                 onChange={(e) => setAddHandle(e.target.value)}
-                inputMode={isPhoneNumber(addPlatform) ? "tel" : undefined}
+                inputMode={addWantsNumber ? "tel" : undefined}
                 autoCapitalize="none"
                 autoComplete="off"
                 spellCheck={false}

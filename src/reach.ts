@@ -31,19 +31,17 @@ const KNOWN = new Map<string, Known>([
   ["phone", { label: "Phone", addresses: [] }],
 ]);
 
-/**
- * The platforms the handle editor offers.
- *
- * Longer than the four your own card offers, and that asymmetry is the spec's:
- * your card is an identity you publish, this is a note about how you actually
- * reach one person, WhatsApp and Telegram included. twitter is readable but not
- * offerable -- it is the old name for a platform that has one.
- *
- * Offering a list rather than a free text box is a decision about dedup, not
- * about capability: the server takes any string, and one person typing
- * "WhatsApp" while another types "whats app" makes two identities for one
- * platform, invisibly.
- */
+/// The platforms the handle editor offers.
+///
+/// Longer than the four your own card offers, and that asymmetry is the spec's:
+/// your card is an identity you publish, this is a note about how you actually
+/// reach one person, WhatsApp and Telegram included. twitter is readable but not
+/// offerable -- it is the old name for a platform that has one.
+///
+/// Offering a list rather than a free text box is a decision about dedup, not
+/// about capability: the server takes any string, and one person typing
+/// "WhatsApp" while another types "whats app" makes two identities for one
+/// platform, invisibly.
 export const REACH_PLATFORMS = [
   "instagram",
   "x",
@@ -57,25 +55,31 @@ function normalize(platform: string): string {
   return platform.trim().toLowerCase();
 }
 
+/// Whether two stored platform strings name the same platform.
+///
+/// Exported because a raw `===` is wrong on data the server takes verbatim: a
+/// row can hold "Instagram" while `preferredPlatform` says "instagram", and
+/// comparing the two literally would quietly fail to mark the row somebody
+/// chose. Every other platform read here already folds first.
+export function samePlatform(a: string, b: string | undefined): boolean {
+  return b !== undefined && normalize(a) === normalize(b);
+}
+
 function known(platform: string): Known | undefined {
   return KNOWN.get(normalize(platform));
 }
 
-/**
- * What the platform is called out loud.
- *
- * An unknown platform is read back as it was written rather than dressed up:
- * somebody who typed "signal" gets "signal", which is true, and Haven does not
- * pretend to know a platform it does not.
- */
+/// What the platform is called out loud.
+///
+/// An unknown platform is read back as it was written rather than dressed up:
+/// somebody who typed "signal" gets "signal", which is true, and Haven does not
+/// pretend to know a platform it does not.
 export function reachLabel(platform: string): string {
   return known(platform)?.label ?? platform;
 }
 
-/**
- * Whether this handle is a phone number, which decides the keyboard the field
- * asks for and whether an at-sign belongs in front of it.
- */
+/// Whether this handle is a phone number, which decides the keyboard the field
+/// asks for and whether an at-sign belongs in front of it.
 export function isPhoneNumber(platform: string): boolean {
   const name = normalize(platform);
   return name === "phone" || name === "whatsapp";
@@ -113,14 +117,12 @@ function escapeForPath(value: string): string {
   );
 }
 
-/**
- * What to open when somebody taps this handle, or null when there is nothing to
- * open.
- *
- * Null is an ordinary answer. A handle on a platform Haven has never heard of
- * is a real way to reach somebody and the row still shows it; it just does not
- * promise a tap it cannot keep.
- */
+/// What to open when somebody taps this handle, or null when there is nothing to
+/// open.
+///
+/// Null is an ordinary answer. A handle on a platform Haven has never heard of
+/// is a real way to reach somebody and the row still shows it; it just does not
+/// promise a tap it cannot keep.
 export function reachUrl(platform: string, value: string): string | null {
   const trimmed = value.trim();
   const entry = known(platform);
@@ -144,26 +146,24 @@ export function reachUrl(platform: string, value: string): string | null {
   return digits === "" ? null : `https://wa.me/${digits}`;
 }
 
-/**
- * What to store for a handle somebody typed or pasted.
- *
- * The field asks them to paste a link, because pasting the profile link is the
- * normal thing to do with a profile -- so the handle is dug out of it rather
- * than demanded on its own, the same folding
- * ios/Haven/Onboarding/ContactValue.swift does behind the contact question.
- * Without it a stored "https://instagram.com/mai.makes" reads back as
- * instagram.com/https://instagram.com/mai.makes, which is the dead link this
- * whole file exists to stop.
- *
- * What is not mirrored is that file's other half, each platform's character
- * and length rules: there they exist to keep Continue disabled, and here there
- * is nothing to disable -- the server caps the length, and Haven does not know
- * a platform's naming rules better than the person writing the handle down.
- *
- * A number is kept as typed. iOS folds one to E.164 with libphonenumber, which
- * takes that whole library to do honestly, and reading a number back is
- * already handled where it matters, in reachUrl.
- */
+/// What to store for a handle somebody typed or pasted.
+///
+/// The field asks them to paste a link, because pasting the profile link is the
+/// normal thing to do with a profile -- so the handle is dug out of it rather
+/// than demanded on its own, the same folding
+/// ios/Haven/Onboarding/ContactValue.swift does behind the contact question.
+/// Without it a stored "https://instagram.com/mai.makes" reads back as
+/// instagram.com/https://instagram.com/mai.makes, which is the dead link this
+/// whole file exists to stop.
+///
+/// What is not mirrored is that file's other half, each platform's character
+/// and length rules: there they exist to keep Continue disabled, and here there
+/// is nothing to disable -- the server caps the length, and Haven does not know
+/// a platform's naming rules better than the person writing the handle down.
+///
+/// A number is kept as typed. iOS folds one to E.164 with libphonenumber, which
+/// takes that whole library to do honestly, and reading a number back is
+/// already handled where it matters, in reachUrl.
 export function reachValue(platform: string, raw: string): string {
   let value = raw.trim();
   const entry = known(platform);

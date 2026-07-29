@@ -4,7 +4,7 @@ import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { formatMonthYear, normalizeUrl, type PersonSnapshot } from "./lib";
 import { PersonSky } from "./PersonSky";
-import { reachLabel, reachUrl } from "./reach";
+import { reachLabel, reachUrl, samePlatform } from "./reach";
 
 function ArrowUpRight() {
   return (
@@ -198,7 +198,7 @@ export function PersonDetail({
                   <span className="card-handle-label">
                     {reachLabel(handle.platform)}
                   </span>
-                  {handle.platform === preferredPlatform && (
+                  {samePlatform(handle.platform, preferredPlatform) && (
                     <span className="person-handle-mark">preferred</span>
                   )}
                   {/* After the mark, not before it: the mark belongs with the

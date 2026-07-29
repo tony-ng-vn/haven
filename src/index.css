@@ -1492,7 +1492,8 @@ textarea.field {
    input matches :focus-visible even on pointer focus, so without this the
    global ring draws a hard rectangle inside the rounded glass. */
 .atlas-input:focus-visible,
-.atlas-add-input:focus-visible {
+.atlas-add-input:focus-visible,
+.atlas-add-select:focus-visible {
   box-shadow: none;
 }
 
@@ -1558,6 +1559,20 @@ textarea.field {
   color: rgba(255, 255, 255, 0.58);
 }
 
+/* A field inside a row carries no chrome of its own, whichever kind it is: the
+   glass well around it is .atlas-add-row. */
+.atlas-add-input,
+.atlas-add-select {
+  flex: 1;
+  min-width: 0;
+  color: #fff;
+  background: none;
+  border: none;
+  outline: none;
+  /* 16px, not smaller: iOS Safari zooms the page on focus below this. */
+  font-size: 16px;
+}
+
 /* The platform list. The caret is drawn here rather than left to the OS,
    because a native one arrives in the system's own light chrome and lands on
    the glass looking like a control from another app. */
@@ -1566,16 +1581,9 @@ textarea.field {
 }
 
 .atlas-add-select {
-  flex: 1;
-  min-width: 0;
   /* Room for the caret, which floats above the select rather than beside it so
      that the whole row stays one click target. */
   padding-right: 24px;
-  color: #fff;
-  background: none;
-  border: none;
-  outline: none;
-  font-size: 16px;
   -webkit-appearance: none;
   appearance: none;
 }
@@ -1596,15 +1604,7 @@ textarea.field {
 }
 
 .atlas-add-input {
-  flex: 1;
-  min-width: 0;
-  color: #fff;
   caret-color: #fff;
-  background: none;
-  border: none;
-  outline: none;
-  /* 16px, not smaller: iOS Safari zooms the page on focus below this. */
-  font-size: 16px;
 }
 
 .atlas-add-input::placeholder {
@@ -2380,8 +2380,6 @@ a.card-handle:focus-visible {
   white-space: nowrap;
 }
 
-/* On a person's page the rows sit in the page column rather than centered
-   under a face, so they take the width they are given. */
 .person-reach {
   display: flex;
   flex-direction: column;
@@ -2395,6 +2393,9 @@ a.card-handle:focus-visible {
   color: var(--muted);
 }
 
+/* On a person's page the rows sit in the page column rather than centered under
+   a face, so they take the width they are given, and the column above already
+   spaces them. */
 .person-handles {
   margin: 0;
   max-width: none;

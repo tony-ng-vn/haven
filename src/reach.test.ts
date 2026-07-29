@@ -7,6 +7,7 @@ import {
   reachPlaceholder,
   reachUrl,
   reachValue,
+  samePlatform,
 } from "./reach";
 
 // The web mirror of ios/Haven/Directory/PersonReach.swift, and the tests that
@@ -286,5 +287,20 @@ describe("the iOS file this mirrors", () => {
     expect(swift).toContain('"Their number" : "Paste a link or type the handle"');
     expect(reachPlaceholder("phone")).toBe("Their number");
     expect(reachPlaceholder("x")).toBe("Paste a link or type the handle");
+  });
+});
+
+describe("samePlatform", () => {
+  test("folds like every other platform read", () => {
+    // The server stores what was sent, so a row can say "Instagram" while
+    // preferredPlatform says "instagram". A raw === would silently fail to
+    // mark the row the person actually chose.
+    expect(samePlatform("instagram", "Instagram")).toBe(true);
+    expect(samePlatform(" X ", "x")).toBe(true);
+    expect(samePlatform("instagram", "x")).toBe(false);
+  });
+
+  test("nothing preferred marks nothing", () => {
+    expect(samePlatform("instagram", undefined)).toBe(false);
   });
 });
