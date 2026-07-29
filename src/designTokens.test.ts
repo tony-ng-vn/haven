@@ -112,6 +112,17 @@ describe("focus", () => {
   });
 });
 
+describe("browser chrome", () => {
+  test("theme-color wears the night", () => {
+    // The tab bar and installed-app chrome are the first pixels anyone sees.
+    const html = readFileSync("index.html", "utf8");
+    const manifest = readFileSync("public/manifest.webmanifest", "utf8");
+    expect(html).toContain('name="theme-color" content="#0e1123"');
+    expect(html).not.toContain("#f5f5f7");
+    expect(manifest).toContain('"theme_color": "#0e1123"');
+  });
+});
+
 describe("component sources", () => {
   test("no component hardcodes the retired blues", () => {
     const banned = /#0071e3|#0a84ff|#178bff|10,\s*132,\s*255/i;

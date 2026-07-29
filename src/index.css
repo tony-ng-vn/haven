@@ -718,7 +718,7 @@ textarea.field {
 
 /* The last-resort fallback when a render throws. Kept in the same quiet
    register as the rest of Haven: one soft card, muted words, a single way
-   back. Uses the shared tokens, so it follows light and dark on its own. */
+   back. */
 .error-boundary {
   min-height: 100vh;
   min-height: 100dvh;
@@ -948,8 +948,8 @@ textarea.field {
 /* ------------------------------------------------------- deep field sky */
 
 /* A ready capture is a person, and a person is a unique patch of night:
-   their stars, their nebulae, minted from their name. The one deliberately
-   dark surface in the product, in both themes -- a window, not a panel. */
+   their stars, their nebulae, minted from their name. Deeper than the night
+   the app already sits on, deliberately -- a window, not a panel. */
 .triage-card-sky {
   border-color: rgba(255, 255, 255, 0.22);
   box-shadow:
@@ -1468,9 +1468,9 @@ textarea.field {
   backdrop-filter: blur(8px);
 }
 
+/* The icon holds its 18px against a long placeholder; only the input gives. */
 .atlas-pill .search-icon {
   flex: 0 0 auto;
-  color: inherit;
 }
 
 .atlas-input {
@@ -2106,7 +2106,10 @@ feedback-widget.feedback-fab {
   .atlas-clear:active,
   .atlas-add:active:not(:disabled),
   .sky-cta:active,
-  .atlas-meet-fab:active {
+  .atlas-meet-fab:active,
+  .error-boundary-retry:active,
+  .love-alarm-toggle:active,
+  .wl-go:active {
     transform: none;
   }
 
@@ -2147,9 +2150,9 @@ feedback-widget.feedback-fab {
 }
 
 /* ============================================================ waitlist (/#/join)
-   The public join page. A committed-dark world of its own -- flat at rest, one
-   blue, motion only as confirmation -- laid out around a drifting star field.
-   Ported from the approved prototype. Layout and copy flip at 620px via the
+   The public join page. A world of its own -- flat at rest, one warm light,
+   motion only as confirmation -- laid out around a drifting star field. Ported
+   from the approved prototype. Layout and copy flip at 620px via the
    [data-mode] attribute React sets from the page width. */
 
 .waitlist {
@@ -2501,10 +2504,10 @@ feedback-widget.feedback-fab {
 /* ---------------------------------------------------------------------------
    Public card page (inhavens.com/<handle>)
 
-   Dark like the waitlist rather than like the signed-in app: this is the face
-   Haven shows a stranger, and it is the same night their beacon was scanned
-   against. Fixed and self-contained so it owes nothing to the app chrome, which
-   never mounts on this route.
+   Flat night like the waitlist, not the app's night-into-dusk gradient: this is
+   the face Haven shows a stranger, and it is the same night their beacon was
+   scanned against. Fixed and self-contained so it owes nothing to the app
+   chrome, which never mounts on this route.
    ------------------------------------------------------------------------ */
 .card-page {
   position: fixed;
@@ -2667,8 +2670,6 @@ feedback-widget.feedback-fab {
   color: rgba(242, 239, 233, 0.78);
 }
 
-/* Left underlined by the link rule below, deliberately: it is the only way off
-   this page, and a wordmark that does not look clickable is not a way out. */
 /* The public pages' editorial register: the wordmark-as-link, the page title,
    and the empty card's quiet title share the name serif deliberately -- this
    is the site's face, not the app's chrome. The one sanctioned use outside
@@ -2679,6 +2680,8 @@ feedback-widget.feedback-fab {
   font-family: var(--font-serif);
 }
 
+/* Left underlined by the link rule below, deliberately: it is the only way off
+   this page, and a wordmark that does not look clickable is not a way out. */
 .legal-back {
   display: inline-block;
   font-size: 17px;
