@@ -3,4 +3,18 @@
   <url>
     <loc>https://inhavens.com/</loc>
   </url>
+  <!--
+    The three pages the site owns above the handle namespace. Card pages are
+    deliberately absent: they are somebody's name and photo, and putting them
+    here would ask Google to index every Haven user.
+  -->
+  <url>
+    <loc>https://inhavens.com/support</loc>
+  </url>
+  <url>
+    <loc>https://inhavens.com/privacy</loc>
+  </url>
+  <url>
+    <loc>https://inhavens.com/terms</loc>
+  </url>
 </urlset>

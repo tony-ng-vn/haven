@@ -6,6 +6,20 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.33.0
+
+2026-07-29
+
+**Web**
+
+- Haven has a support page at inhavens.com/support. It answers what to do when you cannot sign in, exactly how to delete your account and everything in it, whether the people you write notes about can see them (they cannot), and how to reach a person about anything else.
+
+**Docs**
+
+- The App Store Support URL now points at that page instead of the marketing site, which is what a reviewer expects to find behind it.
+
+---
+
 ## v0.32.1
 
 2026-07-29

@@ -16,6 +16,7 @@ import {
   isJoinHash,
   isValidEmail,
   legalDocFromPath,
+  sitePageFromPath,
   DEFAULT_ADMIN_EMAILS,
   nameGuessFromSlug,
   normalizeEmail,
@@ -841,6 +842,66 @@ describe("resolveView with a legal path", () => {
   test("no one can claim these paths as a handle", () => {
     expect(handleFromPath("/privacy")).toBeNull();
     expect(handleFromPath("/terms")).toBeNull();
+  });
+});
+
+describe("sitePageFromPath", () => {
+  test("names every page the site owns above the handles", () => {
+    expect(sitePageFromPath("/privacy")).toBe("privacy");
+    expect(sitePageFromPath("/terms")).toBe("terms");
+    expect(sitePageFromPath("/support")).toBe("support");
+  });
+
+  test("forgives a trailing slash and any casing", () => {
+    expect(sitePageFromPath("/support/")).toBe("support");
+    expect(sitePageFromPath("/Support")).toBe("support");
+    expect(sitePageFromPath("/SUPPORT/")).toBe("support");
+  });
+
+  // "supporting" is a perfectly claimable handle, and a prefix match would eat
+  // it. So would any nested path.
+  test("only the top level, and nothing else", () => {
+    expect(sitePageFromPath("/")).toBeNull();
+    expect(sitePageFromPath("/supporting")).toBeNull();
+    expect(sitePageFromPath("/support/extra")).toBeNull();
+    expect(sitePageFromPath("/help")).toBeNull();
+  });
+
+  // legalDocFromPath is the narrower question -- which document LegalPage
+  // should render -- and support is not one, so it must keep saying null.
+  test("support is a site page but not a legal document", () => {
+    expect(legalDocFromPath("/support")).toBeNull();
+  });
+});
+
+describe("resolveView with a support path", () => {
+  const base = {
+    isAuthenticated: false,
+    isLoading: false,
+    hash: "",
+    hasSessionHint: false,
+  };
+
+  // The App Store Support URL is opened by a reviewer with no session, and by
+  // people who are locked out of theirs -- which is the single most likely
+  // reason somebody goes looking for support at all. It cannot require auth.
+  test("a support path wins over every auth state", () => {
+    expect(resolveView({ ...base, pathname: "/support" })).toBe("support");
+    expect(
+      resolveView({ ...base, pathname: "/support", isAuthenticated: true }),
+    ).toBe("support");
+    expect(
+      resolveView({
+        ...base,
+        pathname: "/support",
+        isLoading: true,
+        hasSessionHint: true,
+      }),
+    ).toBe("support");
+  });
+
+  test("no one can claim it as a handle", () => {
+    expect(handleFromPath("/support")).toBeNull();
   });
 });
 
