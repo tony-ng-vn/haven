@@ -12,6 +12,7 @@ import Foundation
 //
 // The Convex side also needs a JWT template named "convex" in Clerk, and
 // CLERK_JWT_ISSUER_DOMAIN set on the Convex deployment (see convex/auth.config.ts).
+//
 // The three keys below are `internal` rather than `private` so `ConfigTests`
 // can assert on them. That is the whole reason, and it is worth the widening:
 // the `precondition` further down guards the same invariant but lives in an
@@ -23,42 +24,46 @@ enum Config {
     static let clerkDevelopmentKey =
         "pk_test_dmFsdWVkLWJvbmVmaXNoLTY0LmNsZXJrLmFjY291bnRzLmRldiQ"
 
-    /// The production instance, once it exists.
+    /// What `clerkProductionKey` held until the production instance existed.
+    /// Kept as a named constant rather than deleted: it is what the release
+    /// build's `precondition` and `ConfigTests` both compare against, so the
+    /// guard against regressing to a placeholder survives the placeholder.
+    static let clerkProductionPlaceholder = "pk_live_REPLACE_BEFORE_SHIPPING"
+
+    /// The `clerk.inhavens.com` instance. Publishable, so shipping it in the
+    /// binary is the intended use rather than a leak -- it is the base64 of the
+    /// instance's own frontend host, which anybody can read off the website.
+    /// The secret key is its counterpart and lives only in Convex's env.
     ///
-    /// Creating it is dashboard and DNS work that no code change can stand in
-    /// for: a production Clerk instance needs its own domain, its own Sign in
-    /// with Apple credentials from the developer portal, and its own "convex"
-    /// JWT template. Three other things move with it, and a build that has this
-    /// key but not those three is still broken:
+    /// The swap to this instance is four edits, and no single one of them
+    /// works alone. A build carrying this key but missing any of
+    /// the others is broken in the way that only shows when somebody tries to
+    /// sign in -- a 401 that reads as "Clerk is down" rather than as a pair of
+    /// systems pointed at different instances. Where each stands:
     ///
-    ///   1. Vercel's VITE_CLERK_PUBLISHABLE_KEY for production.
-    ///   2. CLERK_JWT_ISSUER_DOMAIN on the third-hound-186 Convex deployment.
-    ///   3. The Clerk domains in vercel.json's Content-Security-Policy.
-    /// The swap, as a procedure rather than a promise. Four edits, and they
-    /// have to land together or the build is broken in a way that only shows
-    /// once somebody tries to sign in:
+    ///   1. DONE -- this key.
+    ///   2. DONE -- the Clerk domains in `vercel.json`'s
+    ///      Content-Security-Policy. Both instances are named, in `script-src`,
+    ///      `connect-src` and `frame-src`, so the dev instance keeps working
+    ///      for previews. Drop the `valued-bonefish-64` entries once nothing
+    ///      needs it.
+    ///   3. NOT DONE -- `VITE_CLERK_PUBLISHABLE_KEY` on Vercel, Production
+    ///      environment, to this same key. Dashboard work.
+    ///   4. NOT DONE -- `CLERK_JWT_ISSUER_DOMAIN` on the `third-hound-186`
+    ///      Convex deployment, to `https://clerk.inhavens.com`. The backend
+    ///      track owns this one; it has been asked for.
     ///
-    ///   1. `clerkProductionKey` below, to the `pk_live_` key from the
-    ///      production instance's API keys page.
-    ///   2. `VITE_CLERK_PUBLISHABLE_KEY` on Vercel, Production environment, to
-    ///      the same key.
-    ///   3. `CLERK_JWT_ISSUER_DOMAIN` on the `third-hound-186` Convex
-    ///      deployment, to the production instance's Frontend API URL.
-    ///   4. The three `valued-bonefish-64` entries in `vercel.json`'s
-    ///      Content-Security-Policy, to the production Clerk domain. They are
-    ///      in `script-src`, `connect-src` and `frame-src`; miss one and
-    ///      sign-in fails silently in the browser with a console error nobody
-    ///      is watching.
+    /// And before any of it is worth doing, the production instance has to
+    /// exist properly: its own domain, its own Sign in with Apple credentials
+    /// from the Apple developer portal, and its own JWT template named
+    /// "convex". Without the template the issuer is right and the tokens still
+    /// carry nothing Convex can use.
     ///
     /// Do it before real users rather than after. The issuer is half of
     /// `tokenIdentifier`, so every row written against the development
     /// instance is orphaned by the swap -- not lost, but owned by an identity
     /// that no longer signs in.
-    ///
-    /// The backend track's wave C8 owns the timing; this side is two of the
-    /// four edits and neither is safe on its own.
-    static let clerkProductionPlaceholder = "pk_live_REPLACE_BEFORE_SHIPPING"
-    static let clerkProductionKey = clerkProductionPlaceholder
+    static let clerkProductionKey = "pk_live_Y2xlcmsuaW5oYXZlbnMuY29tJA"
 
     /// Which key this build signs in with.
     ///
@@ -99,10 +104,13 @@ enum Config {
     // Development writes to the dev deployment, so nothing tried here lands in
     // real people's data.
     //
-    // Nothing on the web reads this deployment: every Vercel deployment,
-    // previews included, is built against production. So a card made in a debug
-    // build has no page anywhere, and the code on its back resolves to nobody.
-    // Expected rather than broken -- see `BeaconAddress`.
+    // Production inhavens.com does not read this deployment, so a card made in
+    // a debug build has no page there and the code on its back resolves to
+    // nobody. Expected rather than broken -- see `BeaconAddress`.
+    //
+    // Vercel *previews* do read it: they stopped deploying Convex and now build
+    // against VITE_CONVEX_URL, which is set to this deployment. So a debug-build
+    // card does resolve on a preview url, which is the only place to see one.
     static let convexDeploymentUrl = "https://brilliant-puma-925.convex.cloud"
     #else
     // What ships: the same database inhavens.com reads. That is what makes a

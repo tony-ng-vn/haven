@@ -6,6 +6,16 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.34.0
+
+2026-07-29
+
+**iOS**
+
+- The App Store build now signs in against Haven's own production accounts system instead of the development one. Until now a release build would have refused to start at all -- deliberately, so it could never quietly send real people to a development sign-in that caps how many accounts can exist.
+
+---
+
 ## v0.33.0
 
 2026-07-29
