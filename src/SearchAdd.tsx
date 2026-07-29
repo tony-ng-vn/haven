@@ -13,6 +13,13 @@ import type { Id } from "../convex/_generated/dataModel";
 import { formatMonthYear, type PersonSnapshot } from "./lib";
 import { atlasLayout, buildCluster, buildDust } from "./sky";
 import { composeAtlasField } from "./lib";
+import {
+  REACH_PLATFORMS,
+  isPhoneNumber,
+  reachLabel,
+  reachPlaceholder,
+  reachValue,
+} from "./reach";
 
 type SemanticResults = FunctionReturnType<typeof api.people.semanticSearch>;
 
@@ -44,6 +51,27 @@ function SearchIcon() {
         stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ChevronDown() {
+  return (
+    <svg
+      className="atlas-add-caret"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="m6 9 6 6 6-6"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
@@ -107,12 +135,16 @@ export function SearchAdd({
   // Manual add needs identity and a story (backend-required), so the one-tap
   // add expands into a small form before anything is saved.
   const [addOpen, setAddOpen] = useState(false);
-  const [addPlatform, setAddPlatform] = useState("");
+  // A list rather than a text box, and the same list iOS offers: the server
+  // takes any string, so one person typing "WhatsApp" and another "whats app"
+  // made two identities for one platform, invisibly.
+  const [addPlatform, setAddPlatform] = useState<string>(REACH_PLATFORMS[0]);
   const [addHandle, setAddHandle] = useState("");
   const [addNote, setAddNote] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
   const [semantic, setSemantic] = useState<SemanticResults>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const platformRef = useRef<HTMLSelectElement | null>(null);
 
   const trimmed = query.trim();
 
@@ -223,14 +255,63 @@ export function SearchAdd({
 
   const isEmpty = fieldLoaded && list.length === 0;
   const atCap = fieldLoaded && list.length >= RESULT_LIMIT;
+  // The expanded form owns the screen while it is open. Everything else that
+  // offers to add somebody steps aside for it: the empty state is telling you
+  // to add someone and you are doing that already, and the floating capture
+  // button would be a second way to start the same errand. Hiding them is also
+  // the layout fix -- the form grows downward out of an absolutely positioned
+  // block, and the empty state it grew into is centered in the same viewport,
+  // so nothing but removing one of them keeps them off each other at every
+  // width.
+  const addFormOpen = showAdd && addOpen;
+  // Phone and WhatsApp hold a number rather than a handle, which is the whole
+  // difference the field shows: the number keypad, and no at-sign in front of
+  // something that never had one.
+  const addWantsNumber = isPhoneNumber(addPlatform);
+
+  // Changing the name empties the form, because the form was about the old one.
+  //
+  // Gated on the typed name rather than on showAdd: showAdd rides searchLoaded,
+  // which goes false on every keystroke while the query subscription re-resolves
+  // (the same flicker the isLit comment below is about). Gating on that yanked
+  // an open form away mid-edit -- and because it only closed the form and left
+  // the three fields standing, the form came back prefilled, so one more click
+  // filed the previous person's handle under the new name. The fields go with
+  // it now, and a transient loading flip no longer touches an open form.
+  useEffect(() => {
+    setAddOpen(false);
+    setAddHandle("");
+    setAddNote("");
+    setAddError(null);
+  }, [trimmed]);
+
+  // The trigger somebody just pressed is the element the form replaces, so
+  // focus would land on the body and the next Tab would restart at the top of
+  // the page. Catch it on the form's first field, which is where they were
+  // going anyway.
+  useEffect(() => {
+    if (addFormOpen) platformRef.current?.focus();
+  }, [addFormOpen]);
 
   async function handleAdd() {
     if (adding || trimmed === "") return;
-    const platform = addPlatform.trim();
-    const handle = addHandle.trim();
+    // Folded before it is stored, because the field invites a pasted link and
+    // a whole URL saved as a handle opens nothing.
+    const handle = reachValue(addPlatform, addHandle);
     const note = addNote.trim();
-    if (platform === "" || handle === "" || note === "") {
-      setAddError("Platform, handle, and a note are all required");
+    // The platform comes from a list now, so it is never blank; the two fields
+    // somebody types still can be.
+    if (addHandle.trim() === "" || note === "") {
+      setAddError("A handle and a note are both required");
+      return;
+    }
+    // Null means the paste was an address Haven could not find a handle in.
+    // Saying so beats storing the wreckage: this value is how Haven recognizes
+    // the same person again.
+    if (handle === null) {
+      setAddError(
+        `That does not look like a ${reachLabel(addPlatform)} handle. Paste their profile link, or type just the handle.`,
+      );
       return;
     }
     setAdding(true);
@@ -238,12 +319,12 @@ export function SearchAdd({
     try {
       const id = await addPerson({
         name: trimmed,
-        contactHandles: [{ platform, value: handle }],
+        contactHandles: [{ platform: addPlatform, value: handle }],
         context: note,
       });
       onOpen({ _id: id, name: trimmed, _creationTime: Date.now() });
       setAddOpen(false);
-      setAddPlatform("");
+      setAddPlatform(REACH_PLATFORMS[0]);
       setAddHandle("");
       setAddNote("");
     } catch (error) {
@@ -341,37 +422,42 @@ export function SearchAdd({
           </button>
         )}
 
-        {showAdd && addOpen && (
+        {addFormOpen && (
           <div className="atlas-add-form">
             <label className="atlas-add-label" htmlFor="add-platform">
               Where you know them
             </label>
-            <div className="atlas-add-row">
-              <input
+            <div className="atlas-add-row atlas-add-row-select">
+              <select
+                ref={platformRef}
                 id="add-platform"
-                className="atlas-add-input"
+                className="atlas-add-select"
                 value={addPlatform}
                 onChange={(e) => setAddPlatform(e.target.value)}
-                autoCapitalize="none"
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="instagram"
-              />
+              >
+                {REACH_PLATFORMS.map((platform) => (
+                  <option key={platform} value={platform}>
+                    {reachLabel(platform)}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown />
             </div>
             <label className="atlas-add-label" htmlFor="add-handle">
               Their handle there
             </label>
             <div className="atlas-add-row">
-              <span className="atlas-add-at">@</span>
+              {!addWantsNumber && <span className="atlas-add-at">@</span>}
               <input
                 id="add-handle"
                 className="atlas-add-input"
                 value={addHandle}
                 onChange={(e) => setAddHandle(e.target.value)}
+                inputMode={addWantsNumber ? "tel" : undefined}
                 autoCapitalize="none"
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="mai.makes"
+                placeholder={reachPlaceholder(addPlatform)}
               />
             </div>
             <label className="atlas-add-label" htmlFor="add-note">
@@ -477,7 +563,7 @@ export function SearchAdd({
       )}
 
       {/* First run: the sky is empty. Its own capture button lives inside. */}
-      {isEmpty && (
+      {isEmpty && !addFormOpen && (
         <div className="atlas-empty" role="status">
           <span className="sky-label">your sky is waiting</span>
           <h2 className="atlas-empty-title">No one here yet</h2>
@@ -502,8 +588,9 @@ export function SearchAdd({
         <p className="atlas-hint sky-label">search to find everyone else</p>
       )}
 
-      {/* Capture floats bottom-center whenever the sky already holds someone. */}
-      {fieldLoaded && !isEmpty && (
+      {/* Capture floats bottom-center whenever the sky already holds someone,
+          unless the add form is open and already asking for one. */}
+      {fieldLoaded && !isEmpty && !addFormOpen && (
         <div className="atlas-capture">
           <button type="button" className="sky-cta" onClick={onOpenCapture}>
             Capture someone new

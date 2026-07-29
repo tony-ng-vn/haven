@@ -116,6 +116,27 @@ describe("the public card page", () => {
     expect(screen.getByRole("heading").textContent).toBe("Maya Chen");
   });
 
+  // The page links every platform Haven can address on the open web, which is
+  // more than the three publicHandleValidator allows today -- and never a
+  // number, whatever that validator allows tomorrow. Reaching somebody by
+  // phone goes through Haven, not through a card a stranger can screenshot.
+  test("telegram links out, and a number never appears", () => {
+    show({
+      ...bare,
+      handles: [
+        { platform: "telegram", value: "mayachen" },
+        { platform: "phone", value: "+84901234567" },
+        { platform: "whatsapp", value: "+84901234567" },
+      ],
+    });
+    expect(screen.getByText("Telegram").closest("a")?.getAttribute("href")).toBe(
+      "https://t.me/mayachen",
+    );
+    expect(screen.queryByText("Phone")).toBeNull();
+    expect(screen.queryByText("WhatsApp")).toBeNull();
+    expect(screen.queryByText("+84901234567")).toBeNull();
+  });
+
   // The platform list is closed by the validator today. If it ever grows a
   // member this page has no address for, the row is dropped -- a stranger's
   // first sight of Haven must not be a white screen.

@@ -1492,7 +1492,8 @@ textarea.field {
    input matches :focus-visible even on pointer focus, so without this the
    global ring draws a hard rectangle inside the rounded glass. */
 .atlas-input:focus-visible,
-.atlas-add-input:focus-visible {
+.atlas-add-input:focus-visible,
+.atlas-add-select:focus-visible {
   box-shadow: none;
 }
 
@@ -1558,16 +1559,52 @@ textarea.field {
   color: rgba(255, 255, 255, 0.58);
 }
 
-.atlas-add-input {
+/* A field inside a row carries no chrome of its own, whichever kind it is: the
+   glass well around it is .atlas-add-row. */
+.atlas-add-input,
+.atlas-add-select {
   flex: 1;
   min-width: 0;
   color: #fff;
-  caret-color: #fff;
   background: none;
   border: none;
   outline: none;
   /* 16px, not smaller: iOS Safari zooms the page on focus below this. */
   font-size: 16px;
+}
+
+/* The platform list. The caret is drawn here rather than left to the OS,
+   because a native one arrives in the system's own light chrome and lands on
+   the glass looking like a control from another app. */
+.atlas-add-row-select {
+  position: relative;
+}
+
+.atlas-add-select {
+  /* Room for the caret, which floats above the select rather than beside it so
+     that the whole row stays one click target. */
+  padding-right: 24px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* The menu itself renders in the OS palette, not on our glass, so the options
+   carry an opaque night of their own -- a translucent fill would composite
+   against the system menu and come back unreadable. */
+.atlas-add-select option {
+  color: var(--text);
+  background: var(--night);
+}
+
+.atlas-add-caret {
+  position: absolute;
+  right: 12px;
+  color: rgba(255, 255, 255, 0.58);
+  pointer-events: none;
+}
+
+.atlas-add-input {
+  caret-color: #fff;
 }
 
 .atlas-add-input::placeholder {
@@ -2286,7 +2323,11 @@ feedback-widget.feedback-fab {
   color: rgba(242, 239, 233, 0.62);
 }
 
-.card-handles {
+/* A handle row is the same object on the public card and on a person's page --
+   a platform, the handle, and a tap that goes there -- so it is drawn once and
+   the two surfaces differ only where they have to. */
+.card-handles,
+.person-handles {
   list-style: none;
   margin: 10px 0 0;
   padding: 0;
@@ -2313,8 +2354,11 @@ feedback-widget.feedback-fab {
   transition: background var(--t-fast) var(--ease-out);
 }
 
-.card-handle:hover,
-.card-handle:focus-visible {
+/* Only a row that opens something lifts under the pointer. A handle Haven has
+   no address for still shows, and it must not look like it is about to go
+   somewhere. */
+a.card-handle:hover,
+a.card-handle:focus-visible {
   background: rgba(242, 239, 233, 0.13);
 }
 
@@ -2334,6 +2378,45 @@ feedback-widget.feedback-fab {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.person-reach {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.person-reach-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* On a person's page the rows sit in the page column rather than centered under
+   a face, so they take the width they are given, and the column above already
+   spaces them. */
+.person-handles {
+  margin: 0;
+  max-width: none;
+}
+
+/* Which one they said to use first, said quietly: it is a fact about the
+   person, not a badge. */
+.person-handle-mark {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* The value takes the free space rather than sharing it, so it sits hard right
+   on every row -- a column of handles the eye can run down, whether or not a
+   row carries the preferred mark. */
+.person-handle .card-handle-value {
+  margin-left: auto;
+  text-align: right;
 }
 
 .card-cta {

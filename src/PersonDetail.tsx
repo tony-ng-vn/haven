@@ -4,6 +4,7 @@ import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { formatMonthYear, normalizeUrl, type PersonSnapshot } from "./lib";
 import { PersonSky } from "./PersonSky";
+import { reachLabel, reachUrl, samePlatform } from "./reach";
 
 function ArrowUpRight() {
   return (
@@ -95,6 +96,13 @@ export function PersonDetail({
 
   const openable = normalizeUrl(link);
 
+  // Read off the live doc alone: the search snapshot carries a name and a date
+  // and nothing else, so the rows land when the authoritative doc arrives
+  // rather than flashing an empty list first. Unlike the sky above, which is
+  // seeded by the document id and so is already right on the snapshot.
+  const handles = live?.contactHandles ?? [];
+  const preferredPlatform = live?.preferredPlatform;
+
   async function handleSave() {
     if (saving) return;
     setSaving(true);
@@ -170,6 +178,56 @@ export function PersonDetail({
           is nothing to render client-side. Once getPerson resolves
           ctx.storage.getUrl(screenshotId) into an imageUrl, render a small
           .person-thumb here; the layout already leaves room for it. */}
+
+      {/* What the handle you saved was for. A row Haven can address is a link;
+          one it cannot is still the handle, because that is still how you
+          reach them -- unlike the public card, which drops what it cannot open
+          because a stranger cannot act on a string either way. Drawn only when
+          there is something to reach: nobody needs an empty heading. */}
+      {handles.length > 0 && (
+        <section className="person-reach">
+          <h2 className="person-reach-title">Ways to reach them</h2>
+          <ul className="card-handles person-handles">
+            {handles.map((handle) => {
+              const href = reachUrl(handle.platform, handle.value);
+              // A number dials in place: a new tab for tel: opens an empty
+              // window that never comes back. Only the open web gets its own.
+              const external = href !== null && href.startsWith("https://");
+              const row = (
+                <>
+                  <span className="card-handle-label">
+                    {reachLabel(handle.platform)}
+                  </span>
+                  {samePlatform(handle.platform, preferredPlatform) && (
+                    <span className="person-handle-mark">preferred</span>
+                  )}
+                  {/* After the mark, not before it: the mark belongs with the
+                      platform it describes, and keeping it out of the value's
+                      place is what lets every value line up in one column
+                      instead of shifting on whichever row is preferred. */}
+                  <span className="card-handle-value">{handle.value}</span>
+                </>
+              );
+              return (
+                <li key={`${handle.platform}:${handle.value}`}>
+                  {href === null ? (
+                    <span className="card-handle person-handle">{row}</span>
+                  ) : (
+                    <a
+                      className="card-handle person-handle"
+                      href={href}
+                      target={external ? "_blank" : undefined}
+                      rel={external ? "noopener noreferrer" : undefined}
+                    >
+                      {row}
+                    </a>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <div className="detail-field">
         <div className="field-row">

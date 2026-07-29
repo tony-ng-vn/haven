@@ -6,6 +6,20 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.41.0
+
+2026-07-29
+
+**Web**
+
+- A handle you save for somebody now shows up on their page, as a row you can tap. Adding "mai.makes" on Instagram used to look like it vanished: the page only ever showed the free-text link box, so the handle was saved and never seen again. The rows sit above the link, one per platform, and each opens the right place -- Instagram, X, LinkedIn, Telegram, a WhatsApp chat, or the phone dialler. If you marked one as how they prefer to be reached, that row says so. A platform Haven has never heard of still shows the handle; it just does not pretend it can open it.
+- "Where you know them" is now a short list instead of a text box. Typing it by hand meant "WhatsApp" and "whats app" quietly became two different platforms, and neither one linked anywhere. The list is the same one the iPhone app offers, and the handle field follows it -- picking Phone or WhatsApp asks for a number, with the number keypad on a phone and no at-sign in front of it.
+- Pasting somebody's profile link into the handle field now saves just the handle. Paste "https://instagram.com/mai.makes" and Haven keeps "mai.makes", the way the iPhone app already did, so the row it gives you back opens their profile instead of a dead address. If you paste a link Haven cannot find a handle in -- one of LinkedIn's mobile share links, say -- it says so instead of saving something that opens nowhere.
+- Adding someone no longer collides with the screen behind it. On a first-run empty sky, the form used to grow straight down through "No one here yet"; that message steps aside while you are filling the form in, since you are already doing what it asks.
+- One thing to do at a time: the floating "Capture someone new" button steps aside while the add form is open, instead of offering a second way to start the same errand.
+
+---
+
 ## v0.40.0
 
 2026-07-29
