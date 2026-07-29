@@ -6,6 +6,20 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.38.0
+
+2026-07-29
+
+**Web**
+
+- The web app now wears the same night as the iPhone app. The dusk palette from iOS -- night ground, cream primary button, star-amber accent -- replaces the old blue-and-gray look, and the web is dark-only like the app instead of following the system theme. A test now pins every token to the iOS values, so the two platforms cannot quietly drift apart again.
+- People's names are set in the app's serif everywhere one appears, matching the iOS rule that the serif is reserved for people.
+- Every screen now sits on the same ground as iOS: night easing into dusk, with the ember glow rising off the bottom edge.
+- Clicking into the search field or a form field no longer draws a hard blue rectangle inside the rounded control; keyboard focus shows a soft star-tinted ring on the control itself.
+- The waitlist's stars and its join button glow warm amber and cream instead of the retired blue.
+
+---
+
 ## v0.37.0
 
 2026-07-29
