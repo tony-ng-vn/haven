@@ -5,6 +5,10 @@
 export const clerkAppearance = {
   variables: {
     colorPrimary: "var(--accent-fill)",
+    // Pinned rather than left to Clerk's runtime contrast pick: the fill is
+    // cream, and a Clerk version that defaulted this to white would ship an
+    // unreadable primary button on the front door.
+    colorPrimaryForeground: "var(--accent-fill-text)",
     colorDanger: "var(--danger)",
     colorBackground: "var(--surface)",
     colorText: "var(--text)",

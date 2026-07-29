@@ -66,8 +66,11 @@ describe("dusk palette tokens", () => {
   test("the ground is the iOS NightBackground, not flat black", () => {
     // Night base, dusk rising from the bottom, ember at the horizon.
     expect(css).toContain(`--dusk: ${dusk.duskRaised}`);
-    expect(css).toMatch(/232, 42, 77|35, 42, 77/);
+    expect(css).toMatch(/35, 42, 77/); // dusk in the body gradient
     expect(css).toMatch(/232, 168, 124/); // ember glow
+    // iOS Safari ignores fixed attachment; without these two the gradient
+    // tiles a short page into stacked dusk bands.
+    expect(css).toMatch(/background-repeat: no-repeat/);
   });
 });
 
@@ -80,6 +83,12 @@ describe("type rule", () => {
       /\.person-name,[^{]*\.triage-name,[^{]*\.atlas-cluster-name,[^{]*\.card-name[^{]*\{[^}]*font-family: var\(--font-serif\)/,
     );
     expect(nameRule, "grouped person-name serif rule missing").not.toBeNull();
+    // Exclusivity, the web version of "a grep for serif outside this file
+    // should return nothing": exactly two rules use the serif -- the name
+    // rule and the public pages' editorial rule. A third use anywhere is a
+    // deliberate decision, not a drive-by; raise this count with it.
+    const uses = css.match(/font-family: var\(--font-serif\)/g) ?? [];
+    expect(uses).toHaveLength(2);
   });
 });
 

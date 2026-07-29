@@ -34,7 +34,6 @@
   /* Derived from white so they read over any part of the gradient. These are
      opacities, not new hues, which is why they are allowed. */
   --border: rgba(255, 255, 255, 0.1);
-  --border-strong: rgba(255, 255, 255, 0.18);
   --field-bg: rgba(255, 255, 255, 0.06);
   --shadow-float: 0 12px 40px rgba(0, 0, 0, 0.55);
   --header-bg: rgba(14, 17, 35, 0.72);
@@ -65,7 +64,16 @@
   box-sizing: border-box;
 }
 
+/* The height chain keeps the body box at least one viewport tall, so the
+   night gradient below covers the screen even on a short page -- and on iOS
+   Safari, which ignores fixed attachment and would otherwise tile a
+   content-height gradient into stacked dusk bands. */
+html {
+  height: 100%;
+}
+
 body {
+  min-height: 100%;
   margin: 0;
   /* The ground every screen sits on, ported from NightBackground.swift: night
      at the top easing into dusk, an ember glow rising off the bottom edge.
@@ -87,6 +95,7 @@ body {
       )
       fixed,
     var(--night);
+  background-repeat: no-repeat;
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 17px;
@@ -103,8 +112,7 @@ body {
 .person-name,
 .triage-name,
 .atlas-cluster-name,
-.card-name,
-.card-quiet-title {
+.card-name {
   font-family: var(--font-serif);
 }
 
@@ -2661,17 +2669,22 @@ feedback-widget.feedback-fab {
 
 /* Left underlined by the link rule below, deliberately: it is the only way off
    this page, and a wordmark that does not look clickable is not a way out. */
-/* The public pages' editorial register: the wordmark-as-link and the page
-   title share the name serif deliberately -- this is the site's face, not the
-   app's chrome. */
+/* The public pages' editorial register: the wordmark-as-link, the page title,
+   and the empty card's quiet title share the name serif deliberately -- this
+   is the site's face, not the app's chrome. The one sanctioned use outside
+   the person-name rule up top. */
+.card-quiet-title,
+.legal-back,
+.legal-title {
+  font-family: var(--font-serif);
+}
+
 .legal-back {
   display: inline-block;
-  font-family: var(--font-serif);
   font-size: 17px;
 }
 
 .legal-title {
-  font-family: var(--font-serif);
   font-size: 32px;
   font-weight: 500;
   line-height: 1.2;
