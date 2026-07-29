@@ -14,7 +14,7 @@ in Swift or TypeScript, it is in the wrong section and should be moved.
 
 The full device ledger, with what each check is for and which change produced
 it, is in `docs/superpowers/plans/2026-07-28-frontend-completion-plan.md`.
-Thirty-two items, the last eight added by the 2026-07-29 audit against Apple's
+Thirty-four items, the last ten added by the 2026-07-29 audit against Apple's
 own submission requirements rather than this repo's plan -- they are different
 lists. What follows is the short list, ordered by what blocks what.
 
@@ -51,6 +51,17 @@ lists. What follows is the short list, ordered by what blocks what.
   screenshots on a Mac are yours.
 - [ ] **App Privacy answers in App Store Connect**, which have to match
   `ios/Haven/PrivacyInfo.xcprivacy`. The manifest is current.
+- [ ] **Decide whether Haven is an iPad app.** It currently claims to be, by
+  accident: nothing sets `TARGETED_DEVICE_FAMILY`, so the build ships
+  `UIDeviceFamily = [1, 2]` and permits every orientation. No spec mentions
+  iPad and nobody has run it on one. Apple reviews what you claim, on the
+  device you claim it for. Recommendation: `TARGETED_DEVICE_FAMILY: "1"` for
+  v1 -- one line, reversible, and it removes a whole class of rejection.
+- [ ] **Write the App Review notes.** Haven shows nothing without an account.
+  Sign in with Apple means a reviewer can make their own, so no demo account
+  should be needed, but say that rather than leave them to discover it -- and
+  say that a fresh account lands in onboarding with an empty directory, which
+  is correct and not a broken build.
 
 **Your phone** (an unsigned simulator cannot configure Clerk, so nothing
 authenticated has ever run outside its own unit tests)
