@@ -12,6 +12,7 @@ import {
   deriveProfileUrl,
   formatMonthYear,
   isAdminEmail,
+  isAuthPath,
   isClerkFlowHash,
   isJoinHash,
   isValidEmail,
@@ -776,8 +777,10 @@ describe("resolveView with a card path", () => {
 
   test("every other path routes exactly as it did before", () => {
     expect(resolveView({ ...base, pathname: "/" })).toBe("waitlist");
-    // Hyphenated, so it is not a claimable handle and not a card.
-    expect(resolveView({ ...base, pathname: "/sign-in" })).toBe("waitlist");
+    // Hyphenated, so it is not a claimable handle and not a card. It used to
+    // fall through to the waitlist, which is the bug reported from production:
+    // somebody typing the most obvious url was told Haven has no sign-in.
+    expect(resolveView({ ...base, pathname: "/sign-in" })).toBe("signin");
     expect(
       resolveView({ ...base, pathname: "/", isAuthenticated: true }),
     ).toBe("home");
@@ -842,6 +845,57 @@ describe("resolveView with a legal path", () => {
   test("no one can claim these paths as a handle", () => {
     expect(handleFromPath("/privacy")).toBeNull();
     expect(handleFromPath("/terms")).toBeNull();
+  });
+});
+
+describe("the sign-in paths a person actually types", () => {
+  const base = {
+    isAuthenticated: false,
+    isLoading: false,
+    hash: "",
+    hasSessionHint: false,
+  };
+
+  // Reported from production: inhavens.com/signin and /signup both showed the
+  // waitlist. Every one of these words is reserved, so none could ever be
+  // somebody's card, and landing on the waitlist told a person who typed the
+  // most obvious url that Haven has no sign-in at all.
+  test("every spelling of sign-in reaches the sign-in view", () => {
+    for (const path of [
+      "/signin",
+      "/sign-in",
+      "/signup",
+      "/sign-up",
+      "/login",
+      "/SignIn",
+      "/sign-up/",
+    ]) {
+      expect(resolveView({ ...base, pathname: path })).toBe("signin");
+    }
+  });
+
+  // Clerk owns sub-paths under the component once it is mounted there.
+  test("Clerk's own sub-steps stay on the sign-in view", () => {
+    expect(resolveView({ ...base, pathname: "/sign-in/factor-one" })).toBe(
+      "signin",
+    );
+    expect(
+      resolveView({ ...base, pathname: "/sign-up/verify-email-address" }),
+    ).toBe("signin");
+  });
+
+  // A signed-in visitor who lands on /signin should not be bounced to the
+  // waitlist, and should not be shown a sign-in form either.
+  test("a signed-in visitor on a sign-in path goes home", () => {
+    expect(
+      resolveView({ ...base, pathname: "/signin", isAuthenticated: true }),
+    ).toBe("home");
+  });
+
+  test("no one can claim these as a handle", () => {
+    for (const path of ["/signin", "/signup", "/login"]) {
+      expect(handleFromPath(path)).toBeNull();
+    }
   });
 });
 

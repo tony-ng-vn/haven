@@ -18,6 +18,7 @@ import {
 } from "./lib";
 import { CardPage } from "./CardPage";
 import { LegalPage } from "./LegalPage";
+import { CLERK_ROUTING } from "./clerkConfig";
 import { SupportPage } from "./SupportPage";
 
 function ChevronLeft() {
@@ -73,7 +74,7 @@ function SignIn() {
           // Clerk holds on `fallback` until its script loads and the card
           // mounts, so an early tap is never a dead click into an empty form;
           // once ready it swaps the busy landing for the real card in place.
-          <ClerkSignIn fallback={<SkyLanding busy />} />
+          <ClerkSignIn routing={CLERK_ROUTING} fallback={<SkyLanding busy />} />
         ) : (
           <SkyLanding busy={false} onEnter={() => setTapped(true)} />
         )}

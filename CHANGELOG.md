@@ -18,6 +18,12 @@ pull requests, which is where it is easiest to read anyway.
 **CI**
 
 - Pull requests that cannot change the website no longer build one. Most changes here are to the iOS app or the backend, and each was still producing a full web deployment: of the last forty merges, thirty-three built a bundle that had not changed, and those builds were three quarters of the account's daily deployment budget -- which is what ran it out. Production still builds every time, because that build is what ships the backend.
+- Signing in on the web works again. It had been bouncing between Haven and a Clerk-hosted page forever, never showing the form -- Clerk was told sign-in lived somewhere else and kept sending people there, and that page kept sending them back. Haven now tells Clerk where its own sign-in is.
+- inhavens.com/signin, /sign-in, /signup, /sign-up and /login all reach the sign-in screen. Every one of them used to show the waitlist, so typing the most obvious address suggested Haven had no way in.
+
+**CI**
+
+- A daily check now reads the live Clerk configuration and fails if it disagrees with the app. The sign-in loop was invisible to every test in the repo because the fault was in a dashboard rather than in a file, and only appeared on the production account -- this is the part that can see that.
 
 ---
 
