@@ -20,8 +20,8 @@ export function FeedbackWidget() {
   }, [active]);
 
   if (!active) return null;
-  // feedback-fab lifts the button above the Meet FAB, which shares the same
-  // bottom-right corner (see index.css).
+  // feedback-fab lifts the button clear of the capture pill, which is centered
+  // but nearly reaches the right edge on a narrow screen (see index.css).
   return (
     <feedback-widget className="feedback-fab" endpoint={endpoint} token={token} />
   );

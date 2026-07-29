@@ -1528,7 +1528,9 @@ textarea.field {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: 10px;
+  /* 16px, matching what this form actually rendered with before it owned its
+     own rules: the search pill above it needs the extra air. */
+  margin-top: 16px;
   width: 100%;
   text-align: left;
 }
@@ -1573,7 +1575,9 @@ textarea.field {
 }
 
 .atlas-add-error {
-  margin: 0;
+  /* Set apart from the field it is about, rather than sitting in the form's
+     even rhythm as if it were another row. */
+  margin: 12px 0 0;
   font-size: 13px;
   color: var(--danger-text);
 }
@@ -1618,10 +1622,11 @@ textarea.field {
   opacity: 0.6;
 }
 
-/* The feedback widget is a third-party custom element that pins itself to the
-   bottom-right corner, where the capture button also lives on a narrow screen.
-   Lift it clear. The element selector plus a class outweighs the widget's own
-   :host rule, so no !important is needed; position:fixed still comes from it. */
+/* The feedback widget is a custom element that pins itself to the bottom-right
+   corner. The capture pill is centered, but on a narrow screen it nearly
+   reaches that corner, so the widget is lifted a row clear of it. The element
+   selector plus a class outweighs the widget's own :host rule, so no
+   !important is needed; position:fixed still comes from the widget. */
 feedback-widget.feedback-fab {
   right: max(20px, env(safe-area-inset-right));
   bottom: calc(max(28px, env(safe-area-inset-bottom)) + 56px);

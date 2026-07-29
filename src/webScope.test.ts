@@ -15,12 +15,32 @@ import { describe, expect, test } from "vitest";
 // on the phone grows a web UI again, which is how the two clients quietly
 // became two half-products the first time.
 
-const sources = readdirSync("src").filter(
-  (name) => /\.(ts|tsx)$/.test(name) && !name.includes(".test."),
-);
+// Recursive on purpose. src/ is flat today, so this finds the same files a
+// plain readdir would -- but the day somebody adds src/meet/ is exactly the
+// day these guards must not go blind.
+function sourceFiles(dir = "src"): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return sourceFiles(path);
+    if (!/\.(ts|tsx)$/.test(entry.name) || entry.name.includes(".test.")) {
+      return [];
+    }
+    return [path];
+  });
+}
+
+const sources = sourceFiles().map((path) => path.replace(/^src\//, ""));
 
 function sourceText(name: string): string {
   return readFileSync(join("src", name), "utf8");
+}
+
+// Matches api.profiles.connect and api["profiles"]["connect"] alike: the guard
+// should not be defeatable by respelling the same call.
+function apiCall(...path: string[]): RegExp {
+  const step = (name: string) =>
+    `(?:\\.${name}\\b|\\[\\s*["'\`]${name}["'\`]\\s*\\])`;
+  return new RegExp(`\\bapi${path.map(step).join("")}`);
 }
 
 describe("the web stays a front door and a viewer", () => {
@@ -31,10 +51,10 @@ describe("the web stays a front door and a viewer", () => {
     for (const name of sources) {
       const source = sourceText(name);
       expect(source, `${name} calls profiles.connect`).not.toMatch(
-        /api\.profiles\.connect/,
+        apiCall("profiles", "connect"),
       );
       expect(source, `${name} calls profiles.setUsername`).not.toMatch(
-        /api\.profiles\.setUsername/,
+        apiCall("profiles", "setUsername"),
       );
     }
   });
@@ -45,7 +65,7 @@ describe("the web stays a front door and a viewer", () => {
     // docs/superpowers/plans/2026-07-28-backend-completion-plan.md.
     for (const name of sources) {
       expect(sourceText(name), `${name} calls loveAlarm`).not.toMatch(
-        /api\.loveAlarm/,
+        apiCall("loveAlarm"),
       );
     }
   });
@@ -65,19 +85,29 @@ describe("the web stays a front door and a viewer", () => {
     }
   });
 
-  test("the surfaces the web does own are still here", () => {
+  test("the surfaces the web does own are still here, and still routed", () => {
     // The other half of the rule: this list is what the web IS, so a cleanup
     // pass cannot quietly take one of these away either.
-    const present = sources.join(" ");
+    //
+    // Both halves are load-bearing. Existing as a file is not the same as
+    // being reachable, and a surface nothing renders is gone as far as anyone
+    // visiting the site is concerned -- so the component has to be mounted in
+    // App.tsx too, not merely present on disk.
+    const app = readFileSync(join("src", "App.tsx"), "utf8");
     for (const surface of [
-      "Waitlist.tsx", // the front door
-      "SearchAdd.tsx", // your network as a sky, search, add by name
-      "PersonDetail.tsx", // one person's page
-      "CardPage.tsx", // the public card a stranger opens
-      "LegalPage.tsx",
-      "SupportPage.tsx",
+      "Waitlist", // the front door
+      "SearchAdd", // your network as a sky, search, add by name
+      "PersonDetail", // one person's page
+      "CardPage", // the public card a stranger opens
+      "LegalPage",
+      "SupportPage",
     ]) {
-      expect(present, `${surface} is missing`).toContain(surface);
+      // Array membership, not a substring of the joined list: "HomeWaitlist"
+      // must not satisfy "Waitlist".
+      expect(sources, `${surface}.tsx is missing`).toContain(`${surface}.tsx`);
+      expect(app, `${surface} is never rendered`).toMatch(
+        new RegExp(`<${surface}[\\s/>]`),
+      );
     }
   });
 });
