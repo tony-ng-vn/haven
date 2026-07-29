@@ -99,10 +99,10 @@ form means.
 
 ## URLs
 
-- **Support URL**: `https://inhavens.com` -- there is no support page yet, and
-  the landing page is the honest destination until there is. **Worth making a
-  real one before submission**; a support URL that is a marketing page reads
-  badly on review.
+- **Support URL**: `https://inhavens.com/support` -- a real page now, public and
+  signed out.
+  It answers sign-in trouble, account deletion (in the app and by mail), whether
+  notes are visible to the people they are about, and how to reach a person.
 - **Marketing URL**: `https://inhavens.com`
 - **Privacy Policy URL**: `https://inhavens.com/privacy` -- live, and reachable
   from inside the app, which Review rule 5.1.1(i) asks for.
@@ -159,7 +159,10 @@ list.
 ## What is still open
 
 - The name is not reserved. Everything else here is moot until it is.
-- There is no support page.
+- ~~There is no support page.~~ Built: `inhavens.com/support`.
+  The one open question on it is whether to promise a reply time. The page
+  currently promises none, because that is the user's commitment to make and not
+  the agent's to invent.
 - Screenshots need a Mac, a signed build, and a seeded account.
 - `MARKETING_VERSION` is still `0.1.0` and moves when the submission build is
   cut, not before.
