@@ -75,7 +75,11 @@ export function CardPage({ handle }: { handle: string }) {
   return (
     <div className="card-page">
       <div className="card-sky" aria-hidden="true">
-        <PersonSky name={card.name} handle={card.handle} />
+        {/* The username, alone: it is what the iPhone app seeds this same
+            person's card with, and it is the half of a card that cannot
+            change under them. Mixing the display name back in would give one
+            person two constellations and rewrite this one on every rename. */}
+        <PersonSky seed={card.handle} />
       </div>
       <div className="card-content">
         {card.photoUrl !== null && !photoFailed && (

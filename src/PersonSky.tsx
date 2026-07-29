@@ -10,14 +10,13 @@ const SHIMMER_LAYERS = 3;
 // data. Purely presentational; all randomness lives in buildSky. Memoized
 // because it renders ~190 SVG nodes and would otherwise redo that work on
 // every drag frame of the parent triage card.
-export const PersonSky = memo(function PersonSky({
-  name,
-  handle,
-}: {
-  name: string;
-  handle?: string;
-}) {
-  const sky = useMemo(() => buildSky(name, handle), [name, handle]);
+//
+// The seed arrives whole. Building it here out of a name and a handle is what
+// let three screens drift into three different skies for one person, so the
+// caller that knows the person's real identity passes it in and this file
+// never touches the string.
+export const PersonSky = memo(function PersonSky({ seed }: { seed: string }) {
+  const sky = useMemo(() => buildSky(seed), [seed]);
   const uid = useId();
   const haloId = `halo-${uid}`;
 
