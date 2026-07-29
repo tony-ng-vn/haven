@@ -14,7 +14,9 @@ in Swift or TypeScript, it is in the wrong section and should be moved.
 
 The full device ledger, with what each check is for and which change produced
 it, is in `docs/superpowers/plans/2026-07-28-frontend-completion-plan.md`.
-Twenty-four items. What follows is the short list, ordered by what blocks what.
+Thirty-four items, the last ten added by the 2026-07-29 audit against Apple's
+own submission requirements rather than this repo's plan -- they are different
+lists. What follows is the short list, ordered by what blocks what.
 
 **Blocking a submission, longest lead first**
 
@@ -32,20 +34,34 @@ Twenty-four items. What follows is the short list, ordered by what blocks what.
 - [ ] **Apple Developer: enable Associated Domains**, and put the real Team ID
   in `public/.well-known/apple-app-site-association` in place of `TEAMIDXXXX`.
   Until then a scanned Haven code opens Safari.
-- [ ] **Finish the Clerk production swap.** `VITE_CLERK_PUBLISHABLE_KEY`, the
-  CSP, and `CLERK_JWT_ISSUER_DOMAIN` on the production Convex deployment are
-  all done -- the last set to `https://clerk.inhavens.com` on 2026-07-29, which
-  is the backend track's half. Left: `Config.clerkProductionKey` is still the
-  placeholder and a release build traps on it by design, sign-in on
-  inhavens.com has not been confirmed by a human since the swap, and the dev
-  Clerk entry can come out of the policy once it is.
-- [ ] **A support page.** App Store Connect wants a support URL and the draft
-  points at the landing page, which reads badly on review.
+- [ ] **Confirm the Clerk production swap actually works.** All four edits are
+  now made: `Config.clerkProductionKey` (PR 164), the CSP, and -- per the
+  backend track -- `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_JWT_ISSUER_DOMAIN`
+  set to `https://clerk.inhavens.com`. What is left is not an edit: **no human
+  has signed in since**, and nothing here can check it. The production instance
+  also needs its own JWT template named `convex`, or the issuer is right and
+  the tokens still carry nothing Convex can use. Once sign-in is confirmed, the
+  dev Clerk entries can come out of the CSP.
+- [ ] **Decide whether the support page should promise a reply time.** The page
+  itself is built and live at `inhavens.com/support` (PR 165); it promises no
+  reply time today, because that is your commitment to make and not an agent's
+  to invent. Point App Store Connect's Support URL at it.
 - [ ] **Store metadata and five screenshots.** Text drafted in
   `docs/2026-07-28-app-store-metadata.md`; copying it in and capturing the
   screenshots on a Mac are yours.
 - [ ] **App Privacy answers in App Store Connect**, which have to match
   `ios/Haven/PrivacyInfo.xcprivacy`. The manifest is current.
+- [ ] **Decide whether Haven is an iPad app.** It currently claims to be, by
+  accident: nothing sets `TARGETED_DEVICE_FAMILY`, so the build ships
+  `UIDeviceFamily = [1, 2]` and permits every orientation. No spec mentions
+  iPad and nobody has run it on one. Apple reviews what you claim, on the
+  device you claim it for. Recommendation: `TARGETED_DEVICE_FAMILY: "1"` for
+  v1 -- one line, reversible, and it removes a whole class of rejection.
+- [ ] **Write the App Review notes.** Haven shows nothing without an account.
+  Sign in with Apple means a reviewer can make their own, so no demo account
+  should be needed, but say that rather than leave them to discover it -- and
+  say that a fresh account lands in onboarding with an empty directory, which
+  is correct and not a broken build.
 
 **Your phone** (an unsigned simulator cannot configure Clerk, so nothing
 authenticated has ever run outside its own unit tests)

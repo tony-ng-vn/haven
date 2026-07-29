@@ -6,6 +6,25 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.35.0
+
+2026-07-29
+
+**Web**
+
+- Haven's sign-in screen can now load its own provider logos and avatars. The security policy the site sends listed every host except the one Clerk serves images from, which would have left the sign-in buttons blank the moment that policy was enforced.
+
+**iOS**
+
+- The App Store version is now 1.0.0. It was 0.1.0, which would have told anyone reading the listing that the first release was a beta.
+
+**Docs**
+
+- The remaining work before an App Store submission is written down where it can be worked through: name reservation, three developer-portal capabilities, the Team ID, screenshots, and the privacy answers. All of it is dashboard or device work, and none of it is a code change.
+- Two decisions surfaced that nobody had made: Haven currently tells the App Store it is an iPad app, which nothing in the design ever asked for and no one has tested, and the notes App Review reads have not been written.
+
+---
+
 ## v0.34.0
 
 2026-07-29

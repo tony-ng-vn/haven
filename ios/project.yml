@@ -8,9 +8,14 @@ settings:
   base:
     # Versions what people install from the App Store, and moves only when an
     # iOS build ships -- not with package.json, which versions the codebase.
-    # Still 0.1.0 because no build has shipped: the submission build is when
-    # this changes, and not before.
-    MARKETING_VERSION: "0.1.0"
+    #
+    # 1.0.0 because the next archive is the App Store submission, and a first
+    # release numbered 0.1.0 tells everyone who sees the listing that this is a
+    # beta. Nothing in the store is versioned from zero.
+    MARKETING_VERSION: "1.0.0"
+    # Bump on every upload, including a resubmission after a rejection: App
+    # Store Connect refuses a build whose number it has already seen, and the
+    # rejection for it arrives after the upload has finished.
     CURRENT_PROJECT_VERSION: "1"
     GENERATE_INFOPLIST_FILE: "YES"
     SWIFT_VERSION: "5.0"

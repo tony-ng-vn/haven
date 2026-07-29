@@ -33,7 +33,7 @@
         },
         {
           "key": "Content-Security-Policy-Report-Only",
-          "value": "default-src 'self'; script-src 'self' https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com; connect-src 'self' https://third-hound-186.convex.cloud wss://third-hound-186.convex.cloud https://brilliant-puma-925.convex.cloud wss://brilliant-puma-925.convex.cloud https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com; img-src 'self' data: blob: https://third-hound-186.convex.cloud https://brilliant-puma-925.convex.cloud; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; frame-src https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com https://challenges.cloudflare.com; base-uri 'self'; form-action 'self'"
+          "value": "default-src 'self'; script-src 'self' https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com; connect-src 'self' https://third-hound-186.convex.cloud wss://third-hound-186.convex.cloud https://brilliant-puma-925.convex.cloud wss://brilliant-puma-925.convex.cloud https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com; img-src 'self' data: blob: https://third-hound-186.convex.cloud https://brilliant-puma-925.convex.cloud https://img.clerk.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; frame-src https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com https://challenges.cloudflare.com; base-uri 'self'; form-action 'self'"
         }
       ]
     }

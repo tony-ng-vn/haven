@@ -347,6 +347,24 @@ or a signed session that no test on this server can establish.
 
 New user-side setup this plan adds to the existing "Needs you" list: the Apple Team ID and associated-domains provisioning for F2, and enabling the X connection in Clerk (the existing note names Apple and LinkedIn only).
 
+### App Store submission, audited 2026-07-29
+
+Audited against Apple's own requirements rather than this plan's checklist -- they are different lists. The code side is complete: privacy manifest with every collected type declared, in-app account deletion (5.1.1(v)), Sign in with Apple (4.8), the privacy policy reachable from inside the app (5.1.1(i)), export compliance answered in the plist, the camera usage string, a 1024 icon, and a launch screen. Two things were checked and are correct rather than missing: `PhotosPicker` needs no photo-library usage string, and `CaptureQueue` passes `includingPropertiesForKeys: nil`, so `contentsOfDirectory` is not a required-reason API and the two extensions need no privacy manifest of their own.
+
+What is left is portal, dashboard, and asset work, and none of it is a commit:
+
+25. **The app name is not reserved in App Store Connect.** Everything else is moot until it is.
+26. **Three developer-portal capabilities on the App ID:** Sign in with Apple; Associated Domains; and the App Group `group.com.inhavens.haven` on **both** the app and the share extension. The simulator enforces none of them, so each fails only on hardware -- Sign in with Apple as error 1000 that reads as "Apple is down", and the App Group as captures that silently vanish.
+27. **The real Team ID in `public/.well-known/apple-app-site-association`,** in place of `TEAMIDXXXX`. Until then a scanned card opens Safari rather than Haven. A test pins the placeholder, so it fails the day the ID lands and that is the reminder to update it.
+28. **The production Clerk instance**, with its own domain, its own Sign in with Apple credentials, and its own JWT template named `convex`. Plus `VITE_CLERK_PUBLISHABLE_KEY` on Vercel's Production environment. The iOS half is done (PR 164) and the Convex half is a request to the backend track.
+29. **Five screenshots at 6.9",** which need a Mac, a signed build, and a seeded account of obviously-invented people.
+30. **The App Privacy answers and age rating typed into App Store Connect.** Drafted in `docs/2026-07-28-app-store-metadata.md`; Review checks them against the privacy manifest.
+31. **Decide whether the support page should promise a reply time.** It promises none today, because that is the user's commitment to make.
+32. **DECIDE: does Haven claim to be an iPad app?** Right now it does, by accident. `ios/project.yml` sets no `TARGETED_DEVICE_FAMILY`, so Xcode's default applies and the built `Info.plist` carries `UIDeviceFamily = [1, 2]` -- iPhone *and* iPad -- with no orientation keys, meaning every orientation is permitted. No spec mentions iPad: not `mvp-design.md`, not `ios/README.md`, not `phase1-build-plan.md`. Nobody has run it on one.
+    Apple holds you to what you claim. An app listed as iPad-compatible is reviewed on an iPad in every orientation, and a phone-shaped card UI stretched to a landscape 13" screen is the kind of thing guideline 4.0 is rejected under. **Recommendation: set `TARGETED_DEVICE_FAMILY: "1"` for v1**, which is one line, removes the whole class of risk, and is trivially reversible when somebody has actually looked at it on an iPad. Left as a decision rather than made, because it changes who can install the app. (Ledger item 14 already asks for an iPad check of the 340pt card cap, so the opposite reading is defensible -- which is exactly why it needs deciding rather than assuming.)
+33. **Give App Review a way in, in the review notes.** Haven shows nothing without an account. Sign in with Apple means a reviewer can make their own, so a demo account is probably not required under guideline 2.1 -- but the notes should say so explicitly rather than leave them to work it out, and should mention that a fresh account lands in onboarding with an empty directory, which is the correct behaviour and not a broken build.
+34. **Flip the Content-Security-Policy header from `-Report-Only` to enforcing,** after loading the site once and confirming the console is clean. A test asserts the Report-Only choice, so the flip is a deliberate two-line change rather than a silent one.
+
 ## Exit criteria: "frontend 100% for v1"
 
 - Every unit in waves D, E, F, G, H, and I merged, or explicitly moved to a decision gate's recorded default or the user ledger.
@@ -504,7 +522,12 @@ neither session acts on a stale claim.
 
 Kept current by every frontend PR that discovers a need; the backend session reads this section, not our diffs.
 
-- None blocking today: every unit above builds against functions already on main, plus the two PLANNED items the backend plan already carries for F3 (`havenContactUserId` and `connection` on the person payload; `profiles.disconnect`).
+- **Confirmation wanted, not an action: `CLERK_JWT_ISSUER_DOMAIN` on the `third-hound-186` (production) Convex deployment.**
+  PR 164 put the real `pk_live_` key into `ios/Haven/Config.swift`, so a production build now sends `clerk.inhavens.com` tokens. Convex validates the issuer, and a mismatch fails every authenticated call -- not as an auth error, but as "signed out" or an empty directory, which reads like a data problem.
+  `todo.md` records the backend track setting this to `https://clerk.inhavens.com` on 2026-07-29 (the note landed in PR 152), so this is believed **done**. It is recorded here rather than assumed because the frontend session could not verify it: the `CONVEX_DEPLOYMENT_KEY` in `.env.local` returns `401 Invalid Convex deploy key`, the same dead-key symptom the Preview key showed. A one-line confirmation from whoever holds a working key closes it.
+  Two things that ride along regardless. The issuer is only half the problem: the production Clerk instance also needs its own JWT template named `convex`, or the issuer is right and the tokens still carry nothing Convex can use -- that is on the user's ledger, not the backend's. And the swap orphans dev-instance data, since the issuer is half of `tokenIdentifier`, so any `third-hound-186` rows written against `valued-bonefish-64` are now owned by an identity that cannot sign in.
+- Nothing else blocking: every unit above builds against functions already on main, plus the two PLANNED items the backend plan already carries for F3 (`havenContactUserId` and `connection` on the person payload; `profiles.disconnect`).
+- Checked and **not** needed for the App Store submission, recorded so it is not re-investigated: `profiles.deleteMyAccount` already satisfies guideline 5.1.1(v) and the iOS side wires it to a confirm alert on My Card; `support` is already in the `RESERVED` handle set, so the new `inhavens.com/support` page cannot be shadowed by a card and the AASA already excludes it.
 - Non-blocking, for the backend track rather than a request: `convex/captures.test.ts`
   > "acceptCapture creates an owned person and consumes the capture" failed once
   on 2026-07-28 on a branch that touches no `convex/` or `src/` file at all, and
@@ -512,16 +535,12 @@ Kept current by every frontend PR that discovers a need; the backend session rea
   single-digit milliseconds for its neighbours, which reads like a timing
   dependency rather than a logic one. Recorded rather than fixed, because that
   file is the backend track's.
-- Non-blocking, recorded for backend hygiene (from E3): `mintHandle` throws
 - Non-blocking, recorded for backend hygiene (found by E3): `mintHandle` throws
   "Could not pick an address for you -- choose one yourself" when every rung of
   the ladder is held, and its only caller is `updateMyProfile`'s create path --
   which is onboarding's name question. A person whose name exhausts the ladder
   therefore cannot get past the first onboarding screen at all, and the client
   cannot tell that failure from a dead network, so it says "That did not save.
-  Check your connection and try again." It needs twelve collisions on one name
-  to happen and is not a v1 blocker; the fix is server-side (a random suffix
-  rung, or a fallback base) and belongs with whoever owns `profiles.ts`.
   Check your connection and try again." It needs twelve collisions on one name,
   so it is not a v1 blocker; the fix is server-side (a random-suffix rung, or a
   fallback base) and belongs with whoever owns `profiles.ts`.
