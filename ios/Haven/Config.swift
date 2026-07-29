@@ -47,11 +47,18 @@ enum Config {
     ///      `connect-src` and `frame-src`, so the dev instance keeps working
     ///      for previews. Drop the `valued-bonefish-64` entries once nothing
     ///      needs it.
-    ///   3. NOT DONE -- `VITE_CLERK_PUBLISHABLE_KEY` on Vercel, Production
-    ///      environment, to this same key. Dashboard work.
-    ///   4. NOT DONE -- `CLERK_JWT_ISSUER_DOMAIN` on the `third-hound-186`
-    ///      Convex deployment, to `https://clerk.inhavens.com`. The backend
-    ///      track owns this one; it has been asked for.
+    ///   3. DONE -- `VITE_CLERK_PUBLISHABLE_KEY` on Vercel's Production
+    ///      environment, per `todo.md`.
+    ///   4. DONE -- `CLERK_JWT_ISSUER_DOMAIN` on the `third-hound-186` Convex
+    ///      deployment, set to `https://clerk.inhavens.com` by the backend
+    ///      track on 2026-07-29.
+    ///
+    /// Believed rather than verified for 3 and 4: both are dashboard state this
+    /// repo cannot read, and `.env.local`'s deploy key returns 401, so the
+    /// record in `todo.md` is the only evidence. What is genuinely untested is
+    /// the whole of it -- nobody has signed in against production since. The
+    /// production instance also needs a JWT template named "convex", or the
+    /// issuer is right and the tokens carry nothing Convex can use.
     ///
     /// And before any of it is worth doing, the production instance has to
     /// exist properly: its own domain, its own Sign in with Apple credentials
