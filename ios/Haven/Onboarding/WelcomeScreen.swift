@@ -153,6 +153,12 @@ private extension Error {
         .environment(Clerk.shared)
 }
 
+#Preview("Welcome, accessibility XXXL") {
+    WelcomeScreen()
+        .environment(Clerk.shared)
+        .environment(\.dynamicTypeSize, .accessibility3)
+}
+
 #Preview("Reduce Motion") {
     WelcomeScreen()
         .environment(Clerk.shared)

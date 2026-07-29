@@ -6,6 +6,16 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.32.0
+
+2026-07-28
+
+**iOS**
+
+- Three screens that had no way to be looked at now have one: the two handle editors and the welcome screen. Nothing about them changed; they simply could not be reviewed before a build, which is how a screen ends up shipping wrong.
+
+---
+
 ## v0.31.0
 
 2026-07-28
