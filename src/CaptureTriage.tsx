@@ -509,9 +509,10 @@ export function CaptureTriage() {
                 {activeTop.status === "failed" && (
                   <div className="triage-body triage-sky-body">
                     <div className="sky-space" aria-hidden="true" />
-                    <PersonSky
-                      name={manualName === "" ? activeTop._id : manualName}
-                    />
+                    {/* A capture is not a person yet, so there is no identity
+                        to seed from -- this is the typed name, or the capture
+                        itself before anything has been typed. */}
+                    <PersonSky seed={manualName === "" ? activeTop._id : manualName} />
                     <div className="sky-vignette" aria-hidden="true" />
                     {(mode === "card" || isLeaving) && (
                       <>
@@ -643,9 +644,12 @@ export function CaptureTriage() {
                   activeTop.extracted !== undefined && (
                     <div className="triage-body triage-sky-body">
                       <div className="sky-space" aria-hidden="true" />
+                      {/* Same here: nobody has been saved, so the seed is the
+                          extracted pair rather than an identity. It keeps this
+                          card's sky exactly what it was before seeds were
+                          unified. */}
                       <PersonSky
-                        name={activeTop.extracted.name}
-                        handle={activeTop.extracted.handle}
+                        seed={activeTop.extracted.name + (activeTop.extracted.handle ?? "")}
                       />
                       <div className="sky-vignette" aria-hidden="true" />
                       {(mode === "card" || isLeaving) && (

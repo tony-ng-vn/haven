@@ -151,10 +151,12 @@ export function PersonDetail({
     <div className="person-detail">
       <div className="person-sky-band">
         <div className="sky-space" aria-hidden="true" />
-        {/* Seeded by name only: the search snapshot never carries a handle, so
-            name alone stays stable across the snapshot -> live handoff instead
-            of re-seeding the whole starfield when the doc arrives. */}
-        <PersonSky name={person.name} />
+        {/* Seeded by the document id, which is the route: it is identical on
+            the snapshot and the live doc, so the starfield does not re-mint
+            when the doc arrives, and it is the same seed the atlas cluster
+            uses, so this is visibly the star that was tapped. Renaming
+            somebody leaves their sky alone. */}
+        <PersonSky seed={id} />
         <div className="sky-vignette" aria-hidden="true" />
         <div className="person-sky-content">
           <h1 className="person-name">{person.name}</h1>

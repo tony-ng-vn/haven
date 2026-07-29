@@ -8,7 +8,16 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 // back.
 const answer = vi.hoisted(() => ({ current: undefined as unknown }));
 vi.mock("convex/react", () => ({ useQuery: () => answer.current }));
-vi.mock("./PersonSky", () => ({ PersonSky: () => null }));
+// Stood in, but not thrown away: what this page seeds the sky with is the one
+// thing keeping the web card and the iPhone card the same figure, so the stub
+// records it.
+const skySeed = vi.hoisted(() => ({ current: null as string | null }));
+vi.mock("./PersonSky", () => ({
+  PersonSky: ({ seed }: { seed: string }) => {
+    skySeed.current = seed;
+    return null;
+  },
+}));
 
 const { CardPage } = await import("./CardPage");
 
@@ -74,6 +83,15 @@ describe("the public card page", () => {
   test("a private primary is explained rather than left blank", () => {
     show({ ...bare, primaryPlatform: "phone" });
     expect(screen.getByText("The rest is on Haven.")).toBeTruthy();
+  });
+
+  // The iPhone app seeds this person's sky with their username and nothing
+  // else. If the web card mixes the display name in, the same person has two
+  // different constellations, and renaming themselves scrambles the web one.
+  test("the sky is seeded by the username alone", () => {
+    show({ ...bare, name: "Maya Chen", handle: "mayachen" });
+    expect(skySeed.current).toBe("mayachen");
+    expect(skySeed.current).not.toBe("Maya Chenmayachen");
   });
 
   test("a card with a photo shows it", () => {

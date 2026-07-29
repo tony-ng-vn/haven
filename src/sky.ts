@@ -1,6 +1,11 @@
 // The Deep Field sky: every person's card is a unique patch of space,
 // minted deterministically from their identity. Same person, same sky,
 // forever. Pure and dependency-free so it stays trivially testable.
+//
+// One seed string, and the caller decides what it is -- which has to be the
+// identity that survives a rename (a username, a document id), never a display
+// name. This is also the signature ios/Haven/SkyGenerator.swift ports, so the
+// same person seeded the same way draws the same figure on both platforms.
 
 export type SkyStar = {
   x: number;
@@ -62,8 +67,8 @@ function seededRandom(seed: number): () => number {
   };
 }
 
-export function personHues(name: string, handle?: string): [number, number, number] {
-  const h = hashString(name + (handle ?? ""));
+export function personHues(seed: string): [number, number, number] {
+  const h = hashString(seed);
   // Unsigned shifts: a signed >> on a large hash yields negative hues.
   return [h % 360, (h >>> 9) % 360, (h >>> 18) % 360];
 }
@@ -111,9 +116,9 @@ export function spanningTree(points: Array<{ x: number; y: number }>): Array<[nu
   return edges;
 }
 
-export function buildSky(name: string, handle?: string): SkyData {
-  const rand = seededRandom(hashString(name + (handle ?? "")));
-  const hues = personHues(name, handle);
+export function buildSky(seed: string): SkyData {
+  const rand = seededRandom(hashString(seed));
+  const hues = personHues(seed);
 
   const nebulae = [
     { cx: W * 0.35, cy: H * 0.25, rx: W * 0.75, ry: H * 0.42, hue: hues[0], alpha: 0.18 },
@@ -217,14 +222,13 @@ export type ClusterData = {
 // on their card and detail sky -- identity, not decoration. Minors are dropped;
 // the shared dust field carries the faint-star texture instead.
 export function buildCluster(
-  name: string,
-  handle?: string,
+  seed: string,
   opts?: { width?: number; height?: number; pad?: number },
 ): ClusterData {
   const width = opts?.width ?? 120;
   const height = opts?.height ?? 92;
   const pad = opts?.pad ?? 8;
-  const sky = buildSky(name, handle);
+  const sky = buildSky(seed);
 
   const xs = sky.majors.map((m) => m.x);
   const ys = sky.majors.map((m) => m.y);

@@ -6,6 +6,17 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.39.0
+
+2026-07-29
+
+**Web**
+
+- A person's constellation is now the same figure everywhere it appears -- on the atlas, on their page, and on the card link you share -- and it now matches the iPhone app exactly. Every screen was minting a sky from a different piece of somebody, so one person could have three, and the card you handed a stranger did not look like the card on your phone.
+- Renaming someone no longer scrambles their stars. A person's sky is drawn from who they are rather than what you have called them, so editing a name leaves the figure alone.
+
+---
+
 ## v0.38.0
 
 2026-07-29

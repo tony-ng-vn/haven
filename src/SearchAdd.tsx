@@ -236,10 +236,12 @@ export function SearchAdd({
     [trimmed, list, nameMatches, semantic],
   );
 
-  // One cluster figure per person. Rebuilds only when the field composition
-  // changes (a keystroke that surfaces no new person reuses the memo).
+  // One cluster figure per person, seeded by their document id so the star on
+  // the atlas is the same figure their page draws, and renaming somebody does
+  // not hand them a new one. Rebuilds only when the field composition changes
+  // (a keystroke that surfaces no new person reuses the memo).
   const clusters = useMemo(
-    () => field.map((p) => buildCluster(p.name, undefined, { width: boxW, height: boxH })),
+    () => field.map((p) => buildCluster(p._id, { width: boxW, height: boxH })),
     [field, boxW, boxH],
   );
 
