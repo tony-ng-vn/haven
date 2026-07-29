@@ -6,6 +6,16 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.36.0
+
+2026-07-29
+
+**iOS**
+
+- Haven is now an iPhone app, in portrait, and says so. It had been telling the App Store it ran on iPad in every orientation -- not a decision anybody made, just the setting nobody filled in. Nothing in the app adapts to a bigger screen or a sideways one, so it was claiming more than it could back. Nothing changes for anyone on an iPhone.
+
+---
+
 ## v0.35.0
 
 2026-07-29

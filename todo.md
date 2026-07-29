@@ -51,12 +51,12 @@ lists. What follows is the short list, ordered by what blocks what.
   screenshots on a Mac are yours.
 - [ ] **App Privacy answers in App Store Connect**, which have to match
   `ios/Haven/PrivacyInfo.xcprivacy`. The manifest is current.
-- [ ] **Decide whether Haven is an iPad app.** It currently claims to be, by
-  accident: nothing sets `TARGETED_DEVICE_FAMILY`, so the build ships
-  `UIDeviceFamily = [1, 2]` and permits every orientation. No spec mentions
-  iPad and nobody has run it on one. Apple reviews what you claim, on the
-  device you claim it for. Recommendation: `TARGETED_DEVICE_FAMILY: "1"` for
-  v1 -- one line, reversible, and it removes a whole class of rejection.
+- [x] **Decide whether Haven is an iPad app.** Decided: it is not. It had been
+  claiming to be, by accident -- nothing set `TARGETED_DEVICE_FAMILY`, so the
+  build shipped `UIDeviceFamily = [1, 2]` and permitted every orientation,
+  landscape on iPhone included. There is no size-class handling anywhere in the
+  app, so neither claim was one it could back. Now iPhone, portrait, with a
+  test holding it there.
 - [ ] **Write the App Review notes.** Haven shows nothing without an account.
   Sign in with Apple means a reviewer can make their own, so no demo account
   should be needed, but say that rather than leave them to discover it -- and

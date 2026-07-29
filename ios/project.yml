@@ -19,6 +19,20 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     GENERATE_INFOPLIST_FILE: "YES"
     SWIFT_VERSION: "5.0"
+    # iPhone only. Unset, Xcode fills this in as "1,2" and the build tells the
+    # App Store it is an iPad app too -- which Haven has never been. There is no
+    # size-class handling anywhere in ios/Haven, so every screen would be a phone
+    # layout sitting in a 13-inch window. Apple reviews an app on every device it
+    # claims, so the default was a promise made by omission.
+    #
+    # Reversible: the day somebody opens Haven on an iPad, looks at every screen,
+    # and adds the adaptive layout, this becomes "1,2" in the same commit.
+    TARGETED_DEVICE_FAMILY: "1"
+    # Portrait only, for the same reason and with a wider blast radius: absent,
+    # every orientation is permitted, including landscape on iPhone. No screen
+    # here has been designed sideways. Upside-down is excluded by not being
+    # listed, which also matches what iOS does with a phone by default.
+    INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
     # Phase 1 has no light mode (HavenColor is a single dusk palette), so the
     # app declares dark to the system. This also fixes two real bugs: in light
     # mode the status bar clock rendered black on the night background, and the
