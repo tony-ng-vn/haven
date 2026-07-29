@@ -355,3 +355,55 @@ extension Person.Handle {
         ["platform": platform, "value": value]
     }
 }
+
+// MARK: - Previews
+
+private let previewHandles = [
+    Person.Handle(platform: "instagram", value: "mai.makes"),
+    Person.Handle(platform: "phone", value: "+84901234567"),
+    // A platform Haven has never heard of, kept and shown rather than refused.
+    Person.Handle(platform: "signal", value: "mai.99"),
+]
+
+#Preview("Editing a name") {
+    PersonTextEditor(field: .name, initial: "Mai Tran") { _ in }
+}
+
+// The state the caps exist for: what somebody sees before the server would
+// have refused it.
+#Preview("Editing a name, too long") {
+    PersonTextEditor(
+        field: .name,
+        initial: String(repeating: "Nguyen ", count: 8)
+    ) { _ in }
+}
+
+#Preview("Editing a name, accessibility XXXL") {
+    PersonTextEditor(field: .name, initial: "Mai Tran") { _ in }
+        .environment(\.dynamicTypeSize, .accessibility3)
+}
+
+#Preview("Editing a name, Reduce Motion") {
+    PersonTextEditor(field: .name, initial: "Mai Tran") { _ in }
+        .havenReduceMotion()
+}
+
+#Preview("Ways to reach them") {
+    PersonHandlesEditor(handles: previewHandles, preferred: "phone") { _, _ in }
+}
+
+// Nobody saved yet, which is what an add-someone flow leaves behind before the
+// first handle is typed.
+#Preview("Ways to reach them, none yet") {
+    PersonHandlesEditor(handles: [], preferred: nil) { _, _ in }
+}
+
+#Preview("Ways to reach them, accessibility XXXL") {
+    PersonHandlesEditor(handles: previewHandles, preferred: "phone") { _, _ in }
+        .environment(\.dynamicTypeSize, .accessibility3)
+}
+
+#Preview("Ways to reach them, Reduce Motion") {
+    PersonHandlesEditor(handles: previewHandles, preferred: "phone") { _, _ in }
+        .havenReduceMotion()
+}

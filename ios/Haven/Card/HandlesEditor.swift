@@ -183,3 +183,33 @@ extension MyCard.Handle {
         ["platform": platform.rawValue, "value": value, "verified": verified]
     }
 }
+
+// MARK: - Previews
+
+private let previewCardHandles = [
+    MyCard.Handle(platform: .x, value: "mayachen", verified: true),
+    MyCard.Handle(platform: .phone, value: "+84901234567", verified: false),
+]
+
+#Preview("Ways to reach you") {
+    HandlesEditor(handles: previewCardHandles, primary: .x) { _, _ in }
+}
+
+// Onboarding collects exactly one, so this is the state most people's card is
+// in the first time they open this screen.
+#Preview("Ways to reach you, one") {
+    HandlesEditor(
+        handles: [MyCard.Handle(platform: .instagram, value: "mayachen", verified: false)],
+        primary: .instagram
+    ) { _, _ in }
+}
+
+#Preview("Ways to reach you, accessibility XXXL") {
+    HandlesEditor(handles: previewCardHandles, primary: .x) { _, _ in }
+        .environment(\.dynamicTypeSize, .accessibility3)
+}
+
+#Preview("Ways to reach you, Reduce Motion") {
+    HandlesEditor(handles: previewCardHandles, primary: .x) { _, _ in }
+        .havenReduceMotion()
+}

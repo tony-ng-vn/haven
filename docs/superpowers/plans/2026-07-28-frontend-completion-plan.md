@@ -400,6 +400,18 @@ it looks like it could be written in Swift or TypeScript, it is in the wrong
 section. Eighteen items across four groups, plus the twenty-four-item ledger
 below.
 
+### One thing the criteria do not ask and should have
+
+"The three standard previews for every screen" is an execution rule in this
+plan, not one of the five exit criteria, so the audit passed without checking
+it. Checked afterwards, three of sixteen screens failed it: both handle editors
+had no previews at all and the welcome screen had no accessibility size. Two
+predate this plan; `PersonFieldEditors` was written during it, by me, and the
+rule I was following is the rule I missed. Fixed in PR 163.
+
+The general point is worth keeping: a criterion nobody checks is not a
+criterion, and the sixteen-screen sweep took one command.
+
 ### What is not in scope of these criteria, and is still true
 
 - The Convex production deployment has never had a signed iOS client talk to
