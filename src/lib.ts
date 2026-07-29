@@ -6,10 +6,39 @@ import { isClaimableHandle } from "../convex/handleNames";
 
 // What the detail screen needs to render instantly from data the search
 // results already hold, before its own query answers.
+//
+// The wide half is optional and it is load-bearing, not generosity. searchPeople
+// returns whole projected rows, so a tap on the atlas hands the detail screen
+// the photo, the city and the connection too -- this type was the only thing
+// hiding them. It mattered because the name travels: the shared-element morph
+// captures the band as it will be, and reading these off the slower getPerson
+// meant they landed after the transition and shoved the settled name upward.
+//
+// Optional because two callers legitimately carry less: a manual add builds a
+// snapshot from what it just typed, and the semantic search source is narrower.
+type ProjectedFields = {
+  // Resolved server-side, so it is not a field on the document.
+  photoUrl?: string | null;
+  connection?: { state: "connected" | "ended"; peerUsername: string } | null;
+};
+
 export type PersonSnapshot = Pick<
   Doc<"people">,
   "_id" | "name" | "link" | "context" | "_creationTime"
->;
+> &
+  Partial<
+    Pick<
+      Doc<"people">,
+      | "headline"
+      | "bio"
+      | "city"
+      | "company"
+      | "role"
+      | "contactHandles"
+      | "preferredPlatform"
+    >
+  > &
+  ProjectedFields;
 
 // People paste links loosely ("linkedin.com/in/..."). Return an openable
 // http(s) URL, or null when the text is not a link at all.

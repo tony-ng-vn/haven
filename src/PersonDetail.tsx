@@ -6,6 +6,36 @@ import { formatMonthYear, normalizeUrl, type PersonSnapshot } from "./lib";
 import { PersonSky } from "./PersonSky";
 import { reachLabel, reachUrl, samePlatform } from "./reach";
 
+/// Whether a field somebody left blank counts as something to draw. It does
+/// not: half the fields on most people are empty, and an empty one has to
+/// disappear rather than render as a stray comma.
+function said(value: string | undefined): value is string {
+  return value !== undefined && value !== "";
+}
+
+/// The line under their name: what they do, then where they are.
+///
+/// The web mirror of PersonModel.detail. A blank part is dropped rather than
+/// shown as a stray separator -- MapKit hands back an empty admin area for
+/// countries that have no states, so a city can arrive with a hole in it.
+function detailLine(person: {
+  role?: string;
+  company?: string;
+  city?: { name: string; admin?: string; country?: string };
+}): string | null {
+  const work = [person.role, person.company].filter(said);
+  const city = [
+    person.city?.name,
+    person.city?.admin,
+    person.city?.country,
+  ].filter(said);
+  // An empty half joins to "" and is dropped. Unlike iOS, where a city whose
+  // every part is blank survives compactMap as an empty string and leaves a
+  // dangling "Engineer | ".
+  const halves = [work.join(", "), city.join(", ")].filter(said);
+  return halves.length > 0 ? halves.join(" | ") : null;
+}
+
 function ArrowUpRight() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -47,6 +77,14 @@ export function PersonDetail({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // A Convex storage url is signed and can stop resolving. A person without a
+  // photo is an ordinary person, so a url that fails leaves the page it was
+  // decorating rather than a broken-image glyph.
+  //
+  // The url that failed, not a boolean: one flaky request would otherwise hide
+  // the photo for the rest of the visit, and a photo replaced from a phone
+  // would arrive on the live subscription and be suppressed by the old flag.
+  const [failedPhotoUrl, setFailedPhotoUrl] = useState<string | null>(null);
   // Catch focus when the confirm row swaps in so a keyboard user is never
   // dropped onto the body. Cancel (not Remove) so the safe choice is default
   // for an action that cannot be undone.
@@ -96,12 +134,28 @@ export function PersonDetail({
 
   const openable = normalizeUrl(link);
 
-  // Read off the live doc alone: the search snapshot carries a name and a date
-  // and nothing else, so the rows land when the authoritative doc arrives
-  // rather than flashing an empty list first. Unlike the sky above, which is
-  // seeded by the document id and so is already right on the snapshot.
-  const handles = live?.contactHandles ?? [];
-  const preferredPlatform = live?.preferredPlatform;
+  // Read off `person`, which is the snapshot until the live doc lands. A tap on
+  // the atlas already carries these -- searchPeople returns whole projected
+  // rows -- and taking them from the snapshot is what keeps the name morph
+  // honest: everything below the name is in place when the transition captures
+  // the band, so the settled name does not get shoved upward a beat later.
+  const preferredPlatform = person.preferredPlatform;
+  const saved = person.contactHandles ?? [];
+  // The one they said to use first leads, because that is what choosing it
+  // meant; the rest keep the order they were saved in. samePlatform rather
+  // than ===, because the server stores the platform string verbatim: a row
+  // can hold "Instagram" while preferredPlatform says "instagram".
+  const handles = [
+    ...saved.filter((handle) => samePlatform(handle.platform, preferredPlatform)),
+    ...saved.filter((handle) => !samePlatform(handle.platform, preferredPlatform)),
+  ];
+  const photoUrl = person.photoUrl ?? null;
+  const detail = detailLine(person);
+  // Their headline, or their bio standing in for it, mirroring iOS. `??` and
+  // not `||`: an empty headline is still the headline, and it draws nothing
+  // rather than falling through to the bio.
+  const about = person.headline ?? person.bio;
+  const connection = person.connection ?? null;
 
   async function handleSave() {
     if (saving) return;
@@ -167,15 +221,52 @@ export function PersonDetail({
         <PersonSky seed={id} />
         <div className="sky-vignette" aria-hidden="true" />
         <div className="person-sky-content">
+          {photoUrl !== null && photoUrl !== failedPhotoUrl && (
+            <img
+              className="person-photo"
+              src={photoUrl}
+              alt=""
+              // The name under it says who this is; announcing "photo" gives a
+              // screen reader nothing it can use.
+              aria-hidden="true"
+              onError={() => setFailedPhotoUrl(photoUrl)}
+            />
+          )}
           <h1 className="person-name">{person.name}</h1>
+          {detail !== null && <p className="person-detail-line">{detail}</p>}
+          {connection !== null && (
+            <p
+              className={
+                connection.state === "connected"
+                  ? "person-connection person-connection-live"
+                  : "person-connection"
+              }
+            >
+              {connection.state === "connected"
+                ? "Connected"
+                : "No longer connected"}
+            </p>
+          )}
         </div>
       </div>
       <p className="person-meta">Added {formatMonthYear(person._creationTime)}</p>
 
+      {said(about) && <p className="person-about">{about}</p>}
+
+      {connection?.state === "ended" && (
+        // Said once, plainly, above the fields it is about. A row that stopped
+        // following a card and does not say so reads as a person who simply
+        // never changes anything.
+        <p className="person-frozen">
+          This is the last thing their card said. It will not change again.
+        </p>
+      )}
+
       {/* Reserved slot: the source screenshot thumbnail belongs here, in the
-          quiet register above the link. Deferred this round -- getPerson does
-          not project an image URL yet (it returns screenshotId only), so there
-          is nothing to render client-side. Once getPerson resolves
+          quiet register above the link. Deferred this round -- getPerson
+          projects the person's own photo (drawn in the band above) but only a
+          screenshotId for the capture they came from, so there is nothing to
+          render client-side. Once getPerson resolves
           ctx.storage.getUrl(screenshotId) into an imageUrl, render a small
           .person-thumb here; the layout already leaves room for it. */}
 
@@ -261,7 +352,7 @@ export function PersonDetail({
         />
       </div>
       <div className="detail-field">
-        <label htmlFor="person-context">Private context</label>
+        <label htmlFor="person-context">What you remember</label>
         <textarea
           id="person-context"
           className="field"
@@ -271,7 +362,17 @@ export function PersonDetail({
             setContext(e.target.value);
             setDirty(true);
           }}
+          // Described by the hint below, not merely followed by it: a screen
+          // reader announcing only "What you remember, edit text" would leave
+          // somebody writing the one paragraph the hint exists to prevent.
+          aria-describedby="person-context-hint"
         />
+        {/* Dated lines are what "who did I meet last month" reads, and one line
+            per entry is what makes each one findable on its own -- so say that
+            here rather than let one paragraph grow. */}
+        <p className="person-note-hint" id="person-context-hint">
+          One line per thing. Each is searchable on its own.
+        </p>
       </div>
       {saveError !== null && (
         <p className="form-error" role="alert">
@@ -303,7 +404,7 @@ export function PersonDetail({
         <div className="shared-note-heading">
           <h2 className="shared-note-title">Shared notes</h2>
           <p className="shared-note-copy">
-            A quiet space for mutual memory. Your private context above stays
+            A quiet space for mutual memory. The note you keep above stays
             yours.
           </p>
         </div>

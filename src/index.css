@@ -349,7 +349,11 @@ textarea.field {
 .person-sky-band {
   position: relative;
   overflow: hidden;
-  height: 200px;
+  display: flex;
+  /* Deep enough to read as a field of stars, and taller when a photo and a
+     connection chip ride in it with the name: a fixed height would clip a
+     face off the top edge. */
+  min-height: 200px;
   border-radius: var(--radius-lg);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.28),
@@ -359,13 +363,24 @@ textarea.field {
 .person-sky-content {
   position: relative;
   z-index: 1;
+  flex: 1;
   display: flex;
-  height: 100%;
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
+  gap: 8px;
   padding: 20px;
   text-align: center;
+}
+
+/* 64px, the PersonMetrics.photoDiameter iOS uses: big enough to recognise a
+   face at a glance, small enough that the name under it is read first. */
+.person-photo {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
 }
 
 /* Lifts the quiet .person-name into the sky register (matching
@@ -379,10 +394,52 @@ textarea.field {
   text-shadow: 0 2px 22px rgba(0, 0, 0, 0.6);
 }
 
-.person-meta {
+/* The quiet register on this page: when they were added, the line under their
+   name, what they say about themselves, the notice about a row that stopped
+   following a card, and how to write the note. HavenFont's footnote, muted --
+   never faint, which does not hold 4.5:1 where this page runs toward dusk. */
+.person-meta,
+.person-detail-line,
+.person-about,
+.person-frozen,
+.person-note-hint {
   margin: 0;
   font-size: 13px;
   color: var(--muted);
+}
+
+.person-about,
+.person-frozen {
+  text-wrap: pretty;
+}
+
+/* The name carries a shadow because stars pass behind it. The line under it is
+   smaller and needs the same help. */
+.person-sky-band .person-detail-line {
+  text-shadow: 0 2px 22px rgba(0, 0, 0, 0.6);
+}
+
+/* Whether this row follows a live card, said quietly: being connected is a fact
+   about the person, not an event, and the page's subject is still them. */
+.person-connection {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  margin: 0;
+  font-size: 13px;
+  /* Muted, not faint. This chip only ever renders inside the band, where faint
+     would measure 3.4:1 against the sky it sits on -- and the ended state is
+     both the one that has to be read and the one drawn dimmer. */
+  color: var(--muted);
+  background: var(--field-bg);
+}
+
+/* Still following a card, so it wears the star. */
+.person-connection-live {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .detail-field {

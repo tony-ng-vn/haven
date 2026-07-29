@@ -6,6 +6,20 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.43.0
+
+2026-07-29
+
+**Web**
+
+- A person's page now shows the person. Their photo, what they do, where they are, and what they say about themselves were all being sent to the browser and quietly dropped -- the page had their name, the month you added them, and the boxes you type in, and nothing else. It now opens the way their card does on the iPhone: their photo above their name in their own sky, their role, company and city on one line under it, and their headline below that.
+- If a photo cannot load, the page simply shows no photo. A person without one is an ordinary person, and a broken-image square is not an answer.
+- The page now says whether somebody is still connected to you on Haven. A small "Connected" tag sits under their name. If the connection ended -- they left Haven, or one of you disconnected -- it reads "No longer connected", and one line explains what that means for everything above it: this is the last thing their card said, and it will not change again. Without that, a frozen page and a person who never updates anything look identical.
+- The note you keep about somebody is now called "What you remember", the same thing the iPhone app calls it, instead of "Private context" -- a name nothing else in Haven ever used. It also says how the note is read: one line per thing, because each line is searchable on its own.
+- The platform you marked as how somebody prefers to be reached now leads their list of ways to reach them, instead of sitting wherever it happened to be saved.
+
+---
+
 ## v0.42.0
 
 2026-07-29
