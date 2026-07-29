@@ -135,3 +135,38 @@ describe("component sources", () => {
     }
   });
 });
+
+describe("the feedback widget", () => {
+  // A third-party custom element drawing in a shadow root, so our rules cannot
+  // reach inside it -- only these custom properties can. Unset, it renders a
+  // white pill and a white sheet with a purple submit, which was the one thing
+  // on screen that did not belong to Haven.
+  const rule = css.match(
+    /feedback-widget\.feedback-fab\s*\{[\s\S]*?\n\}/,
+  )?.[0];
+
+  test("is dressed from the Haven palette", () => {
+    expect(rule, "the feedback-fab rule is gone").toBeDefined();
+    for (const property of [
+      "--fw-surface",
+      "--fw-surface-strong",
+      "--fw-text",
+      "--fw-muted",
+      "--fw-border",
+      "--fw-radius",
+      "--fw-accent",
+    ]) {
+      expect(rule, `${property} is not set`).toContain(property);
+    }
+  });
+
+  test("its accent is never the cream fill", () => {
+    // The widget's submit rule pairs this background with a HARDCODED white
+    // label, so Haven's own primary fill would measure 1.22:1 there. This
+    // assertion is the reason that mistake cannot be made by someone
+    // reasonably assuming the primary fill belongs on a primary button.
+    expect(rule).not.toMatch(/--fw-accent:\s*var\(--accent-fill\)/);
+    expect(rule).not.toMatch(/--fw-accent:\s*#f2e7d5/i);
+    expect(rule).not.toMatch(/--fw-accent:\s*var\(--accent\)/);
+  });
+});

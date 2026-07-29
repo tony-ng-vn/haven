@@ -6,6 +6,16 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.42.0
+
+2026-07-29
+
+**Web**
+
+- The Feedback button and the sheet it opens now belong to Haven. They were arriving in the widget's own colours -- a white pill on the night sky, and a white sheet with a purple Submit -- because nobody had ever told it what Haven looks like. It reads the night, the ink, and Haven's own corners now. It stays an internal-only button, and it is still temporary.
+
+---
+
 ## v0.41.0
 
 2026-07-29
