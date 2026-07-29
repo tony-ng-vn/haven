@@ -34,6 +34,16 @@ lists. What follows is the short list, ordered by what blocks what.
 - [ ] **Apple Developer: enable Associated Domains**, and put the real Team ID
   in `public/.well-known/apple-app-site-association` in place of `TEAMIDXXXX`.
   Until then a scanned Haven code opens Safari.
+- [ ] **Set the production Clerk instance's sign-in and sign-up urls.** In the
+  Clerk dashboard they are `https://accounts.inhavens.com/sign-in` and
+  `/sign-up` -- the Account Portal -- which is what caused the production
+  sign-in loop. The app now overrides them in code, so sign-in works either
+  way, but any redirect Clerk starts on its own (an email link, the portal
+  itself) still lands on a page Haven does not control. Set both to
+  `https://inhavens.com/sign-in` and `/sign-up`. The `clerk-config` workflow
+  checks this daily and is red until it is done.
+- [ ] **Rename the Clerk application from "Euno" to "Haven".** It is the name
+  shown on Clerk's own screens and in sign-in emails. Same workflow catches it.
 - [ ] **Confirm the Clerk production swap actually works.** All four edits are
   now made: `Config.clerkProductionKey` (PR 164), the CSP, and -- per the
   backend track -- `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_JWT_ISSUER_DOMAIN`

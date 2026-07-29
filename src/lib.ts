@@ -402,6 +402,23 @@ export function isClerkFlowHash(hash: string): boolean {
   return /^#\/.+/.test(hash);
 }
 
+/// The paths that mean "let me in", or null when a path means something else.
+///
+/// Every word here is reserved in `handleNames`, so none can be somebody's
+/// card. Reported from production: `/signin` and `/signup` both rendered the
+/// waitlist, which tells a person who typed the most obvious url that Haven has
+/// no sign-in at all.
+///
+/// Sub-paths count too, because Clerk owns them once its component is mounted
+/// at one of these: `/sign-in/factor-one` is Clerk's second step, not a 404.
+export function isAuthPath(pathname: string): boolean {
+  const first = pathname.split("/").filter((segment) => segment !== "")[0];
+  if (first === undefined) return false;
+  return ["signin", "sign-in", "signup", "sign-up", "login"].includes(
+    first.toLowerCase(),
+  );
+}
+
 // What to paint on the very first frame, before Clerk has loaded. The signed-out
 // landing needs nothing from Clerk, so a first-time visitor sees it immediately;
 // only a returning visitor (session hint) waits on a splash, and a Clerk flow
@@ -504,6 +521,9 @@ export function resolveView(input: {
   // card they opened.
   if (handleFromPath(input.pathname ?? "/") !== null) return "card";
   if (input.isAuthenticated) return "home";
+  // Checked after the auth test, so somebody already signed in who lands on
+  // /signin gets their people rather than a form asking them to do it again.
+  if (isAuthPath(input.pathname ?? "/")) return "signin";
   if (!isJoinHash(input.hash) && isClerkFlowHash(input.hash)) return "signin";
   if (input.isLoading && bootMode(input) === "splash") return "splash";
   return "waitlist";
