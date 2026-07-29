@@ -12,10 +12,15 @@ import Foundation
 //
 // The Convex side also needs a JWT template named "convex" in Clerk, and
 // CLERK_JWT_ISSUER_DOMAIN set on the Convex deployment (see convex/auth.config.ts).
+// The three keys below are `internal` rather than `private` so `ConfigTests`
+// can assert on them. That is the whole reason, and it is worth the widening:
+// the `precondition` further down guards the same invariant but lives in an
+// `#else`, so it cannot fire until the first release build -- which is the
+// archive on submission day. A test fires on every commit instead.
 enum Config {
     /// The development instance. Fine here and nowhere else: Clerk development
     /// instances cap their user count and are documented as not for production.
-    private static let clerkDevelopmentKey =
+    static let clerkDevelopmentKey =
         "pk_test_dmFsdWVkLWJvbmVmaXNoLTY0LmNsZXJrLmFjY291bnRzLmRldiQ"
 
     /// The production instance, once it exists.
@@ -52,8 +57,8 @@ enum Config {
     ///
     /// The backend track's wave C8 owns the timing; this side is two of the
     /// four edits and neither is safe on its own.
-    private static let clerkProductionPlaceholder = "pk_live_REPLACE_BEFORE_SHIPPING"
-    private static let clerkProductionKey = clerkProductionPlaceholder
+    static let clerkProductionPlaceholder = "pk_live_REPLACE_BEFORE_SHIPPING"
+    static let clerkProductionKey = clerkProductionPlaceholder
 
     /// Which key this build signs in with.
     ///
