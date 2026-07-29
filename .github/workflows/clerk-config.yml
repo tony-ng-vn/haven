@@ -1,0 +1,107 @@
+name: clerk-config
+
+# Checks the live Clerk instance Haven ships against, not the code.
+#
+# There is a class of sign-in bug that no test in this repo can see, because it
+# lives in the Clerk dashboard rather than in a file. The one that reached
+# production: a Clerk production instance has an Account Portal at
+# accounts.<domain>, its environment advertises that portal as the instance's
+# sign_in_url, and the prebuilt <SignIn/> component obeys it -- navigating away
+# from Haven to the portal, which redirects back to Haven, forever.
+#
+# None of it reproduces on a development instance, which has no Account Portal.
+# So it was invisible in every environment anybody could run: green unit tests,
+# green ios-test, a working simulator, and a redirect loop the moment the
+# production key shipped.
+#
+# The half of the guard that lives in code is src/clerkConfig.test.ts. This is
+# the half that can see the dashboard.
+#
+# A monitor, not a gate. It does not run on pull_request: a third party's
+# configuration is not something a PR should be blocked on, and Clerk being
+# briefly unreachable is not a reason to stop merging. It runs daily and on
+# demand, and it fails loudly when the instance and the app disagree.
+
+on:
+  schedule:
+    # Daily. The thing being watched changes when somebody edits a dashboard,
+    # which is rare and unannounced -- exactly what a scheduled check is for.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the production Clerk instance agrees with the app
+        run: |
+          node <<'NODE'
+          const { readFileSync } = require("node:fs");
+
+          // The instance to check is whichever one the shipped app signs in
+          // against, read from the key rather than hardcoded here -- a Clerk
+          // publishable key is the instance's frontend host, base64'd, with a
+          // trailing "$". Swap the key and this check follows it.
+          const config = readFileSync("ios/Haven/Config.swift", "utf8");
+          const key = config.match(/clerkProductionKey\s*=\s*"(pk_live_[^"]+)"/)?.[1];
+          if (!key) {
+            console.error("Could not find clerkProductionKey in ios/Haven/Config.swift.");
+            process.exit(1);
+          }
+          const encoded = key.slice("pk_live_".length);
+          const padded = encoded.padEnd(Math.ceil(encoded.length / 4) * 4, "=");
+          const host = Buffer.from(padded, "base64").toString("utf8").replace(/\$$/, "");
+          console.log(`Clerk instance: ${host}`);
+
+          const url =
+            `https://${host}/v1/environment` +
+            `?__clerk_api_version=2021-02-05&_clerk_js_version=5.0.0`;
+          const response = await fetch(url);
+          if (!response.ok) {
+            console.error(`Clerk environment fetch failed: ${response.status}`);
+            process.exit(1);
+          }
+          const display = (await response.json()).display_config ?? {};
+
+          const problems = [];
+          const report = {};
+          for (const field of [
+            "sign_in_url",
+            "sign_up_url",
+            "home_url",
+            "after_sign_in_url",
+            "after_sign_up_url",
+          ]) {
+            const value = display[field];
+            report[field] = value;
+            if (typeof value !== "string") continue;
+            // The failure that reached production. An Account Portal url here
+            // means the prebuilt components navigate off Haven to reach it.
+            if (/^https?:\/\/accounts\./.test(value)) {
+              problems.push(
+                `${field} points at the Account Portal (${value}). ` +
+                  `The prebuilt <SignIn/> obeys this and navigates away from Haven; ` +
+                  `the portal redirects back, and that is the loop. ` +
+                  `Set it to a url on the app itself in the Clerk dashboard.`,
+              );
+            }
+          }
+          console.table(report);
+
+          // The name a person sees on Clerk's own screens and in its emails.
+          if (display.application_name !== undefined && display.application_name !== "Haven") {
+            problems.push(
+              `application_name is "${display.application_name}", not "Haven". ` +
+                `That is the name shown on Clerk-hosted screens and in sign-in emails.`,
+            );
+          }
+
+          if (problems.length > 0) {
+            console.error("\nThe live Clerk instance disagrees with the app:\n");
+            for (const problem of problems) console.error(` - ${problem}\n`);
+            process.exit(1);
+          }
+          console.log("\nThe live Clerk instance agrees with the app.");
+          NODE
