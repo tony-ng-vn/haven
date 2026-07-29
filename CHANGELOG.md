@@ -15,6 +15,10 @@ pull requests, which is where it is easiest to read anyway.
 - The site's content security policy is now enforced rather than merely reported. It had been in report-only mode since it was written, which means it had never actually blocked anything -- a missing entry showed up as a console message nobody was watching instead of as a problem.
 - The feedback widget can reach its own service. It posts to a hosted service on a different Convex deployment, which the policy had never named; under report-only that broke nothing, and turning enforcement on without this would have broken it silently for the only people who can see the widget.
 
+**CI**
+
+- Pull requests that cannot change the website no longer build one. Most changes here are to the iOS app or the backend, and each was still producing a full web deployment: of the last forty merges, thirty-three built a bundle that had not changed, and those builds were three quarters of the account's daily deployment budget -- which is what ran it out. Production still builds every time, because that build is what ships the backend.
+
 ---
 
 ## v0.36.0

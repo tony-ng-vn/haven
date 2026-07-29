@@ -1,5 +1,6 @@
 {
   "buildCommand": "if [ \"$VERCEL_ENV\" = production ]; then npx convex deploy --cmd 'npm run build'; else : \"${VITE_CONVEX_URL:?Preview builds no longer deploy Convex, so set VITE_CONVEX_URL for the Preview environment in Vercel}\" && npm run build; fi",
+  "ignoreCommand": "if [ \"$VERCEL_ENV\" = production ]; then exit 1; fi; git fetch origin main --depth=100 >/dev/null 2>&1 || exit 1; git diff --quiet origin/main...HEAD -- src/ public/ index.html vite.config.ts vercel.json package.json package-lock.json",
   "framework": "vite",
   "outputDirectory": "dist",
   "headers": [
