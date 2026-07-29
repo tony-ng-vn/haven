@@ -198,10 +198,14 @@ export function PersonDetail({
                   <span className="card-handle-label">
                     {reachLabel(handle.platform)}
                   </span>
-                  <span className="card-handle-value">{handle.value}</span>
                   {handle.platform === preferredPlatform && (
                     <span className="person-handle-mark">preferred</span>
                   )}
+                  {/* After the mark, not before it: the mark belongs with the
+                      platform it describes, and keeping it out of the value's
+                      place is what lets every value line up in one column
+                      instead of shifting on whichever row is preferred. */}
+                  <span className="card-handle-value">{handle.value}</span>
                 </>
               );
               return (

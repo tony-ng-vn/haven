@@ -2410,6 +2410,14 @@ a.card-handle:focus-visible {
   color: var(--accent);
 }
 
+/* The value takes the free space rather than sharing it, so it sits hard right
+   on every row -- a column of handles the eye can run down, whether or not a
+   row carries the preferred mark. */
+.person-handle .card-handle-value {
+  margin-left: auto;
+  text-align: right;
+}
+
 .card-cta {
   margin-top: 18px;
   min-height: 44px;
