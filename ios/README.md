@@ -30,19 +30,40 @@ xcodegen generate
 open Haven.xcodeproj
 ```
 
-## Configure (required before running)
+## Configure
 
-1. Edit `Haven/Config.swift`:
-   - `clerkPublishableKey` from the Clerk dashboard (API keys).
-   - `convexDeploymentUrl`, e.g. `https://brilliant-puma-925.convex.cloud` (the dev deployment).
-   Both values are public and safe to ship in the app binary.
-2. In the Clerk dashboard, create a JWT template named `convex` (the Convex integration template).
-3. On the Convex deployment, set `CLERK_JWT_ISSUER_DOMAIN` to the Clerk Frontend API URL: `npx convex env set CLERK_JWT_ISSUER_DOMAIN <domain>`.
+**Nothing, for a simulator build.** `Haven/Config.swift` already carries both
+Clerk keys and both Convex urls, split by build configuration, and a debug build
+takes the development side of that split on its own:
+
+| A debug build talks to | |
+|---|---|
+| Clerk | the `valued-bonefish-64` development instance |
+| Convex | `brilliant-puma-925`, the development deployment |
+
+So nothing you do in the simulator can reach production data, and the production
+Clerk instance is not exercised at all -- a debug build cannot tell you whether
+the production sign-in works. That is a web check (`inhavens.com/sign-in`) or a
+release build, not this.
+
+The three steps below are one-time setup for the *development* deployment, and
+they have already been done for this project. They are kept because a new
+deployment needs them:
+
+1. In the Clerk dashboard, create a JWT template named `convex` (the Convex integration template).
+2. On the Convex deployment, set `CLERK_JWT_ISSUER_DOMAIN` to the Clerk Frontend API URL: `npx convex env set CLERK_JWT_ISSUER_DOMAIN <domain>`.
    This is already read by `convex/auth.config.ts`, which pins `applicationID: "convex"`.
+3. Nothing in `Config.swift`. Editing it to point a debug build at production is
+   not a shortcut for testing the production swap -- it writes real rows from a
+   development build, and the values are asserted by `ConfigTests`.
 
 ## Run
 
 Build to a simulator or a device.
+
+**Pick an iPhone.** Haven declares `TARGETED_DEVICE_FAMILY: "1"` and portrait
+only, so an iPad destination will not install -- that is deliberate (there is no
+adaptive layout), not a broken build.
 Signed out, you get the welcome screen, which owns sign-in.
 Signed in, the app reads `profiles:getMyCard` (auth-gated by `requireUser`) and shows the first question that card has not answered, or `HavenTabs` once there are none left.
 
