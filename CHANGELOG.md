@@ -6,6 +6,16 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.29.0
+
+2026-07-28
+
+**Web**
+
+- The site's content policy now names both the development and the production Clerk instances. The production publishable key is already live on Vercel, so the next production build loads Clerk from a domain the policy did not mention; listing both means whichever key a build compiles in, the policy covers it.
+
+---
+
 ## v0.28.0
 
 2026-07-28
