@@ -1,0 +1,29 @@
+<task-notification>
+<task-id>a74cfbeb2b21d1508</task-id>
+<tool-use-id>toolu_0151oC5UTi6bdWqjYUqLNXMC</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/45c37739-14ec-4f83-9d43-29f77afa5176/tasks/a74cfbeb2b21d1508.output</output-file>
+<status>completed</status>
+<summary>Agent "Reuse review" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've read all the relevant files and grepped the shared modules. Here are my findings.
+
+## REUSE review: waitlist confirmation email + name field
+
+### 1. escapeHtml (convex/emailClient.ts:10-17) — NOT duplication, genuinely new
+Grep for `escapeHtml`, `&amp;amp;`, `&amp;lt;`, `htmlEscape`, `encodeHtml`, `replace(/&amp;/` across `src` and `convex` returns only `emailClient.ts` itself. There is no pre-existing HTML-escape helper anywhere in the codebase. This is the first and only place HTML is generated (the rest of the app renders through React/JSX, which escapes automatically). No reuse available; nothing to flag.
+
+### 2. normalizeWaitlistName (src/lib.ts:54-56) — closest match is composeName, but reuse is NOT appropriate
+`normalizeWaitlistName` = `raw.trim().replace(/\s+/g, " ")`. Two candidate helpers share the whitespace-collapse core:
+
+- `convex/nameSearch.ts:17` `normalizeName` — also lowercases, NFD-decomposes, strips combining marks, and maps the Vietnamese D-stroke. As the task notes, that produces a search key ("dun dun"), which would destroy the typed casing/accents we greet people by. Wrong behavior; must NOT reuse.
+- `src/lib.ts:129` `composeName(first, last)` = `` `${first} ${last}`.replace(/\s+/g, " ").trim() ``. Its inner operation (collapse runs + trim) is byte-for-byte the same normalization, but its signature takes two parts and joins them with a space. Reusing it would mean calling `composeName(raw, "")`, which is semantically misleading (there is no "last name") and only works by accident of the empty string collapsing away.
+
+Verdict: the two functions genuinely express different intents (join-two-parts vs normalize-one-string) even though the whitespace mechanic is identical. Forcing reuse would hurt readability, not help it. At most this is a candidate for a shared private `collapseWhitespace(s)` primitive that both `composeName` and `normalizeWaitlistName` call — but that's a refactor of pre-existing code, not a reuse the new code skipped. I would not require a change here; a one-line comment cross-referencing composeName's identical collapse is the most I'd suggest.
+
+### 3. Env-reading + fetch in sendWaitlistConfirmation (convex/emailClient.ts:79-116) vs openaiClient.ts — NOT clean duplication
+The env-guard shape is similar: emailClient's `apiKey === undefined || apiKey === ""` (lines 85-90) mirrors `openaiClient.ts:66-73` `apiKey()`'s `key === undefined || key === ""`. But the behaviors are deliberately opposite: `openaiClient.apiKey()` throws (the key is required), while `emailClient` returns `{status:"skipped"}` (email is optional so the join flow can ship before a provider is wired). The `apiKey()` helper is also unexported and file-local to `openaiClient.ts`, and emailClient must check two vars (`RESEND_API_KEY` + `WAITLIST_FROM_EMAIL`). Likewise the `fetch` + `Authorization: Bearer` + JSON POST block resembles `callOpenAI` (openaiClient.ts:79-93), but hits a different host with different error handling (`throw` vs `{status:"failed"}`). No shared HTTP/env utility exists to reuse, and the throw-vs-skip contract makes a forced shared helper wrong. Not a finding.
+
+## Summary
+No real duplication to fix. `escapeHtml` is genuinely new (no existing helper). The env/fetch patterns rhyme with `openaiClient.ts` but differ in required-vs-optional semantics, so reuse would misrepresent behavior. The only borderline item is that `normalizeWaitlistName` and `composeName` (src/lib.ts:55 and :130) contain the identical `replace(/\s+/g, " ").trim()` whitespace collapse — genuinely different intents, so I'd rate it optional-only (extract a private `collapseWhitespace` primitive if you want DRY, but do not funnel one through the other). `normalizeName` in nameSearch.ts must not be reused: its accent-stripping/lowercasing would corrupt the greeting name.</result>
+<usage><subagent_tokens>31460</subagent_tokens><tool_uses>7</tool_uses><duration_ms>56064</duration_ms></usage>
+</task-notification>
