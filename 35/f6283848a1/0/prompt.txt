@@ -1,0 +1,121 @@
+<task-notification>
+<task-id>aeb57a2af97098642</task-id>
+<tool-use-id>toolu_01FjVM2htKUizLgtmnuvVibm</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/d7b8885f-65a9-446f-a015-9e53a7c2bf4e/tasks/aeb57a2af97098642.output</output-file>
+<status>completed</status>
+<summary>Agent "Test strategy review of Euno" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 42 tests pass in ~565ms (4 files: 15 lib, 9 sky, 9 captures, 9 people), and there is no CI of any kind -- no `.github/workflows` tracked, so the suite only runs when someone remembers to run it locally. Here is the full evaluation.
+
+## Test Coverage Analysis
+
+### Where the suite stands
+
+The existing tests are genuinely good: they test through the public API, the ownership-denial tests are real security tests, and the `semanticSearch` test is a well-built three-way check (match found, low-score neighbor filtered, other user's identical vector excluded). The `updatePerson` "undefined unsets" test pins a deliberately unusual contract, which is exactly what tests are for. This is not a padded suite; the gaps below are mostly about the pipeline's race/failure surface and the fact that nothing ever runs the suite automatically.
+
+---
+
+## MUST HAVE
+
+### 1. Minimal CI running the suite (effort: ~30 min)
+
+The single highest-leverage item. Vercel's build (`npx convex deploy --cmd 'npm run build'` in `vercel.json`) gives you typechecking at deploy time, but the 42 tests never run on push or PR. A regression net that never runs catches nothing. The suite finishes in half a second, so cost is trivial.
+
+Minimal workflow (`.github/workflows/test.yml`):
+
+```yaml
+name: test
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+```
+
+`npm run build` is safe in CI (it is `tsc -b &amp;&amp; vite build`, no deploy, no env vars needed) and adds typechecking of `src/` and `convex/`. Do not add coverage thresholds -- that creates the padding incentive this project explicitly avoids.
+
+### 2. Triage race and double-action tests, server side (effort: ~45 min, existing harness covers all of it)
+
+The capture pipeline's data integrity under concurrent/racing actions is the core of the app, and none of it is tested:
+
+- **Skip while still reading.** The UI shows Skip for a pending card, so "discard while extraction is running" is a normal user flow, and `finishExtract`/`failExtract` in `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/convex/captures.ts` carry explicit null guards for exactly this race -- with zero tests. Test: `createCapture`, `discardCapture` *before* `finishAllScheduledFunctions`, then finish scheduled functions and assert nothing throws and no capture/person exists. Also call `internal.captures.finishExtract` directly with the deleted id to pin the guard itself. Catches: someone "simplifying" away the null guards, which would turn a routine skip into a crashing scheduled function.
+- **Double accept.** `acceptCapture` twice on the same capture: second call must throw "Capture not found", not create a duplicate person. Catches: the no-duplicate-person invariant on rapid double-tap (the client currently *can* double-fire, see finding below).
+- **Accept a non-ready capture.** `acceptCapture` on a pending or failed capture must throw "Capture is not ready". The UI guards this but the mutation is public API; the status check is the only thing preventing a person row with garbage data.
+
+### 3. Unauthenticated rejection in captures.test.ts (effort: 5 min)
+
+`requireUser` is duplicated -- `people.ts` and `captures.ts` each have their own copy -- and only the `people.ts` copy has a "Not signed in" test. If someone breaks the `captures.ts` copy during a refactor, nothing catches it, and that is the entire auth boundary for uploads. One test (`createCapture` or `listCaptures` unauthenticated rejects) closes it. (Longer term: share the helper, but that is a code change, not mine to make here.)
+
+### 4. Fix two weak spots in existing tests (effort: 15 min)
+
+- **"bumps updatedAt" verifies nothing.** In `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/convex/people.test.ts` line 104, `expect(after!.updatedAt).toBeGreaterThanOrEqual(before!.updatedAt)` passes even if the mutation never touched `updatedAt` at all (equal values satisfy `&gt;=`). Use fake timers to advance the clock between create and update, then assert strictly greater. This is the one existing test that passes while proving nothing about its own name.
+- **stubOpenAI silently falls through to the real network.** In `captures.test.ts`, the fetch stub routes on URL substrings and passes everything else to the real `fetch`. If the OpenAI client ever changes endpoint paths (e.g. moves to the Responses API), the stubs silently miss and tests make real network calls -- flaky at best, hitting the live API at worst. Make any unmatched `api.openai.com` URL throw loudly instead of falling through. This is the fragile-mocking pattern in the suite; everything else about the mocking (stub at the network boundary, not between internal functions) is right.
+
+---
+
+## NICE TO HAVE
+
+### 5. Embed idempotency (effort: 20 min)
+
+`embedPerson` in `convex/people.ts` deliberately skips re-embedding when `embeddedText` is unchanged -- there is even a comment calling the stored text an idempotency key -- but no test. Add a fetch-call counter to the stub: update a person with identical values, assert the embeddings endpoint was hit exactly once. Catches a regression that silently multiplies OpenAI cost and latency; it would never show up as a functional failure.
+
+### 6. Extraction response edge cases (effort: 15 min)
+
+- Model returns a refusal / no `choices` -&gt; capture fails with "OpenAI returned no extraction" rather than a raw TypeError message surfacing to the user.
+- `is_profile: true` but `name: null` or `""` -&gt; "Could not read a profile in this screenshot" (the tested case only covers `is_profile: false`; the empty-name branch in `extractProfile` is separate input territory).
+
+I would *skip* a malformed-JSON-content test: with `strict: true` json_schema mode the model cannot emit non-JSON, and the failure would land in the same generic catch the 500-error test already covers. Testing it adds a case, not confidence.
+
+### 7. semanticSearch empty branches (effort: 10 min)
+
+Two untested early returns: blank query -&gt; `[]` without calling OpenAI (assert no fetch), and all-matches-below-threshold -&gt; `[]`. Cheap, and the second pins the `MIN_SEMANTIC_SCORE` gate as a standalone behavior instead of only implicitly inside the happy-path test. Embed-failure (OpenAI down) server-side is not worth testing -- the action just propagates, and the meaningful behavior (silent degradation) lives in the client.
+
+### 8. Extract the swipe decision into lib.ts and unit test it (small refactor + 20 min of tests)
+
+This is the one piece of React-layer logic worth testing, and it is testable for free once extracted. In `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/src/CaptureTriage.tsx`, `project()`, `rubberband()`, the velocity calculation from the 100ms sample window in `onPointerUp`, and the +/-240 threshold decision are all pure math with zero React in them. A regression flips save/context directions or breaks the flick-velocity feel, and nothing would catch it. Move `decideSwipe(dragX, samples) -&gt; "save" | "context" | "settle"` into `lib.ts` next to the other tested helpers. The file already has the pattern ("kept free of React ... so they stay trivially unit-testable") -- the swipe math just never followed it.
+
+### 9. Test withScreenTransition's fallback branches (small refactor + 20 min)
+
+`withScreenTransition` in `src/App.tsx` has real branching (no API, reduced motion, hidden tab, rejected `finished` promise) and *it already regressed once* -- commit 966afae "tolerate skipped view transitions without console noise" is the fix for the rejected-promise path. Past regression is the best predictor of future ones. Export it (or move to `lib.ts`), stub `document.startViewTransition`, and pin that `done` always runs. The morph-cleanup (`setMorphId(null)`) depends on it.
+
+### 10. Sky invariant fuzz (effort: 15 min)
+
+The `buildSky` property tests (bounds, separation, spanning tree) run against exactly one seed. `placeMajors` is rejection sampling with a 600-try cap, so a bad seed could in principle yield fewer stars than asserted. Loop the existing invariant assertions over ~100 generated names. Cheap because the assertions already exist.
+
+---
+
+## NOT WORTH TESTING (explicitly)
+
+- **PersonSky rendering.** Purely presentational; all logic lives in `buildSky`, which is tested. An SVG snapshot test is exactly the padding the project rules prohibit.
+- **App auth gating.** `Authenticated`/`Unauthenticated`/`AuthLoading` composition is Convex's framework behavior. The one piece of app logic (`isClerkFlowHash`) is already extracted and tested -- the right call was already made here.
+- **RTL component tests for SearchAdd / PersonDetail / CaptureTriage.** The bugs they would guard are real (stale semantic results despite the cancelled-flag, live query clobbering in-progress typing despite the dirty flag, double-tap Save), but the setup cost is nontrivial: new deps (`@testing-library/react`, `happy-dom`), plus per-file environment config since the Convex tests need `edge-runtime`. Defer until one of those areas actually churns or bites; extract-and-unit-test (items 8-9) buys most of the value for none of the infrastructure.
+- **Unicode/diacritic search through convex-test.** Whether Convex's production full-text search matches an ASCII query against a Vietnamese name with diacritics is platform behavior that convex-test's simulator may not reproduce faithfully -- a green test would be false confidence. Do a one-time manual check on the real deployment; if ASCII-folding matters for the product, that becomes a normalization feature (with tests), not a test of the simulator. The rest of the unicode surface is safe by inspection: `hashString` handles any UTF-16 input deterministically, and `buildEmbedText` is plain string assembly. NFC/NFD normalization differences are theoretically possible across input sources but have no user-visible consequence given skies are per-record.
+
+---
+
+## Code findings surfaced while evaluating (not test gaps, but worth relaying)
+
+1. **Double-tap Save fires twice.** `save()` in `src/CaptureTriage.tsx` calls `void acceptCapture(...)` with no catch and no in-flight guard, and increments `savedCount` optimistically. A rapid second tap throws "Capture not found" as an unhandled rejection and over-counts. Fix is a guard/disabled state; the must-have server test (item 2) pins the invariant that matters (no duplicate person) in the meantime.
+2. **`handleFiles` ignores upload failure.** `response.json()` is called without checking `response.ok`; a failed storage upload becomes an opaque crash inside the void'd promise.
+3. **Unbounded context length silently breaks semantic search.** Nothing caps the context textarea. A very long context makes `embedText` fail (embedding model input limit), the scheduled embed action dies silently, and the person is saved but permanently invisible to semantic search -- no error anywhere. Consider truncating the embed text or capping input, then test the cap.
+
+## Priority summary
+
+- **Critical:** CI workflow (item 1) -- everything else is moot if the suite never runs.
+- **High:** triage race/double-action tests (2), captures auth test (3), weak-assertion and stub-fallthrough fixes (4).
+- **Medium:** embed idempotency (5), extraction edges (6), semanticSearch branches (7), swipe-math extraction (8), withScreenTransition (9).
+- **Low:** sky fuzz (10).
+
+Total must-have effort is roughly two hours, nearly all of it reusing the existing convex-test harness and stubs.
+
+Key files: `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/convex/captures.test.ts`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/convex/people.test.ts`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/src/CaptureTriage.tsx`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/src/App.tsx`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/vercel.json`.</result>
+<usage><subagent_tokens>87991</subagent_tokens><tool_uses>22</tool_uses><duration_ms>239658</duration_ms></usage>
+</task-notification>
