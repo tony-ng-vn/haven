@@ -1,0 +1,3 @@
+<timestamp>Thursday, Jul 23, 2026, 10:16 AM (UTC-7)</timestamp>
+
+so i just merged and pull again how can i rerun my simulator with the change?
