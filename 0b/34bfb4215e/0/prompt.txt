@@ -1,0 +1,39 @@
+<timestamp>Thursday, Jul 23, 2026, 9:51 AM (UTC-7)</timestamp>
+
+help me fix > git status
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+        modified:   ios/Haven/Config.swift
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+        .DS_Store
+
+no changes added to commit (use "git add" and/or "git commit -a")
+> git commit ios/Haven/Config.swift
+Aborting commit due to empty commit message.
+> clear
+> git add ios/Haven/Config.swift
+> git commit -m "auth(ios): update key for IOS project"
+[main f64c350] auth(ios): update key for IOS project
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+> git push
+Enumerating objects: 9, done.
+Counting objects: 100% (9/9), done.
+Delta compression using up to 12 threads
+Compressing objects: 100% (5/5), done.
+Writing objects: 100% (5/5), 548 bytes | 548.00 KiB/s, done.
+Total 5 (delta 4), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (4/4), completed with 4 local objects.
+remote: error: GH013: Repository rule violations found for refs/heads/main.
+remote: Review all repository rules at https://github.com/tony-ng-vn/euno/rules?ref=refs%2Fheads%2Fmain
+remote: 
+remote: - Required status check "test" is expected.
+remote: 
+To https://github.com/tony-ng-vn/euno.git
+ ! [remote rejected] main -> main (push declined due to repository rule violations)
+error: failed to push some refs to 'https://github.com/tony-ng-vn/euno.git'
