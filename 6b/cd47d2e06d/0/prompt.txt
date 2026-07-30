@@ -1,0 +1,5 @@
+idk if there is a note in here for me to note idea but we are integrating the feedback sdk, while
+  waiting what i want to add for future development is that add the feature to create a connection
+  graph of that person to everyone they connected on linkedln, which means they can install the data
+  from linkedln to get all the connection, then add to their profile in euno and we create that
+  connection so they can search people easier. what do u think of this idea
