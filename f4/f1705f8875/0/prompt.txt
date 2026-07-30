@@ -1,0 +1,1 @@
+wait why email go out? i don't have a domain email so like how can i set  WAITLIST_FROM_EMAIL? can i just use the default from resend? or what if i use my personal email?
