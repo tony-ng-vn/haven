@@ -1,0 +1,29 @@
+<task-notification>
+<task-id>ac00b6ef8c1ab4fe9</task-id>
+<tool-use-id>toolu_013nm8KGXRGsbbYLNcRhj1o6</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/752919c5-b916-4950-b41a-651ba53ec7b8/tasks/ac00b6ef8c1ab4fe9.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix and ready PR #26 X/Twitter pricing" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Done. Summary:
+
+**Corrected rate and source:** Verified against X's current pricing page (`https://docs.x.com/x-api/getting-started/pricing`) via direct fetch. The page's read-pricing table shows "Posts: Read" at $0.005/resource, but "User: Read" and "Following/Followers: Read" are both billed at **$0.010/resource** - confirming the review's claim exactly (2x the doc's original figure).
+
+**Locations changed** in `docs/superpowers/specs/2026-07-20-x-twitter-integration-research.md`:
+1. Option 1 (line ~50) - non-owned followers/following reads: corrected $0.005 -&gt; $0.010, now explicitly named as the "Following/Followers: Read" rate and contrasted with the $0.005 "Posts: Read" rate.
+2. Option 3 (line ~90) - username-lookup endpoint: corrected $0.005 -&gt; $0.010, named as the "User: Read" rate.
+3. Sources list - added the $0.010 "User: Read"/"Following/Followers: Read" rates alongside the existing $0.005 "Posts: Read" citation so the source note matches what's now claimed in the body.
+
+**No other downstream dollar math existed** in the doc (no "cost to look up N users" style computations), so no further recalculation was needed.
+
+**Verdict/prose:** No change needed beyond the numbers. Neither Option 1 nor Option 3 used "cheap enough to reconsider" framing tied to the exact 0.005 figure - both already concluded "Skip" on product-fit and friction grounds independent of the precise rate. Doubling the cost only reinforces the existing skip recommendation; it doesn't change the argument's force enough to require prose softening.
+
+**ASCII check:** `grep -nP '[^\x00-\x7F]'` on the file returned nothing (clean).
+
+**Tests:** `OPENAI_API_KEY=test npm test` - all 11 test files, 171 tests passed (one expected stderr log from an intentional-failure test case in `convex/people.test.ts`, not a failure).
+
+**Commit:** `f8a230e` - "docs(x): fix user-read pricing rate from 0.005 to 0.010 per resource"
+
+**Push/PR:** Pushed to `docs/x-twitter-integration-research`. PR #26 is now marked ready for review (confirmed via `gh pr view 26`: `isDraft: false`).</result>
+<usage><subagent_tokens>54143</subagent_tokens><tool_uses>15</tool_uses><duration_ms>90189</duration_ms></usage>
+</task-notification>
