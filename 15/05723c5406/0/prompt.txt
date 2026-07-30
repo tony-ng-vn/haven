@@ -1,0 +1,32 @@
+<task-notification>
+<task-id>a8c5096dc95c89e96</task-id>
+<tool-use-id>toolu_01VQrB3bZn5zWzVsZymvHnzv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/ee073cab-f874-4362-9e77-2cc4eea31c84/tasks/a8c5096dc95c89e96.output</output-file>
+<status>completed</status>
+<summary>Agent "Architecture advice for Haven" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Decision 1: Capacitor wrap. Do not rewrite in Swift.
+
+Recommendation: Wrap the existing React + Convex app with Capacitor.
+
+Why:
+1. You have working code and zero users. A Swift rewrite means months rebuilding what already exists, plus learning SwiftUI, plus maintaining two codebases the moment you want Android or web back. Pre-launch, the only job is validating that people want a searchable people directory. Capacitor gets you in the App Store in days, not months.
+2. Your feature list does not actually need native UI. Haven is forms, lists, and search results - the exact category where a WebView is indistinguishable from native. Widgets and App Clips are small native targets in the same Xcode project either way; Capacitor does not block them (WidgetKit extensions and App Clips are written in Swift regardless of what the main app is). EventKit and Bluetooth have mature Capacitor plugins. Nothing on your roadmap hits a Capacitor wall.
+3. Convex's React client (live queries, auth via Clerk) works unchanged inside Capacitor. A Swift rewrite forces you to also solve Convex-from-Swift, which is much less beaten a path.
+
+Main risk: WebView jank on gesture-heavy interactions (swipe, pull-to-refresh, keyboard handling) can feel "off" and needs deliberate polish. If Haven someday lives or dies on a buttery Bluetooth-radar UI, that one screen may want a native rewrite - do it then, screen by screen, not now.
+
+## Decision 2: Stay on Convex alone. Option (c).
+
+Recommendation: One datastore, and it should be the one you already have.
+
+Why:
+1. Your MVP search needs are modest and Convex covers them. Structured attribute filtering (company, city, role) is ordinary indexed queries. Freeform memory search is Convex full-text search indexes. Semantic search later is Convex's built-in vector search - you get pgvector-equivalent capability without adding a database. "Postgres is better for searching" is true for gnarly analytical joins and trigram fuzziness, but that is not what your queries look like. Your queries look like "filter by 2-3 fields, rank text matches, eventually rank embeddings" - Convex does all three natively.
+2. The hybrid option (b) is the worst of the three for a solo founder. Two datastores means sync logic, consistency bugs, two mental models, two ops surfaces, and you lose Convex's reactivity for exactly the data (people) your UI most wants to be live. That is a tax you pay forever to solve a problem you do not have yet.
+3. Migration is not a one-way door. Your data model is small (users, people, memories). If you hit a real wall post-launch - say, complex cross-user graph queries for the matching feature - migrating a three-table schema to Postgres then is a week of work with actual requirements in hand, versus speculative work now against imagined ones.
+
+Main risk: If "matching people by shared interests" grows into heavy relational/graph queries across many users, Convex's query model will feel constraining and you may migrate later anyway. Accept that risk: it is a good-problem-to-have that arrives only after validation, and the fuzzy-matching gap (no pg_trgm equivalent) can be bridged in the interim with normalized fields or embeddings.
+
+The theme for both: your scarce resource is validation speed, not architecture headroom. Ship the wrapped app on the stack you have, and let real usage tell you where to invest.</result>
+<usage><subagent_tokens>25278</subagent_tokens><tool_uses>0</tool_uses><duration_ms>21518</duration_ms></usage>
+</task-notification>
