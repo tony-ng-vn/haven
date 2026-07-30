@@ -1,0 +1,378 @@
+Base directory for this skill: /Users/minhthiennguyen/.claude/skills/agent-shipping-workflow
+
+# Agent Shipping Workflow
+
+Canonical shipping flow for every agent session that changes code.
+
+**Announce at start:** "I'm using the agent-shipping-workflow for this task."
+
+## When This Applies
+
+Use for every task that changes code: features, fixes, refactors, config updates with behavior impact.
+
+Skip only for: questions, reviews with no edits, or when the user explicitly says "no PR" or "work in place."
+
+Docs-only changes may skip the worktree and PR ceremony when the user wants it, but they do NOT skip Phase 3. A document that records a decision, a spec, or a plan is something later work is built on, and a contradiction in it is as expensive as a bug.
+
+## The Six Phases
+
+```
+ISOLATE -> IMPLEMENT -> REVIEW -> SHIP -> BABYSIT -> MERGE + CLEANUP
+```
+
+| Phase | Goal | Stop condition |
+|-------|------|----------------|
+| 1. Isolate | Safe workspace, clean baseline | Tests pass in workspace |
+| 2. Implement | Deliver the change with tests | Task done, tests green |
+| 3. Review | Fresh-context review of the diff | Findings verified, real ones fixed |
+| 4. Ship | Integrate via PR (default) or user choice | PR open or user picks another option |
+| 5. Babysit | CI green, actionable comments handled | Tell user PR is ready |
+| 6. Merge + cleanup | Land work, remove worktree | Worktree gone, branch deleted |
+
+---
+
+## Phase 1: Isolate
+
+**Before editing any project file, set up isolation.**
+
+### Detect existing worktree
+
+```bash
+GIT_DIR=$(cd "$(git rev-parse --git-dir)" 2>/dev/null && pwd -P)
+GIT_COMMON=$(cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd -P)
+BRANCH=$(git branch --show-current)
+```
+
+- `GIT_DIR != GIT_COMMON` (and not a submodule): already isolated. Skip creation. Report path and branch.
+- Otherwise: create isolation before editing.
+
+### Create workspace
+
+Priority order:
+
+1. **Native worktree tool** if the harness provides one (Cursor `move_agent_to_root`, Codex app worktree controls, etc.)
+2. **Git worktree fallback:**
+
+```bash
+# Prefer project-local, must be gitignored
+git check-ignore -q .worktrees 2>/dev/null || { echo ".worktrees/" >> .gitignore && git add .gitignore && git commit -m "chore: ignore worktrees directory"; }
+git worktree add ".worktrees/<branch-name>" -b "<branch-name>"
+cd ".worktrees/<branch-name>"
+```
+
+Branch naming: `feat/`, `fix/`, `chore/`, `refactor/` + short description.
+
+### Baseline
+
+```bash
+# Project setup if needed
+[ -f package.json ] && npm install
+# Run tests -- must pass before you change anything
+npm test   # or cargo test / pytest / go test ./...
+```
+
+If baseline fails: report failures and ask whether to proceed or fix first.
+
+---
+
+## Phase 2: Implement
+
+Follow global AGENTS.md rules:
+
+1. **Reproduce first** for bugs (end-to-end when possible)
+2. **Test first (TDD):** write test, confirm it fails for the right reason, implement, confirm pass
+3. **Minimal scope:** only what the task needs
+4. **Verify before done:** full suite, edge cases, error paths
+5. **npm projects:** run `npm test` after implementing
+
+Commit atomically as you go. Conventional Commits: `feat:`, `fix:`, `refactor:`, etc.
+
+### Verifying an iOS or macOS app
+
+**A green build is not a working app. Nothing executes during a build.** Launch it, drive it, and look at it before you claim anything works.
+
+Use the **Xcode MCP** for this, not only a headless `xcodebuild`. It talks to a running Xcode, so it can build, run on a simulator, drive the app, and hand back what actually happened.
+
+Its tools are deferred and the server is often still connecting at session start, so discover them when you need them rather than assuming names:
+
+```
+ToolSearch: "+xcode build run test simulator"
+```
+
+If nothing comes back, diagnose before falling back. `claude mcp list` gives the real status in one line:
+
+- `Connected` with tools listed: use them.
+- `! Connected - tools fetch failed - MCP error -32001: Request timed out`: the bridge started but Xcode never answered it. `xcrun mcpbridge` serves its tools from a live Xcode, so this means Xcode is not responding, not that the MCP is misconfigured. Confirm with `osascript -e 'tell application "Xcode" to get name of every window'` -- an AppleEvent `-1712` timeout is the same wedge from a different angle. Xcode is busy or hung; it needs restarting, which is the user's call since they may have unsaved state.
+- Server absent entirely: `pgrep -x Xcode` to check it is running at all.
+
+- `Connected` and healthy, but `ToolSearch` still finds nothing: the session missed the registration. The deferred tool registry is built when the session starts, so a session that began while the fetch was failing never picks the tools up, even after Xcode recovers. Only a fresh session fixes this. Say so and use the command line for the rest of this one.
+
+Two traps here, both learned the hard way:
+
+- **Do not probe `xcrun mcpbridge` by hand.** A bare bridge with piped stdin hangs forever on `initialize`, because it expects the auth token and environment Xcode hands to an agent it launched (see `xcrun mcpbridge run-agent`). It hangs identically whether the MCP is healthy or not, so it proves nothing, and it holds a connection while it hangs. `claude mcp list` is the only diagnostic worth running.
+- **Do not `pkill mcpbridge` to tidy up.** One of those processes is the live session connection, and killing it disconnects the server for the rest of the session. Leave them; they are a symptom.
+
+Only fall back to the command line once you know which case it is, and tell the user what you found rather than quietly downgrading.
+
+Command-line fallback:
+
+```sh
+# If the project is generated (XcodeGen project.yml, Tuist), regenerate FIRST.
+# A stale .xcodeproj is usually git-ignored and can be missing files that exist
+# on disk, so the build fails for a reason that is not real.
+xcodegen generate
+
+xcodebuild test -project <App>.xcodeproj -scheme <App> \
+  -destination 'platform=iOS Simulator,name=<installed device>' \
+  CODE_SIGNING_ALLOWED=NO
+```
+
+Check `xcrun simctl list devices available` for a device name that exists. A wrong `-destination` fails with a message that looks nothing like the real problem.
+
+What each level of verification actually proves:
+
+| Did | Proves |
+|---|---|
+| Build succeeds | It compiles and links. Nothing more. |
+| Unit tests pass | The pure logic is right. |
+| Ran in the simulator | The screen renders and the flow does not crash. |
+| Ran on a physical device | The only place feel, gesture physics, haptics, and performance are real. |
+
+Never report a feature done on a simulator run when the definition of done says device. Hand it over for the device check and say plainly that is what is left.
+
+Two things unit tests cannot cover, so stop pretending otherwise: anything about how it feels, and anything that needs real entitlements or a signed build. Note keychain, push, and sign-in noise in an unsigned test run for what it is rather than chasing it.
+
+---
+
+## Phase 3: Review
+
+**Never go from "tests pass" straight to shipping. Review the diff first, every time.**
+
+Tests prove the code does what you told it to. They say nothing about whether you decided the right thing, contradicted yourself two files over, or left a mess behind. That is what this phase is for.
+
+Review is TWO passes, and both are required. Skipping the second is the common failure: code that works and is still bad.
+
+1. **Is it correct?** Bugs, edge cases, wrong decisions, security holes, contradictions with the rest of the codebase.
+2. **Is it clean?** Redundancy, duplication, dead code, leftover scaffolding, wrong abstractions, things the codebase already had. This pass REMOVES code, and its output is edits, not a list.
+
+The global AGENTS.md rules this serves: "quality, simplicity, robustness, scalability, and long-term maintainability over development cost and speed", "keep code readable and clean", and "confirm the change delivers what was requested without regressions or slop, including dead code, duplicated logic, leftover scaffolding, or unused exports."
+
+### Run it in a fresh context
+
+Dispatch the review to a subagent, not to yourself inline. A reviewer that shares your context shares your blind spots: it will find your reasoning persuasive because it is your reasoning. Give the subagent the diff and the intent, and let it look with clean eyes.
+
+Review the diff, not the repo: `git diff <base-branch>...HEAD`.
+
+Prefer a stronger model for the review than for the implementation when the change is substantial. A reviewer weaker than the author rubber-stamps.
+
+### Pass 1: correctness
+
+Always run the default. Add the others when the diff touches their area.
+
+| What changed | Use |
+|---|---|
+| Any code change (default) | `agent-skills:code-reviewer` subagent, or `/agent-skills:review` -- correctness, readability, architecture, security, performance |
+| Auth, user input, secrets, storage, external calls, permissions | add `agent-skills:security-auditor` or `/security-review` |
+| UI, components, styling, motion | add `rams` (accessibility and visual) or `better-interface`, and look at the running screen, not just the code |
+| iOS or macOS app code | run it through the Xcode MCP per Phase 2 before reviewing; a diff that was never executed is not reviewable |
+| Tests themselves, or thin coverage | add `agent-skills:test-engineer` |
+| Docs, plans, specs | check factual accuracy, and contradictions against the other docs in the repo |
+| Stuck, or want a genuinely independent second opinion | `codex:codex-rescue` |
+
+### Pass 2: quality and cleanup
+
+Always run `/simplify` (or `agent-skills:code-simplify`), which reviews the changed code for reuse, simplification, efficiency, and altitude, then applies the fixes. For a large diff, new files, or complexity that is climbing, add `thermo-nuclear-code-quality-review` for structure, spaghetti, and file bloat.
+
+Hunt these specifically. Every one of them survives a green test suite:
+
+- **Dead code.** Unused exports, variables assigned and never read, unreferenced files, commented-out blocks, debug logging, scaffolding from an approach you abandoned mid-task.
+- **Duplication.** The same logic in two places. Worse, a helper that already exists in the file or the codebase and your new code walked past it.
+- **Reinvention.** Hand-rolling what the standard library, the framework, or an existing module in this repo already does.
+- **Wrong altitude.** Logic in the wrong layer, a function doing two jobs, a component that fetches and renders and formats.
+- **Overbuilt.** An abstraction with one caller, a config option nobody sets, generality nobody asked for, a parameter always passed the same value.
+- **Names that lie.** A function whose name describes what it did two edits ago.
+- **Comments that say WHAT, not WHY**, or that went stale when the code under them changed.
+- **Slop the task did not need.** Files, deps, or settings that crept in and no longer serve the request.
+
+The test for whether this pass did its job: it should usually make the diff SMALLER. If a cleanup pass only ever adds lines, it did not happen.
+
+Then re-run the full suite. Cleanup that changes behavior is a bug, and the suite is what proves it did not.
+
+### Handle the findings honestly
+
+1. **Verify each finding against the code before acting.** Reviewers assert plausible things that are wrong. Read the file and confirm the defect is real.
+2. **Fix what is real.** Both passes. A quality finding you agree with and leave in place is not a finding, it is a decision to ship worse code.
+3. **Re-run the full suite** after fixing anything.
+4. **Say what you skipped and why.** Never silently drop a finding.
+5. **Report a clean review as clean.** "The review found nothing" is a real and useful outcome. Do not invent findings to look thorough.
+6. **Relay what matters to the user.** A subagent's report is not shown to them.
+
+### Do not
+
+- Do NOT attempt `/code-review ultra` (or its `/ultrareview` alias). It is user-triggered and billed, and you cannot launch it. Offer it as something the user can run.
+- Do NOT count CodeRabbit, Copilot, or any PR bot as this phase. They run after you ship, they can be rate-limited or out of quota, and they may never look at all. This review is yours and happens before the PR exists.
+- Do NOT skip review because the change is small or "obviously fine." That judgement is exactly what is being reviewed.
+
+---
+
+## Phase 4: Ship
+
+**Tests must pass before offering options.**
+
+```bash
+npm test   # or project equivalent
+```
+
+### Present exactly these options
+
+```
+Implementation complete. What would you like to do?
+
+1. Merge back to <base-branch> locally
+2. Push and create a Pull Request (default for agent-driven work)
+3. Keep the branch as-is (I'll handle it later)
+4. Discard this work
+
+Which option?
+```
+
+Detached HEAD (externally managed sandbox): drop option 1. Offer push+PR, keep, or discard only.
+
+### Option 2 (default for agent-driven tasks)
+
+```bash
+git push -u origin <branch-name>
+gh pr create --title "<conventional commit subject>" --body "$(cat <<'EOF'
+## TLDR
+<Plain language: what changed, why it matters, what the user can now do>
+
+## Summary
+<1-3 bullets>
+
+## Test plan
+- [ ] <verification steps run>
+EOF
+)"
+```
+
+**Keep the worktree alive** after opening a PR. Do not remove it until merge or explicit discard.
+
+### Option 1: merge locally
+
+Only after tests pass on the merge result:
+
+```bash
+MAIN_ROOT=$(git -C "$(git rev-parse --git-common-dir)/.." rev-parse --show-toplevel)
+cd "$MAIN_ROOT"
+git checkout <base-branch> && git pull
+git merge <branch-name>
+# re-run tests
+git branch -d <branch-name>
+# then Phase 6 cleanup
+```
+
+### Option 4: discard
+
+Require typed confirmation: user must type `discard`.
+
+---
+
+## Phase 5: Babysit
+
+**Default after you open a PR as part of an agent-driven task.** Do not stop at "PR created."
+
+### What to monitor
+
+```bash
+gh pr view
+gh pr checks --json name,bucket,state,workflow,link
+# Review comments: unresolved, actionable only
+```
+
+### Each pass
+
+1. Fix failing CI caused by this PR's changes (scoped fixes only)
+2. Address actionable review comments (mechanical fixes, not judgment calls)
+3. Commit focused fixes, push
+4. Re-check until green or blocked
+
+### Platform loops
+
+| Platform | How to loop |
+|----------|-------------|
+| Claude Code | `/loop 5m /babysit-pr` (see `~/.claude/commands/babysit-pr.md`) |
+| Cursor | `babysit` skill; or monitored shell with `gh pr checks` every 5m |
+| Codex | Same monitored-shell pattern; re-run checks each cycle |
+
+### Stop and tell the user when
+
+- All checks green AND actionable comments addressed -> **"PR is ready for your review/merge"**
+- Same failure after one fix attempt -> surface it, stop looping
+- Comment needs human judgment -> leave it, tell user why
+
+### Never during babysit
+
+- Force-push over commits you did not just make
+- Merge, approve, or dismiss reviews (human only)
+- Change CI workflows just to make checks pass
+
+---
+
+## Phase 6: Merge + Cleanup
+
+**Only after the user merges (or chose Option 1 locally).**
+
+```bash
+MAIN_ROOT=$(git -C "$(git rev-parse --git-common-dir)/.." rev-parse --show-toplevel)
+WORKTREE_PATH=$(git rev-parse --show-toplevel)
+cd "$MAIN_ROOT"
+git worktree remove "$WORKTREE_PATH"
+git worktree prune
+git branch -d <branch-name>   # or -D if user confirmed discard
+```
+
+Rules:
+
+- Only remove worktrees you created (under `.worktrees/`, `worktrees/`, or `~/.config/superpowers/worktrees/`)
+- Never `git worktree remove` from inside the worktree being removed
+- `cd` to main repo root first
+- Harness-owned worktrees: do not remove; tell user to use native cleanup
+
+---
+
+## Quick Reference
+
+```
+Start task
+  -> detect/create worktree
+  -> baseline tests pass
+  -> TDD + implement + verify
+  -> tests pass  (iOS/macOS: also run the app via the Xcode MCP, not just a build)
+  -> review the diff in a fresh-context subagent, two passes:
+       correctness (bugs, security, wrong decisions)
+       quality (dead code, duplication, overbuild -- apply the cleanups)
+  -> verify findings, fix the real ones, re-run tests, relay to user
+  -> ask user: merge / PR / keep / discard
+  -> if PR: push, create PR, babysit until ready
+  -> tell user when ready
+  -> after user merges: remove worktree, delete branch
+```
+
+## Red Flags
+
+- Editing main checkout when isolation was possible
+- Skipping baseline or final test runs
+- Shipping without a review pass, or reviewing inline instead of in a fresh context
+- Running the correctness pass and calling review done, skipping quality entirely
+- A "cleanup" pass that removed nothing, when the diff plainly has slop in it
+- Reporting a quality finding to the user instead of just fixing it
+- Calling an app change verified on a build that compiled but never ran
+- Reaching for `xcodebuild` without first checking whether the Xcode MCP is available
+- Claiming a feature done on a simulator when its definition of done says physical device
+- Treating a PR bot (CodeRabbit, Copilot) as the review phase
+- Acting on a review finding without verifying it against the code first
+- Dropping a finding silently instead of saying it was skipped and why
+- Opening PR and stopping without babysitting (agent-driven tasks)
+- Removing worktree while PR is still open for iteration
+- Merging without user approval
+- Deleting branch before removing worktree
