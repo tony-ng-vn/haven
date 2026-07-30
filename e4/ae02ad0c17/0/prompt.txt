@@ -1,0 +1,68 @@
+<task-notification>
+<task-id>a1339f9b11755b834</task-id>
+<tool-use-id>toolu_01V9NDcPDkrCXDywcmu4wdc2</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/f7f75a91-bdaa-42a5-9c19-ae1b60d1668a/tasks/a1339f9b11755b834.output</output-file>
+<status>completed</status>
+<summary>Agent "Review docs consolidation commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All checks are done. Here is the complete review, including the item 1 work from the first run.
+
+## Review Summary
+
+**Verdict:** APPROVE (docs-only; no critical issues, a few follow-ups worth filing)
+
+**Overview:** The edited passages accurately reflect the build plan and the prototype's actual behavior, the source-of-truth split is stated reciprocally in both documents, and all four files are fully ASCII-clean. The remaining findings are small: an email remnant in the prototype's prose, a real schema-design question the plan leaves open (`username` vs `havenHandle`), and one ambiguity in the `verified` flag definition.
+
+### Item 1: Factual accuracy of the edited passages
+
+I verified the edits against the prototype's screen definitions and gating logic directly, not its prose. Everything checks out:
+
+- "Three questions - name, city, and one way to reach you - then your card" (`mvp-design.md:174`) matches the prototype's screen set and `ONBOARDING = ["name", "location", "contact"]` (`design/onboarding-prototype.html:667`).
+- Continue gating in the prototype: name Continue disabled until non-empty (`onboarding-prototype.html:736`), city Continue disabled until a suggestion is selected with a Skip ghost (`:759-761`), contact Continue disabled until a handle commits (`:886`). This matches the plan's screen specs, and the plan correctly flags at `phase1-build-plan.md:59-60` that the prototype hard-requires a contact while the shipped app adds Skip. The claim that name is the only truly required field is accurate to both.
+- "Photo is never asked" (`mvp-design.md:175`) is true: there is no photo screen; `state.photo` is only set inside `finishAuth` (`onboarding-prototype.html:844`).
+- The card-reveal figure renders complete: `litCount()` returns `MAJORS` on the card and beacon screens (`onboarding-prototype.html:569`), matching decision 6 and the hero-spike passage at `mvp-design.md:289`.
+- The plan's correction that "the prototype lights stars by count" (`phase1-build-plan.md:57`) is verifiably true (`litCount` counts committed values), and the fixed six-slot mapping matches `MAJORS = 6`.
+- The handles list at `mvp-design.md:141` (Instagram, X, LinkedIn, phone; primaryPlatform; structured city; havenHandle) matches the plan's schema at `phase1-build-plan.md:173-181` exactly.
+- `todo.md:12-20` tracks the plan's nine milestones faithfully. The "due before milestone 4" deadline on the handle UX question (`todo.md:21`) is a correct reading, since the auto-claim-vs-confirm answer determines what milestone 4's onboarding does.
+- The sky algorithm description at `phase1-build-plan.md:32` (FNV-1a into a seeded PRNG, minimum separation, Prim's MST) matches `src/sky.ts:44-90` (mulberry32, Prim's comment at line 90). The seeding-input discrepancy you already know about is the only gap.
+
+### Item 2: Remaining contradictions in other docs
+
+- `mvp-design.md:187` and `mvp-design.md:263` still say a contact opens "straight into WhatsApp or IG or phone". WhatsApp and Telegram were cut from the platform set (the plan's four are LinkedIn, X, Instagram, phone). These passages describe the contacts table and Reach for saved people, not your own profile, so they are arguably still true for manually-saved contacts, but they read as stale next to the ratified platform list. Same for "preferred contact" at `mvp-design.md:88` and `:151` versus the plan's "primaryPlatform" vocabulary. Suggestion: one terminology pass, or a one-line note that the four-platform cut applies to your own profile only.
+- `mvp-design.md:232-234` (use case A, "Set up my card"): "I build my card: photo, name, my handles... I add where I live, where I work, and my role." This is the old flow: photo in setup, plural handles, work and role during onboarding. It directly contradicts the edited Screens section forty lines up. This is the clearest missed passage. Important: reword to match the three-question flow (role and company arrive later in edit).
+- `README.md:17` demonstrates search with a natural-language sentence ("who do I know at LinkedIn who lives in SF"), which the MVP search contract at `mvp-design.md:202-203` explicitly says v1 does not answer. Pre-existing and aspirational, but worth knowing it is there.
+- `DESIGN.md` and `PRODUCT.md` are the legacy web-surface docs (Euno naming, "Platform: web", Quiet Room, Signal Blue palette). Neither describes the old onboarding field list, so no direct contradiction, but neither declares itself web-only, and DESIGN.md's palette conflicts head-on with the plan's dusk tokens (`phase1-build-plan.md:151-166`). A newcomer could pick the wrong design system. Suggestion: a scope line at the top of each ("this covers the legacy web surface only").
+- `CLAUDE.md` is clean; it only carries the Convex idempotent-creation convention, which the plan's `claimHandle` spec correctly cites.
+
+### Item 3: Source of truth
+
+Clear, and reciprocal. `mvp-design.md:291-292` says the build plan owns every Phase 1 detail and wins on disagreement; `phase1-build-plan.md:6` says mvp-design owns architecture and phase sequence. `todo.md:4` names both correctly. The only soft edge: `mvp-design.md:185` still describes Directory as "the list of your contacts with search on top" while the plan makes the directory search field visual-only (focusing it switches screens, `phase1-build-plan.md:123`). The precedence rule resolves it, so this is cosmetic.
+
+### Item 4: Style compliance
+
+- ASCII: all four files (`mvp-design.md`, `todo.md`, `phase1-build-plan.md`, `design/onboarding-prototype.html`) contain zero non-ASCII bytes. No em or en dashes, no curly quotes, no ellipsis characters, no emoji. Verified with a byte-level grep.
+- One sentence per line: `phase1-build-plan.md` complies throughout. In the edits, `mvp-design.md:179` puts two sentences on one line ("...that you show people. Editable, and the surface where..."); it preserves the original line's shape, but since the sentence was substantially rewritten it technically breaches the rule. `todo.md`'s milestone bullets also carry two sentences per line (e.g. lines 10, 12), consistent with that file's pre-existing tracker style; I would not change those.
+
+### Item 5: Issues in phase1-build-plan.md itself (beyond the two you flagged)
+
+- Important, schema design gap: `convex/schema.ts:114-120` shows `profiles` already has a unique, indexed `username` claimed by `setUsername` (`convex/profiles.ts:100`), which already implements the exact idempotent-claim convention the plan cites. The plan adds `havenHandle: string (unique, indexed)` plus `claimHandle` (`phase1-build-plan.md:181-188`) to the same table without ever mentioning `username` or their relationship. Two parallel unique handles on one table, one resolving the beacon URL and one owned by the legacy meet-exchange flow, is exactly the kind of thing milestone 3's TDD pass will trip over. The plan should say whether `havenHandle` replaces, aliases, or coexists with `username`. (The orphaned-surface decision at `todo.md:22` does not cover `profiles.username`.)
+- Important, definition ambiguity: `verified: boolean` is defined as "came from an OAuth connection" (`phase1-build-plan.md:178`, echoed at `mvp-design.md:141`). For LinkedIn, the plan's own contract says OAuth never returns the vanity URL and the handle is a user-confirmed best guess (`phase1-build-plan.md:104`). So a LinkedIn handle is from an OAuth connection but its value is unverified. Pin down before milestone 3 whether that row gets `verified: true`.
+- Suggestion, internal tension to resolve in the milestone 4 spike: decision 10 says "X's username read sits behind paid tiers" (`phase1-build-plan.md:44`) while the X contact contract says the Clerk external account "includes the username" (`:103`). Both can be true only if Clerk's own app-tier API access covers the userinfo read at link time; the day-one spike the plan already schedules should confirm it.
+- Suggestion, prototype prose remnants the plan's corrections list misses: the committed prototype's prose says "phone and email are typed" and "Or type one - phone and email" (`design/onboarding-prototype.html:223`, `:410`), and the code carries an unreachable "Email address" branch (`:827`), but email is in neither the platform list nor the schema enum. Same section says "All four say Connect" about the social rows when only three are social (`:409` vs `:412`). Harmless in a demo, but the plan calls this file the visual source of truth, so a one-line note in the corrections section would prevent someone implementing an email path.
+- Verified accurate, for the record: Instagram Basic Display shutdown date (2024-12-04), guidelines 4.8 and 5.1.1, LinkedIn's pairwise OIDC subject, and the plan's citations of existing code (`profiles.getMyProfile` / `setUsername` / `meetExchange` at `convex/profiles.ts:79/100/165`, `normalizeName` in `convex/nameSearch.ts`, the upload pattern in `convex/captures.ts`) all check out.
+
+### What's Done Well
+
+- The plan's "Corrections to make relative to the prototype" section (`phase1-build-plan.md:52-69`) is the standout: every claim in it about how the prototype cheats is verifiably true against the code, which is rare for prose about a prototype.
+- The precedence rule is stated in both documents pointing at each other, so it cannot rot on one side.
+- The "New scope this plan adds" section makes scope growth an explicit decision, and the mvp-design edit mirrors all four items exactly.
+
+### Verification Story
+
+- Tests reviewed: n/a, docs-only change.
+- Build verified: n/a.
+- Prototype logic verified: yes, gating, litCount, photo handling, and stepper all read directly from the script, not the prose.
+
+Files referenced: `/Users/minhthiennguyen/Desktop/Euno/euno-app/mvp-design.md`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/phase1-build-plan.md`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/todo.md`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/design/onboarding-prototype.html`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/schema.ts`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/profiles.ts`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/src/sky.ts`.</result>
+<usage><subagent_tokens>97923</subagent_tokens><tool_uses>19</tool_uses><duration_ms>1134993</duration_ms></usage>
+</task-notification>
