@@ -1,0 +1,107 @@
+<task-notification>
+<task-id>a1d3697485c1ea19d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/3292b234-b27b-4a24-92b0-916f8e5824b2/tasks/a1d3697485c1ea19d.output</output-file>
+<status>completed</status>
+<summary>Agent "Research tomo.ai and cofounder.co design" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have strong signal on both. Writing the report now.
+
+---
+
+# Design Inspiration Research for Euno
+
+Sources fetched:
+- Tomo: https://www.tomo.ai/ (plus context: https://www.tomo.ai/about, https://apps.apple.com/us/app/tomo-your-personal-ai/id6757726935, https://app.dealroom.co/news/feed/tomo-raises-5m-for-ai-self-improvement-coach-that-lives-in-your-text-messages)
+- Cofounder: https://cofounder.co/ (plus context: https://cofounder.co/resources/introducing-cofounder-2, https://agentaya.com/ai-review/cofounder/)
+
+A note on method: both sites are JS-heavy SPAs, so the raw fetch was thin on exact hex values. I used search to confirm product positioning and cross-checked the visual read. Where a color is inferred rather than confirmed, I say so.
+
+---
+
+## Site 1: Tomo (tomo.ai)
+
+### What it is / who it's for
+Tomo is a personal AI that "lives in your texts." You get a phone number, you text it, and it learns your goals and holds you accountable: habits, workouts, budgets, reminders, calendar and email. It even texts you first to check in, and it can spin up little custom tracking apps (workout tracker, savings goal, meal log) inside a companion app. Audience is the self-improvement crowd: people who want a coach or accountability partner without the friction of yet another dashboard app. Recently out of stealth with a $5M seed (Bain Capital Ventures, Accel), ~10k paying subscribers via word of mouth. The relevance to Euno is strong: both are single-user, personal, memory-driven, and both deliberately hide in a calm, familiar surface rather than shouting "app."
+
+### Visual design language
+- Palette: dark, near-black hero with soft atmospheric background (cloud/blur shapes, a 6px background blur layer). Warm human accent is a heart (red/pink) used as the brand mark and on reactions. This is a warm, emotional monochrome rather than a cold tech monochrome. Note: exact hexes were not exposed in the fetched markup, so treat color specifics as an inferred read, not confirmed tokens.
+- Typography: clean modern sans, large hero headline with deliberate line breaks for rhythm ("Live your life / to the fullest"). Type carries the page; almost no dense body copy up top.
+- Layout: hero-centric, single-column, mobile-first. Lots of breathing room around the headline. This is the closest structural cousin to Euno's centered single-column model.
+- Imagery vs type: type-dominant with abstract decorative shapes (orbs, clouds) instead of product screenshots or stock photography. Emotional/lifestyle framing over feature screenshots. The product is sold as a feeling, not a feature list.
+- Motion/interaction: animated "orbs" (menu orb, a "love orb"), blur layers, parallax-style scroll cues. Motion is ambient and soft, not aggressive.
+- Mood: intimate, warm, human, calm-but-alive. "A friend who happens to be software."
+
+### Landing page structure
+1. Slim header carrying social proof up front ("Trusted by 500,000+ people working out today") with three user avatars.
+2. Hero: one emotional headline, minimal subtext.
+3. Single primary CTA: "Text your Tomo" (casual, verb-first, names the product as if it were a person).
+4. Footer with company/legal links.
+
+CTA style: soft, conversational, action-first. "Text your Tomo," not "Sign up" or "Get started." The verb matches how you actually use the product. Login is demoted to a quiet nav item.
+
+Social proof: a single quantified line plus avatar faces, placed in the hero for immediate credibility, then it gets out of the way.
+
+### Steal this for Euno
+- Steal this: the verb-first, product-as-person CTA ("Text your Tomo") -&gt; because Euno's core action is "bring a fragment, get the person back." A CTA like "Ask Euno" or "Find who you're thinking of" mirrors the real gesture far better than "Sign up," and it fits the Quiet Room's content-first, no-jargon voice.
+- Steal this: selling the feeling in the hero with one emotional line and heavy line-break rhythm, no feature list ("Live your life / to the fullest") -&gt; because Euno is not a CRM and should not lead with capabilities. A hero like "You met them once. / Euno remembers the rest." keeps the promise human and the page quiet.
+- Steal this: one warm human accent used sparingly as the brand's emotional signal (the heart) -&gt; because it validates Euno's single-accent discipline. Euno already spends its one blue only on the primary action; Tomo proves a single expressive mark can carry an entire brand without a second hue or a gradient.
+- Steal this: ambient, soft background motion (blur layers, slow drifting shapes) instead of hard UI animation -&gt; because it maps directly to Euno's "quiet motion" rule (140-280ms confirmations, one signature transition). A single slow, near-imperceptible background shift signals "alive" without breaking the calm.
+- Steal this: demoting login and secondary nav to near-invisible, leaving the hero with exactly one thing to do -&gt; because the Quiet Room is content-first and single-column; one CTA and no competing chrome keeps cognitive load near zero.
+- Steal this: placing a single quantified trust line plus a few faces high, then getting out of the way -&gt; because Euno is private and single-user; it can borrow the "one quiet credibility line, then silence" pattern rather than a wall of logos or testimonials.
+
+### Avoid for Euno
+- Avoid the fitness/streak/accountability framing and the "500,000 people working out" energy. Euno is explicitly not an engagement or gamification product; streaks and counters clash with the Quiet Room.
+- Avoid the "it texts you first / proactive nudges" positioning as a headline promise. Euno hands the person back when you ask; it should not read as a notification machine.
+- Avoid leaning on cute decorative orbs as literal UI. Tomo can be playful; Euno's brief is near-monochrome, hairline borders, flat surfaces. Borrow the softness of the motion, not the whimsy of the shapes.
+
+---
+
+## Site 2: Cofounder (cofounder.co)
+
+### What it is / who it's for
+Cofounder is an AI agent-orchestration platform: "run an entire company with AI." A manager agent (they call it a "superoptimizer") parcels work across departments (engineering, sales, marketing, finance, design, ops). The signature surface is a zoomable canvas of active tasks and running agents; each node shows whether an agent owns it or it needs you, and you zoom between the whole-company overview and a single task's detail. Audience is solo/technical founders chasing the "one-person company." This is almost the design opposite of Euno: it is a dense, systems-heavy, dashboard-forward B2B tool. Its value here is mostly as a contrast case, with a few isolated moves worth adapting.
+
+### Visual design language
+- Palette: dark theme, high contrast. Deep navy/charcoal backgrounds, white primary text, a bright cyan/teal accent for interactive elements and highlights, plus small green "+12% / +37%" metric arrows. So: dark base but a cooler, more electric accent than Euno's, and more than one accent color in play (cyan plus green metrics).
+- Typography: modern sans (Inter-like), strong weight and size hierarchy, legible body on dark. Clean, but working harder to organize dense info than to set a mood.
+- Layout: vertical modular sections with generous whitespace between them, but the sections themselves are dense: cards, task lists, data viz, email previews, department blocks. Component-heavy.
+- Imagery vs type: heavy reliance on UI mockups, screenshots, and data visualizations to prove the product works. Abstract shapes frame sections; customer logos (ActiveGraph, Veery, LearnPath, Valence OS) act as proof.
+- Motion/interaction: carousel transitions, an interactive email-preview component, visible task completion states, zoomable canvas. Interaction is a feature being demonstrated, not a quiet confirmation.
+- Mood: powerful, ambitious, systems-and-control. "Command center for your company."
+
+### Landing page structure
+1. Hero: "Cofounder lets you run an entire company with AI," immediate CTA.
+2. Concept overview: agent departments / system architecture.
+3. An educational four-chapter arc: Start -&gt; Build -&gt; Sell -&gt; Scale, each with its own "Learn how to..." CTA.
+4. Feature showcase by department (roadmap, engineering, sales/marketing, scaling).
+5. Social proof: "over 10,650 companies are running on Cofounder," plus metric widgets (e.g. "Daily active users: 9,262 +8%") and sample campaign performance.
+6. Use cases by industry (SaaS, consulting, agencies), then a comprehensive footer.
+
+CTA style: repeated, consistent, verb-first primary ("Run a company") in the bright accent, reused down the page so the same action is always one glance away. Secondary CTAs teach ("Learn how to start / build / sell / scale").
+
+Social proof: quantified adoption, real customer logos, and live-looking product metrics used as evidence the system actually runs.
+
+### Steal this for Euno
+- Steal this: one consistent, verb-first primary CTA repeated verbatim down the page ("Run a company") in the single accent color, so the action is always within a glance -&gt; because Euno spends its one blue only on the primary action. Repeating a single "Find who you're thinking of" button in that blue at each scroll stop reinforces the one-action discipline instead of diluting it.
+- Steal this: the "Start -&gt; Build -&gt; Sell -&gt; Scale" narrative spine that walks the reader through the product as a sequence of moments -&gt; because Euno's story is inherently a short arc (you have a fragment -&gt; you ask -&gt; the name morphs back -&gt; you reconnect). A 3-step "how it feels" strip mirrors this without any dashboard, and it explains a novel product without a feature grid.
+- Steal this: showing the real product surface as the hero image rather than abstract art -&gt; because Euno's signature "name morph" transition is its most distinctive asset. A single, quiet, animated mock of a fragment resolving into a person would explain the product in one glance far better than any copy, and it puts the one moment of motion to work as marketing.
+- Steal this: generous whitespace as hard dividers between sections -&gt; because it is the one structural instinct Cofounder shares with the Quiet Room. Euno can keep the section rhythm (big vertical air between blocks) while stripping out the density Cofounder packs inside each block.
+
+### Avoid for Euno (most of this site is an anti-pattern for the Quiet Room)
+- Avoid the dashboard/canvas/metric-widget aesthetic entirely. Live-updating counters, "+8%" arrows, DAU tiles, task lists, and campaign analytics are exactly the CRM/scoreboard energy Euno's brief forbids. Euno is not a control center.
+- Avoid the second and third accent colors (cyan plus green metric arrows). Euno's whole identity is one signal blue and nothing else. Cofounder's multi-accent, high-contrast electric palette would read as loud and "SaaS" against the Quiet Room.
+- Avoid the logo wall and "10,650 companies" scale flex. Euno is private and single-user; social proof by mass adoption undercuts the intimate, one-person promise. If Euno needs trust signals, keep them quiet and human, not enterprise scale.
+- Avoid the department/feature-grid explanation model. It sells breadth and power. Euno sells a single small moment done beautifully; a feature grid would fight that.
+
+---
+
+## Cross-cutting takeaways for Euno
+
+- Copy the intimacy of Tomo, not the systems of Cofounder. Tomo is the closer sibling on almost every axis (single-user, personal, memory-driven, mobile-first single column, one human accent, ambient motion). Cofounder is mostly a contrast case: study its structure, reject its density and its dashboard aesthetic.
+- Verb-first, product-as-person CTAs beat generic "Sign up." Both sites name the action after the real gesture ("Text your Tomo," "Run a company"). For Euno, something like "Ask Euno" or "Find who you're thinking of" fits the Quiet Room's plain-language, content-first voice.
+- Sell one feeling and one moment, not a feature list. Tomo leads with emotion; Cofounder leads with a narrative arc. Euno's landing page should do both: an emotional hero plus a tiny 3-step arc that culminates in the signature name-morph shown live, using its single permitted moment of motion as the hero demo.
+- Single-accent discipline is validated by both, but in opposite ways. Tomo proves one warm mark can carry a brand; Cofounder shows the cost of a second and third accent (it reads loud and SaaS-like). Euno's one-blue rule is a genuine differentiator, not a limitation.
+- Whitespace as structure, never density as proof. Borrow the generous vertical air both sites use between sections, but keep Euno's blocks near-empty. Where Cofounder fills the air with widgets and Tomo fills it with orbs, Euno should mostly leave it quiet.</result>
+<usage><subagent_tokens>36142</subagent_tokens><tool_uses>5</tool_uses><duration_ms>121690</duration_ms></usage>
+</task-notification>
