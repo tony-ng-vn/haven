@@ -1,0 +1,101 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - src/CaptureTriage.tsx
+  - src/lib.test.ts
+  - src/lib.ts
+
+Unified diff (only + lines are new):
+
+=== DIFF: src/CaptureTriage.tsx ===
+@@ -11,6 +11,7 @@ import {
+   deriveProfileUrl,
+   normalizeUrl,
+   rubberband,
++  triageCountLabel,
+ } from "./lib";
+ import { PersonSky } from "./PersonSky";
+ 
+@@ -471,9 +472,7 @@ export function CaptureTriage() {
+             <span className="triage-count">
+               {uploading > 0
+                 ? `Uploading ${uploading}...`
+-                : queue.length === 1
+-                  ? "1 to review"
+-                  : `${queue.length} to review`}
++                : triageCountLabel(queue.length)}
+             </span>
+           </div>
+ 
+
+
+=== DIFF: src/lib.test.ts ===
+@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
+ import {
+   bootMode,
+   buildEmbedText,
++  CAPTURE_QUEUE_CAP,
+   composeAtlasField,
+   canSaveManualName,
+   composeHeadline,
+@@ -11,6 +12,7 @@ import {
+   formatMonthYear,
+   isClerkFlowHash,
+   normalizeUrl,
++  triageCountLabel,
+ } from "./lib";
+ 
+ describe("normalizeUrl", () => {
+@@ -246,6 +248,28 @@ describe("decideSwipe", () => {
+   });
+ });
+ 
++describe("triageCountLabel", () => {
++  test("singular for exactly one", () => {
++    expect(triageCountLabel(1)).toBe("1 to review");
++  });
++
++  test("plain count below the cap", () => {
++    expect(triageCountLabel(0)).toBe("0 to review");
++    expect(triageCountLabel(7)).toBe("7 to review");
++    expect(triageCountLabel(CAPTURE_QUEUE_CAP - 1)).toBe(
++      `${CAPTURE_QUEUE_CAP - 1} to review`,
++    );
++  });
++
++  test("reads as a floor, not a false exact total, once the queue hits the cap", () => {
++    // listCaptures caps its query at CAPTURE_QUEUE_CAP; at that count the
++    // client cannot tell whether more are queued server-side.
++    expect(triageCountLabel(CAPTURE_QUEUE_CAP)).toBe(
++      `${CAPTURE_QUEUE_CAP}+ to review`,
++    );
++  });
++});
++
+ describe("composeAtlasField", () => {
+   const p = (id: string) => ({ _id: id, name: id });
+ 
+
+
+=== DIFF: src/lib.ts ===
+@@ -176,6 +176,17 @@ export function rubberband(
+   );
+ }
+ 
++// Mirrors convex/captures.ts listCaptures's `.take(50)`. Once the queue
++// hits this cap the client cannot tell whether more are queued
++// server-side, so the toolbar count must read as a floor, not a total.
++export const CAPTURE_QUEUE_CAP = 50;
++
++export function triageCountLabel(queueLength: number): string {
++  if (queueLength >= CAPTURE_QUEUE_CAP) return `${CAPTURE_QUEUE_CAP}+ to review`;
++  if (queueLength === 1) return "1 to review";
++  return `${queueLength} to review`;
++}
++
+ export type SwipeVelocitySample = { t: number; x: number };
+ export type SwipeDecision = "save" | "context" | "settle";
+ 
+
+
+Investigate per the method in your instructions, then return the findings list.
