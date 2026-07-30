@@ -1,0 +1,201 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - convex/auth.config.ts
+  - convex/auth.ts
+  - convex/captures.test.ts
+  - convex/captures.ts
+  - convex/http.ts
+  - convex/people.test.ts
+  - convex/people.ts
+  - convex/schema.ts
+
+Unified diff (only + lines are new):
+
+=== DIFF: convex/auth.config.ts ===
+@@ -1,8 +1,15 @@
++import { AuthConfig } from "convex/server";
++
+ export default {
+   providers: [
+     {
+-      domain: process.env.CONVEX_SITE_URL,
++      // Clerk's Frontend API URL. Set CLERK_JWT_ISSUER_DOMAIN on the Convex
++      // deployment (dashboard or `npx convex env set`) -- see the "convex"
++      // JWT template in the Clerk dashboard for the exact issuer value.
++      domain: process.env.CLERK_JWT_ISSUER_DOMAIN!,
++      // Must match the JWT template name in Clerk (the template's `aud`
++      // claim is checked against this value).
+       applicationID: "convex",
+     },
+   ],
+-};
++} satisfies AuthConfig;
+
+
+=== DIFF: convex/auth.ts ===
+@@ -1,6 +0,0 @@
+-import { Password } from "@convex-dev/auth/providers/Password";
+-import { convexAuth } from "@convex-dev/auth/server";
+-
+-export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
+-  providers: [Password],
+-});
+
+
+=== DIFF: convex/captures.test.ts ===
+@@ -6,9 +6,15 @@ import schema from "./schema";
+ 
+ const modules = import.meta.glob("./**/*.ts");
+ 
+-async function asNewUser(t: ReturnType<typeof convexTest>) {
+-  const userId = await t.run(async (ctx) => ctx.db.insert("users", {}));
+-  return { userId, as: t.withIdentity({ subject: userId }) };
++// Mint a fake Clerk identity and return an authenticated test context bound
++// to it. requireUser() keys ownership on tokenIdentifier ("issuer|subject"),
++// which is what convex-test's withIdentity() synthesizes here.
++let nextSubject = 0;
++function asNewUser(t: ReturnType<typeof convexTest>) {
++  const subject = `user_${nextSubject++}`;
++  const issuer = "https://test.clerk.accounts.dev";
++  const userId = `${issuer}|${subject}`;
++  return { userId, as: t.withIdentity({ subject, issuer }) };
+ }
+ 
+ async function seedScreenshot(t: ReturnType<typeof convexTest>) {
+
+
+=== DIFF: convex/captures.ts ===
+@@ -8,17 +8,18 @@ import {
+   MutationCtx,
+ } from "./_generated/server";
+ import { v } from "convex/values";
+-import { getAuthUserId } from "@convex-dev/auth/server";
+ import { internal } from "./_generated/api";
+ import { Doc } from "./_generated/dataModel";
+ import { extractProfile } from "./openaiClient";
+ 
++// Clerk has no local users table, so tokenIdentifier ("issuer|subject") is
++// the stable ownership key -- guidelines say prefer it over `subject` alone.
+ async function requireUser(ctx: QueryCtx | MutationCtx) {
+-  const userId = await getAuthUserId(ctx);
+-  if (userId === null) {
++  const identity = await ctx.auth.getUserIdentity();
++  if (identity === null) {
+     throw new Error("Not signed in");
+   }
+-  return userId;
++  return identity.tokenIdentifier;
+ }
+ 
+ const extractedValidator = v.object({
+
+
+=== DIFF: convex/http.ts ===
+@@ -1,8 +0,0 @@
+-import { httpRouter } from "convex/server";
+-import { auth } from "./auth";
+-
+-const http = httpRouter();
+-
+-auth.addHttpRoutes(http);
+-
+-export default http;
+
+
+=== DIFF: convex/people.test.ts ===
+@@ -6,11 +6,15 @@ import schema from "./schema";
+ 
+ const modules = import.meta.glob("./**/*.ts");
+ 
+-// Insert a user row and return an authenticated test context bound to it.
+-// getAuthUserId reads identity.subject (split on "|"); a bare user id works.
+-async function asNewUser(t: ReturnType<typeof convexTest>) {
+-  const userId = await t.run(async (ctx) => ctx.db.insert("users", {}));
+-  return { userId, as: t.withIdentity({ subject: userId }) };
++// Mint a fake Clerk identity and return an authenticated test context bound
++// to it. requireUser() keys ownership on tokenIdentifier ("issuer|subject"),
++// which is what convex-test's withIdentity() synthesizes here.
++let nextSubject = 0;
++function asNewUser(t: ReturnType<typeof convexTest>) {
++  const subject = `user_${nextSubject++}`;
++  const issuer = "https://test.clerk.accounts.dev";
++  const userId = `${issuer}|${subject}`;
++  return { userId, as: t.withIdentity({ subject, issuer }) };
+ }
+ 
+ test("addPerson creates a person owned by the caller with a timestamp", async () => {
+
+
+=== DIFF: convex/people.ts ===
+@@ -10,7 +10,6 @@ import {
+   MutationCtx,
+ } from "./_generated/server";
+ import { v } from "convex/values";
+-import { getAuthUserId } from "@convex-dev/auth/server";
+ import { internal } from "./_generated/api";
+ import { Doc, Id } from "./_generated/dataModel";
+ import { buildEmbedText } from "../src/lib";
+@@ -23,13 +22,15 @@ const RESULT_LIMIT = 20;
+ // Tuned against real data during verification.
+ const MIN_SEMANTIC_SCORE = 0.3;
+ 
+-// Guidelines forbid `any` for ctx; use the proper context union.
+-async function requireUser(ctx: QueryCtx | MutationCtx) {
+-  const userId = await getAuthUserId(ctx);
+-  if (userId === null) {
++// Guidelines forbid `any` for ctx; use the proper context union. Clerk has no
++// local users table, so tokenIdentifier ("issuer|subject") is the stable
++// ownership key -- guidelines say prefer it over the bare `subject` claim.
++async function requireUser(ctx: QueryCtx | MutationCtx | ActionCtx) {
++  const identity = await ctx.auth.getUserIdentity();
++  if (identity === null) {
+     throw new Error("Not signed in");
+   }
+-  return userId;
++  return identity.tokenIdentifier;
+ }
+ 
+ export const addPerson = mutation({
+@@ -225,10 +226,7 @@ export const semanticSearch = action({
+   args: { query: v.string() },
+   returns: v.array(searchResultValidator),
+   handler: async (ctx, args) => {
+-    const userId = await getAuthUserId(ctx);
+-    if (userId === null) {
+-      throw new Error("Not signed in");
+-    }
++    const userId = await requireUser(ctx);
+     const term = args.query.trim();
+     if (term === "") {
+       return [];
+
+
+=== DIFF: convex/schema.ts ===
+@@ -1,11 +1,11 @@
+ import { defineSchema, defineTable } from "convex/server";
+ import { v } from "convex/values";
+-import { authTables } from "@convex-dev/auth/server";
+ 
+ export default defineSchema({
+-  ...authTables,
+   people: defineTable({
+-    userId: v.id("users"),
++    // Clerk's identity.tokenIdentifier ("issuer|subject"); the stable
++    // ownership key now that there is no local users table.
++    userId: v.string(),
+     name: v.string(),
+     link: v.optional(v.string()),
+     context: v.optional(v.string()),
+@@ -34,7 +34,7 @@ export default defineSchema({
+   // A screenshot waiting to be triaged into a person. Deleted on accept
+   // (the file moves to the person) or discard (the file is deleted too).
+   captures: defineTable({
+-    userId: v.id("users"),
++    userId: v.string(),
+     screenshotId: v.id("_storage"),
+     status: v.union(
+       v.literal("pending"),
+
+
+Investigate per the method in your instructions, then return the findings list.
