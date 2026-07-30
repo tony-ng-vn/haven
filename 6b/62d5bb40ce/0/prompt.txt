@@ -1,0 +1,1 @@
+use /grilling-frontend-prototyping to spin up the landing page  as the waitlist page for me as the design we have
