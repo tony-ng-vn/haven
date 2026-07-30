@@ -1,0 +1,4 @@
+[Image #7] 
+
+1. use sonnet -  make the text and signin for waitlist go to the center
+2. use sonnet - remove signin, if it is waitlist  there is no reason to include signin
