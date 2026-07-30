@@ -1,0 +1,82 @@
+<task-notification>
+<task-id>ae11b25f30119306f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/d7b8885f-65a9-446f-a015-9e53a7c2bf4e/tasks/ae11b25f30119306f.output</output-file>
+<status>completed</status>
+<summary>Agent "Security audit of Euno" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Security Audit Report -- Euno (Convex + React/Vite + Clerk)
+
+### Summary
+- Critical: 0
+- High: 1
+- Medium: 1
+- Low: 5 (incl. Info)
+
+The authorization model is genuinely clean, so there is no critical finding and I am not going to manufacture one. Every public function derives `userId` server-side from `identity.tokenIdentifier`, and every client-facing `ctx.db.get` re-checks ownership before returning or mutating. The real exposure is financial (denial of wallet), not data-breach.
+
+---
+
+### Findings
+
+#### [HIGH] Denial of wallet -- no rate limiting on any OpenAI-triggering path (OWASP LLM10, Unbounded Consumption)
+- **Location:** `convex/captures.ts:42-55` (createCapture -&gt; extract), `convex/captures.ts:96-127` (extract -&gt; gpt-4o-mini vision at `detail:"high"`), `convex/people.ts:225-261` (semanticSearch -&gt; embeddings), `convex/people.ts:36-53` + `88-114` (add/updatePerson -&gt; embed). Confirmed: zero rate-limit/quota/cooldown code anywhere in `convex/`.
+- **Description:** Three separate surfaces each call the paid `OPENAI_API_KEY` on demand with no per-user cap: every `createCapture` schedules a vision call, every `semanticSearch` runs an embeddings call, and every add/update schedules an embeddings call. Clerk sign-up is open (dev instance, no allowlist in code), so this is exploitable by anyone on the internet, not just existing users.
+- **Impact:** An attacker signs up, then scripts `generateUploadUrl` -&gt; upload a 1x1 image -&gt; `createCapture` in a loop, and/or calls the `semanticSearch` action in a loop. Each iteration bills a real OpenAI request. Unbounded spend against your key; also unbounded scheduled-function and storage growth.
+- **Proof of concept:** With a valid session token, `POST` `createCapture` repeatedly (or drive `semanticSearch({query:"a"+i})`); nothing throttles either. A few hundred requests/second is trivial and each vision call is the most expensive tier.
+- **Recommendation:** Add a per-user rate limiter (e.g. `@convex-dev/rate-limiter`, or a `usage` table keyed by `userId` with a rolling window checked at the top of `createCapture`, `semanticSearch`, `addPerson`, `updatePerson`). Cap captures/day and embeddings/minute per user. Pair with the upload cap below, and restrict Clerk sign-ups (invite-only or verified-domain) so anonymous accounts can't farm the key.
+
+#### [MEDIUM] Upload pipeline has no application-level type or size validation
+- **Location:** `convex/captures.ts:33-40` (generateUploadUrl), `convex/captures.ts:42-55` (createCapture), `src/CaptureTriage.tsx:94-116` (handleFiles).
+- **Description:** `generateUploadUrl` returns a URL for any authenticated user and `createCapture` accepts any `_storage` id with no check on content type or size. The only "image" gate is client-side (`accept="image/*"` and `Content-Type: file.type`), and `file.type` is fully attacker-controlled -- it is set by the client and never verified server-side. There is no size ceiling asserted in app code (Convex platform defaults apply; I did not verify a specific cap, so do not rely on one).
+- **Impact:** A non-image or oversized blob still creates a capture row and burns one gpt-4o-mini vision call before failing. Combined with the HIGH above, this is the amplification primitive; on its own it also lets a client store arbitrary large blobs.
+- **Recommendation:** After upload, read `_storage` metadata (`ctx.db.system.get("_storage", id)`), reject if `contentType` is not an allowed image type or `size` exceeds a sane cap (e.g. a few MB), delete the blob and refuse to schedule extraction on failure. Do this inside `createCapture` before `ctx.scheduler.runAfter`.
+
+#### [LOW] createCapture accepts any storage id, not one bound to the caller
+- **Location:** `convex/captures.ts:42-55`.
+- **Description:** `createCapture({ screenshotId })` trusts any `v.id("_storage")` the client sends; it never confirms the caller was the uploader. Storage ids are opaque and non-sequential, so this is not practically guessable, but the trust boundary is loose: a leaked/shared id would let another account attach a file it did not upload.
+- **Recommendation:** Bind uploads to the user -- have `generateUploadUrl` write a `pending_upload` row keyed by `userId`, and have `createCapture` validate the id against that row before use.
+
+#### [LOW] getPerson and searchPeople return full documents (internal fields leak to client)
+- **Location:** `convex/people.ts:76-86` (getPerson), `convex/people.ts:55-74` (searchPeople) -- neither has a `returns` projection.
+- **Description:** Both ship the entire doc to the client: the 1536-float `embedding`, `embeddedText`, `userId` (which embeds the Clerk issuer/subject), and `screenshotId`. It is the user's own data, so this is low, but it is unnecessary internal-field exposure and also meaningful response bloat on every keystroke-driven search.
+- **Recommendation:** Add `returns` validators that project only the fields the UI renders (id, name, link, context, platform, handle, headline, timestamps).
+
+#### [LOW] Orphaned storage when createCapture never completes
+- **Location:** `src/CaptureTriage.tsx:94-116`, `convex/captures.ts:42`.
+- **Description:** The client uploads to storage, then calls `createCapture`. If that call fails after a successful upload, the blob exists with no capture row referencing it -- invisible and unrecoverable, with no sweep. (Discard and failed-extraction cases are fine: `discardCapture` deletes the blob, and a failed capture is still user-visible/discardable.)
+- **Recommendation:** A periodic cleanup (cron) that deletes `_storage` rows older than N minutes with no referencing capture/person, or the pending-upload record from the LOW above with TTL cleanup.
+
+#### [LOW] Missing HTTP security headers
+- **Location:** `vercel.json` (no `headers` block).
+- **Description:** No CSP, `X-Frame-Options`/frame-ancestors, or `X-Content-Type-Options`. This is defense-in-depth only: there is no XSS sink to leverage a missing CSP, and Vercel serves HTTPS/HSTS on its domains, which is why this is low rather than medium.
+- **Recommendation:** Add a `headers` entry setting `Content-Security-Policy` (allowing self, the Convex `.cloud`/`.site` origins, and Clerk's `*.accounts.dev`/`clerk` hosts), `X-Frame-Options: DENY`, and `X-Content-Type-Options: nosniff`.
+
+#### [INFO] Prompt injection via screenshot content is contained (OWASP LLM01)
+- **Location:** `convex/openaiClient.ts:57-145`, `convex/captures.ts:64-78`.
+- **Description:** A crafted screenshot can try to steer the vision model. Blast radius is self-inflicted: output is schema-constrained (enum `platform` + plain strings), lands only in the attacker's own tenant, hits no dangerous sink (no eval/SQL/shell; rendered as escaped React text; derived URLs normalized), and cannot cross to another user. Worth noting, not fixing now. If you later feed extracted text back to a model for a user-visible summary, revisit.
+
+#### [INFO] Clerk development keys serve production
+- **Location:** `.env.local:1-2` (`pk_test_...`, `sk_test_...`).
+- **Description:** You already know this; stating the implication only. Because dev == prod, the `sk_test_` value is effectively a live backend credential (Clerk Backend API: user management, session minting), and dev instances allow open self-service sign-up -- which is precisely what makes the HIGH remotely exploitable. The key is correctly gitignored (`.env.local` is untracked) and not bundled (no `VITE_` prefix, and a scan of `dist/` found no secret), and `CLERK_SECRET_KEY` is not referenced in code. Action: move to a Clerk production instance, rotate the key, and gate sign-ups.
+
+---
+
+### Positive Observations
+- **Authorization is consistent and correct.** `userId` is always `identity.tokenIdentifier` derived server-side (`convex/people.ts:28-34`, `convex/captures.ts:17-23`); no function accepts a user id as an argument. Ownership is re-checked on every client-facing get/patch/delete (`getPerson` 76-86, `updatePerson` 88-114, `acceptCapture` 165-197, `discardCapture` 199-212). Name search, vector search, and the `by_user` index are all filtered by `userId` (`convex/people.ts:55-74`, `225-239`), so cross-tenant reads are not reachable.
+- **The XSS question the task asked is closed, not open.** `javascript:`/`data:` URLs are unreachable: `deriveProfileUrl` (`src/lib.ts:54-67`) only ever emits `https://&lt;fixed-host&gt;/&lt;handle&gt;`, every rendered `href` first runs through `normalizeUrl` (`src/lib.ts:15-32`) which rejects any non-http(s) scheme and any string containing whitespace, and React escapes the handle/pill text. External links use `rel="noopener noreferrer"`. No `dangerouslySetInnerHTML`, `innerHTML`, `eval`, or `new Function` anywhere in `src/`.
+- **Internal/trusted boundary is respected.** Extraction results reach the DB only through `internal` mutations (`finishExtract`, `failExtract`); clients cannot write `extracted` directly. `fetchSearchResults` is internal and only receives ids already filtered by `userId`.
+- **Reads are bounded.** `listCaptures` take(50), `searchPeople` take(20), semantic limit 8, backfill take(200) -- no unbounded `.collect()`. No `http.ts`/`crons.ts`, so no extra unauthenticated surface.
+- **`@clerk/react` is legitimate** (the `@clerk` npm scope is org-owned, so it cannot be typosquatted); no `postinstall` scripts in `package.json`. Not a supply-chain concern.
+
+### Recommendations (priority order)
+1. Add per-user rate limiting/quotas on `createCapture`, `semanticSearch`, and the embed-scheduling mutations, and restrict Clerk sign-ups. This closes the one HIGH.
+2. Validate uploaded file type and size server-side in `createCapture` (read `_storage` metadata), deleting and refusing on mismatch.
+3. Move Clerk to a production instance and rotate keys.
+4. Add `returns` projections to `getPerson`/`searchPeople`; bind uploads to the uploader; add a storage-orphan sweep; add security headers in `vercel.json`.
+
+Note: the `/?preview=sky` unauthenticated branch in `src/main.tsx` was out of scope per your instructions; flagging only that it must be deleted before production, as its own comment says.
+
+Relevant files: `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/convex/captures.ts`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/convex/people.ts`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/convex/openaiClient.ts`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/src/lib.ts`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/src/CaptureTriage.tsx`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/vercel.json`, `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/.env.local`.</result>
+<usage><subagent_tokens>89762</subagent_tokens><tool_uses>24</tool_uses><duration_ms>524745</duration_ms></usage>
+</task-notification>
