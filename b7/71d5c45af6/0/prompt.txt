@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bxapbipi7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/45c37739-14ec-4f83-9d43-29f77afa5176/tasks/bxapbipi7.output</output-file>
+<status>failed</status>
+<summary>Background command "Wait for Vercel to resolve on new commit" failed with exit code 8</summary>
+</task-notification>
