@@ -1,0 +1,1 @@
+yes it did show up. ok let's merge this chain to main so we deployed. then after that we will going to make sure the original design of deep sky is working and merged that, then we will go and change the default page too no more black no more quiet room we will change it
