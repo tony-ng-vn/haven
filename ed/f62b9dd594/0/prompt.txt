@@ -1,0 +1,1 @@
+i just add next public clerk and clerk secret into .env.local
