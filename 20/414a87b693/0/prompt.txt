@@ -1,0 +1,1 @@
+no no i want to create a seperate todo.md one, like to keep track of all backlog and todo. or u think its better to have it in mvp-design?
