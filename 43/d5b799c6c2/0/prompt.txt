@@ -1,0 +1,3 @@
+1. why do we need playwright? it's not necessary for an html that's main goal is to for me to learn what's the pr about right?
+2. why we have arm in there if i don't have warp? can we remove it?
+3. i make the skill based on this thread entirely https://x.com/geoffreylitt/status/2072522251300409556?s=20, do u think we are follwing it? like there are some customization but like the main flow is still based on it
