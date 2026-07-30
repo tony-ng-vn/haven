@@ -1,0 +1,290 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - src/App.tsx
+  - src/clerkAppearance.ts
+  - src/lib.test.ts
+  - src/lib.ts
+  - src/main.tsx
+
+Unified diff (only + lines are new):
+
+=== DIFF: src/App.tsx ===
+@@ -1,12 +1,12 @@
+-import { useEffect, useRef, useState, type FormEvent } from "react";
++import { useEffect, useRef, useState } from "react";
+ import { flushSync } from "react-dom";
+-import { useAuthActions } from "@convex-dev/auth/react";
++import { SignInButton, useClerk } from "@clerk/react";
+ import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
+ import type { Id } from "../convex/_generated/dataModel";
+ import { SearchAdd } from "./SearchAdd";
+ import { PersonDetail } from "./PersonDetail";
+ import { CaptureTriage } from "./CaptureTriage";
+-import { mapAuthError, type AuthFlow, type PersonSnapshot } from "./lib";
++import type { PersonSnapshot } from "./lib";
+ 
+ function ChevronLeft() {
+   return (
+@@ -22,82 +22,20 @@ function ChevronLeft() {
+   );
+ }
+ 
++// Clerk's own modal handles sign-in, sign-up, and error states, so this
++// keeps only the Quiet Room shell (brand, tagline, card) around its trigger.
+ function SignIn() {
+-  const { signIn } = useAuthActions();
+-  const [flow, setFlow] = useState<AuthFlow>("signIn");
+-  const [error, setError] = useState<string | null>(null);
+-  const [submitting, setSubmitting] = useState(false);
+-  const [shaking, setShaking] = useState(false);
+-
+-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+-    event.preventDefault();
+-    if (submitting) return;
+-    const formData = new FormData(event.currentTarget);
+-    setError(null);
+-    setSubmitting(true);
+-    try {
+-      await signIn("password", formData);
+-    } catch (err) {
+-      setError(mapAuthError(err, flow));
+-      setShaking(true);
+-      setSubmitting(false);
+-    }
+-    // On success the Authenticated gate swaps screens; no state to reset.
+-  }
+-
+   return (
+     <div className="auth">
+-      <form
+-        className="auth-card"
+-        data-shake={shaking ? "true" : undefined}
+-        onAnimationEnd={() => setShaking(false)}
+-        onSubmit={handleSubmit}
+-      >
++      <div className="auth-card">
+         <span className="auth-brand">Euno</span>
+         <p className="auth-tagline">Find your way back to the people you meet.</p>
+-        <input
+-          className="field"
+-          name="email"
+-          placeholder="Email"
+-          type="email"
+-          inputMode="email"
+-          autoComplete="email"
+-          autoCapitalize="none"
+-          spellCheck={false}
+-          required
+-        />
+-        <input
+-          className="field"
+-          name="password"
+-          placeholder="Password"
+-          type="password"
+-          autoComplete={flow === "signIn" ? "current-password" : "new-password"}
+-          minLength={flow === "signUp" ? 8 : undefined}
+-          required
+-        />
+-        <input name="flow" type="hidden" value={flow} />
+-        {error !== null && (
+-          <p className="auth-error" role="alert">
+-            {error}
+-          </p>
+-        )}
+-        <button className="btn-primary auth-submit" type="submit" disabled={submitting}>
+-          {submitting && <span className="spinner" aria-hidden="true" />}
+-          {flow === "signIn" ? "Sign in" : "Create account"}
+-        </button>
+-        <button
+-          className="btn-ghost auth-toggle"
+-          type="button"
+-          onClick={() => {
+-            setFlow(flow === "signIn" ? "signUp" : "signIn");
+-            setError(null);
+-          }}
+-        >
+-          {flow === "signIn"
+-            ? "New here? Create an account"
+-            : "Already have an account? Sign in"}
+-        </button>
+-      </form>
++        <SignInButton mode="modal">
++          <button className="btn-primary auth-submit" type="button">
++            Sign in
++          </button>
++        </SignInButton>
++      </div>
+     </div>
+   );
+ }
+@@ -131,7 +69,7 @@ function withScreenTransition(update: () => void, done?: () => void) {
+ }
+ 
+ function Home() {
+-  const { signOut } = useAuthActions();
++  const { signOut } = useClerk();
+   const [screen, setScreen] = useState<Screen>({ kind: "search" });
+   const [query, setQuery] = useState("");
+   // The person whose row carries the shared name morph. Set before opening
+
+
+=== DIFF: src/clerkAppearance.ts ===
+@@ -0,0 +1,17 @@
++// Clerk's prebuilt sign-in modal renders in Clerk's own component tree, not
++// ours, so it cannot pick up index.css directly. Point it at the same
++// Quiet Room CSS variables (see index.css) so the modal reads as part of
++// the app rather than a bolted-on third-party widget.
++export const clerkAppearance = {
++  variables: {
++    colorPrimary: "var(--accent-fill)",
++    colorDanger: "var(--danger)",
++    colorBackground: "var(--surface)",
++    colorText: "var(--text)",
++    colorTextSecondary: "var(--muted)",
++    colorInputBackground: "var(--field-bg)",
++    colorInputText: "var(--text)",
++    borderRadius: "var(--radius)",
++    fontFamily: "inherit",
++  },
++};
+
+
+=== DIFF: src/lib.test.ts ===
+@@ -3,58 +3,9 @@ import {
+   buildEmbedText,
+   deriveProfileUrl,
+   formatMonthYear,
+-  mapAuthError,
+   normalizeUrl,
+ } from "./lib";
+ 
+-describe("mapAuthError", () => {
+-  test("wrong password reads as a calm mismatch message", () => {
+-    const error = new Error(
+-      "[CONVEX A(auth:signIn)] [Request ID: abc] Server Error Uncaught Error: InvalidSecret",
+-    );
+-    expect(mapAuthError(error, "signIn")).toBe(
+-      "That email and password do not match.",
+-    );
+-  });
+-
+-  test("unknown account on sign-in uses the same non-revealing message", () => {
+-    const error = new Error("Uncaught Error: InvalidAccountId");
+-    expect(mapAuthError(error, "signIn")).toBe(
+-      "That email and password do not match.",
+-    );
+-  });
+-
+-  test("existing account on sign-up points at signing in", () => {
+-    const error = new Error("Uncaught Error: Account alice already exists");
+-    expect(mapAuthError(error, "signUp")).toBe(
+-      "An account with that email already exists. Try signing in instead.",
+-    );
+-  });
+-
+-  test("short password on sign-up explains the requirement", () => {
+-    const error = new Error("Uncaught Error: Invalid password");
+-    expect(mapAuthError(error, "signUp")).toBe(
+-      "Passwords need at least 8 characters.",
+-    );
+-  });
+-
+-  test("network failure asks to retry", () => {
+-    const error = new TypeError("Failed to fetch");
+-    expect(mapAuthError(error, "signIn")).toBe(
+-      "Could not reach the server. Check your connection and try again.",
+-    );
+-  });
+-
+-  test("anything unrecognized falls back to a generic retry line", () => {
+-    expect(mapAuthError(new Error("kaboom"), "signIn")).toBe(
+-      "Something went wrong. Please try again.",
+-    );
+-    expect(mapAuthError(undefined, "signUp")).toBe(
+-      "Something went wrong. Please try again.",
+-    );
+-  });
+-});
+-
+ describe("normalizeUrl", () => {
+   test("keeps http and https URLs as they are", () => {
+     expect(normalizeUrl("https://example.com/a")).toBe("https://example.com/a");
+
+
+=== DIFF: src/lib.ts ===
+@@ -3,8 +3,6 @@
+ 
+ import type { Doc } from "../convex/_generated/dataModel";
+ 
+-export type AuthFlow = "signIn" | "signUp";
+-
+ // What the detail screen needs to render instantly from data the search
+ // results already hold, before its own query answers.
+ export type PersonSnapshot = Pick<
+@@ -12,31 +10,6 @@ export type PersonSnapshot = Pick<
+   "_id" | "name" | "link" | "context" | "_creationTime"
+ >;
+ 
+-// Convex Auth surfaces provider failures as opaque server error strings, so
+-// matching substrings is the only stable-enough signal we have. Wrong email
+-// and wrong password map to one message on purpose: no account enumeration.
+-export function mapAuthError(error: unknown, flow: AuthFlow): string {
+-  const raw = error instanceof Error ? error.message : String(error ?? "");
+-  const message = raw.toLowerCase();
+-
+-  if (message.includes("failed to fetch") || message.includes("network")) {
+-    return "Could not reach the server. Check your connection and try again.";
+-  }
+-  if (flow === "signUp" && message.includes("already exists")) {
+-    return "An account with that email already exists. Try signing in instead.";
+-  }
+-  if (message.includes("invalid password")) {
+-    return "Passwords need at least 8 characters.";
+-  }
+-  if (
+-    message.includes("invalidaccountid") ||
+-    message.includes("invalidsecret")
+-  ) {
+-    return "That email and password do not match.";
+-  }
+-  return "Something went wrong. Please try again.";
+-}
+-
+ // People paste links loosely ("linkedin.com/in/..."). Return an openable
+ // http(s) URL, or null when the text is not a link at all.
+ export function normalizeUrl(raw: string): string | null {
+
+
+=== DIFF: src/main.tsx ===
+@@ -1,16 +1,23 @@
+-import { ConvexAuthProvider } from "@convex-dev/auth/react";
++import { ClerkProvider, useAuth } from "@clerk/react";
+ import React from "react";
+ import ReactDOM from "react-dom/client";
+ import { ConvexReactClient } from "convex/react";
++import { ConvexProviderWithClerk } from "convex/react-clerk";
+ import App from "./App";
++import { clerkAppearance } from "./clerkAppearance";
+ import "./index.css";
+ 
+ const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
+ 
+ ReactDOM.createRoot(document.getElementById("root")!).render(
+   <React.StrictMode>
+-    <ConvexAuthProvider client={convex}>
+-      <App />
+-    </ConvexAuthProvider>
++    <ClerkProvider
++      publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string}
++      appearance={clerkAppearance}
++    >
++      <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
++        <App />
++      </ConvexProviderWithClerk>
++    </ClerkProvider>
+   </React.StrictMode>,
+ );
+
+
+Investigate per the method in your instructions, then return the findings list.
