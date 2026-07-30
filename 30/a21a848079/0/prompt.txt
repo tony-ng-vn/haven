@@ -1,0 +1,6 @@
+1. [Image #6] for the handle again, we don't want people to type in manually. after they choose the platform, our system will let them login with that platform like redirect to that platform to just authorize and login you know what i mean?
+2. [Image #7] if this is the card that we literally cover the personalization constellation
+3. [Image #8] instead of this we will make it less word + ui picture of the widget in my lock screen as an example for people to see
+4. [Image #9] for the search right now it's based on character matching but we will have an intelligence search layer too right as we been discussing right?
+5. instead of your code use the word your .... like something that not qr and code
+6. remove the add photo from the onboarding flow to make it less friction. that's something user can go and edit in their profile later on or when they connect with the contact they want we can import that profile picture there
