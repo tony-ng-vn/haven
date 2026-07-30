@@ -1,0 +1,47 @@
+Continue the feedback-sdk integration. New information that changes the plan you were on.
+
+You had concluded you needed to clone tony-ng-vn/feedback-sdk and run an interactive
+`npx convex dev` login to deploy your own backend. That's wrong -- don't do that.
+
+The real model: the SDK owner already runs ONE deployed Convex service. Every app after
+that is npm install plus two env vars. You never need this repo's source or a Convex
+login to integrate an app. If you already ran `npx convex dev` or cloned the repo,
+stop it and delete the clone -- it's not needed.
+
+Read INTEGRATING.md in that repo (not README.md) for the authoritative playbook --
+fetch https://raw.githubusercontent.com/tony-ng-vn/feedback-sdk/main/INTEGRATING.md.
+
+Here's everything you need, already provisioned for this app:
+
+  Service URL:    https://glorious-gerbil-332.convex.site
+  Submit token:   REDACTED
+
+Do this:
+1. Confirm `feedback-sdk-widget` is installed from npm (not a local tarball -- if
+   package.json still points at a file: path, switch it to the published version).
+2. Set VITE_FEEDBACK_ENDPOINT and VITE_FEEDBACK_TOKEN in euno-app/.env.local to the
+   two values above.
+3. Check src/FeedbackWidget.tsx: the widget is a browser custom element that touches
+   HTMLElement at import time, so a top-level `import "feedback-sdk-widget"` crashes
+   under SSR. It must be a dynamic import inside a client-only hook (useEffect for
+   React), not a top-level import. Fix it if it isn't already.
+4. Verify end-to-end: run the dev server, submit real feedback through the actual
+   widget in the browser (not just curl), then confirm it landed with:
+   curl -s https://glorious-gerbil-332.convex.site/feedback \
+     -H "Authorization: Bearer REDACTED"
+5. Run the app's full test suite and confirm nothing broke.
+6. Report back: what was already correct from the earlier session, what you fixed,
+   and confirmation the widget actually rendered and submitted in a real browser.
+
+Keep the admin key (fba_euno_...) in your terminal/agent only -- never in the repo,
+never in an env var the client bundle can read. Only the fbk_ submit token is safe
+to ship to the browser.
+
+---
+A few notes on why it's shaped this way:
+
+- It's fully self-contained (that session has zero memory of ours), and it opens by directly correcting the exact wrong belief the transcript showed it forming, so it doesn't re-derive the same mistake.
+- I pointed it at INTEGRATING.md specifically, not README.md — that's the doc PR #4 wrote precisely for this scenario.
+- I handed it the submit token, not the owner key — least privilege. It doesn't need provisioning power, just its own app's token (which I re-verified above still works and its queue is correctly isolated).
+- Step 3 calls out the SSR guard because that's a real, separate bug class (not what stalled it before, but worth catching now) — React's useEffect dynamic-import pattern, same as I used for tony-todo.
+- Step 4 asks for an actual browser submit, not just curl, since that's the one thing I was never able to verify myself in any of these integrations (no Chrome extension connected this whole session).
