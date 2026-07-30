@@ -1,0 +1,168 @@
+<task-notification>
+<task-id>a1f5ea9f7f02a5b77</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/d7b8885f-65a9-446f-a015-9e53a7c2bf4e/tasks/a1f5ea9f7f02a5b77.output</output-file>
+<status>completed</status>
+<summary>Agent "Gather UI inspiration from real apps" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here is the decision-ready brief. Everything below is anchored to the real sources listed at the end.
+
+---
+
+# 5 Off-Brand Treatments for the "Person from a Screenshot" Card
+
+Note on fonts: where a brand's real typeface is proprietary (CashMarket, Mabry, Monzo Sans, Circular/Spotify Mix), I give you the closest loadable Google Fonts substitute so you can actually ship the look.
+
+---
+
+## 1. HOLOGRAPHIC TRADING CARD
+
+**(a) References + the specific detail to steal**
+- **Pokemon TCG holofoil** -- the foil lives only inside the art box on a standard holo, while text/frame stay matte; reverse-holo flips that (foil everywhere except the art box). Steal this: put the shimmer ONLY on the screenshot, keep the bio/handle rows matte. Modern Special-Illustration-Rare cards add physical ridges via hot-foil stamping (debossed texture), and secret rares use gold-sparkle textured starbursts. (Bulbapedia Holofoil; CGC rarity guide)
+- **poke-holo.simey.me** -- the canonical CSS recreation of the tilt effect: a `background` sandwich of a repeating linear-gradient color-band + a "sparkle" mask, driven by pointer position, composited with `mix-blend-mode: color-dodge` / `overlay` and a moving `background-position`. This is your exact motion recipe.
+- **Panini / Prizm** die-cut chrome frames and **NBA Top Shot** slick black moment cards -- steal the ornate metallic border + a corner rarity gem and a stat badge row.
+
+**(b) Signature colors**
+- Iridescent sweep across the classic foil hues: magenta `#FF3CAC`, cyan `#2EE6D6`, violet `#7A5CFF`, lime `#B6FF3C`, gold `#FFD447` -- run them as an angled repeating gradient.
+- Card base: near-black `#0B0B12` or pearl white `#F4F1E9`; gold frame `#C9A227`.
+
+**(c) Fonts (Google Fonts)**
+- Ornate name plate: **Cinzel** (Trajan-style engraved caps) or **Cormorant** for a classier die-cut look.
+- Stat badges / HP-style numerals: **Anton** or **Archivo Black** (fat condensed, reads as "sports card").
+- Body/handle: **Oswald** condensed.
+
+**(d) Signature devices**
+1. Pointer-driven holographic sweep on the screenshot only (`color-dodge` blend + moving gradient), glare that tracks tilt.
+2. Corner **rarity gem** (faceted diamond) + a small foil rarity star (Pokemon's black star).
+3. Ornate metallic die-cut border with a **stat badge strip** (platform icon, follower count, "first met" date styled like HP/attack rows).
+
+---
+
+## 2. INSTANT FILM / POLAROID SCRAPBOOK
+
+**(a) References + the specific detail to steal**
+- **Polaroid / i-Type frame geometry** -- exact proportions: outer 4.2 x 3.5 in, square image 3.1 x 3.1 in, and the bottom border is intentionally wider than the top and sides. Steal this exactly: square-crop the screenshot, thick white frame, oversized bottom lip for the handwritten caption.
+- **Fujifilm Instax** -- slightly cooler, glossier white frame, smaller square image; good if you want a tighter, more modern instant look.
+- **Dazz Cam / Huji** retro-camera apps -- steal the film treatment on the photo: warm cast, faint grain, date stamp in the corner, mild light leak.
+- **Corkboard + washi tape scrapbooks** -- steal the tape strips pinning the photo down and the slight rotation.
+
+**(b) Signature colors**
+- Frame: warm off-white `#FAF6EE` / `#F5F0E6` (never pure #FFF).
+- Film cast on the photo: sepia warm `#C8A06A`, faded teal shadow `#7A9E9A` (from the documented Polaroid palette `#daede8 #bfd5cb #abc9cf`).
+- Ink for captions: faded ballpoint blue `#2E3A59` or pencil grey `#4A4A4A`.
+- Washi tape: muted pastel `#F2C6C2`, `#BFD8C4`, semi-transparent.
+
+**(c) Fonts (Google Fonts)**
+- Handwritten caption: **Caveat** (the most authentic everyday-handwriting sim on GF) or **Shadows Into Light** for a neater journal hand; **Gochi Hand** / **Kalam** as alts.
+- Date-stamp: **Cutive Mono** or **Courier Prime** (typewriter/film-counter feel).
+
+**(d) Signature devices**
+1. Thick asymmetric film frame (fat bottom border) + slight `rotate(-2deg)` and a soft drop shadow so it sits ON the page.
+2. Two **washi-tape strips** (semi-transparent, torn ends) pinning the top corners.
+3. Film treatment on the photo: warm grain overlay + tiny corner **date stamp** in mono, optional light leak.
+
+---
+
+## 3. POP DRENCH / YEAR-IN-REVIEW
+
+**(a) References + the specific detail to steal**
+- **Cash App** -- one flat, fully-drenched saturated background, minimal chrome, the brand color owns the whole surface. Steal: single loud background, everything else reads on top of it.
+- **Spotify Wrapped 2024** -- "type as form": oversized number/name shapes with gradients poured into the letterforms, dramatic blood-red / neon-pink / canary-yellow combos. Steal: make the person's NAME the hero at display size, gradient-filled.
+- **Gumroad** -- flat bubblegum-pink canvas, chunky black outlines, playful. Steal the hard black borders + drop-shadow "sticker" buttons on a candy field.
+- **Monzo Hot Coral** -- one confident coral owns the identity. **Poolsuite** -- retro-sunset gradient maximalism.
+
+**(b) Signature colors (real brand hexes)**
+- Cash App green `#00D632`.
+- Gumroad pink `#FF90E8`.
+- Monzo Hot Coral `#FF4D56` (Monzo's own stated value; some sources `#FF4B60`).
+- Spotify Wrapped 2024 trio: blood red, neon pink, canary yellow -- pair e.g. `#E90B2C` + `#FF4FA3` + `#FFE14D`.
+- Pick ONE as the drench; use a second only for the oversized type.
+
+**(c) Fonts (Google Fonts)**
+- Oversized hero name: **Bricolage Grotesque** (display-y, characterful) or **Archivo Black** / **Anton** for maximum shout.
+- The Cash App "wide" fintech feel (real font Agrandir Wide is proprietary): use **Anybody** (variable width, crank the width axis) or **Archivo Expanded**.
+- Body/handle: **Space Grotesk** or **Hanken Grotesk**.
+
+**(d) Signature devices**
+1. Full-bleed single saturated drench; the screenshot sits in a rounded "sticker" tile with a hard offset shadow.
+2. Oversized **gradient-filled name** that breaks the grid (Wrapped-style type-as-form), possibly clipping the card edge.
+3. Chunky playful chips for platform/@handle (pill badges, hard black outline a la Gumroad), optional slight tilt.
+
+---
+
+## 4. TERMINAL SCAN HUD
+
+**(a) References + the specific detail to steal**
+- **Blade Runner Voight-Kampff machine** -- CRT readout aesthetic, hairline geometric-sans logotype with very tight kerning (Art Deco lean), and the "machine reading a person" framing with the razor-thin eye-scan. Steal: treat the screenshot as a subject being scanned, with a reticle over the eye/face.
+- **Cyberpunk HUD / hacker terminals (VT323 lineage)** -- phosphor glow, horizontal scanlines, the CRT beam-smear. Steal the scanline overlay + green/amber phosphor text.
+- **Arc / Linear extreme-dark UI** -- for the RESTRAINT version: near-black surface, one hairline grid, one accent, precise mono readout rows instead of full retro camp.
+
+**(b) Signature colors**
+- Surface: near-black `#0A0E0A` / `#0D0F14`.
+- Phosphor green `#33FF66` / `#00FF9C`; amber alt `#FFB000`.
+- Danger/glitch accent: `#FF3B3B` and cyan `#22D3EE`.
+- Dim grid lines: `#1E2A22` at low opacity.
+
+**(c) Fonts (Google Fonts)**
+- Retro phosphor: **VT323** (built from DEC VT320 glyphs, emulates beam-smear) for headers/glitch.
+- Clean HUD readout rows: **Share Tech Mono**, **Space Mono**, or **JetBrains Mono** / **IBM Plex Mono** for the Linear-restraint version.
+
+**(d) Signature devices**
+1. **Scan reticle / crosshair** with corner brackets over the photo, plus a moving horizontal scan-line sweeping the image.
+2. Readout rows: `NAME:`, `HANDLE:`, `PLATFORM:`, `BIO:` in mono with a blinking cursor and a "MATCH 98.2%" confidence line.
+3. CRT texture: faint scanlines + subtle chromatic-aberration/glitch on hover, thin dot/line grid background.
+
+---
+
+## 5. PASSPORT / IDENTITY DOSSIER
+
+**(a) References + the specific detail to steal**
+- **Real passport data page (ICAO 9303)** -- the **MRZ**: two lines of 44 monospace characters (TD3) printed in **OCR-B**, using `&lt;` as the filler between fields. Steal this literally: render the name/handle encoded as an MRZ strip across the card bottom.
+- **Guilloche security printing** -- fine interwoven wavy line patterns, microtext, and optically-variable ink that shifts color on tilt. Steal the guilloche as a faint background engraving + a rosette seal.
+- **Papers, Please** -- desaturated bureaucratic palette (~3 muted shades per element), harsh contrast, and the thunk of a red inspection **stamp**. Steal the stamp + the cold officialdom.
+- **Boarding passes / ID cards** -- steal the labeled field grid (SURNAME / GIVEN NAMES / TYPE / CODE) and a mugshot box with a portrait-tint.
+
+**(b) Signature colors**
+- Security paper tint: pale ecru `#EFE7D3` / `#E8E2CE` with a faint blue-green safety wash `#CFE0D8`.
+- Guilloche line ink: desaturated navy `#2B3A55` and teal `#3E6E66`.
+- Stamp red `#B4322A`; official gold-foil seal `#B8912E`.
+- Papers-Please-cold neutral greys `#8A8D82`, `#3B3F3A`.
+
+**(c) Fonts (Google Fonts)**
+- MRZ line: **Cutive Mono** is the closest free Google Fonts stand-in for OCR-B (a genuinely free OFL "OCR-B" clone also exists if you want exact); **Nova Mono** as an alt.
+- Field labels/data: **Archivo** or **Oswald** (stern institutional grotesque) for headers; **IBM Plex Mono** for data values.
+
+**(d) Signature devices**
+1. **MRZ strip** across the bottom -- two 44-char OCR-B lines with `&lt;&lt;&lt;` fillers encoding NAME/HANDLE.
+2. Faint **guilloche** engraving + a circular rosette **seal** watermark behind the content.
+3. A rotated red inspection **stamp** ("VERIFIED" / date met) and a labeled field grid with a portrait-tinted mugshot box.
+
+---
+
+## Cross-cutting font cheat-sheet (all on Google Fonts)
+- Display shout: Anton, Archivo Black, Bebas Neue, Bricolage Grotesque
+- Wide fintech: Anybody (width axis), Archivo Expanded
+- Engraved/ornate: Cinzel, Cormorant
+- Handwriting: Caveat, Shadows Into Light, Gochi Hand, Kalam
+- Mono family: VT323, Share Tech Mono, Space Mono, JetBrains Mono, IBM Plex Mono, Cutive Mono, Nova Mono
+
+---
+
+## Sources
+- Cash App color + fonts: https://brandpalettes.com/cash-app-colors/ , https://mobbin.com/colors/brand/cash-app , https://keylaydesign.com/cash-apps-new-brand-portal/
+- Gumroad font/brand: https://typ.io/s/59qb , https://gumroad.com/design/fonts
+- Monzo Hot Coral: https://www.deck.gallery/monzo-brand-style-guide-deck/slide/14-hot-coral-primary-color/ , https://www.trendsmap.com/twitter/tweet/1394660469831610371 , https://brandarchive.xyz/identity/monzo
+- Spotify Wrapped 2024 palette/type: https://elements.envato.com/learn/spotify-wrapped-2024 , https://alexjimenezdesign.medium.com/three-design-elements-that-made-spotify-wrapped-2024-great-0a8e2b133b72
+- Polaroid geometry + colors: https://www.designpieces.com/palette/polariod-color-palette-hex-and-rgb/ , https://logos-world.net/polaroid-logo/ , https://www.cannacompanionusa.com/topic/svU/802/viewVun2p8-polaroid-picture_measurements
+- Handwriting fonts: https://fonts.google.com/specimen/Shadows%2BInto%2BLight , https://www.notebookandpenguin.com/handwriting-google-fonts/
+- Pokemon holo mechanics: https://bulbapedia.bulbagarden.net/wiki/Holofoil , https://www.cgccards.uk/news/article/12438/pokemon-rarity-symbols/ , https://poke-holo.simey.me/
+- NBA Top Shot / Pop Mart: https://nbatopshot.com/ , https://team-zero.dev/articles/nftix/nba-top-shot-digital-sports-cards/ , https://www.popmart.com/us/search/labubu
+- Blade Runner Voight-Kampff: https://www.speculativeidentities.com/research/voight-kampff , https://scifiinterfaces.com/2019/12/10/8-reasons-the-voight-kampff-machine-is-shit-and-a-redesign-to-fix-it/
+- Terminal fonts: https://fonts.google.com/specimen/VT323 , https://fonts.google.com/specimen/Share%2BTech%2BMono , https://github.com/phoikoi/VT323
+- MRZ / OCR-B: https://idenfy.com/blog/machine-readable-zone/ , https://en.wikipedia.org/wiki/OCR-B , https://www.typewolf.com/ocr-b , https://extractfox.com/blog/passport-mrz-format-explained
+- Guilloche / security print: https://benhodosi.com/ , https://www.holoteam.com/post/security-printing-pattern , https://www.kinegram.com/events-insights/details/enhance-passport-security-advanced-anti-counterfeiting-solutions
+- Papers, Please design: https://www.gamedeveloper.com/design/designing-the-bleak-genius-of-i-papers-please-i- , https://medium.com/@ishikasoni50/the-design-of-oppression-in-papers-please-1b83b16a3079
+
+Two things to flag as approximate: Spotify Wrapped colors change every year (2024 was blood-red/neon-pink/canary-yellow with the custom Spotify Mix face, not the older Circular), so I gave representative hexes rather than official ones. And Monzo's Hot Coral is stated as `#FF4D56` by Monzo itself but appears in the wild as `#FF4B60` / `#FE4D55` depending on the medium.</result>
+<usage><subagent_tokens>50929</subagent_tokens><tool_uses>16</tool_uses><duration_ms>204732</duration_ms></usage>
+</task-notification>
