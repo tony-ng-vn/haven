@@ -1,0 +1,18 @@
+are we integrating canvas ui? i was trying to set this up maybe u can help me set this up too Last login: Fri Jul 24 11:36:46 on ttys009
+> npx shadcn@latest add @canvas-ui/liquid-react
+✔ You need to create a components.json file to add components. Proceed? … yes
+✔ Select a component library › Base UI (Recommended)
+✔ Which preset would you like to use? › Sera
+✔ Preflight checks.
+✔ Verifying framework. Found Vite.
+✖ Validating Tailwind CSS.
+✖ Validating import alias.
+
+No Tailwind CSS configuration found at /Users/minhthiennguyen/Desktop/Euno/euno-app.
+It is likely you do not have Tailwind CSS installed or have an invalid configuration.
+Install Tailwind CSS then try again.
+Visit https://tailwindcss.com/docs/guides/vite to get started.
+
+Could not find valid path aliases or package imports for init.
+Configure path aliases in tsconfig.json or imports in package.json, then run init again.
+Learn more at https://ui.shadcn.com/docs/installation/manual#configure-import-aliases.
