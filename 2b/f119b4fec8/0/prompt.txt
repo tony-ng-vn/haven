@@ -1,0 +1,5 @@
+let's try with this one again for the skill, the language should be plain like this 'Adds an in-app Feedback button so signed-in users can send feedback (idea / bug / other, with optional screenshot) from inside Euno, instead of stopping to re-explain it elsewhere. The feedback lands in an isolated per-project queue that an agent can read and act on.
+
+Against the architecture: this is purely additive and client-side. It mounts a framework-agnostic web component (feedback-sdk-widget, from npm) inside the authenticated Home. The widget POSTs to a shared hosted feedback service; Euno's own Convex backend, schema, and auth are untouched. The button only exists when two build-time env vars are set, so this PR is inert in any environment that has not opted in.
+
+', like the language i use to write tldr
