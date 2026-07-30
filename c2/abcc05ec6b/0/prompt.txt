@@ -1,0 +1,30 @@
+<task-notification>
+<task-id>a4aa35cac8587993a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/752919c5-b916-4950-b41a-651ba53ec7b8/tasks/a4aa35cac8587993a.output</output-file>
+<status>completed</status>
+<summary>Agent "X/Twitter integration research" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Draft PR opened: **https://github.com/tony-ng-vn/euno/pull/26**
+
+## Summary
+
+**Verdict:** Do not build an X API integration for followers/following import or profile enrichment. Keep current capture behavior as-is (it's already better than LinkedIn's). "Sign in with X" via Clerk is a viable optional auth-only experiment, not a product-value item.
+
+**Codebase check first:** X ("x") is already a first-class platform in `convex/openaiClient.ts`'s `PLATFORMS` enum, and unlike LinkedIn it's also in `src/lib.ts`'s `HANDLE_URLS` map, so `deriveProfileUrl` builds `https://x.com/&lt;handle&gt;` automatically from a screenshot's visible handle - no manual paste step needed, and `PLATFORM_LABELS` already shows "X" not the raw enum. X capture is more complete than LinkedIn's out of the box; no engineering gap to close.
+
+**Six options evaluated:**
+1. **Followers/following import (API)** - X moved to pay-per-use pricing Feb 6, 2026 (no free tier; legacy $200/$5,000/mo tiers closed to new signups; Enterprise ~$42k/mo). The "Owned Reads" $0.001/resource rate that would make this affordable is disputed in X's own dev forum as to whether it applies to third-party multi-tenant apps, and the pricing model had a billing correction announced months after launch. Skip.
+2. **Data-archive export** - legal/free, same shape as LinkedIn's CSV, but strictly weaker: `follower.js`/`following.js` contain only numeric account IDs, no usernames or names (confirmed via a first-hand technical account), so it can't seed a person record at all. Skip.
+3. **Enrich from pasted handle/URL** - X actually has a non-partner-gated `GET /2/users/by/username` lookup (real difference from LinkedIn), but it's a paid, metered dependency duplicating what free screenshot capture already does. Skip.
+4. **Sign in with X (Clerk)** - low effort, Clerk fully supports X OAuth v2 with zero-config dev instances. Optional later, auth only.
+5. **Post to X** - out of scope, billed per-post anyway. Skip.
+6. **Deepen X-aware capture** - already done; no residual gaps found.
+
+**Fit against principles:** Follower/following data is a broadcast/interest graph, arguably a weaker signal of "someone you met" than even LinkedIn connections, cutting against Euno's anti-CRM/anti-social-graph stance.
+
+**Verification:** `OPENAI_API_KEY=test npm test` passed (171 tests, 11 files, no regressions). `grep -P '[^\x00-\x7F]' &lt;file&gt;` returned nothing (pure ASCII confirmed). Worktree left in place at `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/x-twitter-research` on branch `docs/x-twitter-integration-research`.
+
+File: `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/x-twitter-research/docs/superpowers/specs/2026-07-20-x-twitter-integration-research.md`</result>
+<usage><subagent_tokens>89999</subagent_tokens><tool_uses>39</tool_uses><duration_ms>321563</duration_ms></usage>
+</task-notification>
