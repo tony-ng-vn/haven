@@ -1,0 +1,108 @@
+<task-notification>
+<task-id>a6a0aca5b41f5661b</task-id>
+<tool-use-id>toolu_01WoAgcejwmrxiCwV5WfprWZ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/ff2f60f2-21b1-4bc3-87e2-a040e7e3caee/tasks/a6a0aca5b41f5661b.output</output-file>
+<status>completed</status>
+<summary>Agent "Research OCR/VLM options for profile screenshots" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to write a tight, decision-oriented report.
+
+---
+
+# Research report: extracting structured data from social-profile screenshots
+
+## Q1. What is `imanoop7/Ollama-OCR`?
+
+It is a **thin Python wrapper + Streamlit app around Ollama's local vision models**, not a model and not a novel OCR engine. It does no OCR itself; it shells your image and a prompt to whatever vision model you have pulled in Ollama and formats the reply.
+
+- Under the hood it calls local VLMs: LLaVA, Llama 3.2 Vision, Granite 3.2-Vision, Moondream, MiniCPM-V.
+- Output modes: Markdown, plain text, JSON, "structured", key-value, table. Plus batch processing, custom prompts, basic image preprocessing.
+- Strengths: fully local/private, dead-simple to stand up, flexible output formatting, model-agnostic.
+- Limits: quality is entirely the underlying model's (the README itself warns "LLaVa model can generate wrong output sometimes"); no special layout engine, no platform logic, no benchmarked accuracy. It is convenience glue, not a differentiator.
+
+Verdict: useful as a local prototyping harness, but it adds almost nothing you couldn't get by calling Ollama's vision API yourself. Don't treat it as a "solution" to your problem, just as one way to invoke a local VLM.
+
+## Q2. Classic OCR vs VLM for this task
+
+**Use a VLM with structured/JSON output. Classic OCR is the wrong primary tool here.**
+
+Your task is not "read all the text" - it is "understand a UI, decide which platform it is, and map pixels to named fields." Classic OCR (Tesseract, PaddleOCR, Textract) returns a flat bag of text plus bounding boxes with no idea that one string is a *name*, another is a *@handle*, another is a *bio*, or that the blue-and-white chrome means LinkedIn. You would then have to write brittle per-platform heuristics on top of OCR output, and those break every time a platform reskins its UI.
+
+A VLM does all of it in one pass: it reads the text, reasons about layout and branding, classifies the platform, and emits `{platform, name, handle, headline, ...}` directly. This is exactly the "send an image + 'return these fields as JSON'" pattern the sources describe as the VLM sweet spot for messy, layout-varying inputs. OCR still has a niche - it is cheaper and more deterministic for dense text-only pages - but for platform-ID + field-mapping from varied UI chrome, the VLM is the right call.
+
+## Q3. Best options as of early 2026
+
+### Cloud VLMs (recommended primary)
+Screenshots are small inputs (roughly 1-3k tokens each) with tiny structured outputs, so per-image cost is dominated by input tokens and is very low across the board:
+
+| Model | Token pricing (in / out per 1M) | Rough cost per screenshot | Notes |
+|---|---|---|---|
+| Gemini 2.5 Flash-Lite | $0.10 / $0.40 | ~$0.0002 (sub-cent) | Cheapest, fastest (~360 tok/s), 1M context |
+| GPT-4o mini | $0.15 / $0.60 | ~$0.0003 | Native structured outputs, strong on screenshots |
+| Claude Haiku 4.5 | $1.00 / $5.00 | ~$0.003 | ~3x pricier input; strong reasoning/instruction-following |
+| Premium tier (Gemini 2.5 Pro, GPT-4o, Claude Sonnet) | e.g. Gemini 2.5 Pro $1.25 / $10 | ~$0.005-0.02 | Only if a cheap model misreads specific layouts |
+
+**Best value for this job: Gemini 2.5 Flash (or Flash-Lite).** Cheapest, fast, native JSON/schema output, and vision-strong. GPT-4o mini is a near-tie and has clean structured-output support. Claude Haiku costs more per image but is a fine choice if you're already in the Anthropic ecosystem. For a contacts app doing a handful of screenshots per user, all of these are effectively free per image; pick on accuracy and your existing stack, not price.
+
+### Local / open models (for a local-first fallback)
+- **Best all-round default: Qwen2.5-VL 7B.** Strongest OCR + document/UI understanding in its class (cited ~95.7 on doc-understanding/OCR benchmarks), beats the larger Llama 3.2 Vision 11B on several benchmarks. `ollama pull qwen2.5vl:7b`. Fits a single 12 GB GPU at 4-bit; ~8 GB+ VRAM realistic.
+- **Best dense-OCR specialist: MiniCPM-V (2.6 / 4.5, ~8B).** State-of-the-art on OCRBench, handles high-res/any-aspect images, runs in ~6 GB VRAM. Great for dense text; slightly less "reasoning about the whole UI."
+- **Best for UI/screenshot semantics specifically: InternVL 2.5 8B** (trained on UI mockups/screenshots/code) - worth testing head-to-head with Qwen for platform-ID.
+- **Tiny/edge: Moondream 2 (1.9B)** runs in ~2 GB VRAM but is too weak for reliable multi-field UI extraction.
+- Pure-OCR engines (PaddleOCR, Surya, docTR) are text extractors only - use them as a cheap fallback layer, not for platform-ID/field-mapping.
+
+Practical hardware read: a 7-8B VLM at 4-bit needs roughly an 8-12 GB GPU (or an Apple Silicon Mac with enough unified memory). CPU-only works but is slow.
+
+## Q4. URL reconstruction feasibility per platform
+
+Confirmed - reliability splits by whether the URL is handle-based or slug-based:
+
+- **X/Twitter: reliable.** URL is `x.com/&lt;handle&gt;`; the `@handle` is prominently displayed. Visible handle -&gt; exact URL.
+- **Instagram: reliable.** URL is `instagram.com/&lt;username&gt;`; username is the header of the profile. Visible handle -&gt; exact URL.
+- **TikTok, GitHub, Threads, Bluesky: reliable** for the same reason (handle == path).
+- **LinkedIn: unreliable from a screenshot alone.** The public URL is a **vanity slug** `linkedin.com/in/&lt;slug&gt;`. Two failure modes: (1) if the user never customized it, LinkedIn assigns `firstname-lastname-&lt;hash&gt;` where the hash is *not derivable* from anything visible on the profile; (2) even a clean custom slug is a chosen string that generally does **not** appear anywhere in the profile body - it only lives in the browser address bar, which a content screenshot usually crops out. So you can capture name/headline/company reliably, but you **cannot reconstruct the LinkedIn URL** from a body screenshot. You can only *guess* `/in/firstname-lastname` and verify, or ask the user to paste the URL / screenshot the address bar.
+- **Facebook: unreliable** (numeric IDs or non-visible vanity names, same problem).
+
+Design implication: treat URL as *derived-and-verified* for handle platforms, and *user-supplied-or-best-effort-guess* for LinkedIn/Facebook. Don't promise a reconstructed LinkedIn URL.
+
+## Q5. Existing purpose-built "screenshot -&gt; structured contact" tools
+
+Notably, almost nobody solves the *screenshot* path - the market solves the easier *live-page* path:
+
+- **folk CRM / folkX Chrome extension**: capture a LinkedIn profile into a structured contact while browsing. But it reads the live DOM and real URL, not a screenshot - which is exactly why it can get the LinkedIn URL and you can't from an image.
+- **Lessie AI, Skrapp, Waalaxy, PhantomBuster, Lindy**: LinkedIn scrapers/enrichment tools. All DOM/API-based, extension-driven, often ToS-gray. Same live-page assumption.
+- The "Twitter screenshot" tools (TwitterShots, Pikaso) go the *opposite* direction - they *generate* pretty screenshots from tweets, not extract data from them.
+
+Takeaway: the "user uploads an arbitrary screenshot from any platform" ingestion path is relatively underserved; the incumbents avoid it by living inside the browser on the live page. That's both your opportunity (flexible, platform-agnostic, works from a phone screenshot) and your constraint (you inherit the LinkedIn-URL problem the DOM scrapers sidestep).
+
+---
+
+## Recommendation
+
+**Primary approach:** Cloud VLM with schema-constrained JSON output. Start with **Gemini 2.5 Flash** (cheapest + fast + strong vision) or **GPT-4o mini**; call from your Convex backend with a strict output schema like `{platform, confidence, name, handle, headline, company, profile_url, url_confidence}`. Have the model both classify platform and extract fields in one call. Reconstruct `profile_url` deterministically in code from the handle for X/Instagram/TikTok/etc.; for LinkedIn/Facebook, return a low-confidence guess and prompt the user to confirm or paste the URL.
+
+**Local-first fallback:** **Qwen2.5-VL 7B via Ollama** (with MiniCPM-V as a dense-OCR backup), driven either through your own Ollama call or a wrapper like Ollama-OCR for quick prototyping. Same JSON prompt. This gives you a private, no-per-call-cost path and a graceful-degradation option if a user opts out of cloud.
+
+**One design rule to bake in now:** model the profile URL as a per-platform reliability tier, not a universal output. Handle-based platforms = auto-derived; slug-based (LinkedIn) = user-confirmed. This single distinction is the difference between the feature feeling magic and feeling broken.
+
+## Sources
+- https://github.com/imanoop7/Ollama-OCR (README)
+- https://ollama.com/library/qwen2.5vl
+- https://ollama.com/library/minicpm-v
+- https://localaimaster.com/blog/local-ai-vision-tasks
+- https://www.promptquorum.com/power-local-llm/local-vision-models-llava-ollama-2026
+- https://insiderllm.com/guides/vision-models-locally/
+- https://blog.roboflow.com/local-vision-language-models/
+- https://macaron.im/blog/gemini-flash-lite-vs-gpt4o-mini-vs-claude-haiku
+- https://intuitionlabs.ai/articles/ai-api-pricing-comparison-grok-gemini-openai-claude
+- https://www.cloudidr.com/llm-pricing
+- https://linkedviewer.com/blog/linkedin-profile-url-format-guide
+- https://www.linkedin.com/help/linkedin/answer/a542685/manage-your-public-profile-url
+- https://www.linkedhelper.com/blog/linkedin-url/
+- https://www.folk.app/articles/linkedin-profile-extractor
+- https://lessie.ai/linkedin-profile-extractor
+- https://www.edenai.co/post/top-free-computer-vision-apis-and-open-source-models
+
+Note: per-image cost figures are my calculations from the published per-token prices (a typical screenshot is ~1-3k input tokens plus a small JSON output), not vendor-quoted per-image rates.</result>
+<usage><subagent_tokens>38563</subagent_tokens><tool_uses>7</tool_uses><duration_ms>115394</duration_ms></usage>
+</task-notification>
