@@ -1,0 +1,51 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - convex/people.test.ts
+  - convex/people.ts
+
+Unified diff (only + lines are new):
+
+=== DIFF: convex/people.test.ts ===
+@@ -65,3 +65,19 @@ test("searchPeople with an empty query returns only the caller's recent people",
+   const results = await me.as.query(api.people.searchPeople, { query: "  " });
+   expect(results.map((p) => p.name).sort()).toEqual(["Felix Ng", "Maya Chen"]);
+ });
++
++test("getPerson returns the caller's person and null for another user's", async () => {
++  const t = convexTest(schema, modules);
++  const me = await asNewUser(t);
++  const other = await asNewUser(t);
++
++  const myId = await me.as.mutation(api.people.addPerson, { name: "Maya" });
++  const otherId = await other.as.mutation(api.people.addPerson, {
++    name: "Rao",
++  });
++
++  expect((await me.as.query(api.people.getPerson, { id: myId }))?.name).toBe(
++    "Maya",
++  );
++  expect(await me.as.query(api.people.getPerson, { id: otherId })).toBeNull();
++});
+
+
+=== DIFF: convex/people.ts ===
+@@ -51,3 +51,15 @@ export const searchPeople = query({
+       .take(20);
+   },
+ });
++
++export const getPerson = query({
++  args: { id: v.id("people") },
++  handler: async (ctx, args) => {
++    const userId = await requireUser(ctx);
++    const person = await ctx.db.get("people", args.id);
++    if (person === null || person.userId !== userId) {
++      return null;
++    }
++    return person;
++  },
++});
+
+
+Investigate per the method in your instructions, then return the findings list.
