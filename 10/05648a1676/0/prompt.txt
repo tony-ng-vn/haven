@@ -1,0 +1,1 @@
+Goal: Let users add contact methods with almost no typing. Social platforms use an authorization flow to connect automatically; phone and email are type. Manual links are only a fallback when a platform cannot provide the profile.
