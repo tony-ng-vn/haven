@@ -1,0 +1,11 @@
+1. yes we will back that to make sure data privacy for everyone
+  2. yeah the read my text thing im just saying so we can note it down as part of my v4 part for future so i don't forget.
+  3. yes the widget thing is the thing. i just realize linkedln doesn't have it, so it can be our advantage
+  4. yes i like the idea of light weight slice of Haven without having to install the app, but that mean a user doesn't need to install and signup to Haven to use the app? or they would
+  still need to create a profile and later have the app to use it? like what makes a person wants to install Haven? the ability to search people up? how does app clip different with the
+  app?
+  5.
+i was thinking if the core mvp of the app is: a centralize place to store everyone context + searchable (ai directory), then should the calendar one be a potential add on but not needed yet? maybe only testing would tell us
+6. i think we will focus on native because no one open the web anyway, having people open the web, type in inhavens.com is already a friction, very friction action. for the source it can be any source as we are referencing to people, but linkedln will be kinda needed later on for the search function for baseline data, in which for the 2nd core point we need linkedln but for the first one we dont
+7. all the COVID contact-tracing apps) -> what are they???
+8. if the radar is not native but on cloud but has satalite to detect your location would that work...? maybe the auto detect thing could be a future thing but not needed now
