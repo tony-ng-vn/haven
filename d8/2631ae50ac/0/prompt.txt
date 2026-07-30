@@ -1,0 +1,33 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - src/waitlistCopy.test.ts
+  - src/waitlistCopy.ts
+
+Unified diff (only + lines are new):
+
+=== DIFF: src/waitlistCopy.test.ts ===
+@@ -15,7 +15,7 @@ describe("waitlist copy", () => {
+     expect(WAITLIST_COPY).toEqual({
+       eyebrow: "Haven - private beta",
+       headline: "Your people are a constellation.",
+-      sub: "Every person you meet becomes a point of light - and Haven keeps them from drifting away.",
++      sub: "We keep everyone you meet in one place, and help you find them again when you forget their name.",
+       cta: "Join",
+       submitting: "Joining",
+       fine: "Private beta",
+
+
+=== DIFF: src/waitlistCopy.ts ===
+@@ -8,7 +8,7 @@
+ export const WAITLIST_COPY = {
+   eyebrow: "Haven - private beta",
+   headline: "Your people are a constellation.",
+-  sub: "Every person you meet becomes a point of light - and Haven keeps them from drifting away.",
++  sub: "We keep everyone you meet in one place, and help you find them again when you forget their name.",
+   cta: "Join",
+   submitting: "Joining",
+   fine: "Private beta",
+
+
+Investigate per the method in your instructions, then return the findings list.
