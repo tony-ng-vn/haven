@@ -1,0 +1,82 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - convex/people.test.ts
+  - convex/people.ts
+
+Unified diff (only + lines are new):
+
+=== DIFF: convex/people.test.ts ===
+@@ -39,3 +39,29 @@ test("addPerson rejects an unauthenticated caller", async () => {
+     t.mutation(api.people.addPerson, { name: "Maya" }),
+   ).rejects.toThrow("Not signed in");
+ });
++
++test("searchPeople matches the caller's people by name and excludes others", async () => {
++  const t = convexTest(schema, modules);
++  const me = await asNewUser(t);
++  const other = await asNewUser(t);
++
++  await me.as.mutation(api.people.addPerson, { name: "Maya Chen" });
++  await me.as.mutation(api.people.addPerson, { name: "Felix Ng" });
++  await other.as.mutation(api.people.addPerson, { name: "Maya Rao" });
++
++  const results = await me.as.query(api.people.searchPeople, { query: "Maya" });
++  expect(results.map((p) => p.name)).toEqual(["Maya Chen"]);
++});
++
++test("searchPeople with an empty query returns only the caller's recent people", async () => {
++  const t = convexTest(schema, modules);
++  const me = await asNewUser(t);
++  const other = await asNewUser(t);
++  await me.as.mutation(api.people.addPerson, { name: "Maya Chen" });
++  await me.as.mutation(api.people.addPerson, { name: "Felix Ng" });
++  // Another user's person must never appear in my empty-query results.
++  await other.as.mutation(api.people.addPerson, { name: "Rao" });
++
++  const results = await me.as.query(api.people.searchPeople, { query: "  " });
++  expect(results.map((p) => p.name).sort()).toEqual(["Felix Ng", "Maya Chen"]);
++});
+
+
+=== DIFF: convex/people.ts ===
+@@ -1,7 +1,10 @@
+-import { mutation, QueryCtx, MutationCtx } from "./_generated/server";
++import { mutation, query, QueryCtx, MutationCtx } from "./_generated/server";
+ import { v } from "convex/values";
+ import { getAuthUserId } from "@convex-dev/auth/server";
+ 
++// Bound every list read so the query stays scalable as the table grows.
++const RESULT_LIMIT = 20;
++
+ // Guidelines forbid `any` for ctx; use the proper context union.
+ async function requireUser(ctx: QueryCtx | MutationCtx) {
+   const userId = await getAuthUserId(ctx);
+@@ -27,3 +30,24 @@ export const addPerson = mutation({
+     });
+   },
+ });
++
++export const searchPeople = query({
++  args: { query: v.string() },
++  handler: async (ctx, args) => {
++    const userId = await requireUser(ctx);
++    const term = args.query.trim();
++    if (term === "") {
++      return await ctx.db
++        .query("people")
++        .withIndex("by_user", (q) => q.eq("userId", userId))
++        .order("desc")
++        .take(RESULT_LIMIT);
++    }
++    return await ctx.db
++      .query("people")
++      .withSearchIndex("search_name", (q) =>
++        q.search("name", term).eq("userId", userId),
++      )
++      .take(20);
++  },
++});
+
+
+Investigate per the method in your instructions, then return the findings list.
