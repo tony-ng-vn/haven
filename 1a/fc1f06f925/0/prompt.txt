@@ -1,0 +1,1 @@
+1. spin up background agent to look into https://www.tomo.ai/ and https://cofounder.co/
