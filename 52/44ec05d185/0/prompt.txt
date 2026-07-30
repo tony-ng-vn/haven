@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b062sztpx</task-id>
+<tool-use-id>toolu_01Jy64jAXvyyjhxzgTXb7ajY</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/45c37739-14ec-4f83-9d43-29f77afa5176/tasks/b062sztpx.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI then show status" completed (exit code 0)</summary>
+</task-notification>
