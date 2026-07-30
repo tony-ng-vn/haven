@@ -1,0 +1,170 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - src/CaptureTriage.tsx
+  - src/lib.test.ts
+  - src/lib.ts
+
+Unified diff (only + lines are new):
+
+=== DIFF: src/CaptureTriage.tsx ===
+@@ -7,8 +7,10 @@ import {
+   canSaveManualName,
+   composeHeadline,
+   composeName,
++  decideSwipe,
+   deriveProfileUrl,
+   normalizeUrl,
++  rubberband,
+ } from "./lib";
+ import { PersonSky } from "./PersonSky";
+ 
+@@ -26,19 +28,6 @@ const PLATFORM_LABELS: Record<string, string> = {
+   other: "Profile",
+ };
+ 
+-// Scroll-style momentum projection: where would the card coast to?
+-function project(velocity: number, decelerationRate = 0.998): number {
+-  return ((velocity / 1000) * decelerationRate) / (1 - decelerationRate);
+-}
+-
+-// Progressive resistance past a boundary; real things slow before they stop.
+-function rubberband(overshoot: number, dimension = 320, constant = 0.55): number {
+-  return (
+-    (overshoot * dimension * constant) /
+-    (dimension + constant * Math.abs(overshoot))
+-  );
+-}
+-
+ // Uploads one screenshot in isolation and reports whether it landed, so a
+ // bad file in a batch never voids the ones around it.
+ export async function uploadScreenshot(
+@@ -352,19 +341,13 @@ export function CaptureTriage() {
+ 
+   function onPointerUp(_event: PointerEvent<HTMLDivElement>) {
+     if (!drag.dragging || top === undefined) return;
+-    const samples = history.current;
+-    const last = samples[samples.length - 1];
+-    const first =
+-      samples.find((s) => last.t - s.t <= 100) ?? samples[0];
+-    const velocity =
+-      last.t > first.t ? ((last.x - first.x) / (last.t - first.t)) * 1000 : 0;
+-    const projected = drag.x + project(velocity);
++    const decision = decideSwipe(drag.x, history.current);
+     history.current = [];
+ 
+     // An unnamed manual star can go neither way -- name it first.
+     const blockedUnnamed = top.status === "failed" && !canSaveManual;
+ 
+-    if (projected < -240) {
++    if (decision === "save") {
+       // Flung left: remember them now, context can wait.
+       if (blockedUnnamed) {
+         flashActionError("Name them first");
+@@ -375,7 +358,7 @@ export function CaptureTriage() {
+       save(top);
+       return;
+     }
+-    if (projected > 240) {
++    if (decision === "context") {
+       // Flung right: they matter; settle back and write the context.
+       if (blockedUnnamed) {
+         flashActionError("Name them first");
+
+
+=== DIFF: src/lib.test.ts ===
+@@ -6,6 +6,7 @@ import {
+   canSaveManualName,
+   composeHeadline,
+   composeName,
++  decideSwipe,
+   deriveProfileUrl,
+   formatMonthYear,
+   isClerkFlowHash,
+@@ -216,6 +217,35 @@ describe("bootMode", () => {
+   });
+ });
+ 
++describe("decideSwipe", () => {
++  test("a hard left drag past the threshold commits to save", () => {
++    expect(decideSwipe(-300, [{ t: 0, x: -300 }])).toBe("save");
++  });
++
++  test("a hard right drag past the threshold commits to context", () => {
++    expect(decideSwipe(300, [{ t: 0, x: 300 }])).toBe("context");
++  });
++
++  test("a leftward flick under the positional threshold still commits via momentum", () => {
++    // Only -50px of drag (threshold is -240), but a fast enough flick left
++    // projects well past it -- the card should still save, not settle.
++    const samples = [
++      { t: 0, x: 0 },
++      { t: 50, x: -50 },
++    ];
++    expect(decideSwipe(-50, samples)).toBe("save");
++  });
++
++  test("a small, slow drag settles back", () => {
++    expect(decideSwipe(50, [{ t: 0, x: 50 }])).toBe("settle");
++  });
++
++  test("settles exactly at the threshold boundary (strictly greater/less to commit)", () => {
++    expect(decideSwipe(-240, [{ t: 0, x: -240 }])).toBe("settle");
++    expect(decideSwipe(240, [{ t: 0, x: 240 }])).toBe("settle");
++  });
++});
++
+ describe("composeAtlasField", () => {
+   const p = (id: string) => ({ _id: id, name: id });
+ 
+
+
+=== DIFF: src/lib.ts ===
+@@ -157,3 +157,44 @@ export function bootMode(input: {
+   if (input.hasSessionHint) return "splash";
+   return "landing";
+ }
++
++// The triage card's drag gesture: scroll-style momentum projection for
++// "where would the card coast to if released now?".
++export function project(velocity: number, decelerationRate = 0.998): number {
++  return ((velocity / 1000) * decelerationRate) / (1 - decelerationRate);
++}
++
++// Progressive resistance past a boundary; real things slow before they stop.
++export function rubberband(
++  overshoot: number,
++  dimension = 320,
++  constant = 0.55,
++): number {
++  return (
++    (overshoot * dimension * constant) /
++    (dimension + constant * Math.abs(overshoot))
++  );
++}
++
++export type SwipeVelocitySample = { t: number; x: number };
++export type SwipeDecision = "save" | "context" | "settle";
++
++// Whether a released triage card commits left (save), right (add context),
++// or springs back to center. Velocity is read from the last ~100ms of
++// pointer samples, projected forward, and added to the current drag
++// position -- so a fast flick can commit the card even from short of the
++// positional threshold, the way a scroll view keeps going after a flick.
++export function decideSwipe(
++  dragX: number,
++  samples: SwipeVelocitySample[],
++): SwipeDecision {
++  if (samples.length === 0) return "settle";
++  const last = samples[samples.length - 1];
++  const first = samples.find((s) => last.t - s.t <= 100) ?? samples[0];
++  const velocity =
++    last.t > first.t ? ((last.x - first.x) / (last.t - first.t)) * 1000 : 0;
++  const projected = dragX + project(velocity);
++  if (projected < -240) return "save";
++  if (projected > 240) return "context";
++  return "settle";
++}
+
+
+Investigate per the method in your instructions, then return the findings list.
