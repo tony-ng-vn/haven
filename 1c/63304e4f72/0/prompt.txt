@@ -1,0 +1,2 @@
+i really like the language and how we structure everything now. what i want to add on is
+1. the ability to click into the pr block and see the technical detail explanation. like we give the general high level plain langague explanation here already so everyone can understand even a non technical. then the pr block detail is the true technical explanation of how we do it, still in plain language and explain like this but focus mainly to explain the technical concept and work that we do
