@@ -1,0 +1,22 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - .github/workflows/test.yml
+
+Unified diff (only + lines are new):
+
+=== DIFF: .github/workflows/test.yml ===
+@@ -10,8 +10,8 @@ jobs:
+   test:
+     runs-on: ubuntu-latest
+     steps:
+-      - uses: actions/checkout@v4
+-      - uses: actions/setup-node@v4
++      - uses: actions/checkout@v5
++      - uses: actions/setup-node@v5
+         with:
+           node-version: 24
+           cache: npm
+
+
+Investigate per the method in your instructions, then return the findings list.
