@@ -1,0 +1,645 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - package-lock.json
+  - package.json
+  - src/PersonDetail.test.tsx
+  - src/PersonDetail.tsx
+
+Unified diff (only + lines are new):
+
+=== DIFF: package-lock.json ===
+@@ -1,12 +1,12 @@
+ {
+   "name": "haven-app",
+-  "version": "0.42.0",
++  "version": "0.43.0",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+       "name": "haven-app",
+-      "version": "0.42.0",
++      "version": "0.43.0",
+       "dependencies": {
+         "@clerk/react": "^6.12.5",
+         "convex": "^1.41.0",
+
+
+=== DIFF: package.json ===
+@@ -1,7 +1,7 @@
+ {
+   "name": "haven-app",
+   "private": true,
+-  "version": "0.42.0",
++  "version": "0.43.0",
+   "type": "module",
+   "scripts": {
+     "dev": "vite",
+
+
+=== DIFF: src/PersonDetail.test.tsx ===
+@@ -1,6 +1,7 @@
+ // @vitest-environment happy-dom
++import { readFileSync } from "node:fs";
+ import { afterEach, describe, expect, test, vi } from "vitest";
+-import { cleanup, render, screen } from "@testing-library/react";
++import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+ import type { Id } from "../convex/_generated/dataModel";
+ 
+ // The page subscribes to two queries and calls three mutations, none of which
+@@ -29,10 +30,15 @@ type Doc = {
+   name: string;
+   link?: string;
+   context?: string;
++  headline?: string;
++  bio?: string;
++  company?: string;
++  role?: string;
++  city?: { name: string; admin?: string; country?: string };
+   contactHandles?: { platform: string; value: string }[];
+   preferredPlatform?: string;
+   photoUrl: string | null;
+-  connection: null;
++  connection: { state: "connected" | "ended"; peerUsername: string } | null;
+   updatedAt: number;
+ };
+ 
+@@ -50,6 +56,22 @@ function show(doc: Doc) {
+   return render(<PersonDetail id={id} initial={null} onSaved={() => {}} />);
+ }
+ 
++/// What one part of the page says for this person, or null when that part is
++/// not drawn at all. Every field below is a line that has to disappear rather
++/// than render empty, so "no element" is the answer being checked as often as
++/// the text is.
++function shown(doc: Partial<Doc>, selector: string): string | null {
++  const { container } = show({ ...base, ...doc });
++  return container.querySelector(selector)?.textContent ?? null;
++}
++
++/// The platform names down the reach rows, in the order they are drawn.
++function reachOrder(container: HTMLElement): (string | null)[] {
++  return [
++    ...container.querySelectorAll(".person-handle .card-handle-label"),
++  ].map((node) => node.textContent);
++}
++
+ describe("the handles on a person's page", () => {
+   test("a saved handle is a row you can actually open", () => {
+     show({
+@@ -119,9 +141,381 @@ describe("the handles on a person's page", () => {
+     });
+     const linkField = screen.getByLabelText("Link") as HTMLInputElement;
+     expect(linkField.value).toBe("https://mai.example");
+-    expect(screen.getByText("Private context")).toBeTruthy();
++    expect(screen.getByText("What you remember")).toBeTruthy();
+     expect(screen.getByText("Save")).toBeTruthy();
+     expect(screen.getByText("Shared notes")).toBeTruthy();
+     expect(screen.getByText("Remove from your network")).toBeTruthy();
+   });
++
++  // The one they said to use first leads, because that is what choosing it
++  // meant. Everything else keeps the order it was saved in.
++  test("the platform they chose comes first", () => {
++    const { container } = show({
++      ...base,
++      contactHandles: [
++        { platform: "instagram", value: "mai.makes" },
++        { platform: "telegram", value: "maimakes" },
++        { platform: "phone", value: "+84 90 123 4567" },
++      ],
++      preferredPlatform: "telegram",
++    });
++    expect(reachOrder(container)).toEqual(["Telegram", "Instagram", "Phone"]);
++  });
++
++  // The server stores the platform string verbatim, so a row can hold
++  // "Instagram" while preferredPlatform says "instagram". A raw === would
++  // quietly bury the row somebody actually picked.
++  test("different capitals are still the platform they chose", () => {
++    const { container } = show({
++      ...base,
++      contactHandles: [
++        { platform: "telegram", value: "maimakes" },
++        { platform: "Instagram", value: "mai.makes" },
++      ],
++      preferredPlatform: "instagram",
++    });
++    expect(reachOrder(container)).toEqual(["Instagram", "Telegram"]);
++    expect(screen.getByText("preferred").closest("a")?.getAttribute("href")).toBe(
++      "https://instagram.com/mai.makes",
++    );
++  });
++
++  test("no preference leaves the order alone", () => {
++    const { container } = show({
++      ...base,
++      contactHandles: [
++        { platform: "telegram", value: "maimakes" },
++        { platform: "instagram", value: "mai.makes" },
++      ],
++    });
++    expect(reachOrder(container)).toEqual(["Telegram", "Instagram"]);
++    expect(screen.queryByText("preferred")).toBeNull();
++  });
++});
++
++// What they do and where they are, as one line under their name. The formula is
++// PersonModel.detail's: the work, then the city, and nothing at all when there
++// is nothing to say.
++describe("the line under their name", () => {
++  test("what they do, then where they are", () => {
++    expect(shown({ role: "Engineer" }, ".person-detail-line")).toBe("Engineer");
++    expect(shown({ company: "Analytical Engines" }, ".person-detail-line")).toBe(
++      "Analytical Engines",
++    );
++    expect(
++      shown(
++        { role: "Engineer", company: "Analytical Engines" },
++        ".person-detail-line",
++      ),
++    ).toBe("Engineer, Analytical Engines");
++    expect(
++      shown({ city: { name: "Sai Gon", country: "Vietnam" } }, ".person-detail-line"),
++    ).toBe("Sai Gon, Vietnam");
++    expect(
++      shown(
++        {
++          role: "Engineer",
++          company: "Analytical Engines",
++          city: { name: "Sai Gon", admin: "Ho Chi Minh", country: "Vietnam" },
++        },
++        ".person-detail-line",
++      ),
++    ).toBe("Engineer, Analytical Engines | Sai Gon, Ho Chi Minh, Vietnam");
++  });
++
++  test("nothing to say draws no line", () => {
++    expect(shown({}, ".person-detail-line")).toBeNull();
++    // A field somebody blanked is not a fact about them.
++    expect(
++      shown({ role: "", company: "", city: { name: "" } }, ".person-detail-line"),
++    ).toBeNull();
++  });
++
++  // MapKit hands back an empty admin area for countries that have no states.
++  test("a city with no state gets no stray comma", () => {
++    expect(
++      shown(
++        { city: { name: "Sai Gon", admin: "", country: "Vietnam" } },
++        ".person-detail-line",
++      ),
++    ).toBe("Sai Gon, Vietnam");
++  });
++});
++
++describe("what they say about themselves", () => {
++  test("the headline is the line, and the bio stands in for it", () => {
++    expect(shown({ headline: "Compiler engineer" }, ".person-about")).toBe(
++      "Compiler engineer",
++    );
++    expect(shown({ bio: "Builds ceramics." }, ".person-about")).toBe(
++      "Builds ceramics.",
++    );
++    expect(
++      shown(
++        { headline: "Compiler engineer", bio: "Builds ceramics." },
++        ".person-about",
++      ),
++    ).toBe("Compiler engineer");
++  });
++
++  test("nothing written means no line", () => {
++    expect(shown({}, ".person-about")).toBeNull();
++    // An empty headline is still the headline: it stands in front of the bio and
++    // then draws nothing, which is what iOS's `headline ?? bio` does.
++    expect(shown({ headline: "", bio: "Builds ceramics." }, ".person-about")).toBeNull();
++  });
++});
++
++describe("their photo", () => {
++  test("rides in the sky band with their name", () => {
++    const { container } = show({
++      ...base,
++      photoUrl: "https://files.example/mai.jpg",
++    });
++    const photo = container.querySelector(".person-sky-band .person-photo");
++    expect(photo?.getAttribute("src")).toBe("https://files.example/mai.jpg");
++    // The name beside it says who this is; announcing "photo" gives a screen
++    // reader nothing it can use.
++    expect(photo?.getAttribute("aria-hidden")).toBe("true");
++    expect(photo?.getAttribute("alt")).toBe("");
++  });
++
++  // A Convex storage url is signed and can stop resolving, and a person with no
++  // photo is an ordinary person -- so a url that fails leaves the page it was
++  // decorating, not a broken-image glyph.
++  test("a url that stops resolving leaves an ordinary person", () => {
++    const { container } = show({
++      ...base,
++      photoUrl: "https://files.example/gone.jpg",
++    });
++    const photo = container.querySelector(".person-photo");
++    expect(photo).not.toBeNull();
++    fireEvent.error(photo as Element);
++    expect(container.querySelector(".person-photo")).toBeNull();
++    expect(container.querySelector(".person-name")?.textContent).toBe("Mai Nguyen");
++  });
++
++  test("most people have no photo", () => {
++    expect(show(base).container.querySelector(".person-photo")).toBeNull();
++  });
++});
++
++describe("whether this row still follows a card", () => {
++  test("a live connection says so", () => {
++    expect(
++      shown(
++        { connection: { state: "connected", peerUsername: "mai" } },
++        ".person-connection",
++      ),
++    ).toBe("Connected");
++  });
++
++  // The state that has to be legible: a frozen row and a person who never
++  // changes anything look identical without it.
++  test("an ended one says what that means for the fields", () => {
++    const { container } = show({
++      ...base,
++      connection: { state: "ended", peerUsername: "mai" },
++    });
++    expect(container.querySelector(".person-connection")?.textContent).toBe(
++      "No longer connected",
++    );
++    expect(container.querySelector(".person-frozen")).not.toBeNull();
++  });
++
++  test("somebody you saved yourself has neither", () => {
++    const { container } = show(base);
++    expect(container.querySelector(".person-connection")).toBeNull();
++    expect(container.querySelector(".person-frozen")).toBeNull();
++  });
++
++  test("a live connection is not warned about", () => {
++    expect(
++      shown(
++        { connection: { state: "connected", peerUsername: "mai" } },
++        ".person-frozen",
++      ),
++    ).toBeNull();
++  });
++});
++
++describe("the note you keep", () => {
++  test("is called what the app calls it, and says how to write it", () => {
++    const { container } = show(base);
++    expect(screen.getByLabelText("What you remember")).toBeTruthy();
++    expect(
++      screen.getByText("One line per thing. Each is searchable on its own."),
++    ).toBeTruthy();
++    // The web's own name for it, which nothing else in Haven ever used --
++    // including the shared-note card, which pointed at it by name.
++    expect(container.textContent?.toLowerCase()).not.toContain(
++      "private context",
++    );
++  });
++
++  test("still saves the same field", () => {
++    show({ ...base, context: "Met at the Hanoi meetup." });
++    const field = screen.getByLabelText("What you remember") as HTMLTextAreaElement;
++    expect(field.id).toBe("person-context");
++    expect(field.value).toBe("Met at the Hanoi meetup.");
++  });
++});
++
++// Pinned to the iOS source, the way designTokens.test.ts pins the palette and
++// reach.test.ts pins the addresses. Nothing imports across the platform
++// boundary, so a sentence reworded on the phone drifts silently here. Every pin
++// below asserts its parse found something first, because a regex that quietly
++// matches nothing turns the assertion under it into a green no-op.
++describe("the iOS screen this mirrors", () => {
++  const screenSwift = readFileSync(
++    "ios/Haven/Directory/PersonScreen.swift",
++    "utf8",
++  );
++  const modelSwift = readFileSync(
++    "ios/Haven/Directory/PersonModel.swift",
++    "utf8",
++  );
++
++  /// The slice of the Swift between two landmarks, so one ternary's strings
++  /// cannot be read as another's.
++  function section(from: string, to: string): string {
++    const start = screenSwift.indexOf(from);
++    expect(start, `PersonScreen.swift no longer has "${from}"`).toBeGreaterThan(-1);
++    const end = screenSwift.indexOf(to, start);
++    expect(end, `PersonScreen.swift no longer has "${to}"`).toBeGreaterThan(start);
++    return screenSwift.slice(start, end);
++  }
++
++  /// What a pattern captured, having checked that it captured anything at all.
++  function pin(source: string, pattern: RegExp, what: string): string[] {
++    const found = source.match(pattern);
++    expect(found, `the iOS source no longer has ${what}`).not.toBeNull();
++    const groups = found!.slice(1);
++    expect(groups.length, `${what} captured nothing`).toBeGreaterThan(0);
++    for (const group of groups) {
++      expect(group ?? "", `${what} parsed empty`).not.toBe("");
++    }
++    return groups;
++  }
++
++  test("says the same two things about a connection", () => {
++    // Anchored on `label`: the ternary a few lines above it picks SF Symbol
++    // names in exactly this shape, and a loose regex grabs those instead.
++    const chip = section("private var label: String {", "/// The address is worth");
++    const [connected, ended] = pin(
++      chip,
++      /\.connected \? "([^"]*)" : "([^"]*)"/,
++      "the connection labels",
++    );
++    expect(
++      shown(
++        { connection: { state: "connected", peerUsername: "mai" } },
++        ".person-connection",
++      ),
++    ).toBe(connected);
++    expect(
++      shown(
++        { connection: { state: "ended", peerUsername: "mai" } },
++        ".person-connection",
++      ),
++    ).toBe(ended);
++  });
++
++  test("says the same sentence about a row that stopped following a card", () => {
++    const [sentence] = pin(
++      screenSwift,
++      /Text\("(This is the last thing[^"]*)"\)/,
++      "the frozen-row sentence",
++    );
++    expect(
++      shown({ connection: { state: "ended", peerUsername: "mai" } }, ".person-frozen"),
++    ).toBe(sentence);
++  });
++
++  test("calls the note and its two headings the same thing", () => {
++    const [heading] = pin(
++      screenSwift,
++      /Text\("(What you remember)"\)\s*\.havenGroupLabel\(\)/,
++      "the note heading",
++    );
++    const [supporting] = pin(
++      screenSwift,
++      /Text\("(One line per thing[^"]*)"\)/,
++      "the note's supporting line",
++    );
++    const [reachHeading] = pin(
++      screenSwift,
++      /Text\("(Ways to reach them)"\)/,
++      "the reach heading",
++    );
++    show(base);
++    expect(screen.getByLabelText(heading)).toBeTruthy();
++    expect(screen.getByText(supporting)).toBeTruthy();
++    cleanup();
++    show({ ...base, contactHandles: [{ platform: "signal", value: "mai.99" }] });
++    expect(screen.getByText(reachHeading)).toBeTruthy();
++  });
++
++  test("hides the photo from a screen reader for the same reason", () => {
++    const header = section("if let photo {", "VStack(alignment: .leading");
++    expect(header).toContain("accessibilityHidden(true)");
++    const { container } = show({
++      ...base,
++      photoUrl: "https://files.example/mai.jpg",
++    });
++    expect(
++      container.querySelector(".person-photo")?.getAttribute("aria-hidden"),
++    ).toBe("true");
++  });
++
++  test("builds the line under the name from the same parts", () => {
++    const [order] = pin(
++      modelSwift,
++      /let work = \[([^\]]*)\]\.compactMap/,
++      "the order work reads in",
++    );
++    expect(order).toBe("role, company");
++    const [work] = pin(
++      modelSwift,
++      /\[work\.joined\(separator: "([^"]*)"\)\]/,
++      "how a role and a company are joined",
++    );
++    const [halves] = pin(
++      modelSwift,
++      /all\.joined\(separator: "([^"]*)"\)/,
++      "how the work and the city are joined",
++    );
++    const [cityOrder, cityJoin] = pin(
++      modelSwift,
++      /\[([^\]]*)\]\s*\.compactMap \{ \$0 \}\s*\.filter \{ !\$0\.isEmpty \}\s*\.joined\(separator: "([^"]*)"\)/,
++      "how a city line is joined",
++    );
++    expect(cityOrder).toBe("name, admin, country");
++    expect(
++      shown(
++        {
++          role: "Engineer",
++          company: "Analytical Engines",
++          city: { name: "Sai Gon", admin: "Ho Chi Minh", country: "Vietnam" },
++        },
++        ".person-detail-line",
++      ),
++    ).toBe(
++      `Engineer${work}Analytical Engines${halves}Sai Gon${cityJoin}Ho Chi Minh${cityJoin}Vietnam`,
++    );
++  });
++
++  test("prefers the headline over the bio, the same way", () => {
++    pin(
++      screenSwift,
++      /if let about = person\.(headline) \?\? person\.(bio)/,
++      "the about line",
++    );
++    expect(
++      shown(
++        { headline: "Compiler engineer", bio: "Builds ceramics." },
++        ".person-about",
++      ),
++    ).toBe("Compiler engineer");
++  });
+ });
+
+
+=== DIFF: src/PersonDetail.tsx ===
+@@ -6,6 +6,38 @@ import { formatMonthYear, normalizeUrl, type PersonSnapshot } from "./lib";
+ import { PersonSky } from "./PersonSky";
+ import { reachLabel, reachUrl, samePlatform } from "./reach";
+ 
++/// Whether a field somebody left blank counts as something to draw. It does
++/// not: half the fields on most people are empty, and an empty one has to
++/// disappear rather than render as a stray comma.
++function said(value: string | undefined): value is string {
++  return value !== undefined && value !== "";
++}
++
++/// The line under their name: what they do, then where they are.
++///
++/// The web mirror of PersonModel.detail. A blank part is dropped rather than
++/// shown as a stray separator -- MapKit hands back an empty admin area for
++/// countries that have no states, so a city can arrive with a hole in it.
++function detailLine(person: {
++  role?: string;
++  company?: string;
++  city?: { name: string; admin?: string; country?: string };
++}): string | null {
++  const work = [person.role, person.company].filter(said);
++  const city = [
++    person.city?.name,
++    person.city?.admin,
++    person.city?.country,
++  ].filter(said);
++  const halves = [
++    work.length > 0 ? work.join(", ") : undefined,
++    // Unlike iOS, a city whose every part is blank counts as no city rather
++    // than as an empty half, so it cannot leave a dangling "Engineer | ".
++    city.length > 0 ? city.join(", ") : undefined,
++  ].filter(said);
++  return halves.length > 0 ? halves.join(" | ") : null;
++}
++
+ function ArrowUpRight() {
+   return (
+     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+@@ -47,6 +79,10 @@ export function PersonDetail({
+   const [confirmingDelete, setConfirmingDelete] = useState(false);
+   const [deleting, setDeleting] = useState(false);
+   const [deleteError, setDeleteError] = useState<string | null>(null);
++  // A Convex storage url is signed and can stop resolving. A person without a
++  // photo is an ordinary person, so a url that fails leaves the page it was
++  // decorating rather than a broken-image glyph.
++  const [photoFailed, setPhotoFailed] = useState(false);
+   // Catch focus when the confirm row swaps in so a keyboard user is never
+   // dropped onto the body. Cancel (not Remove) so the safe choice is default
+   // for an action that cannot be undone.
+@@ -97,11 +133,26 @@ export function PersonDetail({
+   const openable = normalizeUrl(link);
+ 
+   // Read off the live doc alone: the search snapshot carries a name and a date
+-  // and nothing else, so the rows land when the authoritative doc arrives
++  // and nothing else, so all of this lands when the authoritative doc arrives
+   // rather than flashing an empty list first. Unlike the sky above, which is
+   // seeded by the document id and so is already right on the snapshot.
+-  const handles = live?.contactHandles ?? [];
+   const preferredPlatform = live?.preferredPlatform;
++  const saved = live?.contactHandles ?? [];
++  // The one they said to use first leads, because that is what choosing it
++  // meant; the rest keep the order they were saved in. samePlatform rather
++  // than ===, because the server stores the platform string verbatim: a row
++  // can hold "Instagram" while preferredPlatform says "instagram".
++  const handles = [
++    ...saved.filter((handle) => samePlatform(handle.platform, preferredPlatform)),
++    ...saved.filter((handle) => !samePlatform(handle.platform, preferredPlatform)),
++  ];
++  const photoUrl = live?.photoUrl ?? null;
++  const detail = detailLine(live ?? {});
++  // Their headline, or their bio standing in for it, mirroring iOS. `??` and
++  // not `||`: an empty headline is still the headline, and it draws nothing
++  // rather than falling through to the bio.
++  const about = live?.headline ?? live?.bio;
++  const connection = live?.connection ?? null;
+ 
+   async function handleSave() {
+     if (saving) return;
+@@ -167,15 +218,52 @@ export function PersonDetail({
+         <PersonSky seed={id} />
+         <div className="sky-vignette" aria-hidden="true" />
+         <div className="person-sky-content">
++          {photoUrl !== null && !photoFailed && (
++            <img
++              className="person-photo"
++              src={photoUrl}
++              alt=""
++              // The name under it says who this is; announcing "photo" gives a
++              // screen reader nothing it can use.
++              aria-hidden="true"
++              onError={() => setPhotoFailed(true)}
++            />
++          )}
+           <h1 className="person-name">{person.name}</h1>
++          {detail !== null && <p className="person-detail-line">{detail}</p>}
++          {connection !== null && (
++            <p
++              className={
++                connection.state === "connected"
++                  ? "person-connection person-connection-live"
++                  : "person-connection"
++              }
++            >
++              {connection.state === "connected"
++                ? "Connected"
++                : "No longer connected"}
++            </p>
++          )}
+         </div>
+       </div>
+       <p className="person-meta">Added {formatMonthYear(person._creationTime)}</p>
+ 
++      {said(about) && <p className="person-about">{about}</p>}
++
++      {connection?.state === "ended" && (
++        // Said once, plainly, above the fields it is about. A row that stopped
++        // following a card and does not say so reads as a person who simply
++        // never changes anything.
++        <p className="person-frozen">
++          This is the last thing their card said. It will not change again.
++        </p>
++      )}
++
+       {/* Reserved slot: the source screenshot thumbnail belongs here, in the
+-          quiet register above the link. Deferred this round -- getPerson does
+-          not project an image URL yet (it returns screenshotId only), so there
+-          is nothing to render client-side. Once getPerson resolves
++          quiet register above the link. Deferred this round -- getPerson
++          projects the person's own photo (drawn in the band above) but only a
++          screenshotId for the capture they came from, so there is nothing to
++          render client-side. Once getPerson resolves
+           ctx.storage.getUrl(screenshotId) into an imageUrl, render a small
+           .person-thumb here; the layout already leaves room for it. */}
+ 
+@@ -261,7 +349,7 @@ export function PersonDetail({
+         />
+       </div>
+       <div className="detail-field">
+-        <label htmlFor="person-context">Private context</label>
++        <label htmlFor="person-context">What you remember</label>
+         <textarea
+           id="person-context"
+           className="field"
+@@ -272,6 +360,12 @@ export function PersonDetail({
+             setDirty(true);
+           }}
+         />
++        {/* Dated lines are what "who did I meet last month" reads, and one line
++            per entry is what makes each one findable on its own -- so say that
++            here rather than let one paragraph grow. */}
++        <p className="person-note-hint">
++          One line per thing. Each is searchable on its own.
++        </p>
+       </div>
+       {saveError !== null && (
+         <p className="form-error" role="alert">
+@@ -303,7 +397,7 @@ export function PersonDetail({
+         <div className="shared-note-heading">
+           <h2 className="shared-note-title">Shared notes</h2>
+           <p className="shared-note-copy">
+-            A quiet space for mutual memory. Your private context above stays
++            A quiet space for mutual memory. The note you keep above stays
+             yours.
+           </p>
+         </div>
+
+
+Investigate per the method in your instructions, then return the findings list.
