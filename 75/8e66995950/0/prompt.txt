@@ -1,0 +1,152 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. **Primary Request and Intent:**
+
+The user (Tony Nguyen) is designing UI for **Haven** (formerly Euno), a native iOS + Convex "searchable private memory network for people you know." The conversation progressed through several distinct phases:
+
+- **Initial:** Critique the existing Phase 1 onboarding artifact, then design an original alternative that is "minimalist, clean, sleek and warm," inspired by the movie *Your Name*, Notion, and Universe.
+- **Iterative onboarding refinement** across ~5 revisions driven by numbered user feedback lists (centering, location autocomplete, OAuth-based contact collection, constellation seeding, widget flow, single primary contact, search screen, "feels spiritual like a therapy app").
+- **Final review + build plan:** "review this onboarding prototype ui for me, looking into every single aspect... then compare to the mvp plan... draft up a final plan that i can start having opus to work on it. especially look into this: https://canvasui.dev/"
+- **Canvas UI setup help** after the user's `npx shadcn@latest add @canvas-ui/liquid-react` failed.
+- **Waitlist visual effect design** via the `/grilling-frontend-prototyping` skill — 5 rounds of 5-variant comparison artifacts, converging on a constellation lens.
+- **Current:** Consolidate all waitlist design decisions into `waitlist-design.md`.
+
+**Active constraint:** User explicitly said "no don't start ship yet" — no PR, no merge, no implementation into `Waitlist.tsx` until told.
+
+2. **Key Technical Concepts:**
+- Convex backend (`convex/`), Clerk auth, Vite + React 19 + TypeScript, vitest (204 tests)
+- Native SwiftUI iOS client (Phase 0 complete), MKLocalSearchCompleter, WidgetKit, CIQRCodeGenerator, PhoneNumberKit
+- FNV-1a hash + seeded PRNG for deterministic constellations (`src/sky.ts`), Prim's minimum spanning tree
+- Canvas UI: shadcn registry distribution, `html-in-canvas` API (`drawElementImage`, `layoutsubtree`), WebGL2, origin trials
+- OAuth/OIDC: LinkedIn pairwise (app-scoped) `sub`, Instagram Basic Display API shutdown, Snapchat Login Kit scopes
+- Canvas 2D rendering: radial falloff, clipping vs per-element alpha fade, magnification transforms
+- The agent-shipping-workflow skill: ISOLATE → IMPLEMENT → SHIP → BABYSIT → MERGE + CLEANUP
+
+3. **Files and Code Sections:**
+
+- **`/Users/minhthiennguyen/Desktop/Euno/euno-app/waitlist-design.md`** (NEW, most recent work, 239 lines)
+  - Consolidates all waitlist design decisions. Documents: what ships today (two layouts at 620px breakpoint, progressive disclosure form, three outcomes joined/already/error, DriftSky star field, tokens), the constellation lens full spec, the three rules (purely additive, no boundary, heavy lag), falloff formula, phone consequence, the 5 grilling rounds table, rejected alternatives, Canvas UI verdict, build guidance, open items.
+  - Settled lens parameters table:
+    | Radius | 195px |
+    | Follow lag | 0.055 per frame |
+    | Edge softness | 0.85 of radius |
+    | Magnification | 1.18 |
+    | Base sky dimming | none |
+    | Line glow pass | `rgba(255,217,160,0.13)` at 3.2px |
+    | Line core pass | `rgba(255,230,190,0.7)` at 0.9px |
+    | Lit star fill | `rgba(255,226,180,a)` capped 0.95, `a = min(base * 2.6, 0.9)` |
+    | Figure membership | stars `size > 0.95` within `radius / zoom` |
+    | Driver | pointer only |
+
+- **`phase1-build-plan.md`** (NEW) — iOS Phase 1 handoff doc: 14 ratified decisions, corrections vs prototype, per-screen specs, design tokens, additive Convex schema, iOS implementation notes, 9 milestones with definitions of done, 4 open questions.
+
+- **`design/`** — `onboarding-prototype.html`, `grill-liquid-waitlist.html`, `grill-effects-waitlist.html`, `grill-lens-waitlist.html`, `grill-constellation-lens.html`, `grill-breath-driver.html` (the settled spec, `LOOK = { R: 195, lag: 0.055, soft: 0.85, zoom: 1.18 }`), plus pre-existing `og-card.html`.
+
+- **`src/components/canvasui/Liquid.tsx`** (NEW, uncommitted) — pulled from `canvasui.dev/r/liquid-react.json`, 27,951 chars, zero deps beyond React. Now superseded.
+
+- **`src/LiquidPreview.tsx`** (NEW, uncommitted) — throwaway preview at `#/liquid`. Should be deleted rather than shipped.
+
+- **`src/App.tsx`** (MODIFIED, uncommitted):
+```tsx
+import { LiquidPreview } from "./LiquidPreview";
+...
+// Design preview, deliberately ahead of resolveView so it needs no auth and
+// cannot perturb the real routing. Remove with the preview itself.
+if (hash === "#/liquid") return <LiquidPreview />;
+```
+
+- **`src/Waitlist.tsx`** (READ, unmodified) — 205 lines. `Mode = "desktop" | "phone"`, `Status = "idle" | "submitting" | "joined" | "already"`, `BREAKPOINT = 620`, `COPY` record, ResizeObserver-driven mode.
+
+- **`src/DriftSky.tsx`** (READ, unmodified) — 105 lines, `startDrift(canvas)`, count `min(300, floor(w*h/3600))`, 4% "hot" blue stars, reduced-motion still frame. Shared by waitlist and sign-in.
+
+- **`src/sky.ts`** (READ) — has private `spanningTree(points)` at line 92 (Prim's MST) that should be exported and reused.
+
+- **`src/index.css`** lines 2206-2260 (READ) — `.waitlist` `background:#000; color:#f5f5f7`, `.wl-eyebrow` 13px/0.16em, `.wl-sub` 18px/1.55 `#b8b8bd`, `.wl-bottom` max-width 460px.
+
+- **Memory files updated:** `haven-platform-constraints.md` (corrected OAuth findings, beacon-URL decision), `euno-dev-verification-notes.md` (artifact-viewer-black quirk, ref-click misses).
+
+4. **Errors and fixes:**
+
+- **Rail step list not clickable** — User: "this doesn't clickable" with image. My bug: styled rows like nav (pill highlight) but built as `<div>` with `cursor: default`. Fixed to `<button>` with jump + seed logic.
+- **Black page when html-in-canvas flag ON** — User: "i don't get it what's wrong?" with two images. React uses `position: relative; width:100%; height:100%`; I used `position: absolute; inset: 0`, which has no containing block inside a canvas layout subtree so content collapsed to zero size → empty capture. Also nested `<canvas>` (star field) cannot be captured. Fixed both; star field now always lives outside the effect.
+- **Fabricated OAuth handles** — User: "cuz idk how my X is tonybuilds and facebook is tony.nguyen". I had hardcoded fake-looking handles. Owned it plainly, first made them derive from typed name, then per user instruction ("never derived") reverted to fixed demo values with explicit simulation disclosure.
+- **Clouds rendered blue** — `color?: [number,number,number] | "auto"`; my `"#E8A87C"` string fell through the `auto` check. Fixed to `[0.91, 0.66, 0.49]`, then tuned opacity/cover down twice (overcast → wisps).
+- **Depth variant showed fewer stars inside** — base dimming (0.28) outweighed the deep field. Fixed by raising alphaMul to 2.6/2.4.
+- **`.fallback[hidden]` visible at rest** — explicit `display: flex` beat the UA `[hidden]` rule. Added `.fallback[hidden] { display: none; }`.
+- **Fallback panel overlapped Continue** — added `overflow-y: auto` + hidden scrollbar to `.mid.top-aligned`.
+- **focus() yanked page scroll** — added `focus({ preventScroll: true })` plus internal `mid.scrollTop` adjust.
+- **Duplicate `useEffect` in App.tsx** — I introduced it via a bad Edit; removed immediately.
+- **Duplicate function declarations across 5 effect bundles** — each ships its own `supportsHtmlInCanvas`; wrapped each in an IIFE (`const FX_x = (() => {...})()`).
+- **Artifact viewer black in user's Chrome** — not my bug; affected the user's own older artifact too. Worked around by serving locally on port 8471.
+
+5. **Problem Solving:**
+- Established that Instagram Basic Display API shut down 2026-12-04 (verified), LinkedIn OIDC omits vanity URL and its `sub` is **pairwise/app-scoped** (verified), Snapchat Login Kit has **no username scope** (verified).
+- **Key architectural conclusion:** authorization proves identity but cannot construct a public profile URL for most platforms → the QR/beacon must resolve to `inhavens.com/<havenHandle>`, a Haven-owned address. A social handle becomes *content on* the destination, not the destination.
+- **Constellation seeding:** from Convex user ID (unique, permanent, survives name edits), not name (collides) or birthday (only 366 skies). No LLM — pure FNV-1a + seeded PRNG.
+- **Therapy-app fix:** reserve serif strictly for people's names; everything else plain interface type.
+- **Canvas UI verdict:** not adopted. Web-only, needs Chrome flag + origin trial, and cannot capture the `<canvas>` star field where all the meaning lives. Lens hand-built instead (~120 lines, no flag, no dependency).
+
+6. **All user messages:**
+- "what do u think of the onboarding flow design of our haven app? https://claude.ai/code/artifact/45381fd6-1933-4757-9b27-dfb70236b861?via=auto_preview. make your own design for me, create for me a design that minimalist, clean, sleek and warm, inspiration from the movie my name, notion and unniverse"
+- "the flow is not clickable now"
+- [Image] "this doesn't clickable"
+- "1. [Image] - this not centralize. i want something centralize 2. [Image] - for the location tab, it should show up the actual address. like you know how most of the app whenver u type in the address it will show up a list of suggested location? having that and then user choose is better for us so we can control the actual location and knows and also prevent edge case when user type in the location. maybe look into map api 3. [Image] - i like the add word, but remember we want to make it less friction as much as possible. So because of that when user click add, it should redirect user to the app to authorize and login you get what i mean? excep for the Phone number is a direct phone 4. [Image] - for this your card part will it be the constellation of your name? or would make constellation based on your birthday is better? but for birthday it can be duplicate for name it hard to duplicate right? if we make constelation by name then we have to call the llm right? 5. after your card part, it should be the part that I call the widget add flow... 6. for the preferred one instead of having them choose multiple just have them choose one... 7. we need one more screen which is the search screen. so 2 main screen once onboarding done: directory and search. use fable 5 to look through all of that and improve the app ui and flow for me" (also: "overall i really like it, but also for some reason it feel really spiritual like a therapy app, and im not sure about it..")
+- "1. [Image] for the handle again, we don't want people to type in manually. after they choose the platform, our system will let them login with that platform like redirect to that platform to just authorize and login you know what i mean? 2. [Image] if this is the card that we literally cover the personalization constellation 3. [Image] instead of this we will make it less word + ui picture of the widget in my lock screen as an example for people to see 4. [Image] for the search right now it's based on character matching but we will have an intelligence search layer too right as we been discussing right? 5. instead of your code use the word your .... like something that not qr and code 6. remove the add photo from the onboarding flow to make it less friction..."
+- "Goal: Let users add contact methods with almost no typing. Social platforms use an authorization flow to connect automatically; phone and email are type. Manual links are only a fallback when a platform cannot provide the profile."
+- "1. for instagram is this true or u bugging? Instagram does not let apps read your profile. Paste your link and we will pull the handle out of it. 2. for linkedln it's auto import my linkedln account name without bringing me to the linkedln app. why? or it will its just now we just simulate? same question for X and Facebook? cuz idk how my X is tonybuilds and facebook is tony.nguyen 3. also lets add snapchat too"
+- "1. never derived. we can have it as tonybuilds now for demo but in the app the atual flow needs to be the main thing we will do, with a fall back of people input it in themself. to make it simple lets keep it: linkedln, x, instagram and phone number as the oly options now 2. not like read through api but u know the authorization flow where u can do like signin with facebook or google etc? i was thinking we can do that for this, the idea is all user need to do is click add -> redirect to the app -> authorize and that's it so no friction instead they have to go find their instagram name and paste it into us and we verified and then create the url to their profile u know what i mean? like anyway works as long as we can get user profile or profile name so that we can share or redirect people to that with the qr code"
+- "what we have right now is good to start a final review and then development. i want you to review this onboarding prototype ui for me, looking into every single aspect and thing u could look at, from the ui to functionalities, frictionality, everything u could think of, then compare to the mvp plan. once done review draft up a final plan that i can start having opus to work on it. especially look into this:https://canvasui.dev/"
+- "are we integrating canvas ui? i was trying to set this up maybe u can help me set this up too" + terminal output showing shadcn init failure
+- "wire for me to see before we create a pr for it, on the other hand the mvp ui is good now right?"
+- "1. i really really like the real effect. can we implement that on top of what we already have? use /grilling-frontend-prototyping to do it 2. the edit card can be done later as its not part of the onboarding flow"
+- [2 images] "e ... vs ... i don't get it what's wrong?"
+- "i like ink one. let's pick some different animation and style from canvasui and work on it"
+- "lets go with the lens, but we have to make it like when looking into the len there is some meaning or something cool"
+- "lets pick constellation, and start improving on the circle its too big and just feel distracted"
+- "breath"
+- "cursor only"
+- "no don't start ship yet so we done with the ui improvement right?"
+- "one thing i forgot to say the radius should be 195px"
+- "let's put everything down into a waitlist-design.md"
+
+7. **Pending Tasks:**
+- None explicitly outstanding. The user's last request (`waitlist-design.md`) is complete.
+- Explicitly deferred by user: "the edit card can be done later as its not part of the onboarding flow"
+- Explicitly blocked by user: shipping/PR ("no don't start ship yet")
+- Known-undesigned (flagged, not requested): My Card / edit screen, Phase 2 contact detail + notes editor.
+
+8. **Current Work:**
+
+Just completed writing `/Users/minhthiennguyen/Desktop/Euno/euno-app/waitlist-design.md` in response to "let's put everything down into a waitlist-design.md". Before writing, I read `src/index.css` lines 2206-2260 to record actual shipped values rather than remembered ones. The doc follows the user's global AGENTS.md conventions: one complete sentence per physical line, ASCII-only (verified 0 non-ASCII chars, 239 lines). It was delivered via SendUserFile.
+
+Immediately prior, per "one thing i forgot to say the radius should be 195px", I changed `LOOK.R` from 175 to 195 in both the scratchpad and `design/grill-breath-driver.html`:
+```js
+const LOOK = { R: 195, lag: 0.055, soft: 0.85, zoom: 1.18 };
+```
+
+**Repo state — everything uncommitted:**
+```
+ M .gitignore
+ M src/App.tsx
+?? design/grill-breath-driver.html
+?? design/grill-constellation-lens.html
+?? design/grill-effects-waitlist.html
+?? design/grill-lens-waitlist.html
+?? design/grill-liquid-waitlist.html
+?? design/onboarding-prototype.html
+?? phase1-build-plan.md
+?? waitlist-design.md
+?? src/LiquidPreview.tsx
+?? src/components/
+```
+An empty worktree exists at `.worktrees/feat-constellation-lens` on branch `feat/constellation-lens` (baseline 204 tests green, nothing implemented in it). A local HTTP server runs on port 8471 serving the scratchpad; Vite dev server runs on 5173.
+
+9. **Optional Next Step:**
+
+None without user direction. The requested task is complete and the user has explicitly blocked shipping: "no don't start ship yet so we done with the ui improvement right?"
+
+Natural options to offer (but not start unprompted): committing the design docs and prototypes, deleting the now-superseded `src/LiquidPreview.tsx` + `src/components/canvasui/Liquid.tsx` + the `#/liquid` route, or removing the unused `.worktrees/feat-constellation-lens` worktree. Implementation of the lens into `Waitlist.tsx` remains blocked pending explicit user go-ahead.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/minhthiennguyen/.claude/projects/-Users-minhthiennguyen-Desktop-Euno-euno-app/a77eba51-0f93-4a3f-adce-108aba272963.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
