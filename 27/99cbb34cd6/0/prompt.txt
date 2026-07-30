@@ -1,0 +1,1 @@
+wait why email go out? i don't have a domain email so like how can i set  WAITLIST_FROM_EMAIL?
