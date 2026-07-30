@@ -1,0 +1,1 @@
+ok just merged and etst. how do we know if from our system we send an email or not before our friend check?
