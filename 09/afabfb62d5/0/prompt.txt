@@ -1,0 +1,1 @@
+i like the inset one. one tiny fix is let's do show your name first, and once u click it it will pops down email so u don't have to click up again instead u can still fill the name then go down to email. so original the join button will be with your name but when it pops down the email join will pop down to your email like this current ui
