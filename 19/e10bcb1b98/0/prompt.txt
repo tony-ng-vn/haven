@@ -1,0 +1,80 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - src/App.tsx
+  - src/SearchAdd.tsx
+
+Unified diff (only + lines are new):
+
+=== DIFF: src/App.tsx ===
+@@ -1,6 +1,7 @@
+ import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
+ import { useAuthActions } from "@convex-dev/auth/react";
+ import { useState } from "react";
++import { SearchAdd } from "./SearchAdd";
+ 
+ function SignIn() {
+   const { signIn } = useAuthActions();
+@@ -37,7 +38,7 @@ export default function App() {
+       </Unauthenticated>
+       <Authenticated>
+         <button onClick={() => void signOut()}>Sign out</button>
+-        <p>Signed in.</p>
++        <SearchAdd onOpen={(id) => console.log("open", id)} />
+       </Authenticated>
+     </>
+   );
+
+
+=== DIFF: src/SearchAdd.tsx ===
+@@ -0,0 +1,47 @@
++import { useQuery, useMutation } from "convex/react";
++import { useState } from "react";
++import { api } from "../convex/_generated/api";
++import type { Id } from "../convex/_generated/dataModel";
++
++export function SearchAdd({ onOpen }: { onOpen: (id: Id<"people">) => void }) {
++  const [query, setQuery] = useState("");
++  const results = useQuery(api.people.searchPeople, { query }) ?? [];
++  const addPerson = useMutation(api.people.addPerson);
++
++  const trimmed = query.trim();
++  const hasExact = results.some(
++    (p) => p.name.toLowerCase() === trimmed.toLowerCase(),
++  );
++
++  return (
++    <div className="search-add">
++      <input
++        className="search-box"
++        placeholder="Search a name, or type a new one"
++        value={query}
++        onChange={(e) => setQuery(e.target.value)}
++        autoFocus
++      />
++      <ul className="results">
++        {results.map((p) => (
++          <li key={p._id}>
++            <button className="result-row" onClick={() => onOpen(p._id)}>
++              {p.name}
++            </button>
++          </li>
++        ))}
++      </ul>
++      {trimmed !== "" && !hasExact && (
++        <button
++          className="add-button"
++          onClick={async () => {
++            const id = await addPerson({ name: trimmed });
++            onOpen(id);
++          }}
++        >
++          Add "{trimmed}"
++        </button>
++      )}
++    </div>
++  );
++}
+
+
+Investigate per the method in your instructions, then return the findings list.
