@@ -1,0 +1,1 @@
+do u think for whatever we are doing confluent cloud or confluent kafka or flint is needed and why>
