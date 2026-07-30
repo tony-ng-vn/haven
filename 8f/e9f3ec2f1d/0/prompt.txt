@@ -1,0 +1,25 @@
+<task-notification>
+<task-id>a1a39796388e27a94</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/752919c5-b916-4950-b41a-651ba53ec7b8/tasks/a1a39796388e27a94.output</output-file>
+<status>completed</status>
+<summary>Agent "Instagram integration research" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Done. Draft PR is up: https://github.com/tony-ng-vn/euno/pull/29
+
+**Verdict reached:** Do not build an Instagram data/API integration for importing followers/following or enriching other people's profiles. On the API axis, this is a cleaner "no" than LinkedIn's: Instagram has no followers/following endpoint at any access tier (not even a partner-gated one to apply for), because Meta's current API (Instagram API with Instagram Login, which replaced the Basic Display API that was deprecated December 4, 2024) is Business/Creator-account-only and simply doesn't expose that data. Keep treating Instagram as a capture source (already done, and already more complete than LinkedIn's since `deriveProfileUrl` produces a working URL from the handle with no manual paste step needed). There's no viable "Sign in with Instagram" analog to LinkedIn's OIDC option either, since Instagram Login is scoped to professional-account management, not consumer identity.
+
+**Codebase check:** Instagram is already a recognized platform in `convex/openaiClient.ts`'s `PLATFORMS` enum and in `src/lib.ts`'s `HANDLE_URLS` map (`instagram: (h) =&gt; https://instagram.com/${h}`), and `CaptureTriage.tsx` renders the derived URL as a read-only pill with no manual link field, unlike LinkedIn/Facebook which do need one.
+
+**Options evaluated (5, matching the LinkedIn doc's structure):**
+1. Followers/following import via API - no endpoint exists at any tier; recommend skip.
+2. Followers/following export (JSON, user-initiated "Download Your Information") - legal and feasible, but worse fit than LinkedIn's CSV since it's audience data with no relationship context; recommend not now.
+3. Handle/URL profile enrichment - Business Discovery only returns aggregate metrics for public professional accounts, not a general lookup; scraping is ToS-hostile with real enforcement history (Meta v. Bright Data ruling on logged-out scraping, Meta v. Voyager Labs settlement over scraping friends/connections lists); recommend don't scrape.
+4. Sign in with Instagram - not a comparable product to LinkedIn's OIDC option; recommend skip.
+5. Instagram-aware capture UX - already shipped, no gap to close, only minor extraction-prompt polish possible.
+
+**Verification:** `OPENAI_API_KEY=test npm test` passed all 171 tests in the fresh worktree (ran `npm install` first since node_modules is gitignored). File confirmed pure ASCII via both `grep -P '[^\x00-\x7F]'` and an `LC_ALL=C` byte-range grep, both returning no matches. Each prose paragraph was reformatted to one sentence per physical line to match the reference LinkedIn doc's convention (table cells and list bullets left as normal Markdown, consistent with how the reference doc itself handles those).
+
+The worktree is left in place at `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/instagram-research` on branch `docs/instagram-integration-research`. File: `docs/superpowers/specs/2026-07-20-instagram-integration-research.md`.</result>
+<usage><subagent_tokens>98336</subagent_tokens><tool_uses>54</tool_uses><duration_ms>459153</duration_ms></usage>
+</task-notification>
