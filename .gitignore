@@ -11,7 +11,9 @@ dist/
 .DS_Store
 
 # tool artifact
-.entire/
+# Not .entire/ wholesale: git never looks inside an ignored directory, so that
+# also hid .entire/settings.json, the one file Entire expects committed. Its own
+# .entire/.gitignore already excludes the noise (tmp/, metadata/, logs/).
 .vercel
 .impeccable/live/sessions/
 .worktrees/
