@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>acf8c5622a7b0ecb7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/752919c5-b916-4950-b41a-651ba53ec7b8/tasks/acf8c5622a7b0ecb7.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix and ready PR #21" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Everything's done. Here's the rundown.
+
+**What changed in the doc** (`docs/superpowers/specs/2026-07-20-linkedin-integration-research.md`, in worktree `.worktrees/pr21`):
+
+- Added a new option 2, "Export your own connections via LinkedIn's data export (CSV)" - covers the Settings &gt; Data privacy &gt; "Get a copy of your data" flow, what fields the CSV typically has (name, company, position, connected-on, sometimes email), why it's legal/feasible with zero LinkedIn involvement, and why the verdict is still "not now" (anti-CRM stance, bulk import out of MVP scope, no "how you met" context) while flagging it as the realistic route if Contacts-style seeding is ever deliberately reopened. Options 2-5 renumbered to 3-6.
+- Added a matching row to the Decision matrix: `Connections export (CSV, user-initiated) | Yes | Weak | No`.
+- Added a Sources bullet pointing to LinkedIn's "Downloading your account data" flow (no fabricated URL, since I couldn't verify a specific link, matching how the doc's other unlinked source entry is styled).
+- Converted every em dash, arrow, and ellipsis character to ASCII (`-`, `-&gt;`, `...`) throughout the whole file - confirmed no curly quotes were actually present.
+- Reformatted paragraph prose so each sentence sits on its own line (no blank lines inserted, so paragraphs still render as single blocks); left tables and list items untouched per the doc's existing structure.
+
+**Verification:**
+- `grep -P '[^\x00-\x7F]' docs/superpowers/specs/2026-07-20-linkedin-integration-research.md` returns nothing (exit code 1, no matches).
+- `npm install` + `OPENAI_API_KEY=test npm test` in the worktree: all 8 test files / 156 tests passed (one stderr line is an intentionally-simulated failure inside `people.test.ts`, not a real failure).
+
+**Commit:** `f7ccc84` - `docs(linkedin): add csv export option and normalize doc to ascii`, plain ASCII, no co-author trailers, no tool/agent mentions. Pushed to `origin/cursor/linkedin-integration-research-05dc`.
+
+**PR status:** `gh pr ready 21` succeeded - PR #21 is now `isDraft: false`, state OPEN, at https://github.com/tony-ng-vn/euno/pull/21.
+
+The worktree at `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/pr21` was left in place as instructed.</result>
+<usage><subagent_tokens>64276</subagent_tokens><tool_uses>17</tool_uses><duration_ms>288035</duration_ms></usage>
+</task-notification>
