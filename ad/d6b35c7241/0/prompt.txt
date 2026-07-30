@@ -1,0 +1,20 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - convex/people.ts
+
+Unified diff (only + lines are new):
+
+=== DIFF: convex/people.ts ===
+@@ -48,7 +48,7 @@ export const searchPeople = query({
+       .withSearchIndex("search_name", (q) =>
+         q.search("name", term).eq("userId", userId),
+       )
+-      .take(20);
++      .take(RESULT_LIMIT);
+   },
+ });
+ 
+
+
+Investigate per the method in your instructions, then return the findings list.
