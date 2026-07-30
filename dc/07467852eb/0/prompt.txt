@@ -1,0 +1,75 @@
+<task-notification>
+<task-id>a08f5272f65b9915d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/d7b8885f-65a9-446f-a015-9e53a7c2bf4e/tasks/a08f5272f65b9915d.output</output-file>
+<status>completed</status>
+<summary>Agent "Full code review of Euno" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review Summary
+
+**Verdict:** REQUEST CHANGES
+
+**Overview:** This is a well-built codebase for its size -- the Convex layer follows the generated guidelines closely (tokenIdentifier ownership, argument validators, bounded queries, correct query/mutation/action split, scheduler-based background work), and the tests are targeted and meaningful. The blocking issues are one real state-machine bug in the swipe-save animation, a large payload leak from queries that return raw person docs including 1536-float embeddings, and silent failure paths in the upload/save pipeline.
+
+All paths below are relative to `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth`.
+
+### Critical Issues
+
+None. No security vulnerabilities or data-loss bugs found; ownership checks are consistently enforced and tested.
+
+### High
+
+- **`convex/people.ts:60-72, 80-85` -- `searchPeople` and `getPerson` return full documents, including `embedding` (1536 floats) and `embeddedText`.**
+  Cost: each embedded person is roughly 25-30KB of JSON; `searchPeople` re-runs on every keystroke and returns up to 20 docs, so a single keystroke can move ~500KB over the websocket, and the subscription re-fires when a background embed patches any listed doc. The code already knows the right shape -- `fetchSearchResults` (people.ts:212-221) strips exactly these fields for semantic search, so the two search paths are inconsistent with each other.
+  Fix: map `searchPeople`/`getPerson` results through the same projection. Longer term, move `embedding`/`embeddedText` to a separate `personEmbeddings` table keyed by `personId` (the guidelines' churn-separation advice), which also stops every embed from rewriting the whole person doc.
+
+- **`src/CaptureTriage.tsx:221-231, 296-300` -- the exit animation dies the moment the query catches up, so the saved card snaps back to center.**
+  `isLeaving` requires `leaving._id === topId`. When `acceptCapture` confirms (typically 50-200ms, well inside the 340ms window), the capture disappears from `listCaptures`, `topId` becomes the next card, `isLeaving` flips false, and the `triage-card-exit` class is removed mid-flight. Since `activeTop = leaving ?? top` still renders the old card with no inline transform and the base `.triage-card` has no transition, the card the user just flung off reappears fully opaque at rest until the 340ms timer clears `leaving`. This hits nearly every non-reduced-motion save. The redundant condition on line 224 (`isLeaving || leaving !== null`) is a symptom of the same confusion.
+  Fix: gate the exit class on `leaving !== null` (the rendered card is always the leaving card while `leaving` is set), and delete the redundant `isLeaving ||` in `cardStyle`.
+
+- **`src/CaptureTriage.tsx:98-115` -- upload failures are completely silent.**
+  `handleFiles` never checks `response.ok`, and the `try/finally` has no `catch`; a failed upload (offline, storage error, non-JSON error body) rejects `Promise.all`, which is `void`ed at the call site (line 244). The "Uploading N..." counter quietly returns to zero and the user believes the screenshot was captured. On mobile networks this is a routine path, not an edge case.
+  Fix: check `response.ok` before `response.json()`, catch per-file errors, and surface a "N screenshots failed to upload" state with the count.
+
+### Medium
+
+- **`src/CaptureTriage.tsx:126-146` -- `save()` is optimistic with no failure handling.** `void acceptCapture(...)` swallows rejections, and `savedCount` increments before the mutation lands. If the mutation fails (offline, capture raced into another state), the card flies off, "1 added" shows, and then the same card reappears in the queue -- the UI has asserted a save that never happened. Fix: `.catch` the mutation, decrement/skip the count, and show a brief error; or count saves from the mutation's resolution.
+- **`src/CaptureTriage.tsx:316-329, 441-447` + `convex/captures.ts:199-212` -- failed extractions are a dead end, and "Skip" is silently destructive.** A transient OpenAI 500 marks the capture `failed`; the only affordance is "Skip", which permanently deletes the screenshot file and the capture. The file is still in storage, so a retry is nearly free. Fix: add a `retryExtract` mutation (reset status to `pending`, reschedule `internal.captures.extract`) and label the discard action honestly ("Discard") on failed cards.
+- **`convex/captures.ts:42-55` and `convex/people.ts:225-261` -- no server-side rate limiting on OpenAI-backed public functions.** `createCapture` triggers a vision call and `semanticSearch` an embedding call; the client debounce is advisory, so any signed-in user with a script can run up the OpenAI bill unbounded. For a public deployment, add a per-user rate limit (e.g. the `@convex-dev/rate-limiter` component) on both entry points.
+- **`convex/people.ts:177-184` -- embed failures are silent with no retry.** If the scheduled `embed` action throws (OpenAI down, key missing, context exceeds the embedding token limit), the person simply never appears in semantic search, and nothing ever retries; `backfillEmbeddings` is manual. Fix: schedule a bounded retry with backoff from the action's catch, or run a periodic cron that re-drives people missing embeddings.
+
+### Low
+
+- `convex/captures.ts:96-127` -- if the `extract` action is killed rather than thrown (action timeout, redeploy), the `catch` never runs and the capture is stuck `pending` forever; the skeleton card spins until the user skips. A cron sweeping old `pending` captures to `failed` would close the hole.
+- `src/CaptureTriage.tsx:139-146, 153-155` -- double-clicking Save or Skip fires a second mutation that rejects with "Capture not found" as an unhandled rejection, and double-Save increments `savedCount` twice. Disable the buttons once a mutation for the top card is in flight.
+- `src/CaptureTriage.tsx:145` -- two saves inside 340ms leave the first timer to clear the second card's `leaving` early, truncating its exit; keep the timer id in a ref and clear it before setting a new one.
+- `convex/people.ts:15` -- the backend imports `buildEmbedText` from `../src/lib`, so Convex bundling now depends on the frontend folder; a src/ refactor can silently change embedding semantics. Move shared pure helpers to a location owned by neither UI nor backend (e.g. `shared/`), or into `convex/` and import the other way (type-only imports from `_generated` are fine).
+- `convex/captures.ts:17-23` and `convex/people.ts:28-34` -- `requireUser` is duplicated with divergent ctx types; extract one helper (e.g. `convex/auth.ts`).
+- `convex/captures.ts:151` + `src/CaptureTriage.tsx:279-285` -- `listCaptures` takes 50 but the UI presents `queue.length` as the total "to review"; harmless today, mislabeled once a heavy user crosses 50.
+- `convex/schema.ts:12` -- `updatedAt` is written on every mutation but never read; "Recent" sorts by `_creationTime`. Either order recents by it (arguably the better product behavior) or drop the field.
+- `package.json` -- `convex: ^1.27.0`, but the code uses 1.41+ APIs (two-argument `ctx.db.get`, guidelines target ^1.41). The lockfile pins 1.42.2, but the declared floor is wrong; raise it to `^1.41.0`.
+- `convex/auth.config.ts:9` -- `process.env.CLERK_JWT_ISSUER_DOMAIN!` with a missing env produces `domain: undefined` and an opaque auth failure; throw a descriptive error instead, matching the pattern `openaiClient.ts:65-73` already uses for the OpenAI key.
+- `src/lib.ts:62-66` -- `deriveProfileUrl` interpolates the extracted handle without `encodeURIComponent`; a model-mangled handle ("ada l", "a/b") yields a malformed or path-escaping URL saved as the person's link.
+- `convex/openaiClient.ts:84-87` -- the raw OpenAI error body is stored in `captures.error` and rendered verbatim to the end user (`CaptureTriage.tsx:325-327`), including the "npx convex env set" hint when the key is missing. Store the raw detail for logs, show a generic message.
+- `src/CaptureTriage.tsx:59-61` -- `reduceMotion` is snapshotted once in `useState` and never tracks preference changes, while `App.tsx:66` reads it fresh per call; pick one approach (a `matchMedia` change listener).
+- `src/SearchAdd.tsx:121-129` -- `handleAdd` has no `catch`; a failed `addPerson` (offline) just stops the spinner with no feedback, unlike `PersonDetail`, which handles this properly.
+- `src/SearchAdd.tsx:91-110` -- while a new query's debounce+roundtrip is pending, the previous query's semantic results stay on screen under the new text; clearing `semantic` when `trimmed` changes would avoid showing matches for a query the user has already abandoned.
+- `src/CaptureTriage.tsx:197` -- `void event;` is a dead statement; drop the unused parameter instead.
+- `convex/people.ts:269` -- `listMissingEmbeddings` filters after `take(200)`, so the backfill scans only the first 200 people and can miss later ones; fine for a documented one-off, but it will silently under-backfill at scale.
+
+### What's Done Well
+
+- Guidelines compliance is genuinely strong: `tokenIdentifier` as the ownership key, argument validators on every function, `withIndex`/`withSearchIndex` everywhere with bounded `take()`, vector search correctly confined to an action, internal/public function split done right, and no `ctx.db` in actions.
+- The capture pipeline's discard-during-extract race is correctly handled: `finishExtract`/`failExtract` re-check existence and no-op on a deleted capture (`convex/captures.ts:68-71, 84-87`), and there is a test-adjacent comment explaining why.
+- `embeddedText` as an idempotency key for re-embedding (`convex/people.ts:165-168`) is a clean, cheap design that makes redundant scheduling harmless.
+- `normalizeUrl` (`src/lib.ts:15-32`) explicitly rejects non-http(s) schemes, closing the `javascript:` href hole, with a test for it.
+- `src/sky.ts` is exemplary: pure, deterministic, dependency-free, with tests that assert real invariants (spanning-tree edge count, separation distance, power-law distribution) rather than snapshots.
+- The Convex tests consistently verify cross-user isolation for every read and write path, which is the single most important property in this app.
+
+### Verification Story
+
+- Tests reviewed: yes. 42 tests, all passing (519ms). Backend coverage of ownership and the extraction failure path is good. Gaps: no test for `finishExtract`/`failExtract` on a discarded capture, none for `acceptCapture` on a non-ready capture, none for the missing-storage-file branch of `extract`, and the `CaptureTriage` state machine (the most complex client logic) has no tests -- understandable given the gesture code, but the save/leaving reducer logic could be extracted and unit-tested, which would have caught the High finding.
+- Build verified: `tsc --noEmit` passes clean; `npm test` passes.
+- Security checked: yes. Auth enforced on all public functions and derived server-side; no injection surfaces (React escaping, no raw HTML); URL scheme filtering in place; storage ids unguessable. Remaining concerns are the cost-abuse gap (no rate limiting) and minor error-detail leakage, both listed above.</result>
+<usage><subagent_tokens>110531</subagent_tokens><tool_uses>28</tool_uses><duration_ms>432115</duration_ms></usage>
+</task-notification>
