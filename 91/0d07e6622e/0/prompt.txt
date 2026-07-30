@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bodtpaj8e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/d7b8885f-65a9-446f-a015-9e53a7c2bf4e/tasks/bodtpaj8e.output</output-file>
+<status>killed</status>
+<summary>Background command "Restart local dev server" was stopped</summary>
+</task-notification>
