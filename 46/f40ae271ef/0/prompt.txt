@@ -1,0 +1,1 @@
+i mean then why don't we just make the plan that works for to maximize parallel agent? like we have 1 orchestrator that is do the update while the other sub agent just do the worker you know? wouldn't that solve it? maybe that's subagent but how is it different than ultracode workflows then?
