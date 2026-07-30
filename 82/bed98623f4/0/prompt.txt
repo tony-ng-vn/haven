@@ -1,0 +1,1 @@
+it shouldn't start as the signin right away from clerk tho. can we have like a button or something?? and make sure that's button follow the glass ui design we did for the main page. wait do we still have that design?
