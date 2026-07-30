@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "52c50fe74df3",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 34,
+  "files_touched": [
+    ".DS_Store",
+    ".gitignore",
+    ".worktrees/ci-swift-tests/.github/workflows/ios.yml",
+    ".worktrees/convex-profile-schema/convex/captures.ts",
+    ".worktrees/convex-profile-schema/convex/crons.ts",
+    ".worktrees/convex-profile-schema/convex/schema.ts",
+    ".worktrees/docs-phase1-consolidation/mvp-design.md",
+    ".worktrees/docs-phase1-consolidation/todo.md",
+    ".worktrees/docs-review-fixes/DESIGN.md",
+    ".worktrees/docs-review-fixes/PRODUCT.md",
+    ".worktrees/docs-review-fixes/README.md",
+    ".worktrees/docs-review-fixes/design/onboarding-prototype.html",
+    ".worktrees/docs-review-fixes/mvp-design.md",
+    ".worktrees/docs-review-fixes/phase1-build-plan.md",
+    ".worktrees/docs-review-fixes/todo.md",
+    ".worktrees/ios-sky-port/ios/Haven/SkyGenerator.swift",
+    ".worktrees/ios-sky-port/ios/HavenTests/SkyGeneratorTests.swift",
+    ".worktrees/ios-sky-port/ios/README.md",
+    ".worktrees/ios-sky-port/ios/project.yml",
+    ".worktrees/ios-sky-port/todo.md",
+    ".worktrees/ios-test-target/todo.md",
+    "design/grill-sky-placement.html",
+    "design/grill-sky-scaling.html",
+    "node_modules",
+    "src/App.tsx",
+    "waitlist-design.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/52/c50fe74df3/0/metadata.json",
+      "transcript": "/52/c50fe74df3/0/full.jsonl",
+      "compact_transcript": "/52/c50fe74df3/0/transcript.jsonl",
+      "content_hash": "/52/c50fe74df3/0/content_hash.txt",
+      "prompt": "/52/c50fe74df3/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 802,
+    "cache_creation_tokens": 1829441,
+    "cache_read_tokens": 135900975,
+    "output_tokens": 306388,
+    "api_call_count": 428
+  }
+}

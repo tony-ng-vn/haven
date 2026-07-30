@@ -1,0 +1,443 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "52c50fe74df3",
+  "session_id": "f7f75a91-bdaa-42a5-9c19-ae1b60d1668a",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-30T08:19:16.22678Z",
+  "branch": "main",
+  "checkpoints_count": 34,
+  "save_step_count": 26,
+  "files_touched": [
+    ".DS_Store",
+    ".gitignore",
+    ".worktrees/ci-swift-tests/.github/workflows/ios.yml",
+    ".worktrees/convex-profile-schema/convex/captures.ts",
+    ".worktrees/convex-profile-schema/convex/crons.ts",
+    ".worktrees/convex-profile-schema/convex/schema.ts",
+    ".worktrees/docs-phase1-consolidation/mvp-design.md",
+    ".worktrees/docs-phase1-consolidation/todo.md",
+    ".worktrees/docs-review-fixes/DESIGN.md",
+    ".worktrees/docs-review-fixes/PRODUCT.md",
+    ".worktrees/docs-review-fixes/README.md",
+    ".worktrees/docs-review-fixes/design/onboarding-prototype.html",
+    ".worktrees/docs-review-fixes/mvp-design.md",
+    ".worktrees/docs-review-fixes/phase1-build-plan.md",
+    ".worktrees/docs-review-fixes/todo.md",
+    ".worktrees/ios-sky-port/ios/Haven/SkyGenerator.swift",
+    ".worktrees/ios-sky-port/ios/HavenTests/SkyGeneratorTests.swift",
+    ".worktrees/ios-sky-port/ios/README.md",
+    ".worktrees/ios-sky-port/ios/project.yml",
+    ".worktrees/ios-sky-port/todo.md",
+    ".worktrees/ios-test-target/todo.md",
+    "design/grill-sky-placement.html",
+    "design/grill-sky-scaling.html",
+    "node_modules",
+    "src/App.tsx",
+    "waitlist-design.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "90bd2c0e4f37",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 802,
+    "cache_creation_tokens": 1829441,
+    "cache_read_tokens": 135900975,
+    "output_tokens": 306388,
+    "api_call_count": 428
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-handoff-2026-07-25T18:17:40.949896Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "handoff"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "90bd2c0e4f37",
+      "timestamp": "2026-07-25T18:17:40.949896Z",
+      "native": {
+        "command": "/handoff"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/handoff",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01SXi7UZqqReyLdyLiFsGZMu",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "agent-shipping-workflow"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "90bd2c0e4f37",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 151,
+        "end": 152,
+        "entry_ids": [
+          "1ec07ef7-94f0-45f4-992e-b2819ad8da5f"
+        ],
+        "tool_use_id": "toolu_01SXi7UZqqReyLdyLiFsGZMu"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01SXi7UZqqReyLdyLiFsGZMu"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: agent-shipping-workflow",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01BTdwRnC31HBuHenWwzrnPc",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "grilling-frontend-prototyping"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "90bd2c0e4f37",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2100,
+        "end": 2101,
+        "entry_ids": [
+          "60b338f6-07fb-416b-9595-eb90ea676584"
+        ],
+        "tool_use_id": "toolu_01BTdwRnC31HBuHenWwzrnPc"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01BTdwRnC31HBuHenWwzrnPc"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: grilling-frontend-prototyping",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 34
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-30T08:19:15.913714Z",
+    "agent_lines": 1565,
+    "agent_removed": 0,
+    "human_added": 41069,
+    "human_modified": 45,
+    "human_removed": 0,
+    "total_committed": 42673,
+    "total_lines_changed": 44222,
+    "agent_percentage": 3.538962507349283,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 8038,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9,
+        ".gitignore": 1,
+        "design/grill-breath-driver.html": 401,
+        "design/grill-constellation-lens.html": 376,
+        "design/grill-effects-waitlist.html": 3094,
+        "design/grill-lens-waitlist.html": 469,
+        "design/grill-liquid-waitlist.html": 1206,
+        "design/onboarding-prototype.html": 1080,
+        "phase1-build-plan.md": 268,
+        "src/App.tsx": 5,
+        "src/LiquidPreview.tsx": 113,
+        "src/components/canvasui/Liquid.tsx": 1016
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 8029,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 10,
+      "user_lines_removed": 1,
+      "agent_lines_added": 8029,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9,
+        "design/grill-breath-driver.html": 1
+      },
+      "user_removed_per_file": {
+        "design/grill-breath-driver.html": 1
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 10,
+      "user_lines_removed": 1,
+      "agent_lines_added": 8268,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9,
+        "design/grill-breath-driver.html": 1
+      },
+      "user_removed_per_file": {
+        "design/grill-breath-driver.html": 1
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 10,
+      "user_lines_removed": 1,
+      "agent_lines_added": 8268,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9,
+        "design/grill-breath-driver.html": 1
+      },
+      "user_removed_per_file": {
+        "design/grill-breath-driver.html": 1
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1349,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 9,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 10,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 11,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 12,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 13,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 14,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 15,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 16,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 17,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 18,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 19,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 20,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 21,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 22,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 23,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 24,
+      "user_lines_added": 0,
+      "user_lines_removed": 1,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_removed_per_file": {
+        "node_modules": 1
+      }
+    },
+    {
+      "checkpoint_number": 25,
+      "user_lines_added": 0,
+      "user_lines_removed": 1,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_removed_per_file": {
+        "node_modules": 1
+      }
+    },
+    {
+      "checkpoint_number": 26,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 687,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 27,
+      "user_lines_added": 0,
+      "user_lines_removed": 1,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_removed_per_file": {
+        "node_modules": 1
+      }
+    }
+  ]
+}
