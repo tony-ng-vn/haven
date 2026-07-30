@@ -1,0 +1,32 @@
+i really really want to integrate this frictionless motion for haven. You **cannot directly use Apple’s NameDrop inside Haven**. Apple does not provide a public API that lets third-party apps trigger NameDrop, replace its contact card with a Haven profile, or detect the exact “tops of two iPhones touching” gesture.
+
+You can, however, build a **Haven version of the same experience**:
+
+1. Both people open Haven and enter a “Share Contact” screen.
+2. Haven discovers nearby Haven users using Apple’s **Multipeer Connectivity** framework.
+3. Optionally, **Nearby Interaction/UWB** confirms that the selected phones are extremely close.
+4. Each phone displays the other person’s Haven profile.
+5. Both users explicitly approve the exchange.
+6. Your backend adds them to each other’s Haven directories.
+
+Apple documents Multipeer Connectivity as a framework for discovering and communicating with nearby devices. Nearby Interaction can provide distance and direction between supported Apple devices, but the apps must first discover each other and exchange session tokens through another networking method. ([Apple Developer][1])
+
+The interaction could feel like:
+
+> Open Haven → tap “Exchange” → bring the phones together → both phones vibrate → profile cards appear → both tap “Connect.”
+
+The important limitation is that this would be **your own in-app interaction**, not actual NameDrop. It would generally require Haven to be installed on both phones and the relevant screen or session to be active. You should not depend on it working automatically while Haven is closed, because third-party apps do not receive the same privileged system-level behavior as Apple’s NameDrop.
+
+For Haven’s MVP, I would implement:
+
+* **Primary:** animated QR code exchange—reliable across iPhone models.
+* **Secondary:** nearby exchange using Multipeer Connectivity.
+* **Polish:** use Nearby Interaction to make the phones glow or vibrate as they move closer.
+* **Fallback:** a normal Haven profile link through the iOS share sheet.
+
+You also probably do **not need to exchange the actual contact data phone-to-phone**. Each phone can exchange a temporary Haven profile ID or encrypted invitation token, then retrieve the approved profile from your server. That gives you revocation, privacy controls, analytics and prevents someone nearby from silently collecting contact details.
+
+So the feature is feasible, but describe it as something like **“Haven Touch,” “Bring Together,” or “Contact Tap,”** rather than NameDrop.
+
+[1]: https://developer.apple.com/documentation/nearbyinteraction?utm_source=chatgpt.com "Nearby Interaction | Apple Developer Documentation"
+, but based on this it doesn't seem to be possible. do u have any other idea?
