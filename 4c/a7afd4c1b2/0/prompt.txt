@@ -1,0 +1,1 @@
+right now the url is this: https://euno-i27tk2u2h-tonys-projects-6d126fa0.vercel.app/, anyway we can cut short and make the default page lead to waitlist?
