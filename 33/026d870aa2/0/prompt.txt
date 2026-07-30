@@ -1,0 +1,1 @@
+[Image #7] check this out this is what codex in xcode said this. also [Image #8] here u can see i already set it up already and merged to main [Image #9] so why u still see it as not set??? u can also use Xccode mcp to talk with Xcode u know that?
