@@ -1,0 +1,74 @@
+why? Last login: Tue Jul 28 15:04:57 on ttys008
+> npx convex deployment create
+
+
+✔ Deployment type? preview
+✔ What do you want to call this deployment?
+The deployment reference will be used to identify your deployment on the dashboard and in CLI commands.
+Examples: staging, dev/james/feature
+> staging
+✖ No project configured yet. Use `team:project:ref` to specify team and project slugs.
+> cd ..
+> npx convex deployment create
+
+
+✖ Creating a deployment isn't supported with a deploy key (CONVEX_DEPLOY_KEY). Run npx convex login (or use a project key) and try again.
+> npx convex login
+Welcome to developing with Convex, let's get you logged in.
+✔ Device name: Minh’s MacBook Pro
+Visit https://auth.convex.dev/device?user_code=XRQK-PCMV to finish logging in.
+You should see the following code which expires in 299 seconds: XRQK-PCMV
+✔ Open the browser? Yes
+✔ Saved credentials to ~/.convex/config.json
+> npx convex deployment create
+
+
+✖ Creating a deployment isn't supported with a deploy key (CONVEX_DEPLOY_KEY). Run npx convex login (or use a project key) and try again.
+
+ ~/Desktop/Euno/euno-app | on main *3 !20 ?4                                                                                                                     1 err | system node | at 04:11:47 PM im trying to do this 
+! npx convex deployment create
+npm notice run haven-app@0.10.1 npx
+npm notice run 'convex' deployment create
+✖ Creating a deployment requires logging in. Run npx convex login and try again.
+
+You don't need that command — preview deployments get created automatically per branch once the key is in place, and convex login would rewrite your local .env.local, which I'd rather not disturb.
+
+It's a dashboard action:
+
+Convex dashboard → your Haven project → Settings → Deploy Keys → Generate Preview Deploy Key
+
+That's on the project settings page, not inside third-hound-186 or brilliant-puma-925 — preview keys aren't tied to one deployment, which is the whole point.
+
+Copy the preview:... value, then in Vercel → Settings → Environment Variables → CONVEX_DEPLOY_KEY, set it for the Preview environment only.
+
+If there's no "Generate Preview Deploy Key" button on that page, tell me what options you do see and we'll work with those.
+
+✻ Crunched for 9s
+
+❯ [Image #2] but based on this the key u create will based on the enviroment i choose production or development
+[Image #2]
+
+You're right — and that's exactly the distinction. The keys with the permission checkboxes are deployment-scoped, so they're always tied to whichever deployment you've selected (Production or Development). A preview key isn't tied to one, because previews get created per branch on the fly.
+
+It lives one level up: the Project Settings item at the bottom of that same dropdown (⌃⌥S in your screenshot).
+
+On that page, look for a Preview Deploy Key section — separate from the per-deployment keys. Generate there and the value starts with preview:.
+
+If Project Settings doesn't offer one, screenshot that page and I'll work from what's actually there rather than guessing.
+
+✻ Crunched for 10s
+
+※ recap: Backend for v1 is essentially done: B1 and B2 merged, B3 waiting in PR 152, and six of nine production steps finished. Next: generate a Convex preview deploy key from Project Settings and set it on Vercel's Preview environment to unblock all eight PRs.
+
+! npx convex login
+npm notice run haven-app@0.10.1 npx
+npm notice run 'convex' login
+Welcome to developing with Convex, let's get you logged in.
+✖ Cannot prompt for input in non-interactive terminals. (Device name:)
+
+
+You don't need to log in for this — generating a preview key is a dashboard-only action, and the CLI has no command that creates deploy keys anyway.
+
+The failure is just that this input isn't a real TTY, so it can't prompt you. If you ever do want the CLI logged in, run it in an actual terminal window, or npx convex login --device-name haven-server to skip the name prompt (it'll still print a URL you have to open).
+
+But skip it. Go to Project Settings in that dropdown and look for the Preview Deploy Key section. That's the whole task based on this https://docs.convex.dev/production/multiple-deployments#preview
