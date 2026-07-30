@@ -1,0 +1,117 @@
+<task-notification>
+<task-id>a6cbe42cb8e633f0e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/d7b8885f-65a9-446f-a015-9e53a7c2bf4e/tasks/a6cbe42cb8e633f0e.output</output-file>
+<status>completed</status>
+<summary>Agent "Performance audit of Euno" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Web Performance Audit -- Euno (feat-clerk-auth worktree, mirrors main)
+
+### Scorecard
+
+| Metric | Value | Source | Target | Status |
+|--------|-------|--------|--------|--------|
+| LCP | not measured | -- | &lt;= 2.5s | -- |
+| INP | not measured | -- | &lt;= 200ms | -- |
+| CLS | not measured | -- | &lt;= 0.1 | -- |
+| Lighthouse Performance | not measured | -- | &gt;= 90 | -- |
+
+&gt; Artifacts used: **none -- source analysis plus a local production build** (`npm run build`, plus one sourcemap build for byte attribution). Every finding below is potential impact, not a measurement. All figures marked "est." are structural estimates.
+&gt; Framework / stack detected: React 19 + Vite 7 SPA, Convex reactive client, @clerk/react 6.x, Vercel static hosting.
+
+### Bundle attribution (measured from the build, sourcemap-based)
+
+`dist/assets/index-*.js` = 377.4 kB raw / 110.9 kB gzip, single chunk. Raw-byte breakdown:
+
+| Package | Raw | Share | ~gzip est. |
+|---|---|---|---|
+| react-dom (client) | 176.6 kB | 48% | ~53 kB |
+| convex (WS sync client + react) | 72.1 kB | 20% | ~22 kB |
+| @clerk/react + @clerk/shared | 81.9 kB | 22% | ~25 kB |
+| react + scheduler | 11.1 kB | 3% | ~3 kB |
+| app code (all of src/) | ~21 kB | 6% | ~6 kB |
+
+Critical context: **the 375 kB bundle is not the real payload story.** `@clerk/react` is only a loader shell -- at runtime it injects `clerk.browser.js` from Clerk's CDN (confirmed in `node_modules/@clerk/shared/dist/loadClerkJsScript.mjs`, `clerkJSScriptUrl` -&gt; `https://&lt;your-fapi-host&gt;/npm/@clerk/clerk-js@&lt;v&gt;/dist/clerk.browser.js`), plus a **second** CDN script (`clerkUIScriptUrl`) when `&lt;SignIn /&gt;` mounts. clerk-js is typically several hundred kB compressed -- larger than your entire bundle. Not measured here; confirm in the network tab.
+
+### Summary
+- Critical: 1
+- High: 2
+- Medium: 2
+- Low: 2
+
+### Findings
+
+#### [CRITICAL] First render of the signed-out landing is serially gated on the clerk-js CDN download
+- **Area:** Loading / Core Web Vitals (LCP)
+- **Location:** `src/App.tsx:183-195` (AuthLoading/Unauthenticated gating), `src/main.tsx:26-33` (ClerkProvider at root), `index.html` (no preconnect)
+- **Description:** `Unauthenticated` (convex/react) renders null while `isLoading`, and `ConvexProviderWithClerk` maps `isLoading` directly to Clerk's `!isLoaded` (verified in the shipped Convex source). Clerk's `isLoaded` only flips after clerk-js is downloaded from its CDN, executed, and has phoned home (`/v1/environment`, `/v1/client`). So the sky landing -- which needs nothing from Clerk until the button is tapped -- waits on this serial chain: HTML -&gt; 110 kB gz bundle download+parse -&gt; React mounts -&gt; script tag injected -&gt; DNS/TLS to a **new origin** -&gt; clerk-js (est. 300+ kB gz) -&gt; execute -&gt; two API round trips -&gt; landing renders. Until then users see only the pulsing "Euno" splash. The same chain gates signed-in startup (session restore needs clerk-js too).
+- **Impact:** potential impact -- on mid-tier mobile over 4G this chain plausibly puts landing LCP in the 4-7s range (est.); it structurally cannot beat bundle-time + a full third-party script fetched from a cold origin.
+- **Recommendation:** three tiers, in order of effort:
+  1. **Preconnect (trivial, do regardless).** In `index.html` add `&lt;link rel="preconnect" href="https://&lt;your-clerk-frontend-api-host&gt;" crossorigin&gt;` and one for your `*.convex.cloud` deployment. Est. 100-300ms off mobile cold start each.
+  2. **Parallelize clerk-js with the bundle.** Clerk's loader reuses an existing `&lt;script data-clerk-js-script&gt;` tag if present (verified in loadClerkJsScript.mjs). Adding that tag to `index.html` with `async crossorigin="anonymous"` starts the clerk-js download at HTML parse time instead of after React mounts -- removes the whole bundle-parse+mount stage (est. 0.5-1.5s on mobile) from the clerk-js start time. Caveat: the URL pins a clerk-js version; keep it in step with what `@clerk/react`'s versionSelector expects when you upgrade the SDK.
+  3. **Un-gate the landing from Clerk entirely (biggest win).** The landing is brand + tagline + a button; only the button tap (and the `#/sso-callback` edge you already handle) needs Clerk. Keep a localStorage hint ("has signed in on this device"): if absent, render `SignIn`'s landing view immediately from your own code while Clerk warms in the background; if present, keep the splash. New-visitor LCP becomes independent of Clerk -- bounded by your own 110 kB bundle (est. LCP well under 2.5s on 4G).
+
+#### [HIGH] Triage drag re-renders the ~190-node sky SVG on every pointermove
+- **Area:** Rendering / JavaScript (INP, gesture smoothness)
+- **Location:** `src/CaptureTriage.tsx:178-185` (`onPointerMove` -&gt; `setDrag`), `src/PersonSky.tsx:6` (not memoized)
+- **Description:** Every pointermove during a card drag calls `setDrag`, re-rendering the whole card subtree. `PersonSky` memoizes `buildSky` data but the component itself is not memoized, so React reconciles ~190 SVG elements (150 minors + giants + major groups + edges + flares + nebulae) once per frame for the entire drag. The swipe-label opacities and card transform are the only things that actually change.
+- **Impact:** potential impact -- est. several ms of reconciliation per frame on mobile CPUs; at 60-120Hz input this is the difference between a fluid fling and a stuttery one, and it burns main-thread budget exactly while the user is interacting.
+- **Recommendation:** wrap the export in `React.memo` -- `name`/`handle` are stable strings, so this is a one-line fix that removes the SVG from the per-move render entirely. If drag still stutters after that (measure first), move the card transform and label opacities to direct `ref.style` writes and keep React state only for begin/end -- but memo alone is likely the 90% fix. This is targeted memoization backed by a specific hot path, not blanket memo-everything.
+
+#### [HIGH] ~160 independent, infinite CSS opacity animations on SVG child elements
+- **Area:** Rendering (paint/composite cost, battery)
+- **Location:** `src/index.css:916-946` (`.sky-tw`, `.sky-flare`, `.sky-shoot`), `src/PersonSky.tsx:53-129`, counts from `src/sky.ts:36` (`MINOR_COUNT = 150`)
+- **Description:** Each star/flare carries its own never-ending `opacity` animation with unique duration and phase. On the sign-in landing the SVG covers the full viewport. Opacity animations on **SVG child elements** are not reliably compositor-driven: WebKit (your primary target -- this is a phone-screenshot app, so lots of iOS Safari) generally repaints these on the main thread, and since phases are staggered, effectively some part of the sky invalidates every frame, indefinitely. Even where Chromium can composite them, 160 independently-animated elements means either 160 tiny layers (memory + layer management) or continuous repaint. On the landing this runs concurrently with clerk-js parse/execute -- the worst possible moment -- and afterwards it just drains battery while the user reads the sign-in screen. There is no `will-change` anywhere, which is actually correct: adding it to 160 nodes would trade paint cost for a layer explosion; do not add it.
+  - Offscreen behavior (you asked): browsers keep ticking these animations but skip painting elements outside the viewport, so offscreen cost is minor. The problem is the sky is essentially always fully visible while mounted.
+  - Related: `.sky-cta`'s `backdrop-filter: blur(8px)` (`src/index.css:527-528`) sits directly over the animating stars, so the blur re-filters its backdrop every frame the sky changes. Small region, but it is a per-frame GPU cost stacked on the same screen.
+- **Impact:** potential impact -- continuous main-thread/GPU paint work on the two most important screens; on mobile this is warm-phone, battery-drain territory and competes with startup JS. Needs a trace to quantify (happy to do a Deep-mode pass with a DevTools trace).
+- **Recommendation:** keep the effect, cut the cost ~90% with two changes:
+  1. Animate only the stars that visibly twinkle: majors + giants + a seeded subset of ~20-25 minors. The faint minors (resting opacity down to 0.25, delta 0.3) read as static texture anyway; render the rest without `.sky-tw`. One condition in `PersonSky.tsx` plus a flag from `buildSky`.
+  2. If you want the whole field to shimmer, put the non-featured minors into 2-3 `&lt;g&gt;` layers and animate each group's opacity with offset phases -- 3 animations instead of ~150, visually near-identical at these opacity ranges.
+  The one-shot reveal choreography is fine as is (it runs once and is already `prefers-reduced-motion`-guarded). The 13s shooting-star loop is negligible. Keep `.sky-cta`'s blur only if a trace shows it is cheap; a slightly more opaque plain fill would read almost the same over a dark sky.
+
+#### [MEDIUM] The "Sign in" tap triggers a second CDN script download at the moment of interaction
+- **Area:** Loading / Core Web Vitals (INP on the conversion tap)
+- **Location:** `src/App.tsx:42-43` (`&lt;ClerkSignIn /&gt;` mounts on tap), Clerk UI loader in `@clerk/shared` (`loadClerkUIScript`)
+- **Description:** Deferring Clerk's form until the user chooses to enter is a good structure -- but mounting `&lt;ClerkSignIn /&gt;` is what kicks off the separate Clerk UI bundle fetch from the CDN. On mobile, the single most important tap in the app is answered by a network download.
+- **Impact:** potential impact -- est. 0.5-2s of visible dead time between tapping "Sign in" and the form appearing on 4G.
+- **Recommendation:** warm the UI script when the landing mounts instead: in an effect, call `loadClerkUIScript` (exported from `@clerk/shared/loadClerkJsScript`) with your publishable key, or at minimum `&lt;link rel="preload" as="script"&gt;` it. Verify against Clerk's current docs -- the load-on-existing-tag behavior is confirmed in the shipped source, the exact preload API surface may differ by version.
+
+#### [MEDIUM] Capture screen renders nothing while the captures query loads
+- **Area:** Loading UX
+- **Location:** `src/CaptureTriage.tsx:217-219` (`if (captures === undefined) return null;`)
+- **Description:** Opening "Add from screenshots" plays a view transition into a completely blank screen until `listCaptures` answers; the toolbar/stack/empty-state then pop in. The reading-state skeleton you built (`CaptureTriage.tsx:307-314`) never covers this first gap.
+- **Impact:** potential impact -- a visible blank-screen beat on every entry to triage on slow connections; the view transition crossfades to nothing, which reads as a hang.
+- **Recommendation:** render the triage chrome with a card-shaped `.skeleton-line .skeleton-block` (the pieces already exist in `src/index.css:443-468`) instead of null.
+
+#### [LOW] Recent-people list has no loading state on the home screen
+- **Area:** Loading UX
+- **Location:** `src/SearchAdd.tsx:111-119`
+- **Description:** Deliberate anti-flash design ("Nothing renders until the query answers") -- good instinct, but on a cold start over mobile the signed-in home is just a search box for however long the first Convex round trip takes, with no signal that content is coming.
+- **Impact:** potential impact -- perceived slowness on cold signed-in starts; no CLS risk either way (content appends below existing elements).
+- **Recommendation:** delayed skeleton: show 2-3 result-row-shaped skeleton lines only if `results === undefined` persists past ~300ms. Preserves the no-flash behavior on fast loads.
+
+#### [LOW] Code splitting the screens buys almost nothing; do not bother on its own
+- **Area:** Loading
+- **Location:** `src/App.tsx:6-9` (static imports)
+- **Description:** You asked for concrete lazy-load numbers, so here they are from the sourcemap: `CaptureTriage` 7.4 kB + `PersonDetail` 2.5 kB + `SearchAdd` 3.7 kB + `PersonSky`/`sky` 4.4 kB = ~18 kB raw, roughly 5 kB gzip. Convex (~22 kB gz) and the Clerk wrapper (~25 kB gz) cannot be split out under the current architecture because the provider tree and `AuthLoading`/`Unauthenticated` live at the root; react-dom (~53 kB gz) is the floor. `React.lazy(CaptureTriage)` alone would save ~2 kB gz for signed-out visitors and add a suspense hop for signed-in ones.
+- **Impact:** immaterial in isolation. The only split that moves the needle is the app-shell restructure in the Critical finding (render the landing before importing the Clerk+Convex provider tree; est. first-paint bundle ~65 kB gz), and it only matters as part of un-gating the landing.
+- **Recommendation:** skip route-level lazy loading; a 110 kB gz single bundle is a reasonable shape for this app. Invest in the Critical finding instead.
+
+### Positive Observations
+- System font stack (`src/index.css:65`): zero webfont bytes, zero font-swap CLS. For a mobile app this is worth real LCP margin and it fits the design.
+- Reduced-preference handling is genuinely thorough: `prefers-reduced-motion` silences the sky, view transitions, and triage fling (`src/index.css:1102-1136`); `prefers-reduced-transparency` drops the header blur; the reveal choreography is opt-in via no-preference.
+- The drag gesture animates only `transform`/`opacity`, uses pointer capture, velocity projection, and rubberbanding -- the compositor-friendly way to do it. The per-move render cost (finding above) is the only blemish.
+- Semantic search is debounced, stale-guarded, and silent on failure (`src/SearchAdd.tsx:91-110`); name search rides Convex's reactive subscription rather than fetch-per-keystroke.
+- Skeletons for the card-reading state and person detail; the triage thumbnail has fixed CSS dimensions, so no layout shift from image loads.
+- View transitions are guarded against reduced motion and hidden tabs, with an `@supports` entrance fallback -- and no `unload` handlers anywhere, so bfcache is not sabotaged by the app's own code.
+- CSS is small (15.3 kB / 4 kB gz), the favicon is a data URI, and `index.html` carries no third-party blocking resources.
+
+### Recommendations
+- Ship in this order: preconnects (minutes), `React.memo(PersonSky)` (one line), clerk-js tag in `index.html`, animated-star reduction, triage-entry skeleton, Clerk UI warmup, then the landing un-gating if the landing's LCP still matters after measurement.
+- Measure before and after: this audit is source-only. A single Lighthouse mobile run plus a DevTools performance trace of (a) the sign-in landing at rest and (b) a triage drag would confirm the sky paint cost and the clerk-js chain, and would let the scorecard be filled in honestly. I can do that Deep-mode pass against a deployed URL or local preview if you want.
+- Verify Vercel is serving `/assets/*` with `cache-control: ... immutable` (the Vite preset normally does, but the custom `buildCommand` in `vercel.json` makes it worth a one-time header check).
+
+Key files: `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/feat-clerk-auth/src/App.tsx`, `src/CaptureTriage.tsx`, `src/PersonSky.tsx`, `src/sky.ts`, `src/index.css`, `src/main.tsx`, `index.html`, `vercel.json` (all under the worktree root).</result>
+<usage><subagent_tokens>100599</subagent_tokens><tool_uses>27</tool_uses><duration_ms>442525</duration_ms></usage>
+</task-notification>
