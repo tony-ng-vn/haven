@@ -1,0 +1,2 @@
+some note i want to add
+1. add a section call concern. in there include: 1. friction to manually add people, 2. friction to manually add dynamic context (idt there is a better way as human context only human know so maybe the psychology part of how to trigger and make the process feel frictionless could matter), 3.  swipe motion to approval context could consider friction as people might not open the app to do so
