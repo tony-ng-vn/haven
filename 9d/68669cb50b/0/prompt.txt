@@ -1,0 +1,1 @@
+i thought the convex db is in the feedback-sdk convex already so why do i need to do that? also right now in order for us to use the feedback-sdk we have to clone it into the project??? isn't it's already regiester as npm so install the npm is enough??
