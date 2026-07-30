@@ -1,0 +1,1 @@
+i just replace in the key in the config that's all i need to run the simulator right?
