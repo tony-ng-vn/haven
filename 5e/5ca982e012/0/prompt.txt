@@ -1,0 +1,25 @@
+<task-notification>
+<task-id>a41ca0646ce9b8ac9</task-id>
+<tool-use-id>toolu_01UpbEqjUhhREY8ycT8F48Ey</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/752919c5-b916-4950-b41a-651ba53ec7b8/tasks/a41ca0646ce9b8ac9.output</output-file>
+<status>completed</status>
+<summary>Agent "Android/Google Contacts integration research" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The PR is open: **https://github.com/tony-ng-vn/euno/pull/25** (draft).
+
+## Summary
+
+**Verdict:** Do not build a Google Contacts bulk-import feature for the MVP -- but for a different reason than LinkedIn. Google's People API self-serve OAuth scope (`contacts.readonly`) is genuinely buildable with no partner approval, unlike LinkedIn's Connections API. The blocker is Euno's own product scope (PRODUCT.md / MVP doc rule out bulk import; a flat contact list has no "how you met" story), not a technical or legal gate from Google.
+
+**Options evaluated:**
+
+1. **Google People API OAuth (`contacts.readonly`)** -- self-serve, no partner gate. Classified as a *sensitive* scope (not *restricted*), so it needs standard app verification (brand + data-access review, roughly days to a few weeks per Google, though real-world reports describe longer) but **not** the annual CASA security assessment reserved for restricted scopes like full Gmail/Drive. Clerk requires switching to custom Google OAuth credentials to request this extra scope. Feasible; weak product fit; recommend not building now, but flagged as the front-runner if bulk import is ever reopened.
+2. **Native Android `ContactsContract`** -- not reachable from a web app at all; not applicable to Euno's stack.
+3. **W3C Contact Picker API** (`navigator.contacts.select`) -- Chrome/Android only (Chrome 80+, Android M+), not Baseline, no iOS Safari/Firefox/desktop support. Feasible only as a narrow single-browser convenience; recommend skipping given inconsistent reach.
+4. **vCard/CSV export from Google Contacts / Google Takeout** -- fully legal, zero infrastructure, same flat-list/no-context problem as the API path. Recommended as a fallback only if bulk seeding is ever reopened.
+
+**Verification:** `OPENAI_API_KEY=test npm test` passed all 171 tests (docs-only change, confirming nothing else broke). `grep -P '[^\x00-\x7F]'` against the new file returned nothing -- confirmed pure ASCII.
+
+**File:** `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/android-contacts-research/docs/superpowers/specs/2026-07-20-android-google-contacts-integration-research.md` (worktree left in place per instructions, on branch `docs/android-google-contacts-integration-research`).</result>
+<usage><subagent_tokens>83630</subagent_tokens><tool_uses>42</tool_uses><duration_ms>306974</duration_ms></usage>
+</task-notification>
