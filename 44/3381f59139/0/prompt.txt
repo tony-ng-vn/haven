@@ -1,0 +1,100 @@
+<recommended_plugins>
+Here is a list of plugins that are available but not installed.
+
+- Atlassian Rovo (atlassian-rovo@openai-curated-remote)
+- Box (box@openai-curated-remote)
+- Figma (figma@openai-curated-remote)
+- Outlook Calendar (outlook-calendar@openai-curated-remote)
+- SharePoint (sharepoint@openai-curated-remote)
+- Slack (slack@openai-curated-remote)
+- Teams (teams@openai-curated-remote)
+</recommended_plugins>
+
+# AGENTS.md instructions for /Users/minhthiennguyen/Desktop/Euno/euno-app
+
+<INSTRUCTIONS>
+# Global agent rules
+
+<!-- Canonical global rules. Claude Code imports this live (@~/.codex/AGENTS.md) and
+     Codex reads it natively. Cursor cannot import, so after editing run
+     ~/.config/agent-rules/sync-global-rules.sh to refresh ~/.cursor/rules/global-rules.mdc. -->
+
+## General guidelines
+- When writing or substantially editing long Markdown or HTML documentation, put each complete sentence on its own physical line. Preserve normal Markdown and HTML structure, but do not place multiple sentences on the same physical line.
+
+## Output style (all projects, no exceptions)
+
+Use plain ASCII only. Never use an em dash; use a plain hyphen "-" instead. Do not use emoji, icons, or decorative or pictographic symbols (checkmarks, warning signs, arrows, stars, and the like) anywhere: chat, code, comments, commit messages, PRs, or any file you write or edit. Do not use other non-ASCII typography, including en dashes, ellipsis characters, or curly quotes. Use ASCII forms such as "->", "--", "...", straight quotes, and plain words like "note:" or "warning:".
+
+## Working on code
+
+- Prefer quality, simplicity, robustness, scalability, and long-term maintainability over development cost and speed.
+- Keep code readable and clean. Working-but-ugly is acceptable, but clean is the goal.
+- Comments explain WHY, not what: give the context a future reader (human or agent) needs. Keep them short, one line where possible, and only where they add something.
+- Bug fixes: reproduce the issue first in an end-to-end setting when available, as closely as possible to how a real user encounters it. Then fix the root cause without over-engineering or introducing regressions.
+- Fix broken windows you encounter, even when unrelated to the immediate task: lint failures, test failures, flakiness, and obvious UI or pixel-quality problems found during end-to-end testing.
+- Tests: cover the important, core logic. Do not pad the suite with low-value tests.
+
+## Every code change (feature, fix, or refactor)
+
+- Test first: write a test capturing the intended behavior, confirm it fails for the right reason, then implement until it passes.
+- Verify before done: run the full suite, including edge cases such as empty or missing input, error paths, accessibility, reduced motion, and boundaries. Confirm the change delivers what was requested without regressions or slop, including dead code, duplicated logic, leftover scaffolding, or unused exports.
+- npm projects: run `npm test` after implementing.
+
+## Changelogs
+
+- When a project keeps a CHANGELOG.md, format each entry as: `## vX.Y.Z` heading, then the date on its own line below it, then one `**Category**` subheading per area the change touched, then a plain-language bullet per change under each, then a horizontal rule (`---`) before the next entry. Newest entry first.
+- Categories are per-project, not universal: pick names that match the project's own architecture (e.g. a component, a layer, a surface), and record the chosen set as a project-specific rule (in that repo's own AGENTS.md/CLAUDE.md) so later entries stay consistent instead of drifting.
+- Each bullet describes the change in plain language from the user's point of view (what changed and why it matters), not a copy of the commit message.
+- Bump the version to match: patch for small fixes or docs-only changes, minor for new features or visible behavior changes, major for breaking changes. Keep the package manifest's version field (package.json, pyproject.toml, etc.) in sync with the newest entry.
+- Update the changelog as part of the change that prompted it, not as a separate cleanup pass.
+
+## Agent shipping workflow (all code work)
+
+Every implementation, fix, or feature task follows the `agent-shipping-workflow` skill (`~/.codex/skills/agent-shipping-workflow/SKILL.md`). Read and follow it before editing code.
+
+```
+ISOLATE -> IMPLEMENT -> SHIP -> BABYSIT -> MERGE + CLEANUP
+```
+
+1. **Isolate:** create or enter a worktree (`.worktrees/<branch>`), run baseline tests
+2. **Implement:** TDD, verify, atomic commits (rules above still apply)
+3. **Ship:** tests pass, ask user (merge / PR / keep / discard); default agent-driven path is push + PR
+4. **Babysit:** follow the Commits and PRs rules below
+5. **Merge + cleanup:** only after user merges -- remove worktree, delete branch
+
+Skip isolation only when the user says work in place, or the harness already provides an isolated workspace.
+
+## Commits and PRs
+
+- Commits and PR titles MUST follow Conventional Commits: `type(scope): description`, where type is one of feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert (scope optional). Keep the subject imperative and lowercase with no trailing period. Flag a breaking change with a `!` before the colon (`feat!: ...`) or a `BREAKING CHANGE:` footer. Example: `feat(auth): add password reset flow`.
+- Never add an agent or tool as a co-author. Never mention agent or tool names in commits or PRs.
+- Every PR includes a TLDR, separate from the summary. Write it in plain language: what the change adds from a product view, what the user can now do, and for technical changes, a plain-language explanation of the change against the architecture and system. The TLDR shows the WHY, not just the what.
+- If you open a PR as the final step of a task you were asked to build or ship, don't stop there: babysit until CI is green and actionable review comments are addressed, then tell the user the PR is ready. Use `/loop 5m /babysit-pr` in Claude Code, the `babysit` skill in Cursor, or an equivalent monitored check loop in Codex. This does not apply to PRs the user opened themselves outside of an agent-driven task -- those stay opt-in.
+- Stop babysitting when CodeRabbit or another automated code reviewer reports that the user has run out of review usage and no further review can be performed.
+
+--- project-doc ---
+
+<!-- convex-ai-start -->
+
+This project uses [Convex](https://convex.dev) as its backend.
+
+When working on Convex code, **always read
+`convex/_generated/ai/guidelines.md` first** for important guidelines on
+how to correctly use Convex APIs and patterns. The file contains rules that
+override what you may have learned about Convex from training data.
+
+Convex agent skills for common tasks can be installed by running
+`npx convex ai-files install`.
+
+<!-- convex-ai-end -->
+
+</INSTRUCTIONS>
+
+<environment_context>
+  <cwd>/Users/minhthiennguyen/Desktop/Euno/euno-app</cwd>
+  <shell>zsh</shell>
+  <current_date>2026-07-25</current_date>
+  <timezone>America/Los_Angeles</timezone>
+  <filesystem><workspace_roots><root>/Users/minhthiennguyen/Desktop/Euno/euno-app</root><root>/Users/minhthiennguyen/.codex/visualizations/2026/07/25/019f9a69-847c-7d92-b568-7cb2de0eb76f</root></workspace_roots><permission_profile type="disabled"><file_system type="unrestricted" /></permission_profile></filesystem>
+</environment_context>
