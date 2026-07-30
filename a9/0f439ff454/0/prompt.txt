@@ -1,0 +1,3 @@
+lets do one by one. i purchased the domain on cloud fiar, now how can i
+1. deploy my euno app into inhavens.com?
+2. create email for tony@inhavens.com to use resned
