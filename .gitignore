@@ -15,4 +15,5 @@ dist/
 .vercel
 .impeccable/live/sessions/
 .worktrees/
+pr-walkthrough/
 tsconfig.tsbuildinfo
