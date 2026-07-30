@@ -1,0 +1,1 @@
+ok if u look at all the phase, and i want to work on multiple part in parallel how do u think i can break it down
