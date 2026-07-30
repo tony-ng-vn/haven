@@ -1,0 +1,1 @@
+we can seperate these thing into parallel work right? like we don't need to do them sequentially
