@@ -1,0 +1,506 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - package-lock.json
+  - package.json
+  - src/CaptureTriage.tsx
+  - src/CardPage.test.tsx
+  - src/CardPage.tsx
+  - src/PersonDetail.tsx
+  - src/PersonSky.tsx
+  - src/SearchAdd.tsx
+  - src/sky.test.ts
+  - src/sky.ts
+
+Unified diff (only + lines are new):
+
+=== DIFF: package-lock.json ===
+@@ -1,12 +1,12 @@
+ {
+   "name": "haven-app",
+-  "version": "0.37.0",
++  "version": "0.39.0",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+       "name": "haven-app",
+-      "version": "0.37.0",
++      "version": "0.39.0",
+       "dependencies": {
+         "@clerk/react": "^6.12.5",
+         "convex": "^1.41.0",
+
+
+=== DIFF: package.json ===
+@@ -1,7 +1,7 @@
+ {
+   "name": "haven-app",
+   "private": true,
+-  "version": "0.37.0",
++  "version": "0.39.0",
+   "type": "module",
+   "scripts": {
+     "dev": "vite",
+
+
+=== DIFF: src/CaptureTriage.tsx ===
+@@ -509,9 +509,10 @@ export function CaptureTriage() {
+                 {activeTop.status === "failed" && (
+                   <div className="triage-body triage-sky-body">
+                     <div className="sky-space" aria-hidden="true" />
+-                    <PersonSky
+-                      name={manualName === "" ? activeTop._id : manualName}
+-                    />
++                    {/* A capture is not a person yet, so there is no identity
++                        to seed from -- this is the typed name, or the capture
++                        itself before anything has been typed. */}
++                    <PersonSky seed={manualName === "" ? activeTop._id : manualName} />
+                     <div className="sky-vignette" aria-hidden="true" />
+                     {(mode === "card" || isLeaving) && (
+                       <>
+@@ -643,9 +644,12 @@ export function CaptureTriage() {
+                   activeTop.extracted !== undefined && (
+                     <div className="triage-body triage-sky-body">
+                       <div className="sky-space" aria-hidden="true" />
++                      {/* Same here: nobody has been saved, so the seed is the
++                          extracted pair rather than an identity. It keeps this
++                          card's sky exactly what it was before seeds were
++                          unified. */}
+                       <PersonSky
+-                        name={activeTop.extracted.name}
+-                        handle={activeTop.extracted.handle}
++                        seed={activeTop.extracted.name + (activeTop.extracted.handle ?? "")}
+                       />
+                       <div className="sky-vignette" aria-hidden="true" />
+                       {(mode === "card" || isLeaving) && (
+
+
+=== DIFF: src/CardPage.test.tsx ===
+@@ -8,7 +8,16 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+ // back.
+ const answer = vi.hoisted(() => ({ current: undefined as unknown }));
+ vi.mock("convex/react", () => ({ useQuery: () => answer.current }));
+-vi.mock("./PersonSky", () => ({ PersonSky: () => null }));
++// Stood in, but not thrown away: what this page seeds the sky with is the one
++// thing keeping the web card and the iPhone card the same figure, so the stub
++// records it.
++const skySeed = vi.hoisted(() => ({ current: null as string | null }));
++vi.mock("./PersonSky", () => ({
++  PersonSky: ({ seed }: { seed: string }) => {
++    skySeed.current = seed;
++    return null;
++  },
++}));
+ 
+ const { CardPage } = await import("./CardPage");
+ 
+@@ -76,6 +85,15 @@ describe("the public card page", () => {
+     expect(screen.getByText("The rest is on Haven.")).toBeTruthy();
+   });
+ 
++  // The iPhone app seeds this person's sky with their username and nothing
++  // else. If the web card mixes the display name in, the same person has two
++  // different constellations, and renaming themselves scrambles the web one.
++  test("the sky is seeded by the username alone", () => {
++    show({ ...bare, name: "Maya Chen", handle: "mayachen" });
++    expect(skySeed.current).toBe("mayachen");
++    expect(skySeed.current).not.toBe("Maya Chenmayachen");
++  });
++
+   test("a card with a photo shows it", () => {
+     // Queried by class rather than by role: the photo carries an empty alt on
+     // purpose -- the name is right below it -- so it is presentational to a
+
+
+=== DIFF: src/CardPage.tsx ===
+@@ -75,7 +75,11 @@ export function CardPage({ handle }: { handle: string }) {
+   return (
+     <div className="card-page">
+       <div className="card-sky" aria-hidden="true">
+-        <PersonSky name={card.name} handle={card.handle} />
++        {/* The username, alone: it is what the iPhone app seeds this same
++            person's card with, and it is the half of a card that cannot
++            change under them. Mixing the display name back in would give one
++            person two constellations and rewrite this one on every rename. */}
++        <PersonSky seed={card.handle} />
+       </div>
+       <div className="card-content">
+         {card.photoUrl !== null && !photoFailed && (
+
+
+=== DIFF: src/PersonDetail.tsx ===
+@@ -151,10 +151,12 @@ export function PersonDetail({
+     <div className="person-detail">
+       <div className="person-sky-band">
+         <div className="sky-space" aria-hidden="true" />
+-        {/* Seeded by name only: the search snapshot never carries a handle, so
+-            name alone stays stable across the snapshot -> live handoff instead
+-            of re-seeding the whole starfield when the doc arrives. */}
+-        <PersonSky name={person.name} />
++        {/* Seeded by the document id, which is the route: it is identical on
++            the snapshot and the live doc, so the starfield does not re-mint
++            when the doc arrives, and it is the same seed the atlas cluster
++            uses, so this is visibly the star that was tapped. Renaming
++            somebody leaves their sky alone. */}
++        <PersonSky seed={id} />
+         <div className="sky-vignette" aria-hidden="true" />
+         <div className="person-sky-content">
+           <h1 className="person-name">{person.name}</h1>
+
+
+=== DIFF: src/PersonSky.tsx ===
+@@ -10,14 +10,13 @@ const SHIMMER_LAYERS = 3;
+ // data. Purely presentational; all randomness lives in buildSky. Memoized
+ // because it renders ~190 SVG nodes and would otherwise redo that work on
+ // every drag frame of the parent triage card.
+-export const PersonSky = memo(function PersonSky({
+-  name,
+-  handle,
+-}: {
+-  name: string;
+-  handle?: string;
+-}) {
+-  const sky = useMemo(() => buildSky(name, handle), [name, handle]);
++//
++// The seed arrives whole. Building it here out of a name and a handle is what
++// let three screens drift into three different skies for one person, so the
++// caller that knows the person's real identity passes it in and this file
++// never touches the string.
++export const PersonSky = memo(function PersonSky({ seed }: { seed: string }) {
++  const sky = useMemo(() => buildSky(seed), [seed]);
+   const uid = useId();
+   const haloId = `halo-${uid}`;
+ 
+
+
+=== DIFF: src/SearchAdd.tsx ===
+@@ -236,10 +236,12 @@ export function SearchAdd({
+     [trimmed, list, nameMatches, semantic],
+   );
+ 
+-  // One cluster figure per person. Rebuilds only when the field composition
+-  // changes (a keystroke that surfaces no new person reuses the memo).
++  // One cluster figure per person, seeded by their document id so the star on
++  // the atlas is the same figure their page draws, and renaming somebody does
++  // not hand them a new one. Rebuilds only when the field composition changes
++  // (a keystroke that surfaces no new person reuses the memo).
+   const clusters = useMemo(
+-    () => field.map((p) => buildCluster(p.name, undefined, { width: boxW, height: boxH })),
++    () => field.map((p) => buildCluster(p._id, { width: boxW, height: boxH })),
+     [field, boxW, boxH],
+   );
+ 
+
+
+=== DIFF: src/sky.test.ts ===
+@@ -7,13 +7,16 @@ import {
+   personHues,
+ } from "./sky";
+ 
+-const ROS = { name: "Rosalind Franklin", handle: "@ros_franklin" };
+-const ALAN = { name: "Alan Kay", handle: "alan-kay" };
++// One string per person, which is all a sky was ever hashed from. These are
++// the old name + handle pairs run together, so every assertion below sweeps
++// exactly the seed space it swept before the callers stopped concatenating.
++const ROS = "Rosalind Franklin@ros_franklin";
++const ALAN = "Alan Kayalan-kay";
+ 
+ describe("personHues", () => {
+   test("derives three stable hues from identity", () => {
+-    const a = personHues(ROS.name, ROS.handle);
+-    const b = personHues(ROS.name, ROS.handle);
++    const a = personHues(ROS);
++    const b = personHues(ROS);
+     expect(a).toEqual(b);
+     expect(a).toHaveLength(3);
+     a.forEach((h) => {
+@@ -23,27 +26,27 @@ describe("personHues", () => {
+   });
+ 
+   test("different people get different hues", () => {
+-    expect(personHues(ROS.name, ROS.handle)).not.toEqual(
+-      personHues(ALAN.name, ALAN.handle),
++    expect(personHues(ROS)).not.toEqual(
++      personHues(ALAN),
+     );
+   });
+ });
+ 
+ describe("buildSky", () => {
+   test("is fully deterministic for the same person", () => {
+-    const a = buildSky(ROS.name, ROS.handle);
+-    const b = buildSky(ROS.name, ROS.handle);
++    const a = buildSky(ROS);
++    const b = buildSky(ROS);
+     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+   });
+ 
+   test("different people mint different skies", () => {
+-    const a = buildSky(ROS.name, ROS.handle);
+-    const b = buildSky(ALAN.name, ALAN.handle);
++    const a = buildSky(ROS);
++    const b = buildSky(ALAN);
+     expect(JSON.stringify(a)).not.toBe(JSON.stringify(b));
+   });
+ 
+   test("constellation stars keep their distance and stay in bounds", () => {
+-    const sky = buildSky(ROS.name, ROS.handle);
++    const sky = buildSky(ROS);
+     expect(sky.majors.length).toBeGreaterThanOrEqual(7);
+     expect(sky.majors.length).toBeLessThanOrEqual(9);
+     for (const star of sky.majors) {
+@@ -62,7 +65,7 @@ describe("buildSky", () => {
+   });
+ 
+   test("the figure is a spanning tree: exactly n-1 calm edges", () => {
+-    const sky = buildSky(ROS.name, ROS.handle);
++    const sky = buildSky(ROS);
+     expect(sky.edges).toHaveLength(sky.majors.length - 1);
+     for (const [a, b] of sky.edges) {
+       expect(a).toBeGreaterThanOrEqual(0);
+@@ -73,7 +76,7 @@ describe("buildSky", () => {
+   });
+ 
+   test("deep field density: many faint minors on a power law", () => {
+-    const sky = buildSky(ROS.name, ROS.handle);
++    const sky = buildSky(ROS);
+     expect(sky.minors).toHaveLength(150);
+     for (const star of sky.minors) {
+       expect(star.r).toBeGreaterThanOrEqual(0.4);
+@@ -88,8 +91,8 @@ describe("buildSky", () => {
+   });
+ 
+   test("nebulae and giants carry the person's hues", () => {
+-    const sky = buildSky(ROS.name, ROS.handle);
+-    const hues = personHues(ROS.name, ROS.handle);
++    const sky = buildSky(ROS);
++    const hues = personHues(ROS);
+     expect(sky.nebulae).toHaveLength(3);
+     for (const nebula of sky.nebulae) {
+       expect(hues).toContain(nebula.hue);
+@@ -101,7 +104,7 @@ describe("buildSky", () => {
+   });
+ 
+   test("the two brightest constellation stars get flares", () => {
+-    const sky = buildSky(ROS.name, ROS.handle);
++    const sky = buildSky(ROS);
+     expect(sky.flares).toHaveLength(2);
+     const majorPositions = sky.majors.map((m) => `${m.x},${m.y}`);
+     for (const flare of sky.flares) {
+@@ -111,9 +114,7 @@ describe("buildSky", () => {
+ 
+   test("flags a bounded handful of featured minors for individual twinkle", () => {
+     for (const p of [ROS, ALAN]) {
+-      const featured = buildSky(p.name, p.handle).minors.filter(
+-        (s) => s.featured,
+-      );
++      const featured = buildSky(p).minors.filter((s) => s.featured);
+       // ~20-24 alive minors; the rest render static under group shimmer.
+       expect(featured.length).toBeGreaterThanOrEqual(20);
+       expect(featured.length).toBeLessThanOrEqual(24);
+@@ -121,18 +122,65 @@ describe("buildSky", () => {
+   });
+ 
+   test("the featured set is stable for a given person", () => {
+-    const a = buildSky(ROS.name, ROS.handle).minors.map((s) => !!s.featured);
+-    const b = buildSky(ROS.name, ROS.handle).minors.map((s) => !!s.featured);
++    const a = buildSky(ROS).minors.map((s) => !!s.featured);
++    const b = buildSky(ROS).minors.map((s) => !!s.featured);
+     expect(a).toEqual(b);
+   });
+ 
+   test("featured is a minors-only concept: majors and giants stay alive", () => {
+-    const sky = buildSky(ROS.name, ROS.handle);
++    const sky = buildSky(ROS);
+     for (const m of sky.majors) expect(m.featured).toBeUndefined();
+     for (const g of sky.giants) expect(g.featured).toBeUndefined();
+   });
+ });
+ 
++describe("the seed is one string, hashed the way it always was", () => {
++  // A sky is a promise: same person, same figure, forever. These numbers were
++  // dumped from the two-argument buildSky(name, handle) that shipped before
++  // the seed was unified, so they are the proof that handing the same
++  // characters over as one string moved nobody's stars.
++
++  test("the old name + handle pair, run together, mints the old sky", () => {
++    const sky = buildSky("Rosalind Franklin@ros_franklin");
++    expect(sky.hues).toEqual([344, 121, 318]);
++    expect(sky.majors).toHaveLength(7);
++    expect(sky.majors[0].x).toBe(336.21452886238694);
++    expect(sky.majors[0].y).toBe(293.0253099120222);
++    expect(sky.majors[0].r).toBe(3.386791331227869);
++    expect(sky.majors[0].hue).toBe(344);
++    expect(sky.edges).toEqual([
++      [0, 4],
++      [4, 6],
++      [4, 1],
++      [1, 5],
++      [5, 3],
++      [6, 2],
++    ]);
++    expect(sky.minors[0].x).toBe(250.89263597130775);
++    expect(sky.minors[0].y).toBe(354.6653774008155);
++    expect(sky.shoot.x1).toBe(194.2717980965972);
++    expect(sky.shoot.delay).toBe(10.069262959063053);
++  });
++
++  test("a lone seed, which used to mean a name with no handle, is unchanged", () => {
++    expect(personHues("ada")).toEqual([163, 190, 358]);
++    const sky = buildSky("ada");
++    expect(sky.majors).toHaveLength(8);
++    expect(sky.majors[0].x).toBe(41.70665299706161);
++    expect(sky.majors[0].y).toBe(250.63980596438049);
++    expect(sky.majors[0].r).toBe(2.692375229205936);
++    expect(sky.edges).toEqual([
++      [0, 2],
++      [2, 6],
++      [6, 3],
++      [3, 1],
++      [3, 4],
++      [1, 5],
++      [0, 7],
++    ]);
++  });
++});
++
+ describe("buildSky invariants across many identities", () => {
+   // The constellation figure comes from rejection sampling (retry until the
+   // minimum-separation constraint is met), so a single fixed test person
+@@ -142,7 +190,7 @@ describe("buildSky invariants across many identities", () => {
+ 
+   test("bounds, edge count, and separation hold for every generated identity", () => {
+     for (const name of NAMES) {
+-      const sky = buildSky(name, `@${name}`);
++      const sky = buildSky(`${name}@${name}`);
+ 
+       for (const star of sky.majors) {
+         expect(star.x).toBeGreaterThanOrEqual(sky.pad);
+@@ -170,25 +218,42 @@ describe("buildSky invariants across many identities", () => {
+ 
+ describe("buildCluster", () => {
+   test("is deterministic for the same person", () => {
+-    const a = buildCluster(ROS.name, ROS.handle);
+-    const b = buildCluster(ROS.name, ROS.handle);
++    const a = buildCluster(ROS);
++    const b = buildCluster(ROS);
+     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+   });
+ 
+   test("mirrors buildSky's constellation topology exactly", () => {
+     // The map cluster must be recognizably the same figure as the card sky:
+     // same star count, same minimum-spanning-tree edges.
+-    const sky = buildSky(ROS.name, ROS.handle);
+-    const cluster = buildCluster(ROS.name, ROS.handle);
++    const sky = buildSky(ROS);
++    const cluster = buildCluster(ROS);
+     expect(cluster.stars).toHaveLength(sky.majors.length);
+     expect(cluster.edges).toEqual(sky.edges);
+   });
+ 
++  test("its stars are that same seed's majors, in order, only rescaled", () => {
++    // "Recognizably the same figure" has to mean more than a matching star
++    // count: each cluster star is one major, in the same slot, carrying the
++    // same hue, and the rescale is affine so the figure cannot be reflected
++    // or reshuffled on the way to the map.
++    const sky = buildSky(ROS);
++    const cluster = buildCluster(ROS);
++    expect(cluster.stars.map((s) => s.hue)).toEqual(sky.majors.map((m) => m.hue));
++    const rank = <T,>(items: T[], of: (item: T) => number) =>
++      items
++        .map((item, i) => ({ i, v: of(item) }))
++        .sort((a, b) => a.v - b.v)
++        .map((entry) => entry.i);
++    expect(rank(cluster.stars, (s) => s.x)).toEqual(rank(sky.majors, (m) => m.x));
++    expect(rank(cluster.stars, (s) => s.y)).toEqual(rank(sky.majors, (m) => m.y));
++  });
++
+   test("scales every star inside the padded cluster box", () => {
+     const width = 120;
+     const height = 92;
+     const pad = 8;
+-    const cluster = buildCluster(ROS.name, ROS.handle, { width, height, pad });
++    const cluster = buildCluster(ROS, { width, height, pad });
+     expect(cluster.width).toBe(width);
+     expect(cluster.height).toBe(height);
+     for (const star of cluster.stars) {
+@@ -201,7 +266,7 @@ describe("buildCluster", () => {
+   });
+ 
+   test("honors custom box dimensions", () => {
+-    const cluster = buildCluster(ALAN.name, ALAN.handle, {
++    const cluster = buildCluster(ALAN, {
+       width: 96,
+       height: 72,
+       pad: 6,
+@@ -215,8 +280,8 @@ describe("buildCluster", () => {
+   });
+ 
+   test("different people mint different clusters", () => {
+-    expect(JSON.stringify(buildCluster(ROS.name, ROS.handle))).not.toBe(
+-      JSON.stringify(buildCluster(ALAN.name, ALAN.handle)),
++    expect(JSON.stringify(buildCluster(ROS))).not.toBe(
++      JSON.stringify(buildCluster(ALAN)),
+     );
+   });
+ });
+
+
+=== DIFF: src/sky.ts ===
+@@ -1,6 +1,11 @@
+ // The Deep Field sky: every person's card is a unique patch of space,
+ // minted deterministically from their identity. Same person, same sky,
+ // forever. Pure and dependency-free so it stays trivially testable.
++//
++// One seed string, and the caller decides what it is -- which has to be the
++// identity that survives a rename (a username, a document id), never a display
++// name. This is also the signature ios/Haven/SkyGenerator.swift ports, so the
++// same person seeded the same way draws the same figure on both platforms.
+ 
+ export type SkyStar = {
+   x: number;
+@@ -62,8 +67,8 @@ function seededRandom(seed: number): () => number {
+   };
+ }
+ 
+-export function personHues(name: string, handle?: string): [number, number, number] {
+-  const h = hashString(name + (handle ?? ""));
++export function personHues(seed: string): [number, number, number] {
++  const h = hashString(seed);
+   // Unsigned shifts: a signed >> on a large hash yields negative hues.
+   return [h % 360, (h >>> 9) % 360, (h >>> 18) % 360];
+ }
+@@ -111,9 +116,9 @@ export function spanningTree(points: Array<{ x: number; y: number }>): Array<[nu
+   return edges;
+ }
+ 
+-export function buildSky(name: string, handle?: string): SkyData {
+-  const rand = seededRandom(hashString(name + (handle ?? "")));
+-  const hues = personHues(name, handle);
++export function buildSky(seed: string): SkyData {
++  const rand = seededRandom(hashString(seed));
++  const hues = personHues(seed);
+ 
+   const nebulae = [
+     { cx: W * 0.35, cy: H * 0.25, rx: W * 0.75, ry: H * 0.42, hue: hues[0], alpha: 0.18 },
+@@ -217,14 +222,13 @@ export type ClusterData = {
+ // on their card and detail sky -- identity, not decoration. Minors are dropped;
+ // the shared dust field carries the faint-star texture instead.
+ export function buildCluster(
+-  name: string,
+-  handle?: string,
++  seed: string,
+   opts?: { width?: number; height?: number; pad?: number },
+ ): ClusterData {
+   const width = opts?.width ?? 120;
+   const height = opts?.height ?? 92;
+   const pad = opts?.pad ?? 8;
+-  const sky = buildSky(name, handle);
++  const sky = buildSky(seed);
+ 
+   const xs = sky.majors.map((m) => m.x);
+   const ys = sky.majors.map((m) => m.y);
+
+
+Investigate per the method in your instructions, then return the findings list.
