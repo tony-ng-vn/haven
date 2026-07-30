@@ -1,0 +1,184 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - src/App.tsx
+  - src/CaptureTriage.tsx
+  - src/LoveAlarmPanel.tsx
+  - src/PersonDetail.tsx
+  - src/SearchAdd.tsx
+  - src/Waitlist.tsx
+  - src/sky.ts
+
+Unified diff (only + lines are new):
+
+=== DIFF: src/App.tsx ===
+@@ -36,7 +36,7 @@ function ChevronLeft() {
+ function SkyLanding({ busy, onEnter }: { busy: boolean; onEnter?: () => void }) {
+   return (
+     <>
+-      <span className="auth-brand">Euno</span>
++      <span className="auth-brand">Haven</span>
+       <p className="auth-tagline">Find your way back to the people you meet.</p>
+       <button
+         className="sky-cta"
+@@ -52,7 +52,7 @@ function SkyLanding({ busy, onEnter }: { busy: boolean; onEnter?: () => void })
+   );
+ }
+ 
+-// The signed-out view opens on Euno's own sky -- a glass button over the deep
++// The signed-out view opens on Haven's own sky -- a glass button over the deep
+ // field -- and only reveals Clerk's card once the person chooses to enter, so
+ // we never drop them straight into a third-party form.
+ function SignIn() {
+@@ -63,7 +63,7 @@ function SignIn() {
+   return (
+     <div className="auth auth-sky">
+       <div className="sky-space" aria-hidden="true" />
+-      <PersonSky name="Euno" />
++      <PersonSky name="Haven" />
+       <div className="sky-vignette" aria-hidden="true" />
+       <div className="auth-sky-content">
+         {flow || tapped ? (
+@@ -157,7 +157,7 @@ function Home() {
+         <div className="header-inner">
+           {screen.kind === "search" ? (
+             <>
+-              <span className="brand">Euno</span>
++              <span className="brand">Haven</span>
+               <button className="btn-ghost" type="button" onClick={() => void signOut()}>
+                 Sign out
+               </button>
+@@ -209,7 +209,7 @@ function Home() {
+ function Splash() {
+   return (
+     <div className="splash">
+-      <span className="splash-brand">Euno</span>
++      <span className="splash-brand">Haven</span>
+     </div>
+   );
+ }
+@@ -218,7 +218,7 @@ function Splash() {
+ // returning visitor splash straight toward the app instead of flashing the
+ // landing while Clerk wakes. Reads can fail (private mode); we degrade to "no
+ // hint" rather than throw, so those visitors just meet the landing first.
+-const SESSION_HINT_KEY = "euno:hasSession";
++const SESSION_HINT_KEY = "haven:hasSession";
+ 
+ function readSessionHint(): boolean {
+   try {
+
+
+=== DIFF: src/CaptureTriage.tsx ===
+@@ -446,7 +446,7 @@ export function CaptureTriage() {
+           </h2>
+           <p className="empty-body">
+             {savedCount === 0
+-              ? "Screenshot profiles as you meet people. Upload them here and Euno reads out who they are."
++              ? "Screenshot profiles as you meet people. Upload them here and Haven reads out who they are."
+               : savedCount === 1
+                 ? "1 person added to your people."
+                 : `${savedCount} people added to your people.`}
+
+
+=== DIFF: src/LoveAlarmPanel.tsx ===
+@@ -102,7 +102,7 @@ export function LoveAlarmPanel() {
+       {joinedRoom === null ? (
+         <form className="love-alarm-form" onSubmit={handleJoin}>
+           <p className="love-alarm-copy">
+-            Share a small code with someone nearby. Euno listens only while this room
++            Share a small code with someone nearby. Haven listens only while this room
+             is open.
+           </p>
+           <label>
+
+
+=== DIFF: src/PersonDetail.tsx ===
+@@ -251,7 +251,7 @@ export function PersonDetail({
+           <div className="skeleton-line skeleton-block" />
+         ) : sharedNote === null ? (
+           <p className="shared-note-copy">
+-            Available after you and {person.name} both connect in Euno.
++            Available after you and {person.name} both connect in Haven.
+           </p>
+         ) : (
+           <>
+
+
+=== DIFF: src/SearchAdd.tsx ===
+@@ -448,9 +448,9 @@ export function SearchAdd({
+       )}
+ 
+       {fieldLoaded && meetOpen && (
+-        <section className="meet-sheet" aria-label="Meet by Euno username">
++        <section className="meet-sheet" aria-label="Meet by Haven username">
+           <div className="meet-sheet-head">
+-            <span className="sky-label">euno meet</span>
++            <span className="sky-label">haven meet</span>
+             <button
+               type="button"
+               className="meet-close"
+@@ -462,8 +462,8 @@ export function SearchAdd({
+           </div>
+           <h2 className="meet-title">Exchange in person</h2>
+           <p className="meet-copy">
+-            Stand together, say the other person's Euno username, then confirm.
+-            Euno privately adds each of you to the other's sky.
++            Stand together, say the other person's Haven username, then confirm.
++            Haven privately adds each of you to the other's sky.
+           </p>
+ 
+           {!profileLoaded && (
+@@ -475,7 +475,7 @@ export function SearchAdd({
+           {profileLoaded && profile === null && (
+             <div className="meet-stack">
+               <label className="meet-label" htmlFor="meet-username-setup">
+-                Your Euno username
++                Your Haven username
+               </label>
+               <div className="meet-input-row">
+                 <span className="meet-at">@</span>
+@@ -556,7 +556,7 @@ export function SearchAdd({
+               {meetLookupUsername.length >= 3 &&
+                 meetLookup === null &&
+                 meetError === null && (
+-                  <p className="meet-error">No Euno profile found for that username.</p>
++                  <p className="meet-error">No Haven profile found for that username.</p>
+                 )}
+               {meetLookup !== undefined &&
+                 meetLookup !== null &&
+
+
+=== DIFF: src/Waitlist.tsx ===
+@@ -29,7 +29,7 @@ const COPY: Record<Mode, {
+ }> = {
+   desktop: {
+     headline: "Your people are a constellation.",
+-    sub: "Every person you meet becomes a point of light - and Euno keeps them from drifting away.",
++    sub: "Every person you meet becomes a point of light - and Haven keeps them from drifting away.",
+     cta: "Join",
+     fine: "Private beta",
+   },
+@@ -130,7 +130,7 @@ export function Waitlist() {
+         ) : (
+           <>
+             <div className="wl-top">
+-              <span className="wl-eyebrow">Euno - private beta</span>
++              <span className="wl-eyebrow">Haven - private beta</span>
+               <h1 className="wl-headline">{copy.headline}</h1>
+             </div>
+             <div className="wl-bottom">
+
+
+=== DIFF: src/sky.ts ===
+@@ -261,7 +261,7 @@ export type DustStar = {
+ // One shared field of faint background stars behind every cluster -- seeded
+ // from a fixed string, NOT per person, so the whole sky twinkles as one. Unit
+ // coordinates keep it resolution-independent across resizes.
+-export function buildDust(count = 80, seed = "euno-atlas-dust"): DustStar[] {
++export function buildDust(count = 80, seed = "haven-atlas-dust"): DustStar[] {
+   const rand = seededRandom(hashString(seed));
+   const dust: DustStar[] = [];
+   for (let i = 0; i < count; i++) {
+
+
+Investigate per the method in your instructions, then return the findings list.
