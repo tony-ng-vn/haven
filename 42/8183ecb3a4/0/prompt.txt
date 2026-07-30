@@ -1,0 +1,235 @@
+Base directory for this skill: /Users/minhthiennguyen/.claude/skills/agent-shipping-workflow
+
+# Agent Shipping Workflow
+
+Canonical shipping flow for every agent session that changes code.
+
+**Announce at start:** "I'm using the agent-shipping-workflow for this task."
+
+## When This Applies
+
+Use for every task that changes code: features, fixes, refactors, config updates with behavior impact.
+
+Skip only for: questions, reviews with no edits, docs-only with no code, or when the user explicitly says "no PR" or "work in place."
+
+## The Five Phases
+
+```
+ISOLATE -> IMPLEMENT -> SHIP -> BABYSIT -> MERGE + CLEANUP
+```
+
+| Phase | Goal | Stop condition |
+|-------|------|----------------|
+| 1. Isolate | Safe workspace, clean baseline | Tests pass in workspace |
+| 2. Implement | Deliver the change with tests | Task done, tests green |
+| 3. Ship | Integrate via PR (default) or user choice | PR open or user picks another option |
+| 4. Babysit | CI green, actionable comments handled | Tell user PR is ready |
+| 5. Merge + cleanup | Land work, remove worktree | Worktree gone, branch deleted |
+
+---
+
+## Phase 1: Isolate
+
+**Before editing any project file, set up isolation.**
+
+### Detect existing worktree
+
+```bash
+GIT_DIR=$(cd "$(git rev-parse --git-dir)" 2>/dev/null && pwd -P)
+GIT_COMMON=$(cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd -P)
+BRANCH=$(git branch --show-current)
+```
+
+- `GIT_DIR != GIT_COMMON` (and not a submodule): already isolated. Skip creation. Report path and branch.
+- Otherwise: create isolation before editing.
+
+### Create workspace
+
+Priority order:
+
+1. **Native worktree tool** if the harness provides one (Cursor `move_agent_to_root`, Codex app worktree controls, etc.)
+2. **Git worktree fallback:**
+
+```bash
+# Prefer project-local, must be gitignored
+git check-ignore -q .worktrees 2>/dev/null || { echo ".worktrees/" >> .gitignore && git add .gitignore && git commit -m "chore: ignore worktrees directory"; }
+git worktree add ".worktrees/<branch-name>" -b "<branch-name>"
+cd ".worktrees/<branch-name>"
+```
+
+Branch naming: `feat/`, `fix/`, `chore/`, `refactor/` + short description.
+
+### Baseline
+
+```bash
+# Project setup if needed
+[ -f package.json ] && npm install
+# Run tests -- must pass before you change anything
+npm test   # or cargo test / pytest / go test ./...
+```
+
+If baseline fails: report failures and ask whether to proceed or fix first.
+
+---
+
+## Phase 2: Implement
+
+Follow global AGENTS.md rules:
+
+1. **Reproduce first** for bugs (end-to-end when possible)
+2. **Test first (TDD):** write test, confirm it fails for the right reason, implement, confirm pass
+3. **Minimal scope:** only what the task needs
+4. **Verify before done:** full suite, edge cases, error paths
+5. **npm projects:** run `npm test` after implementing
+
+Commit atomically as you go. Conventional Commits: `feat:`, `fix:`, `refactor:`, etc.
+
+---
+
+## Phase 3: Ship
+
+**Tests must pass before offering options.**
+
+```bash
+npm test   # or project equivalent
+```
+
+### Present exactly these options
+
+```
+Implementation complete. What would you like to do?
+
+1. Merge back to <base-branch> locally
+2. Push and create a Pull Request (default for agent-driven work)
+3. Keep the branch as-is (I'll handle it later)
+4. Discard this work
+
+Which option?
+```
+
+Detached HEAD (externally managed sandbox): drop option 1. Offer push+PR, keep, or discard only.
+
+### Option 2 (default for agent-driven tasks)
+
+```bash
+git push -u origin <branch-name>
+gh pr create --title "<conventional commit subject>" --body "$(cat <<'EOF'
+## TLDR
+<Plain language: what changed, why it matters, what the user can now do>
+
+## Summary
+<1-3 bullets>
+
+## Test plan
+- [ ] <verification steps run>
+EOF
+)"
+```
+
+**Keep the worktree alive** after opening a PR. Do not remove it until merge or explicit discard.
+
+### Option 1: merge locally
+
+Only after tests pass on the merge result:
+
+```bash
+MAIN_ROOT=$(git -C "$(git rev-parse --git-common-dir)/.." rev-parse --show-toplevel)
+cd "$MAIN_ROOT"
+git checkout <base-branch> && git pull
+git merge <branch-name>
+# re-run tests
+git branch -d <branch-name>
+# then Phase 5 cleanup
+```
+
+### Option 4: discard
+
+Require typed confirmation: user must type `discard`.
+
+---
+
+## Phase 4: Babysit
+
+**Default after you open a PR as part of an agent-driven task.** Do not stop at "PR created."
+
+### What to monitor
+
+```bash
+gh pr view
+gh pr checks --json name,bucket,state,workflow,link
+# Review comments: unresolved, actionable only
+```
+
+### Each pass
+
+1. Fix failing CI caused by this PR's changes (scoped fixes only)
+2. Address actionable review comments (mechanical fixes, not judgment calls)
+3. Commit focused fixes, push
+4. Re-check until green or blocked
+
+### Platform loops
+
+| Platform | How to loop |
+|----------|-------------|
+| Claude Code | `/loop 5m /babysit-pr` (see `~/.claude/commands/babysit-pr.md`) |
+| Cursor | `babysit` skill; or monitored shell with `gh pr checks` every 5m |
+| Codex | Same monitored-shell pattern; re-run checks each cycle |
+
+### Stop and tell the user when
+
+- All checks green AND actionable comments addressed -> **"PR is ready for your review/merge"**
+- Same failure after one fix attempt -> surface it, stop looping
+- Comment needs human judgment -> leave it, tell user why
+
+### Never during babysit
+
+- Force-push over commits you did not just make
+- Merge, approve, or dismiss reviews (human only)
+- Change CI workflows just to make checks pass
+
+---
+
+## Phase 5: Merge + Cleanup
+
+**Only after the user merges (or chose Option 1 locally).**
+
+```bash
+MAIN_ROOT=$(git -C "$(git rev-parse --git-common-dir)/.." rev-parse --show-toplevel)
+WORKTREE_PATH=$(git rev-parse --show-toplevel)
+cd "$MAIN_ROOT"
+git worktree remove "$WORKTREE_PATH"
+git worktree prune
+git branch -d <branch-name>   # or -D if user confirmed discard
+```
+
+Rules:
+
+- Only remove worktrees you created (under `.worktrees/`, `worktrees/`, or `~/.config/superpowers/worktrees/`)
+- Never `git worktree remove` from inside the worktree being removed
+- `cd` to main repo root first
+- Harness-owned worktrees: do not remove; tell user to use native cleanup
+
+---
+
+## Quick Reference
+
+```
+Start task
+  -> detect/create worktree
+  -> baseline tests pass
+  -> TDD + implement + verify
+  -> tests pass
+  -> ask user: merge / PR / keep / discard
+  -> if PR: push, create PR, babysit until ready
+  -> tell user when ready
+  -> after user merges: remove worktree, delete branch
+```
+
+## Red Flags
+
+- Editing main checkout when isolation was possible
+- Skipping baseline or final test runs
+- Opening PR and stopping without babysitting (agent-driven tasks)
+- Removing worktree while PR is still open for iteration
+- Merging without user approval
+- Deleting branch before removing worktree
