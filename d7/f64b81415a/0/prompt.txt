@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b21vjbfil</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/ff2f60f2-21b1-4bc3-87e2-a040e7e3caee/tasks/b21vjbfil.output</output-file>
+<status>killed</status>
+<summary>Background command "Start dev server from capture-search worktree" was stopped</summary>
+</task-notification>
