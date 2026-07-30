@@ -1,0 +1,17 @@
+check for me to make sure the local main is totally sync with the remote and clean up all the done worktree and branch locally and remote for me
+
+---
+
+remove the cursor research branch and the docs branh too. the entire one i think it was create for entire but im not sure if it needed or not or whats the point of entire, can u check and lmk? and for the stashes since u know the system do we still need it?
+
+---
+
+clean that up too
+
+---
+
+i just signin with entire
+
+---
+
+so it's good now right? can u clean up everything in entire and setup everything in entire then  comeback tell me how can i utilize it

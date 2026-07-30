@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "dcd92a02194a",
+  "strategy": "manual-commit",
+  "branch": "chore/entire-setup",
+  "checkpoints_count": 4,
+  "files_touched": [
+    ".gitignore",
+    "vercel.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/dc/d92a02194a/0/metadata.json",
+      "transcript": "/dc/d92a02194a/0/full.jsonl",
+      "compact_transcript": "/dc/d92a02194a/0/transcript.jsonl",
+      "content_hash": "/dc/d92a02194a/0/content_hash.txt",
+      "prompt": "/dc/d92a02194a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 166,
+    "cache_creation_tokens": 163543,
+    "cache_read_tokens": 10124989,
+    "output_tokens": 63833,
+    "api_call_count": 89
+  }
+}
