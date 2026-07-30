@@ -1,0 +1,1 @@
+integrate this sdk to our app for us today: https://github.com/tony-ng-vn/feedback-sdk
