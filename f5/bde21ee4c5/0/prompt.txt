@@ -1,0 +1,23 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - src/Waitlist.tsx
+
+Unified diff (only + lines are new):
+
+=== DIFF: src/Waitlist.tsx ===
+@@ -106,11 +106,6 @@ export function Waitlist() {
+   return (
+     <div ref={rootRef} className="waitlist" data-mode={mode}>
+       <canvas ref={canvasRef} className="wl-sky" aria-hidden="true" />
+-      {/* Existing beta users reach the Clerk flow here; the "#/sign-in" hash
+-          routes App to sign-in without leaving this page for strangers. */}
+-      <a className="wl-signin" href="#/sign-in">
+-        Sign in
+-      </a>
+       <div className="wl-content">
+         {status === "joined" ? (
+           <div className="wl-joined" role="status">
+
+
+Investigate per the method in your instructions, then return the findings list.
