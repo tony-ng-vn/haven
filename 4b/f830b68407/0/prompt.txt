@@ -1,0 +1,227 @@
+# Applications mentioned by the user:
+
+<appshot app="Helium" bundle-identifier="net.imput.helium" window-title="Configure | Clerk.com" image="Helium Appshot 2026-07-27T23-08-04.368Z.png">
+Window: "Configure | Clerk.com", App: Helium.
+standard window Configure | Clerk.com - Helium - Work, URL: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/user-authentication/sso-connections
+	container Configure | Clerk.com - Helium - Work, URL: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/user-authentication/sso-connections
+		container
+			toolbar
+				button
+				button
+				button
+				button
+				container
+					pop up button View site information
+					text field (settable, string) Description: Address and search bar, Placeholder: Search Google or type a URL, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/user-authentication/sso-connections
+					button
+				container
+					pop up button uBlock Origin (61)
+Has access to this site
+					pop up button Extensions
+				button
+				pop up button Update
+			container
+				HTML content Configure | Clerk.com, URL: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/user-authentication/sso-connections
+					container
+						container Notifications (F8)
+							content list
+						container
+							link Description: Organization logo, Value: dashboard.clerk.com/apps
+							button
+								text Personal workspace
+								text Hobby
+							image
+							pop up button Switch application
+							image
+							pop up button Switch environment
+							button
+								progress indicator Description: Setup task progress, Value: 0%
+								text 0
+								text /
+								text 3
+								text setup tasks
+								text Continue setup
+							button
+							button
+								text Invite
+							button
+								image User avatar
+						pop up button Help Center
+							image
+							image
+						container
+							link Description: Overview, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED
+							link Description: Users, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/users
+							link Description: Organizations, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/organizations
+							link Description: Billing, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/billing/subscriptions
+							link Description: Logs, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/application-logs
+							link Description: Configure, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/user-authentication/user-and-authentication
+						container
+							button
+								text Find...
+								text ⌘
+								text K
+							heading Configure
+								text Configure
+							content list Configure
+								container
+									button
+									container User &amp; authentication
+										content list
+											link Description: User &amp; authentication, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/user-authentication/user-and-authentication
+											link Description: SSO connections, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/user-authentication/sso-connections
+											link Description: Web3, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/user-authentication/web3
+											link Description: Multi-factor, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/user-authentication/multi-factor
+											link Description: Waitlist, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/user-authentication/waitlist
+											link Description: Legal, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/compliance/legal
+								container
+									button
+									container Sessions
+								container
+									button
+									container Organizations
+								container
+									button
+									container Billing
+								container
+									button
+									container Protect
+								link Description: Account Portal, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/account-portal
+								link Description: Features, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/features
+								container
+									button
+									container Customization
+								container
+									button
+									container Developers
+							heading Instance
+								text Instance
+							content list Instance
+								link Description: Settings, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/instance-settings
+								link Description: API keys, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/api-keys
+								link Description: Updates, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/updates
+							heading Application
+								text Application
+							content list Application
+								link Description: Settings, Value: dashboard.clerk.com/apps/app_3GeA4BN3oab0ycN7FH8wFAArB2v/instances/REDACTED/settings
+						container
+							heading SSO connections
+								text SSO connections
+							pop up button Add connection
+								text Add connection
+							container
+							container
+								text You can use up to  3  social/custom connections for free. For unlimited use [upgrade to pro](dashboard.clerk.com/settings/billing)
+							tab group
+								tab (selected) All, Value: 1
+									text All
+								tab (settable, integer) Social, Value: 0
+								tab (settable, integer) Enterprise, Value: 0
+							container All
+								container
+									container
+										search text field (settable, string)
+									container
+										table Connections
+											row Provider Configuration
+												column header
+													text Provider
+												column header
+													text Configuration
+											row Google Social provider
+												row header
+													text Google
+													text Social provider
+												cell
+													text Setup required
+											row LinkedIn Social provider
+												row header
+													text LinkedIn
+													text Social provider
+												cell
+													text Setup required
+											row X / Twitter Social provider
+												row header
+													text X / Twitter
+													text Social provider
+												cell
+													text Setup required
+											row Twitter Social provider
+												row header
+													text Twitter
+													text Social provider
+												cell
+													text Disabled
+											column
+												column header
+													text Provider
+												row header
+													text Google
+													text Social provider
+												row header
+													text LinkedIn
+													text Social provider
+												row header
+													text X / Twitter
+													text Social provider
+												row header
+													text Twitter
+													text Social provider
+											column
+												column header
+													text Configuration
+												cell
+													text Setup required
+												cell
+													text Setup required
+												cell
+													text Setup required
+												cell
+													text Disabled
+											container
+												column header
+													text Provider
+												column header
+													text Configuration
+						text Configure | Clerk.com
+					container grammarly-integration
+						text {"mode":"full","isActive":true,"isUserDisabled":false}
+					container grammarly-global-assistant-notch
+					button
+						image
+			tab group
+				container
+					scroll area
+					scroll area
+						container
+							tab (settable, boolean) Description: X - High memory usage - 832 MB, Value: off
+							tab (settable, boolean) Description: tony-ng-vn/haven, Value: off
+							tab (settable, boolean) Description: Notion Campus Leaders Program, Value: off
+							tab (settable, boolean) Description: (4) Home / X - Inactive tab - 192 MB freed up, Value: off
+							tab (settable, boolean) Value: off, Description: docs(plan): parallel execution plan for phase 1 screens 4-9 by tony-ng-vn · Pull Request #85 · tony-ng-vn/haven
+							tab (settable, boolean) Description: List of Questions - Memory usage - 547 MB, Value: off
+							tab (settable, boolean) Description: (2583) Sam Altman - How to Start a Startup - YouTube - Memory usage - 655 MB, Value: off
+							tab (settable, boolean) Description: Home / X - Memory usage - 402 MB, Value: off
+							tab (settable, boolean) Description: Startup School 2026 | Y Combinator's Work at a Startup - Inactive tab - 170 MB freed up, Value: off
+							tab (settable, boolean) Description: (1) X - Memory usage - 713 MB, Value: off
+							tab (settable, boolean) Description: Haven and Arkor Model - Memory usage - 589 MB, Value: off
+							tab (settable, boolean) Description: tony-ng-vn/haven - Inactive tab - 238 MB freed up, Value: off
+							tab (settable, boolean) Description: ali on X: "22580: From GPT2 to Kimi3, Explained" / X - Memory usage - 483 MB, Value: off
+							tab (settable, boolean) Value: off, Description: docs(plan): memory-first network intelligence plan by tony-ng-vn · Pull Request #109 · tony-ng-vn/haven
+							tab (settable, boolean) Description: Haven and Arkor Model, Value: off
+							tab (settable, boolean) Description: Linktree Social Handle Setup - Memory usage - 544 MB, Value: off
+							tab (settable, boolean) Description: NextStep | Life admin, made clear, Value: off
+							tab (settable, boolean) Description: Arkor: Build a custom model with your coding agent, Value: off
+							tab (settable, boolean) Description: Page Not Found, Value: off
+							tab (settable, boolean) Description: Letter Book Idea - Memory usage - 325 MB, Value: off
+							tab (settable, boolean) Description: Recent Projects | Airfoil Studio, Value: off
+							tab (settable, boolean) Description: Exa AI: Search for AI Agents - Google Gemini - Memory usage - 795 MB, Value: off
+							tab (settable, boolean) Description: Airfoil・Designers helping frontier tech take flight, Value: off
+							tab (selected, settable, boolean) Description: Configure | Clerk.com - Memory usage - 417 MB, Value: on
+				button
+				slider Vertical Tab Strip Resize Handle (Draggable)
+
+</appshot>
+
+## My request for Codex:
+i need to set this up so please help me setup
