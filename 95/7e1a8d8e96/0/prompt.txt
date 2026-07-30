@@ -1,0 +1,1 @@
+add into the rule too that if the build is IOS, then use Xcode mcp to test the app
