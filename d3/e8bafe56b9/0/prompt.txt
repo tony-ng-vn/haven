@@ -1,0 +1,1189 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - convex/authz.ts
+  - convex/captures.test.ts
+  - convex/captures.ts
+  - convex/openaiClient.ts
+  - convex/people.test.ts
+  - convex/people.ts
+  - convex/rateLimit.test.ts
+  - convex/rateLimit.ts
+  - convex/schema.ts
+  - package-lock.json
+  - package.json
+
+Unified diff (only + lines are new):
+
+=== DIFF: convex/authz.ts ===
+@@ -0,0 +1,17 @@
++// Plain helper, not a registered Convex function -- importing it from
++// people.ts and captures.ts needs no _generated/api.d.ts patch.
++
++import { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
++
++// Clerk has no local users table, so tokenIdentifier ("issuer|subject") is
++// the stable ownership key -- guidelines say prefer it over the bare
++// `subject` claim.
++export async function requireUser(
++  ctx: QueryCtx | MutationCtx | ActionCtx,
++): Promise<string> {
++  const identity = await ctx.auth.getUserIdentity();
++  if (identity === null) {
++    throw new Error("Not signed in");
++  }
++  return identity.tokenIdentifier;
++}
+
+
+=== DIFF: convex/captures.test.ts ===
+@@ -1,7 +1,7 @@
+ /// <reference types="vite/client" />
+ import { convexTest } from "convex-test";
+ import { afterEach, beforeEach, expect, test, vi } from "vitest";
+-import { api } from "./_generated/api";
++import { api, internal } from "./_generated/api";
+ import schema from "./schema";
+ 
+ const modules = import.meta.glob("./**/*.ts");
+@@ -17,10 +17,38 @@ function asNewUser(t: ReturnType<typeof convexTest>) {
+   return { userId, as: t.withIdentity({ subject, issuer }) };
+ }
+ 
+-async function seedScreenshot(t: ReturnType<typeof convexTest>) {
+-  return await t.run(async (ctx) =>
+-    ctx.storage.store(new Blob(["fake-image"], { type: "image/png" })),
++// convex-test's storage mock never records contentType from the Blob it was
++// given (its storeBlob syscall only stores size and sha256), so real
++// upload-validation code always sees contentType === undefined here. Patch
++// the system table directly, bypassing the DataModel table-name type (a
++// system table isn't one of ours), so tests can exercise that validation.
++async function setStoredContentType(
++  t: ReturnType<typeof convexTest>,
++  id: unknown,
++  contentType: string,
++) {
++  await t.run((ctx) => (ctx.db as any).patch("_storage", id, { contentType }));
++}
++
++async function seedScreenshot(
++  t: ReturnType<typeof convexTest>,
++  contentType = "image/png",
++) {
++  const id = await t.run(async (ctx) =>
++    ctx.storage.store(new Blob(["fake-image"], { type: contentType })),
++  );
++  await setStoredContentType(t, id, contentType);
++  return id;
++}
++
++async function seedOversizedScreenshot(t: ReturnType<typeof convexTest>) {
++  const id = await t.run(async (ctx) =>
++    ctx.storage.store(
++      new Blob([new Uint8Array(10 * 1024 * 1024 + 1)], { type: "image/png" }),
++    ),
+   );
++  await setStoredContentType(t, id, "image/png");
++  return id;
+ }
+ 
+ const EXTRACTION = {
+@@ -39,8 +67,11 @@ function unitVector(hotIndex: number): number[] {
+   return vector;
+ }
+ 
+-// Stub the two OpenAI endpoints. Storage URLs (and anything else) fall
+-// through to the real fetch so convex-test internals keep working.
++// Stub the two OpenAI endpoints, routed by pathname. Anything to a
++// different host (convex-test internals, storage URLs) falls through to
++// the real fetch; anything to the OpenAI host that isn't one of our two
++// known paths throws instead of silently reaching the real API -- a typo'd
++// path here should fail loudly in tests, not go out over the network.
+ function stubOpenAI(options: {
+   extraction?: unknown;
+   embedding?: number[];
+@@ -50,8 +81,17 @@ function stubOpenAI(options: {
+   vi.stubGlobal(
+     "fetch",
+     async (input: RequestInfo | URL, init?: RequestInit) => {
+-      const url = String(input);
+-      if (url.includes("api.openai.com/v1/chat/completions")) {
++      const raw = String(input);
++      let url: URL;
++      try {
++        url = new URL(raw);
++      } catch {
++        return realFetch(input, init);
++      }
++      if (url.hostname !== "api.openai.com") {
++        return realFetch(input, init);
++      }
++      if (url.pathname.includes("/chat/completions")) {
+         if (options.failExtraction) {
+           return new Response("upstream error", { status: 500 });
+         }
+@@ -61,12 +101,12 @@ function stubOpenAI(options: {
+           ],
+         });
+       }
+-      if (url.includes("api.openai.com/v1/embeddings")) {
++      if (url.pathname.includes("/embeddings")) {
+         return Response.json({
+           data: [{ embedding: options.embedding ?? unitVector(0) }],
+         });
+       }
+-      return realFetch(input, init);
++      throw new Error(`Unstubbed OpenAI request: ${url.pathname}`);
+     },
+   );
+ }
+@@ -260,6 +300,24 @@ test("semanticSearch finds my people by meaning and never another user's", async
+   expect(results[0].score).toBeGreaterThan(0.9);
+ });
+ 
++test("semanticSearch is rate-limited per caller (wiring check)", async () => {
++  const t = convexTest(schema, modules);
++  const { userId, as } = await asNewUser(t);
++  stubOpenAI({ embedding: unitVector(0) });
++
++  await as.action(api.people.semanticSearch, { query: "anyone" });
++
++  const window = await t.run((ctx) =>
++    ctx.db
++      .query("rateLimits")
++      .withIndex("by_user_action", (q) =>
++        q.eq("userId", userId).eq("action", "semanticSearch"),
++      )
++      .unique(),
++  );
++  expect(window?.count).toBe(1);
++});
++
+ test("updatePerson refreshes the embedding from the new context", async () => {
+   stubOpenAI({ embedding: unitVector(2) });
+   const t = convexTest(schema, modules);
+@@ -276,3 +334,303 @@ test("updatePerson refreshes the embedding from the new context", async () => {
+   expect(person?.embedding).toHaveLength(1536);
+   expect(person?.embeddedText).toBe("Maya\nRuns the observatory");
+ });
++
++// ------------------------------------------------------- upload validation
++
++// Note: we don't assert the blob is gone here. Convex mutations are one
++// atomic transaction -- the storage.delete() call in createCapture runs in
++// the same transaction as the throw that follows it, so convex-test's
++// simulated storage (backed by the same transactional _storage table) rolls
++// the delete back along with everything else. The security-relevant
++// property this test guards is that a bad upload never becomes a capture
++// row or a scheduled extraction call, which does hold regardless.
++test("createCapture rejects a non-image upload", async () => {
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++  const screenshotId = await seedScreenshot(t, "application/pdf");
++
++  await expect(
++    as.mutation(api.captures.createCapture, { screenshotId }),
++  ).rejects.toThrow("Please upload an image under 10 MB");
++
++  expect(await as.query(api.captures.listCaptures, {})).toHaveLength(0);
++});
++
++test("createCapture rejects an oversized upload", async () => {
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++  const screenshotId = await seedOversizedScreenshot(t);
++
++  await expect(
++    as.mutation(api.captures.createCapture, { screenshotId }),
++  ).rejects.toThrow("Please upload an image under 10 MB");
++
++  expect(await as.query(api.captures.listCaptures, {})).toHaveLength(0);
++});
++
++test("createCapture accepts a small, valid image", async () => {
++  stubOpenAI({ extraction: EXTRACTION });
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++  const screenshotId = await seedScreenshot(t, "image/png");
++
++  await expect(
++    as.mutation(api.captures.createCapture, { screenshotId }),
++  ).resolves.toBeTypeOf("string");
++});
++
++// ---------------------------------------------------------------- retry
++
++test("retryExtract reruns extraction on a failed capture", async () => {
++  stubOpenAI({ failExtraction: true });
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++  const captureId = await as.mutation(api.captures.createCapture, {
++    screenshotId: await seedScreenshot(t),
++  });
++  await t.finishAllScheduledFunctions(vi.runAllTimers);
++  expect(
++    (await t.run((ctx) => ctx.db.get("captures", captureId)))?.status,
++  ).toBe("failed");
++
++  stubOpenAI({ extraction: EXTRACTION });
++  await as.mutation(api.captures.retryExtract, { captureId });
++  expect(
++    (await t.run((ctx) => ctx.db.get("captures", captureId)))?.status,
++  ).toBe("pending");
++
++  await t.finishAllScheduledFunctions(vi.runAllTimers);
++  const capture = await t.run((ctx) => ctx.db.get("captures", captureId));
++  expect(capture?.status).toBe("ready");
++  expect(capture?.error).toBeUndefined();
++  expect(capture?.errorDetail).toBeUndefined();
++});
++
++test("retryExtract on a ready capture throws", async () => {
++  stubOpenAI({ extraction: EXTRACTION });
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++  const captureId = await as.mutation(api.captures.createCapture, {
++    screenshotId: await seedScreenshot(t),
++  });
++  await t.finishAllScheduledFunctions(vi.runAllTimers);
++
++  await expect(
++    as.mutation(api.captures.retryExtract, { captureId }),
++  ).rejects.toThrow("Capture is not ready to retry");
++});
++
++test("retryExtract rejects another user's capture", async () => {
++  stubOpenAI({ failExtraction: true });
++  const t = convexTest(schema, modules);
++  const me = await asNewUser(t);
++  const other = await asNewUser(t);
++  const captureId = await me.as.mutation(api.captures.createCapture, {
++    screenshotId: await seedScreenshot(t),
++  });
++  await t.finishAllScheduledFunctions(vi.runAllTimers);
++
++  await expect(
++    other.as.mutation(api.captures.retryExtract, { captureId }),
++  ).rejects.toThrow("Capture not found");
++});
++
++// ------------------------------------------------------- error sanitization
++
++test("an upstream failure never leaks raw error text to the user", async () => {
++  stubOpenAI({ failExtraction: true });
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++  const captureId = await as.mutation(api.captures.createCapture, {
++    screenshotId: await seedScreenshot(t),
++  });
++  await t.finishAllScheduledFunctions(vi.runAllTimers);
++
++  const capture = await t.run((ctx) => ctx.db.get("captures", captureId));
++  expect(capture?.error).toBe("Could not read this screenshot -- you can retry");
++  expect(capture?.error?.toLowerCase()).not.toContain("api");
++  expect(capture?.error?.toLowerCase()).not.toContain("env");
++  // The raw detail is kept server-side...
++  expect(capture?.errorDetail).toContain("upstream error");
++  // ...but never reaches a client response.
++  const listed = await as.query(api.captures.listCaptures, {});
++  expect(listed[0]).not.toHaveProperty("errorDetail");
++});
++
++test("the not-a-profile message passes through as-is (it is already safe)", async () => {
++  stubOpenAI({ extraction: { ...EXTRACTION, is_profile: false } });
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++  const captureId = await as.mutation(api.captures.createCapture, {
++    screenshotId: await seedScreenshot(t),
++  });
++  await t.finishAllScheduledFunctions(vi.runAllTimers);
++
++  const capture = await t.run((ctx) => ctx.db.get("captures", captureId));
++  expect(capture?.error).toBe("Could not read a profile in this screenshot");
++  expect(capture?.errorDetail).toBeUndefined();
++});
++
++// -------------------------------------------------------- rate limiting
++
++test("createCapture throttles a burst past the per-minute limit", async () => {
++  stubOpenAI({ extraction: EXTRACTION });
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++
++  for (let i = 0; i < 10; i++) {
++    await as.mutation(api.captures.createCapture, {
++      screenshotId: await seedScreenshot(t),
++    });
++  }
++  await expect(
++    as.mutation(api.captures.createCapture, {
++      screenshotId: await seedScreenshot(t),
++    }),
++  ).rejects.toThrow("Too many requests -- please wait a moment");
++
++  vi.setSystemTime(Date.now() + 60_000);
++  await expect(
++    as.mutation(api.captures.createCapture, {
++      screenshotId: await seedScreenshot(t),
++    }),
++  ).resolves.toBeTypeOf("string");
++});
++
++test("createCapture also tracks a separate daily window", async () => {
++  stubOpenAI({ extraction: EXTRACTION });
++  const t = convexTest(schema, modules);
++  const { userId, as } = await asNewUser(t);
++
++  await as.mutation(api.captures.createCapture, {
++    screenshotId: await seedScreenshot(t),
++  });
++
++  const dayWindow = await t.run((ctx) =>
++    ctx.db
++      .query("rateLimits")
++      .withIndex("by_user_action", (q) =>
++        q.eq("userId", userId).eq("action", "createCapture:day"),
++      )
++      .unique(),
++  );
++  expect(dayWindow?.count).toBe(1);
++});
++
++test("rate limits are per user: exhausting mine does not affect another user", async () => {
++  stubOpenAI({ extraction: EXTRACTION });
++  const t = convexTest(schema, modules);
++  const me = await asNewUser(t);
++  const other = await asNewUser(t);
++
++  for (let i = 0; i < 10; i++) {
++    await me.as.mutation(api.captures.createCapture, {
++      screenshotId: await seedScreenshot(t),
++    });
++  }
++  await expect(
++    me.as.mutation(api.captures.createCapture, {
++      screenshotId: await seedScreenshot(t),
++    }),
++  ).rejects.toThrow("Too many requests -- please wait a moment");
++
++  await expect(
++    other.as.mutation(api.captures.createCapture, {
++      screenshotId: await seedScreenshot(t),
++    }),
++  ).resolves.toBeTypeOf("string");
++});
++
++// ------------------------------------------------------------ unauth
++
++test("captures functions reject an unauthenticated caller", async () => {
++  stubOpenAI({ extraction: EXTRACTION });
++  const t = convexTest(schema, modules);
++  const screenshotId = await seedScreenshot(t);
++  // A real, existing captureId -- so arg validation passes and requireUser's
++  // rejection (not a v.id() format error) is what we're actually testing.
++  const { as } = await asNewUser(t);
++  const captureId = await as.mutation(api.captures.createCapture, {
++    screenshotId: await seedScreenshot(t),
++  });
++
++  await expect(t.mutation(api.captures.generateUploadUrl, {})).rejects.toThrow(
++    "Not signed in",
++  );
++  await expect(
++    t.mutation(api.captures.createCapture, { screenshotId }),
++  ).rejects.toThrow("Not signed in");
++  await expect(t.query(api.captures.listCaptures, {})).rejects.toThrow(
++    "Not signed in",
++  );
++  await expect(
++    t.mutation(api.captures.acceptCapture, { captureId }),
++  ).rejects.toThrow("Not signed in");
++  await expect(
++    t.mutation(api.captures.discardCapture, { captureId }),
++  ).rejects.toThrow("Not signed in");
++  await expect(
++    t.mutation(api.captures.retryExtract, { captureId }),
++  ).rejects.toThrow("Not signed in");
++});
++
++// -------------------------------------------------------- race / contract
++
++test("discarding a capture before extraction finishes leaves nothing behind", async () => {
++  stubOpenAI({ extraction: EXTRACTION });
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++  const screenshotId = await seedScreenshot(t);
++
++  const captureId = await as.mutation(api.captures.createCapture, {
++    screenshotId,
++  });
++  // Discard races the scheduled extract action -- it runs before
++  // finishAllScheduledFunctions lets that action execute.
++  await as.mutation(api.captures.discardCapture, { captureId });
++
++  await expect(t.finishAllScheduledFunctions(vi.runAllTimers)).resolves.not.toThrow();
++
++  expect(await t.run((ctx) => ctx.db.get("captures", captureId))).toBeNull();
++  const people = await t.run((ctx) => ctx.db.query("people").collect());
++  expect(people).toHaveLength(0);
++
++  // A stray finishExtract for the now-deleted capture must no-op, not throw.
++  // extractedValidator has no is_profile field -- strip it from EXTRACTION.
++  const { is_profile: _isProfile, ...extracted } = EXTRACTION;
++  await expect(
++    t.mutation(internal.captures.finishExtract, { captureId, extracted }),
++  ).resolves.toBeNull();
++});
++
++test("acceptCapture is not reentrant: a second accept finds nothing to accept", async () => {
++  stubOpenAI({ extraction: EXTRACTION });
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++  const captureId = await as.mutation(api.captures.createCapture, {
++    screenshotId: await seedScreenshot(t),
++  });
++  await t.finishAllScheduledFunctions(vi.runAllTimers);
++
++  await as.mutation(api.captures.acceptCapture, { captureId });
++  await expect(
++    as.mutation(api.captures.acceptCapture, { captureId }),
++  ).rejects.toThrow("Capture not found");
++
++  const people = await t.run((ctx) => ctx.db.query("people").collect());
++  expect(people).toHaveLength(1);
++});
++
++test("acceptCapture on a still-pending capture is rejected", async () => {
++  stubOpenAI({ extraction: EXTRACTION });
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++  const captureId = await as.mutation(api.captures.createCapture, {
++    screenshotId: await seedScreenshot(t),
++  });
++  // Deliberately not finishing the scheduled extraction -- still "pending".
++
++  await expect(
++    as.mutation(api.captures.acceptCapture, { captureId }),
++  ).rejects.toThrow("Capture is not ready");
++});
+
+
+=== DIFF: convex/captures.ts ===
+@@ -4,23 +4,17 @@ import {
+   internalQuery,
+   mutation,
+   query,
+-  QueryCtx,
+-  MutationCtx,
+ } from "./_generated/server";
+ import { v } from "convex/values";
+ import { internal } from "./_generated/api";
+ import { Doc } from "./_generated/dataModel";
+ import { extractProfile } from "./openaiClient";
++import { requireUser } from "./authz";
++import { checkRateLimit } from "./rateLimit";
+ 
+-// Clerk has no local users table, so tokenIdentifier ("issuer|subject") is
+-// the stable ownership key -- guidelines say prefer it over `subject` alone.
+-async function requireUser(ctx: QueryCtx | MutationCtx) {
+-  const identity = await ctx.auth.getUserIdentity();
+-  if (identity === null) {
+-    throw new Error("Not signed in");
+-  }
+-  return identity.tokenIdentifier;
+-}
++const MINUTE_MS = 60_000;
++const DAY_MS = 24 * 60 * 60_000;
++const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+ 
+ const extractedValidator = v.object({
+   platform: v.string(),
+@@ -44,6 +38,27 @@ export const createCapture = mutation({
+   returns: v.id("captures"),
+   handler: async (ctx, args) => {
+     const userId = await requireUser(ctx);
++    // Denial-of-wallet guard: extraction calls a paid model, so cap both
++    // the burst rate and the daily spend per user.
++    await checkRateLimit(ctx, userId, "createCapture:minute", 10, MINUTE_MS);
++    await checkRateLimit(ctx, userId, "createCapture:day", 100, DAY_MS);
++
++    // Never trust the client's claim about what it uploaded -- read the
++    // real metadata Convex recorded for the blob before touching anything
++    // else, and delete the blob outright when it fails validation.
++    const meta = await ctx.db.system.get("_storage", args.screenshotId);
++    const isValidImage =
++      meta !== null &&
++      meta.contentType !== undefined &&
++      meta.contentType.startsWith("image/") &&
++      meta.size <= MAX_UPLOAD_BYTES;
++    if (!isValidImage) {
++      if (meta !== null) {
++        await ctx.storage.delete(args.screenshotId);
++      }
++      throw new Error("Please upload an image under 10 MB");
++    }
++
+     const captureId = await ctx.db.insert("captures", {
+       userId,
+       screenshotId: args.screenshotId,
+@@ -77,6 +92,16 @@ export const finishExtract = internalMutation({
+   },
+ });
+ 
++// Messages already written to be shown to a user as-is: specific, no
++// upstream/API leakage. Anything else is raw error text (OpenAI response
++// bodies, env-var hints) that must never reach the client -- it goes into
++// errorDetail instead, behind a short generic message.
++const SAFE_ERROR_MESSAGES = new Set([
++  "Could not read a profile in this screenshot",
++  "The screenshot file is missing",
++]);
++const GENERIC_ERROR_MESSAGE = "Could not read this screenshot -- you can retry";
++
+ export const failExtract = internalMutation({
+   args: { captureId: v.id("captures"), error: v.string() },
+   returns: v.null(),
+@@ -85,9 +110,11 @@ export const failExtract = internalMutation({
+     if (capture === null) {
+       return null;
+     }
++    const isSafe = SAFE_ERROR_MESSAGES.has(args.error);
+     await ctx.db.patch("captures", args.captureId, {
+       status: "failed",
+-      error: args.error,
++      error: isSafe ? args.error : GENERIC_ERROR_MESSAGE,
++      errorDetail: isSafe ? undefined : args.error,
+     });
+     return null;
+   },
+@@ -210,3 +237,27 @@ export const discardCapture = mutation({
+     return null;
+   },
+ });
++
++export const retryExtract = mutation({
++  args: { captureId: v.id("captures") },
++  returns: v.null(),
++  handler: async (ctx, args) => {
++    const userId = await requireUser(ctx);
++    const capture = await ctx.db.get("captures", args.captureId);
++    if (capture === null || capture.userId !== userId) {
++      throw new Error("Capture not found");
++    }
++    if (capture.status !== "failed") {
++      throw new Error("Capture is not ready to retry");
++    }
++    await ctx.db.patch("captures", args.captureId, {
++      status: "pending",
++      error: undefined,
++      errorDetail: undefined,
++    });
++    await ctx.scheduler.runAfter(0, internal.captures.extract, {
++      captureId: args.captureId,
++    });
++    return null;
++  },
++});
+
+
+=== DIFF: convex/openaiClient.ts ===
+@@ -72,8 +72,12 @@ function apiKey(): string {
+   return key;
+ }
+ 
++// Any OpenAI-compatible provider (e.g. interfaze.ai) works by pointing this
++// at its base URL; the request/response shape is unchanged.
++const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com";
++
+ async function callOpenAI(path: string, body: unknown): Promise<unknown> {
+-  const response = await fetch(`https://api.openai.com/v1/${path}`, {
++  const response = await fetch(`${baseUrl}/v1/${path}`, {
+     method: "POST",
+     headers: {
+       "Content-Type": "application/json",
+
+
+=== DIFF: convex/people.test.ts ===
+@@ -1,6 +1,6 @@
+ /// <reference types="vite/client" />
+ import { convexTest } from "convex-test";
+-import { expect, test } from "vitest";
++import { afterEach, beforeEach, expect, test, vi } from "vitest";
+ import { api } from "./_generated/api";
+ import schema from "./schema";
+ 
+@@ -17,6 +17,38 @@ function asNewUser(t: ReturnType<typeof convexTest>) {
+   return { userId, as: t.withIdentity({ subject, issuer }) };
+ }
+ 
++// Stub only the embeddings endpoint; anything else falls through to the
++// real fetch. Scoped narrowly since most tests here never run the scheduled
++// embed action at all (they don't call finishAllScheduledFunctions).
++function stubEmbeddings(vector: number[]) {
++  const realFetch = globalThis.fetch;
++  vi.stubGlobal(
++    "fetch",
++    async (input: RequestInfo | URL, init?: RequestInit) => {
++      const raw = String(input);
++      let url: URL;
++      try {
++        url = new URL(raw);
++      } catch {
++        return realFetch(input, init);
++      }
++      if (url.hostname === "api.openai.com" && url.pathname.includes("/embeddings")) {
++        return Response.json({ data: [{ embedding: vector }] });
++      }
++      return realFetch(input, init);
++    },
++  );
++}
++
++beforeEach(() => {
++  vi.useFakeTimers();
++});
++
++afterEach(() => {
++  vi.unstubAllGlobals();
++  vi.useRealTimers();
++});
++
+ test("addPerson creates a person owned by the caller with a timestamp", async () => {
+   const t = convexTest(schema, modules);
+   const { userId, as } = await asNewUser(t);
+@@ -92,6 +124,10 @@ test("updatePerson saves link and context and bumps updatedAt", async () => {
+   const id = await me.as.mutation(api.people.addPerson, { name: "Maya" });
+   const before = await t.run((ctx) => ctx.db.get(id));
+ 
++  // Advance the clock so the new updatedAt is provably later, not just
++  // "not earlier" (Date.now() alone could tie within the same millisecond).
++  vi.advanceTimersByTime(1000);
++
+   await me.as.mutation(api.people.updatePerson, {
+     id,
+     link: "https://example.com",
+@@ -101,7 +137,7 @@ test("updatePerson saves link and context and bumps updatedAt", async () => {
+   const after = await t.run((ctx) => ctx.db.get(id));
+   expect(after?.link).toBe("https://example.com");
+   expect(after?.context).toBe("recruiting agents at Photon");
+-  expect(after!.updatedAt).toBeGreaterThanOrEqual(before!.updatedAt);
++  expect(after!.updatedAt).toBeGreaterThan(before!.updatedAt);
+ });
+ 
+ test("updatePerson rejects updating another user's person", async () => {
+@@ -135,3 +171,142 @@ test("updatePerson with omitted fields clears them (undefined unsets)", async ()
+   expect(after?.link).toBeUndefined();
+   expect(after?.context).toBeUndefined();
+ });
++
++test("people functions reject an unauthenticated caller", async () => {
++  const t = convexTest(schema, modules);
++  const me = await asNewUser(t);
++  const id = await me.as.mutation(api.people.addPerson, { name: "Maya" });
++
++  await expect(t.mutation(api.people.addPerson, { name: "x" })).rejects.toThrow(
++    "Not signed in",
++  );
++  await expect(t.query(api.people.searchPeople, { query: "" })).rejects.toThrow(
++    "Not signed in",
++  );
++  await expect(t.query(api.people.getPerson, { id })).rejects.toThrow(
++    "Not signed in",
++  );
++  await expect(
++    t.mutation(api.people.updatePerson, { id }),
++  ).rejects.toThrow("Not signed in");
++  await expect(
++    t.mutation(api.people.deletePerson, { personId: id }),
++  ).rejects.toThrow("Not signed in");
++});
++
++// ------------------------------------------------------------ projections
++
++test("searchPeople and getPerson never leak embedding, embeddedText, or userId", async () => {
++  stubEmbeddings(new Array(1536).fill(0));
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++
++  const id = await as.mutation(api.people.addPerson, { name: "Maya Chen" });
++  // Run the scheduled embed so the person actually has embedding fields set
++  // -- the leak this test guards against can only happen once they exist.
++  await t.finishAllScheduledFunctions(vi.runAllTimers);
++  const stored = await t.run((ctx) => ctx.db.get("people", id));
++  expect(stored?.embedding).toBeDefined();
++
++  const searchResults = await as.query(api.people.searchPeople, {
++    query: "Maya",
++  });
++  expect(searchResults).toHaveLength(1);
++  expect(searchResults[0]).not.toHaveProperty("embedding");
++  expect(searchResults[0]).not.toHaveProperty("embeddedText");
++  expect(searchResults[0]).not.toHaveProperty("userId");
++
++  const person = await as.query(api.people.getPerson, { id });
++  expect(person).not.toHaveProperty("embedding");
++  expect(person).not.toHaveProperty("embeddedText");
++  expect(person).not.toHaveProperty("userId");
++});
++
++// -------------------------------------------------------------- deletion
++
++test("deletePerson removes the person and its screenshot", async () => {
++  const t = convexTest(schema, modules);
++  const { userId, as } = await asNewUser(t);
++  const screenshotId = await t.run((ctx) =>
++    ctx.storage.store(new Blob(["x"], { type: "image/png" })),
++  );
++  const personId = await t.run((ctx) =>
++    ctx.db.insert("people", {
++      userId,
++      name: "Maya",
++      updatedAt: Date.now(),
++      screenshotId,
++    }),
++  );
++
++  await as.mutation(api.people.deletePerson, { personId });
++
++  expect(await t.run((ctx) => ctx.db.get("people", personId))).toBeNull();
++  expect(await t.run((ctx) => ctx.storage.getUrl(screenshotId))).toBeNull();
++});
++
++test("deletePerson rejects deleting another user's person", async () => {
++  const t = convexTest(schema, modules);
++  const me = await asNewUser(t);
++  const other = await asNewUser(t);
++  const otherId = await other.as.mutation(api.people.addPerson, {
++    name: "Rao",
++  });
++
++  await expect(
++    me.as.mutation(api.people.deletePerson, { personId: otherId }),
++  ).rejects.toThrow("Person not found");
++  expect(await t.run((ctx) => ctx.db.get("people", otherId))).not.toBeNull();
++});
++
++// --------------------------------------------------------- rate limiting
++
++test("addPerson is rate-limited per caller (wiring check)", async () => {
++  const t = convexTest(schema, modules);
++  const { userId, as } = await asNewUser(t);
++  await as.mutation(api.people.addPerson, { name: "Maya" });
++
++  const window = await t.run((ctx) =>
++    ctx.db
++      .query("rateLimits")
++      .withIndex("by_user_action", (q) =>
++        q.eq("userId", userId).eq("action", "addPerson"),
++      )
++      .unique(),
++  );
++  expect(window?.count).toBe(1);
++});
++
++test("addPerson throttles a burst past its per-minute limit", async () => {
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++
++  for (let i = 0; i < 30; i++) {
++    await as.mutation(api.people.addPerson, { name: `Person ${i}` });
++  }
++  await expect(
++    as.mutation(api.people.addPerson, { name: "One too many" }),
++  ).rejects.toThrow("Too many requests -- please wait a moment");
++
++  vi.setSystemTime(Date.now() + 60_000);
++  await expect(
++    as.mutation(api.people.addPerson, { name: "A new window" }),
++  ).resolves.toBeTypeOf("string");
++});
++
++test("updatePerson is rate-limited per caller (wiring check)", async () => {
++  const t = convexTest(schema, modules);
++  const { userId, as } = await asNewUser(t);
++  const id = await as.mutation(api.people.addPerson, { name: "Maya" });
++  await as.mutation(api.people.updatePerson, { id, context: "x" });
++
++  const window = await t.run((ctx) =>
++    ctx.db
++      .query("rateLimits")
++      .withIndex("by_user_action", (q) =>
++        q.eq("userId", userId).eq("action", "updatePerson"),
++      )
++      .unique(),
++  );
++  expect(window?.count).toBe(1);
++});
+
+
+=== DIFF: convex/people.ts ===
+@@ -6,14 +6,14 @@ import {
+   mutation,
+   query,
+   ActionCtx,
+-  QueryCtx,
+-  MutationCtx,
+ } from "./_generated/server";
+ import { v } from "convex/values";
+ import { internal } from "./_generated/api";
+ import { Doc, Id } from "./_generated/dataModel";
+ import { buildEmbedText } from "../src/lib";
+ import { embedText } from "./openaiClient";
++import { requireUser } from "./authz";
++import { checkRateLimit } from "./rateLimit";
+ 
+ // Bound every list read so the query stays scalable as the table grows.
+ const RESULT_LIMIT = 20;
+@@ -22,15 +22,36 @@ const RESULT_LIMIT = 20;
+ // Tuned against real data during verification.
+ const MIN_SEMANTIC_SCORE = 0.3;
+ 
+-// Guidelines forbid `any` for ctx; use the proper context union. Clerk has no
+-// local users table, so tokenIdentifier ("issuer|subject") is the stable
+-// ownership key -- guidelines say prefer it over the bare `subject` claim.
+-async function requireUser(ctx: QueryCtx | MutationCtx | ActionCtx) {
+-  const identity = await ctx.auth.getUserIdentity();
+-  if (identity === null) {
+-    throw new Error("Not signed in");
+-  }
+-  return identity.tokenIdentifier;
++const MINUTE_MS = 60_000;
++
++// What the client is ever allowed to see for a person. Never embedding,
++// embeddedText, or userId -- those stay server-side.
++const personValidator = v.object({
++  _id: v.id("people"),
++  _creationTime: v.number(),
++  name: v.string(),
++  link: v.optional(v.string()),
++  context: v.optional(v.string()),
++  platform: v.optional(v.string()),
++  handle: v.optional(v.string()),
++  headline: v.optional(v.string()),
++  screenshotId: v.optional(v.id("_storage")),
++  updatedAt: v.number(),
++});
++
++function projectPerson(person: Doc<"people">) {
++  return {
++    _id: person._id,
++    _creationTime: person._creationTime,
++    name: person.name,
++    link: person.link,
++    context: person.context,
++    platform: person.platform,
++    handle: person.handle,
++    headline: person.headline,
++    screenshotId: person.screenshotId,
++    updatedAt: person.updatedAt,
++  };
+ }
+ 
+ export const addPerson = mutation({
+@@ -38,6 +59,7 @@ export const addPerson = mutation({
+   returns: v.id("people"),
+   handler: async (ctx, args) => {
+     const userId = await requireUser(ctx);
++    await checkRateLimit(ctx, userId, "addPerson", 30, MINUTE_MS);
+     const name = args.name.trim();
+     if (name === "") {
+       throw new Error("Name is required");
+@@ -54,34 +76,37 @@ export const addPerson = mutation({
+ 
+ export const searchPeople = query({
+   args: { query: v.string() },
++  returns: v.array(personValidator),
+   handler: async (ctx, args) => {
+     const userId = await requireUser(ctx);
+     const term = args.query.trim();
+-    if (term === "") {
+-      return await ctx.db
+-        .query("people")
+-        .withIndex("by_user", (q) => q.eq("userId", userId))
+-        .order("desc")
+-        .take(RESULT_LIMIT);
+-    }
+-    return await ctx.db
+-      .query("people")
+-      .withSearchIndex("search_name", (q) =>
+-        q.search("name", term).eq("userId", userId),
+-      )
+-      .take(RESULT_LIMIT);
++    const people =
++      term === ""
++        ? await ctx.db
++            .query("people")
++            .withIndex("by_user", (q) => q.eq("userId", userId))
++            .order("desc")
++            .take(RESULT_LIMIT)
++        : await ctx.db
++            .query("people")
++            .withSearchIndex("search_name", (q) =>
++              q.search("name", term).eq("userId", userId),
++            )
++            .take(RESULT_LIMIT);
++    return people.map(projectPerson);
+   },
+ });
+ 
+ export const getPerson = query({
+   args: { id: v.id("people") },
++  returns: v.union(v.null(), personValidator),
+   handler: async (ctx, args) => {
+     const userId = await requireUser(ctx);
+     const person = await ctx.db.get("people", args.id);
+     if (person === null || person.userId !== userId) {
+       return null;
+     }
+-    return person;
++    return projectPerson(person);
+   },
+ });
+ 
+@@ -94,6 +119,7 @@ export const updatePerson = mutation({
+   returns: v.null(),
+   handler: async (ctx, args) => {
+     const userId = await requireUser(ctx);
++    await checkRateLimit(ctx, userId, "updatePerson", 60, MINUTE_MS);
+     const person = await ctx.db.get("people", args.id);
+     if (person === null || person.userId !== userId) {
+       throw new Error("Person not found");
+@@ -113,6 +139,23 @@ export const updatePerson = mutation({
+   },
+ });
+ 
++export const deletePerson = mutation({
++  args: { personId: v.id("people") },
++  returns: v.null(),
++  handler: async (ctx, args) => {
++    const userId = await requireUser(ctx);
++    const person = await ctx.db.get("people", args.personId);
++    if (person === null || person.userId !== userId) {
++      throw new Error("Person not found");
++    }
++    if (person.screenshotId !== undefined) {
++      await ctx.storage.delete(person.screenshotId);
++    }
++    await ctx.db.delete("people", args.personId);
++    return null;
++  },
++});
++
+ // ------------------------------------------------------------- embeddings
+ 
+ export const getPersonInternal = internalQuery({
+@@ -222,11 +265,35 @@ export const fetchSearchResults = internalQuery({
+   },
+ });
+ 
++// Actions have no ctx.db (guidelines), so an action-side rate-limit check
++// has to reach the DB through a mutation. userId here is the caller's own
++// identity, derived server-side by the action just above -- not a
++// client-supplied authorization key.
++export const enforceRateLimit = internalMutation({
++  args: {
++    userId: v.string(),
++    action: v.string(),
++    max: v.number(),
++    windowMs: v.number(),
++  },
++  returns: v.null(),
++  handler: async (ctx, args) => {
++    await checkRateLimit(ctx, args.userId, args.action, args.max, args.windowMs);
++    return null;
++  },
++});
++
+ export const semanticSearch = action({
+   args: { query: v.string() },
+   returns: v.array(searchResultValidator),
+   handler: async (ctx, args) => {
+     const userId = await requireUser(ctx);
++    await ctx.runMutation(internal.people.enforceRateLimit, {
++      userId,
++      action: "semanticSearch",
++      max: 30,
++      windowMs: MINUTE_MS,
++    });
+     const term = args.query.trim();
+     if (term === "") {
+       return [];
+
+
+=== DIFF: convex/rateLimit.test.ts ===
+@@ -0,0 +1,66 @@
++/// <reference types="vite/client" />
++import { convexTest } from "convex-test";
++import { afterEach, beforeEach, expect, test, vi } from "vitest";
++import schema from "./schema";
++import { checkRateLimit } from "./rateLimit";
++
++const modules = import.meta.glob("./**/*.ts");
++
++beforeEach(() => {
++  vi.useFakeTimers();
++});
++
++afterEach(() => {
++  vi.useRealTimers();
++});
++
++test("admits up to max calls in a window, then throws on the N+1th", async () => {
++  const t = convexTest(schema, modules);
++  await t.run((ctx) => checkRateLimit(ctx, "user_a", "test", 2, 60_000));
++  await t.run((ctx) => checkRateLimit(ctx, "user_a", "test", 2, 60_000));
++  await expect(
++    t.run((ctx) => checkRateLimit(ctx, "user_a", "test", 2, 60_000)),
++  ).rejects.toThrow("Too many requests -- please wait a moment");
++});
++
++test("a new window admits again after the old one expires", async () => {
++  const t = convexTest(schema, modules);
++  await t.run((ctx) => checkRateLimit(ctx, "user_a", "test", 2, 60_000));
++  await t.run((ctx) => checkRateLimit(ctx, "user_a", "test", 2, 60_000));
++  await expect(
++    t.run((ctx) => checkRateLimit(ctx, "user_a", "test", 2, 60_000)),
++  ).rejects.toThrow("Too many requests -- please wait a moment");
++
++  vi.setSystemTime(Date.now() + 60_000);
++
++  await expect(
++    t.run((ctx) => checkRateLimit(ctx, "user_a", "test", 2, 60_000)),
++  ).resolves.toBeNull();
++});
++
++test("limits are tracked per user, not shared globally", async () => {
++  const t = convexTest(schema, modules);
++  await t.run((ctx) => checkRateLimit(ctx, "user_a", "test", 2, 60_000));
++  await t.run((ctx) => checkRateLimit(ctx, "user_a", "test", 2, 60_000));
++  await expect(
++    t.run((ctx) => checkRateLimit(ctx, "user_a", "test", 2, 60_000)),
++  ).rejects.toThrow("Too many requests -- please wait a moment");
++
++  // user_b's spend is untouched by user_a exhausting their window.
++  await expect(
++    t.run((ctx) => checkRateLimit(ctx, "user_b", "test", 2, 60_000)),
++  ).resolves.toBeNull();
++});
++
++test("limits are tracked per action, not shared across actions for the same user", async () => {
++  const t = convexTest(schema, modules);
++  await t.run((ctx) => checkRateLimit(ctx, "user_a", "actionOne", 1, 60_000));
++  await expect(
++    t.run((ctx) => checkRateLimit(ctx, "user_a", "actionOne", 1, 60_000)),
++  ).rejects.toThrow("Too many requests -- please wait a moment");
++
++  // A different action name for the same user gets its own window.
++  await expect(
++    t.run((ctx) => checkRateLimit(ctx, "user_a", "actionTwo", 1, 60_000)),
++  ).resolves.toBeNull();
++});
+
+
+=== DIFF: convex/rateLimit.ts ===
+@@ -0,0 +1,55 @@
++// Plain helper, not a registered Convex function -- importing it from
++// people.ts and captures.ts needs no _generated/api.d.ts patch.
++
++import { MutationCtx } from "./_generated/server";
++
++// Fixed-window per-user rate limiter backed by the rateLimits table. Not a
++// sliding window: a caller right at a window boundary can burst up to
++// 2x max, which is an acceptable trade for the denial-of-wallet threat
++// model this exists to stop, in return for no extra bookkeeping.
++//
++// One row per (userId, action). A function with more than one window (e.g.
++// a per-minute AND a per-day cap) calls this once per window with distinct
++// action names, e.g. "createCapture:minute" and "createCapture:day".
++export async function checkRateLimit(
++  ctx: MutationCtx,
++  userId: string,
++  action: string,
++  max: number,
++  windowMs: number,
++): Promise<void> {
++  const now = Date.now();
++  const existing = await ctx.db
++    .query("rateLimits")
++    .withIndex("by_user_action", (q) =>
++      q.eq("userId", userId).eq("action", action),
++    )
++    .unique();
++
++  if (existing === null) {
++    await ctx.db.insert("rateLimits", {
++      userId,
++      action,
++      windowStart: now,
++      count: 1,
++    });
++    return;
++  }
++
++  if (now - existing.windowStart >= windowMs) {
++    // Past the window: start a fresh one rather than accumulate forever.
++    await ctx.db.patch("rateLimits", existing._id, {
++      windowStart: now,
++      count: 1,
++    });
++    return;
++  }
++
++  if (existing.count >= max) {
++    throw new Error("Too many requests -- please wait a moment");
++  }
++
++  await ctx.db.patch("rateLimits", existing._id, {
++    count: existing.count + 1,
++  });
++}
+
+
+=== DIFF: convex/schema.ts ===
+@@ -50,6 +50,19 @@ export default defineSchema({
+         bio: v.optional(v.string()),
+       }),
+     ),
++    // Short, generic, user-safe message. Never the raw upstream text.
+     error: v.optional(v.string()),
++    // Raw upstream/error text for our own debugging. Never returned to a
++    // client -- listCaptures and getCapture must not project this field.
++    errorDetail: v.optional(v.string()),
+   }).index("by_user", ["userId"]),
++  // Fixed-window per-user rate limiting. One row per (userId, action) pair;
++  // an action name like "createCapture:minute" models one window, so a
++  // function with two windows (e.g. per-minute and per-day) gets two rows.
++  rateLimits: defineTable({
++    userId: v.string(),
++    action: v.string(),
++    windowStart: v.number(),
++    count: v.number(),
++  }).index("by_user_action", ["userId", "action"]),
+ });
+
+
+=== DIFF: package-lock.json ===
+@@ -9,7 +9,7 @@
+       "version": "0.1.0",
+       "dependencies": {
+         "@clerk/react": "^6.12.5",
+-        "convex": "^1.27.0",
++        "convex": "^1.41.0",
+         "react": "^19.0.0",
+         "react-dom": "^19.0.0"
+       },
+
+
+=== DIFF: package.json ===
+@@ -11,7 +11,7 @@
+   },
+   "dependencies": {
+     "@clerk/react": "^6.12.5",
+-    "convex": "^1.27.0",
++    "convex": "^1.41.0",
+     "react": "^19.0.0",
+     "react-dom": "^19.0.0"
+   },
+
+
+Investigate per the method in your instructions, then return the findings list.
