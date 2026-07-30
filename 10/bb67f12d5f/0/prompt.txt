@@ -1,0 +1,2 @@
+is the screenshot upload and extraction is through local ocr or how do we do it? ohh right now we need the api key to
+  extract it. is there any possible way to do the extraction without llm or api?
