@@ -1,0 +1,83 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - .github/workflows/test.yml
+  - index.html
+  - vercel.json
+
+Unified diff (only + lines are new):
+
+=== DIFF: .github/workflows/test.yml ===
+@@ -0,0 +1,20 @@
++name: test
++
++on:
++  push:
++    branches:
++      - main
++  pull_request:
++
++jobs:
++  test:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 24
++          cache: npm
++      - run: npm ci
++      - run: npm test
++      - run: npm run build
+
+
+=== DIFF: index.html ===
+@@ -6,6 +6,8 @@
+     <meta name="description" content="A personal memory layer over the people of your life." />
+     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f5f7" />
+     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000" />
++    <link rel="preconnect" href="https://valued-bonefish-64.clerk.accounts.dev" crossorigin />
++    <link rel="preconnect" href="https://third-hound-186.convex.cloud" crossorigin />
+     <link
+       rel="icon"
+       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230071e3'/%3E%3Ctext x='32' y='43' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif' font-size='34' font-weight='600' text-anchor='middle' fill='%23fff'%3EE%3C/text%3E%3C/svg%3E"
+
+
+=== DIFF: vercel.json ===
+@@ -1,5 +1,32 @@
+ {
+   "buildCommand": "npx convex deploy --cmd 'npm run build'",
+   "framework": "vite",
+-  "outputDirectory": "dist"
++  "outputDirectory": "dist",
++  "headers": [
++    {
++      "source": "/(.*)",
++      "headers": [
++        {
++          "key": "X-Content-Type-Options",
++          "value": "nosniff"
++        },
++        {
++          "key": "X-Frame-Options",
++          "value": "DENY"
++        },
++        {
++          "key": "Referrer-Policy",
++          "value": "strict-origin-when-cross-origin"
++        },
++        {
++          "key": "Permissions-Policy",
++          "value": "camera=(), microphone=(), geolocation=()"
++        },
++        {
++          "key": "Content-Security-Policy-Report-Only",
++          "value": "default-src 'self'; script-src 'self' https://valued-bonefish-64.clerk.accounts.dev; connect-src 'self' https://third-hound-186.convex.cloud wss://third-hound-186.convex.cloud https://brilliant-puma-925.convex.cloud wss://brilliant-puma-925.convex.cloud https://valued-bonefish-64.clerk.accounts.dev; img-src 'self' data: blob: https://third-hound-186.convex.cloud https://brilliant-puma-925.convex.cloud; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; frame-src https://valued-bonefish-64.clerk.accounts.dev https://challenges.cloudflare.com; base-uri 'self'; form-action 'self'"
++        }
++      ]
++    }
++  ]
+ }
+
+
+Investigate per the method in your instructions, then return the findings list.
