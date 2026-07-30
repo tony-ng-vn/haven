@@ -1,0 +1,2 @@
+1. make tonythiennguyen17@gmail.com the admin of haven
+2. for admin, they can access the feedback dashboard. the feedback dashboard is essentially the dashboard that show every single feedback haven get. and the dashboard is the ui layer of the feedback sdk: https://github.com/tony-ng-vn/feedback-sdk. So i want to integrate the feedback sdk so i can put feedback in myself, and only the admin once login can see that feedback button, it will be hid from everyone else for now
