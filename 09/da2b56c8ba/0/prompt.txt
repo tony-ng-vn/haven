@@ -1,0 +1,1 @@
+<bash-stdout>[32mLogged in as 17thien.nguyen@gmail.com[0m</bash-stdout><bash-stderr></bash-stderr>
