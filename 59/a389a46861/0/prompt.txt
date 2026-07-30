@@ -1,0 +1,335 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - convex/captures.test.ts
+  - convex/captures.ts
+  - convex/crons.ts
+  - convex/schema.ts
+
+Unified diff (only + lines are new):
+
+=== DIFF: convex/captures.test.ts ===
+@@ -873,3 +873,158 @@ test("acceptManualCapture throttles a burst past the per-minute limit", async ()
+     }),
+   ).rejects.toThrow("Too many requests -- please wait a moment");
+ });
++
++// ------------------------------------------------------------ janitor crons
++
++test("sweepStuckCaptures fails a pending capture stuck past the threshold", async () => {
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++  const captureId = await as.mutation(api.captures.createCapture, {
++    screenshotId: await seedScreenshot(t),
++  });
++  // Never let the scheduled extract action resolve it -- simulating an
++  // extraction that got killed (timeout, redeploy) rather than throwing.
++
++  vi.setSystemTime(Date.now() + 16 * 60_000);
++  const swept = await t.mutation(internal.captures.sweepStuckCaptures, {});
++
++  expect(swept).toBe(1);
++  const capture = await t.run((ctx) => ctx.db.get("captures", captureId));
++  expect(capture?.status).toBe("failed");
++  expect(capture?.error).toBe(
++    "Could not read this screenshot -- you can retry",
++  );
++});
++
++test("sweepStuckCaptures leaves a fresh pending capture alone", async () => {
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++  const captureId = await as.mutation(api.captures.createCapture, {
++    screenshotId: await seedScreenshot(t),
++  });
++
++  const swept = await t.mutation(internal.captures.sweepStuckCaptures, {});
++
++  expect(swept).toBe(0);
++  const capture = await t.run((ctx) => ctx.db.get("captures", captureId));
++  expect(capture?.status).toBe("pending");
++});
++
++test("sweepStuckCaptures never touches a ready or failed capture, however old", async () => {
++  const t = convexTest(schema, modules);
++  const { userId } = await asNewUser(t);
++  const screenshotId = await seedScreenshot(t);
++  const readyId = await t.run((ctx) =>
++    ctx.db.insert("captures", {
++      userId,
++      screenshotId,
++      status: "ready",
++      extracted: { platform: "x", name: "Ada Lovelace" },
++    }),
++  );
++  const failedId = await t.run((ctx) =>
++    ctx.db.insert("captures", {
++      userId,
++      screenshotId,
++      status: "failed",
++      error: "Could not read a profile in this screenshot",
++    }),
++  );
++
++  vi.setSystemTime(Date.now() + 60 * 60_000);
++  const swept = await t.mutation(internal.captures.sweepStuckCaptures, {});
++
++  expect(swept).toBe(0);
++  expect(
++    (await t.run((ctx) => ctx.db.get("captures", readyId)))?.status,
++  ).toBe("ready");
++  expect(
++    (await t.run((ctx) => ctx.db.get("captures", failedId)))?.status,
++  ).toBe("failed");
++});
++
++test("sweepOrphanedUploads deletes an old blob no capture or person references", async () => {
++  const t = convexTest(schema, modules);
++  const screenshotId = await seedScreenshot(t);
++
++  vi.setSystemTime(Date.now() + 61 * 60_000);
++  const swept = await t.mutation(internal.captures.sweepOrphanedUploads, {});
++
++  expect(swept).toBe(1);
++  expect(await t.run((ctx) => ctx.storage.getUrl(screenshotId))).toBeNull();
++});
++
++test("sweepOrphanedUploads never deletes a blob referenced by a capture", async () => {
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++  const screenshotId = await seedScreenshot(t);
++  await as.mutation(api.captures.createCapture, { screenshotId });
++
++  vi.setSystemTime(Date.now() + 61 * 60_000);
++  const swept = await t.mutation(internal.captures.sweepOrphanedUploads, {});
++
++  expect(swept).toBe(0);
++  expect(
++    await t.run((ctx) => ctx.storage.getUrl(screenshotId)),
++  ).not.toBeNull();
++});
++
++test("sweepOrphanedUploads never deletes a blob referenced by a person", async () => {
++  const t = convexTest(schema, modules);
++  const { userId } = await asNewUser(t);
++  const screenshotId = await seedScreenshot(t);
++  await t.run((ctx) =>
++    ctx.db.insert("people", {
++      userId,
++      name: "Ada Lovelace",
++      updatedAt: Date.now(),
++      screenshotId,
++    }),
++  );
++
++  vi.setSystemTime(Date.now() + 61 * 60_000);
++  const swept = await t.mutation(internal.captures.sweepOrphanedUploads, {});
++
++  expect(swept).toBe(0);
++  expect(
++    await t.run((ctx) => ctx.storage.getUrl(screenshotId)),
++  ).not.toBeNull();
++});
++
++test("sweepOrphanedUploads leaves a young unreferenced blob alone", async () => {
++  const t = convexTest(schema, modules);
++  const screenshotId = await seedScreenshot(t);
++
++  const swept = await t.mutation(internal.captures.sweepOrphanedUploads, {});
++
++  expect(swept).toBe(0);
++  expect(
++    await t.run((ctx) => ctx.storage.getUrl(screenshotId)),
++  ).not.toBeNull();
++});
++
++test("sweepOrphanedUploads only deletes the orphan when an old orphan and an old referenced blob coexist", async () => {
++  // A single-blob sweep can't prove the loop distinguishes candidates --
++  // this proves it keeps scanning past a referenced blob to reach an orphan
++  // (and stops correctly once it hits one too young to qualify).
++  const t = convexTest(schema, modules);
++  const { as } = await asNewUser(t);
++  const orphanId = await seedScreenshot(t);
++  const referencedId = await seedScreenshot(t);
++  await as.mutation(api.captures.createCapture, {
++    screenshotId: referencedId,
++  });
++
++  vi.setSystemTime(Date.now() + 61 * 60_000);
++  const stillYoungId = await seedScreenshot(t);
++  const swept = await t.mutation(internal.captures.sweepOrphanedUploads, {});
++
++  expect(swept).toBe(1);
++  expect(await t.run((ctx) => ctx.storage.getUrl(orphanId))).toBeNull();
++  expect(
++    await t.run((ctx) => ctx.storage.getUrl(referencedId)),
++  ).not.toBeNull();
++  expect(
++    await t.run((ctx) => ctx.storage.getUrl(stillYoungId)),
++  ).not.toBeNull();
++});
+
+
+=== DIFF: convex/captures.ts ===
+@@ -14,7 +14,8 @@ import { checkRateLimit } from "./rateLimit";
+ import { normalizeName } from "./nameSearch";
+ 
+ const MINUTE_MS = 60_000;
+-const DAY_MS = 24 * 60 * 60_000;
++const HOUR_MS = 60 * MINUTE_MS;
++const DAY_MS = 24 * HOUR_MS;
+ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+ 
+ const extractedValidator = v.object({
+@@ -318,3 +319,90 @@ export const retryExtract = mutation({
+     return null;
+   },
+ });
++
++// ------------------------------------------------------------ janitor crons
++
++// If the extract action is killed rather than throwing (a timeout, a
++// redeploy mid-run), its catch block never runs and the capture stays
++// "pending" forever -- an eternal skeleton card in the UI. Sweep those loose
++// ends into "failed" so the existing retry/manual-naming UI takes over.
++const STUCK_PENDING_MS = 15 * MINUTE_MS;
++const STUCK_SWEEP_BATCH_SIZE = 100;
++
++export const sweepStuckCaptures = internalMutation({
++  args: {},
++  returns: v.number(),
++  handler: async (ctx) => {
++    const cutoff = Date.now() - STUCK_PENDING_MS;
++    const stuck = await ctx.db
++      .query("captures")
++      .withIndex("by_status", (q) =>
++        q.eq("status", "pending").lt("_creationTime", cutoff),
++      )
++      .take(STUCK_SWEEP_BATCH_SIZE);
++    for (const capture of stuck) {
++      await ctx.db.patch("captures", capture._id, {
++        status: "failed",
++        error: GENERIC_ERROR_MESSAGE,
++        errorDetail: "sweepStuckCaptures: pending past the stuck threshold",
++      });
++    }
++    return stuck.length;
++  },
++});
++
++// A client can upload a blob and never call createCapture (a crash, an
++// abandoned tab), leaving an invisible file that nothing ever references.
++// Delete those once they're old enough that no in-flight upload could still
++// need them.
++//
++// Referenced-set construction: rather than reading captures/people in bulk
++// (unsound once either table outgrows a bounded read -- a screenshotId just
++// past the read window would look orphaned and get deleted), this checks
++// each storage candidate against by_screenshotId, an exact indexed lookup
++// on both tables. That keeps the sweep bounded (one _storage page per run)
++// *and* sound at any table size: a blob is only ever deleted because both
++// indexed lookups came back empty, never because a scan ran out of rows to
++// check. A false-positive delete would destroy a user's screenshot, so this
++// trades an extra pair of indexed reads per candidate for a hard guarantee
++// instead of a probabilistic one.
++const ORPHAN_AGE_MS = HOUR_MS;
++const ORPHAN_SWEEP_BATCH_SIZE = 100;
++
++export const sweepOrphanedUploads = internalMutation({
++  args: {},
++  returns: v.number(),
++  handler: async (ctx) => {
++    const cutoff = Date.now() - ORPHAN_AGE_MS;
++    // Explicit oldest-first: the break below relies on this ordering to
++    // know every later candidate is also too young, so state it rather
++    // than lean on the (correct, but unstated at the call site) default.
++    const candidates = await ctx.db.system
++      .query("_storage")
++      .order("asc")
++      .take(ORPHAN_SWEEP_BATCH_SIZE);
++    let deleted = 0;
++    for (const file of candidates) {
++      if (file._creationTime >= cutoff) {
++        break;
++      }
++      const referencingCapture = await ctx.db
++        .query("captures")
++        .withIndex("by_screenshotId", (q) => q.eq("screenshotId", file._id))
++        .first();
++      if (referencingCapture !== null) {
++        continue;
++      }
++      const referencingPerson = await ctx.db
++        .query("people")
++        .withIndex("by_screenshotId", (q) => q.eq("screenshotId", file._id))
++        .first();
++      if (referencingPerson !== null) {
++        continue;
++      }
++      await ctx.storage.delete(file._id);
++      deleted++;
++    }
++    return deleted;
++  },
++});
+
+
+=== DIFF: convex/crons.ts ===
+@@ -12,4 +12,22 @@ crons.interval(
+   {},
+ );
+ 
++// Self-heals a capture stuck "pending" because the extract action was
++// killed rather than throwing (timeout, redeploy) -- see sweepStuckCaptures.
++crons.interval(
++  "sweep stuck captures",
++  { minutes: 30 },
++  internal.captures.sweepStuckCaptures,
++  {},
++);
++
++// Deletes screenshot blobs an abandoned upload left with no capture or
++// person ever pointing to them -- see sweepOrphanedUploads.
++crons.interval(
++  "sweep orphaned uploads",
++  { hours: 24 },
++  internal.captures.sweepOrphanedUploads,
++  {},
++);
++
+ export default crons;
+
+
+=== DIFF: convex/schema.ts ===
+@@ -27,6 +27,9 @@ export default defineSchema({
+     embeddedText: v.optional(v.string()),
+   })
+     .index("by_user", ["userId"])
++    // Same reasoning as captures.by_screenshotId: the orphaned-upload sweep
++    // needs a sound, bounded way to check "is this blob referenced?".
++    .index("by_screenshotId", ["screenshotId"])
+     .searchIndex("search_normalized_name", {
+       searchField: "normalizedName",
+       filterFields: ["userId"],
+@@ -60,7 +63,17 @@ export default defineSchema({
+     // Raw upstream/error text for our own debugging. Never returned to a
+     // client -- listCaptures and getCapture must not project this field.
+     errorDetail: v.optional(v.string()),
+-  }).index("by_user", ["userId"]),
++  })
++    .index("by_user", ["userId"])
++    // Lets the stuck-pending sweep find old "pending" rows without a table
++    // scan; Convex appends _creationTime as the trailing key, so this index
++    // also supports the age cutoff range on the same query.
++    .index("by_status", ["status"])
++    // Lets the orphaned-upload sweep check "is this blob referenced?" as an
++    // exact indexed lookup per candidate instead of a bounded table scan --
++    // see sweepOrphanedUploads in captures.ts for why that matters for
++    // soundness.
++    .index("by_screenshotId", ["screenshotId"]),
+   // Fixed-window per-user rate limiting. One row per (userId, action) pair;
+   // an action name like "createCapture:minute" models one window, so a
+   // function with two windows (e.g. per-minute and per-day) gets two rows.
+
+
+Investigate per the method in your instructions, then return the findings list.
