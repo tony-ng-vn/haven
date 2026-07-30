@@ -1,0 +1,1 @@
+so in my understanding for the 3 implementations to do in parallel the only thing that cannot be test is each run xocde mcp to test but have to implement all and then test once because i have to approve the xcode mcp everytime right?
