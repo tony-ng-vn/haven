@@ -1,0 +1,5 @@
+1. QR code is just how we do it, no need to mention it in the explanation
+2. Add in maybe for scrapping linkedln profile data to turn that into search (enriched data type) and calendar smart matching.
+3. Add in the tinder swipe motion part as a way for people to review and add connection context
+4. does clerk allows me to make my own UI or not? if not i might consider making my own system for signup and signin
+5. write down some of the most core use case a user can use Haven for with the flow from start to end as a user for me
