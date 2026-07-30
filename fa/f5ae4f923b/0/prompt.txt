@@ -1,0 +1,1 @@
+can u please fix it and just teachc me with plain language? plain language like this 'Adds an in-app Feedback button so signed-in users can send feedback (idea / bug / other, with optional screenshot) from inside Euno, instead of stopping to re-explain it elsewhere. The feedback lands in an isolated per-project queue that an agent can read and act on.'
