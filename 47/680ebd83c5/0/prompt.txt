@@ -1,0 +1,1 @@
+so for this email sent how can we test before know it works and merge in prod?
