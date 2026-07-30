@@ -1,0 +1,255 @@
+You previously flagged these candidate vulnerabilities:
+
+[
+  {
+    "filePath": "package.json",
+    "category": "supply-chain / dependency-typosquat",
+    "vulnerableCode": "\"@clerk/react\": \"^6.12.5\"",
+    "explanation": "The added dependency `@clerk/react` is not the official Clerk React SDK. Clerk's official, documented React SDK is published on npm as `@clerk/clerk-react` (see clerk.com docs). No package named `@clerk/react` is documented by Clerk or referenced in their official quickstarts. Because npm scopes (`@clerk/*`) are owned by the `clerk` organization, an unofficial `@clerk/react` published under this scope would either be (a) an unpublished/reserved namespace collision, (b) an internal/experimental package not meant for production consumption, or (c) most concerningly, evidence of a scope takeover / malicious publish. This is an authentication library \u2014 its code runs in every page load and handles session tokens, cookies, and identity \u2014 so a malicious or hijacked version could steal credentials, exfiltrate session cookies (its transitive dep pulls in `js-cookie`), inject arbitrary JS, or backdoor the auth flow. The lock file also pins `@clerk/shared@4.25.5` which does not correspond to Clerk's currently-published shared package version line (Clerk's `@clerk/shared` has been in the 2.x/3.x range historically). Even in the best case (an unofficial fork), taking on an auth library that isn't the vendor's blessed SDK for a production app is a serious supply-chain risk. Because `postinstall` scripts in any of the transitive packages would run on `npm install`, the risk isn't limited to runtime \u2014 it applies at CI/dev install time as well.",
+    "fix": "Do NOT install this dependency until verified. (1) Confirm the correct package name with Clerk's official docs \u2014 for React SPAs the intended package is almost certainly `@clerk/clerk-react`. Replace `\"@clerk/react\": \"^6.12.5\"` with `\"@clerk/clerk-react\": \"^<current-version>\"`. (2) If `@clerk/react` really is intentional, verify the publisher on npm (`npm view @clerk/react maintainers publisher`) matches the official Clerk org (`clerk` / `clerkinc`), inspect the tarball for unexpected postinstall scripts, and pin an exact version + integrity hash after review. (3) Add a lockfile-lint / socket.dev / npm audit signatures step to CI to catch scope-drift on future auth-critical deps.",
+    "severity": "high",
+    "_diff_anchor": "in_diff"
+  }
+]
+
+DIFF:
+=== DIFF: package-lock.json ===
+@@ -8,8 +8,7 @@
+       "name": "euno-app",
+       "version": "0.1.0",
+       "dependencies": {
+-        "@auth/core": "0.41.1",
+-        "@convex-dev/auth": "^0.0.94",
++        "@clerk/react": "^6.12.5",
+         "convex": "^1.27.0",
+         "react": "^19.0.0",
+         "react-dom": "^19.0.0"
+@@ -26,35 +25,6 @@
+         "vitest": "^3.0.0"
+       }
+     },
+-    "node_modules/@auth/core": {
+-      "version": "0.41.1",
+-      "resolved": "https://registry.npmjs.org/@auth/core/-/core-0.41.1.tgz",
+-      "integrity": "REDACTED/88ac9TEvCR85pvATiSPt8VaNf+Gt24JIT/uw==",
+-      "license": "ISC",
+-      "dependencies": {
+-        "@panva/hkdf": "^1.2.1",
+-        "jose": "^6.0.6",
+-        "oauth4webapi": "^3.3.0",
+-        "preact": "10.24.3",
+-        "preact-render-to-string": "6.5.11"
+-      },
+-      "peerDependencies": {
+-        "@simplewebauthn/browser": "^9.0.1",
+-        "@simplewebauthn/server": "^9.0.2",
+-        "nodemailer": "^7.0.7"
+-      },
+-      "peerDependenciesMeta": {
+-        "@simplewebauthn/browser": {
+-          "optional": true
+-        },
+-        "@simplewebauthn/server": {
+-          "optional": true
+-        },
+-        "nodemailer": {
+-          "optional": true
+-        }
+-      }
+-    },
+     "node_modules/@babel/code-frame": {
+       "version": "7.29.7",
+       "resolved": "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.29.7.tgz",
+@@ -337,46 +307,50 @@
+         "node": ">=6.9.0"
+       }
+     },
+-    "node_modules/@convex-dev/auth": {
+-      "version": "0.0.94",
+-      "resolved": "https://registry.npmjs.org/@convex-dev/auth/-/auth-0.0.94.tgz",
+-      "integrity": "sha512-A/REDACTED",
+-      "license": "Apache-2.0",
++    "node_modules/@clerk/react": {
++      "version": "6.12.5",
++      "resolved": "https://registry.npmjs.org/@clerk/react/-/react-6.12.5.tgz",
++      "integrity": "REDACTED",
++      "license": "MIT",
+       "dependencies": {
+-        "@oslojs/crypto": "^1.0.1",
+-        "@oslojs/encoding": "^1.1.0",
+-        "cookie": "^1.0.1",
+-        "is-network-error": "^1.1.0",
+-        "jose": "^5.2.2",
+-        "jwt-decode": "^4.0.0",
+-        "lucia": "^3.2.0",
+-        "oauth4webapi": "^3.1.2",
+-        "path-to-regexp": "^6.3.0",
+-        "server-only": "^0.0.1"
++        "@clerk/shared": "^4.25.5",
++        "tslib": "2.8.1"
+       },
+-      "bin": {
+-        "auth": "dist/bin.cjs"
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "peerDependencies": {
++        "react": "^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0",
++        "react-dom": "^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0"
++      }
++    },
++    "node_modules/@clerk/shared": {
++      "version": "4.25.5",
++      "resolved": "https://registry.npmjs.org/@clerk/shared/-/shared-4.25.5.tgz",
++      "integrity": "REDACTED",
++      "license": "MIT",
++      "dependencies": {
++        "@tanstack/query-core": "^5.100.6",
++        "dequal": "2.0.3",
++        "glob-to-regexp": "0.4.1",
++        "js-cookie": "3.0.7"
++      },
++      "engines": {
++        "node": ">=20.9.0"
+       },
+       "peerDependencies": {
+-        "@auth/core": "^0.41.1",
+-        "convex": "^1.17.0",
+-        "react": "^18.2.0 || ^19.0.0-0"
++        "react": "^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0",
++        "react-dom": "^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0"
+       },
+       "peerDependenciesMeta": {
+         "react": {
+           "optional": true
++        },
++        "react-dom": {
++          "optional": true
+         }
+       }
+     },
+-    "node_modules/@convex-dev/auth/node_modules/jose": {
+-      "version": "5.10.0",
+-      "resolved": "https://registry.npmjs.org/jose/-/jose-5.10.0.tgz",
+-      "integrity": "sha512-s+3Al/p9g32Iq+oqXxkW//REDACTED",
+-      "license": "MIT",
+-      "funding": {
+-        "url": "https://github.com/sponsors/panva"
+-      }
+-    },
+     "node_modules/@edge-runtime/primitives": {
+       "version": "6.0.0",
+       "resolved": "https://registry.npmjs.org/@edge-runtime/primitives/-/primitives-6.0.0.tgz",
+@@ -866,46 +840,6 @@
+         "@jridgewell/sourcemap-codec": "^1.4.14"
+       }
+     },
+-    "node_modules/@oslojs/asn1": {
+-      "version": "1.0.0",
+-      "resolved": "https://registry.npmjs.org/@oslojs/asn1/-/asn1-1.0.0.tgz",
+-      "integrity": "sha512-zw/REDACTED",
+-      "license": "MIT",
+-      "dependencies": {
+-        "@oslojs/binary": "1.0.0"
+-      }
+-    },
+-    "node_modules/@oslojs/binary": {
+-      "version": "1.0.0",
+-      "resolved": "https://registry.npmjs.org/@oslojs/binary/-/binary-1.0.0.tgz",
+-      "integrity": "REDACTED/WFLrsq+K/REDACTED",
+-      "license": "MIT"
+-    },
+-    "node_modules/@oslojs/crypto": {
+-      "version": "1.0.1",
+-      "resolved": "https://registry.npmjs.org/@oslojs/crypto/-/crypto-1.0.1.tgz",
+-      "integrity": "sha512-7n08G8nWjAr/REDACTED/3J0jmXRVvgfqMm/+4oxlQ+Sq39COYLcNQ==",
+-      "license": "MIT",
+-      "dependencies": {
+-        "@oslojs/asn1": "1.0.0",
+-        "@oslojs/binary": "1.0.0"
+-      }
+-    },
+-    "node_modules/@oslojs/encoding": {
+-      "version": "1.1.0",
+-      "resolved": "https://registry.npmjs.org/@oslojs/encoding/-/encoding-1.1.0.tgz",
+-      "integrity": "REDACTED/qZBnyOalCszoMxlyldQ==",
+-      "license": "MIT"
+-    },
+-    "node_modules/@panva/hkdf": {
+-      "version": "1.2.1",
+-      "resolved": "https://registry.npmjs.org/@panva/hkdf/-/hkdf-1.2.1.tgz",
+-      "integrity": "REDACTED/aKY0JGXgYuO/VghU0jcOAZgWXZ1Dmrw==",
+-      "license": "MIT",
+-      "funding": {
+-        "url": "https://github.com/sponsors/panva"
+-      }
+-    },
+     "node_modules/@rolldown/pluginutils": {
+       "version": "1.0.0-rc.3",
+       "resolved": "https://registry.npmjs.org/@rolldown/pluginutils/-/pluginutils-1.0.0-rc.3.tgz",
+@@ -1302,6 +1236,16 @@
+         "win32"
+       ]
+     },
++    "node_modules/@tanstack/query-core": {
++      "version": "5.101.2",
++      "resolved": "https://registry.npmjs.org/@tanstack/query-core/-/query-core-5.101.2.tgz",
++      "integrity": "REDACTED/35aSHHWaCJWB7XvTSHYuV3eM7tw+aE0mT/xMro4M4Q9rCGHT0lw==",
++      "license": "MIT",
++      "funding": {
++        "type": "github",
++        "url": "https://github.com/sponsors/tannerlinsley"
++      }
++    },
+     "node_modules/@types/babel__core": {
+       "version": "7.20.5",
+       "resolved": "https://registry.npmjs.org/@types/babel__core/-/babel__core-7.20.5.tgz",
+@@ -1708,19 +1652,6 @@
+         "convex": "^1.32.0"
+       }
+     },
+-    "node_modules/cookie": {
+-      "version": "1.1.1",
+-      "resolved": "https://registry.npmjs.org/cookie/-/cookie-1.1.1.tgz",
+-      "integrity": "REDACTED/REDACTED/E5fFYadylyhFldcqSidQ==",
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=18"
+-      },
+-      "funding": {
+-        "type": "opencollective",
+-        "url": "https://opencollective.com/express"
+-      }
+-    },
+     "node_modules/csstype": {
+       "version": "3.2.3",
+       "resolved": "https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz",
+@@ -1756,6 +1687,15 @@
+         "node": ">=6"
+       }
+     },
++    "node_modules/dequal": {
++      "version": "2.0.3",
++      "resolved": "https://registry.npmjs.org/dequal/-/dequal-2.0.3.tgz",
++      "integrity": "REDACTED
+
+Now adversarially try to DISPROVE each one. For each candidate, FIRST identify the attacker (who controls the input) and the victim (who is harmed). REFUTE if the only victim is the attacker themselves on their own machine. KEEP if the attacker is a legitimate user/tenant but the impact reaches other users/tenants, shared infra, or server-side resources.
+
+DIFF-ANCHOR: candidates are sorted `in_diff` first, then `off_diff`. Process them in order. `in_diff` candidates use the standard KEEP/REFUTE bar above. `off_diff` candidates require STRICTER evidence: you must identify the specific +/- line in the diff that ENABLES the off-diff sink (a removed guard, a new caller, a changed argument feeding it). If you cannot name that enabling diff line, REFUTE the off_diff candidate. Additionally, REFUTE any off_diff candidate whose sink is already covered by a surviving in_diff candidate.
+
+Then Read the cited file and refute with cited file:line evidence if ANY of these holds:
+- PRE-EXISTING: the cited vulnerableCode does NOT appear on any + line in the DIFF block above — it is unchanged context in a touched file. The diff did not introduce it.
+- A sanitizer/validator/authz check prevents the described exploit.
+- The sink is non-dangerous: typed-schema decoder (msgspec/pydantic, not pickle/yaml), hardcoded https://<host>/ URL with non-:path params, autogen client stub, value is statically number/boolean.
+- NO PRIVILEGE BOUNDARY: attacker == victim. The input comes from env var / CLI arg / $HOME dotfile / HKCU / ~/Library prefs / OS-user config — and the process runs at the same privilege as whoever writes that source. Also: the 'allow' decision is advisory self-gating returned to the same caller; or the prefix/suffix check is a secondary filter behind a parent-domain pin.
+  NEVER apply NO-PRIVILEGE-BOUNDARY to: SSRF/outbound-network sinks; LLM-agent capability gates (PreToolUse/PostToolUse hooks, bash allow/denylists, workspace path jails — the model is the attacker, the user is the victim); data-exposure findings (CWE-200/359/532, secrets-in-logs — the question is who READS the sink, not who controls the input); project-working-directory config (.claude/settings, .vscode/, package.json scripts — repo author ≠ repo cloner); cross-process metadata sources (psutil.Process(...), /proc/<pid>/* — different process owner is a different principal).
+- TRUSTED-HEADER NAMESPACE: the flagged header is from a namespace the same handler already trusts for actor identity/authz (e.g. control-plane-injected X-Amzn-*).
+- FRONTEND-ONLY GATE: the loosened check is in frontend code AND the backend handler independently enforces it.
+- DELEGATED VALIDATION: the unvalidated credential is immediately forwarded to an upstream that validates.
+- THROWAWAY-CODE: all touched files live under scripts/, dev/, tools/, examples/, testdata/, fixtures/, or behind a __main__ dev guard.
+- CONTROL MOVED TO LIBRARY: the diff removes a security control AND bumps a dependency that documents providing that control — the control was delegated, not removed.
+- Config/feature-flag gates the path with no per-request user control over the gate value.
+- Protective-control polarity: the change loosens a guard around a PROTECTIVE control (prompt/audit/confirm).
+Do NOT speculate — refute only with cited evidence. Default = SURVIVES.
+
+Return `survived` — the indices of candidates you could NOT refute — and `refuted` — {idx, reason} records for each you did. An empty `survived` means every candidate was refuted.
