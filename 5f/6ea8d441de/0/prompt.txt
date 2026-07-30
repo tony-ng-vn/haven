@@ -1,0 +1,2 @@
+1.if i run the local host, then signin and then add people, woudl that people stay there if in production i login with the same account again? or not since its different environment?
+2. [Image #5] why this still black? im just asking not working
