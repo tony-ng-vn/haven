@@ -1,0 +1,1 @@
+claude mcp add --transport stdio xcode -- xcrun mcpbridge
