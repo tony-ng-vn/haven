@@ -1,0 +1,1 @@
+ok. so when we create a waitlist system, beside we have to make sure if user already signup for the waitlist in that browser, they cannot just refresh and submit another waitlist email, or they cannot use the same email, or they cannot go directly to the signin or signup url, what else we have to think about?
