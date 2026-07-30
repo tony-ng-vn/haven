@@ -1,0 +1,32 @@
+<task-notification>
+<task-id>a4adb3a87b5b263e5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/752919c5-b916-4950-b41a-651ba53ec7b8/tasks/a4adb3a87b5b263e5.output</output-file>
+<status>completed</status>
+<summary>Agent "Apple Contacts integration research" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+**Verdict reached:** Do not build an Apple Contacts import in any form right now. Not because of a partner gate (there is none, unlike LinkedIn) — the user already owns this data and can export it in one click — but because a flat contact list has no "how I met this person" story, which is the whole point of Euno. This confirms the MVP design's existing call rather than reopening it: `docs/superpowers/specs/2026-07-15-euno-mvp-design.md` already lists "Apple Contacts or any bulk import" as explicitly out of scope for MVP, and "Apple Contacts import to seed the back catalog" under Future ("not now, but the model allows it").
+
+**Options evaluated:**
+1. **Native `CNContactStore` access** — not possible; Euno is a web app with no native iOS/macOS shell, and this framework has zero web exposure.
+2. **W3C Contact Picker API** (`navigator.contacts.select`) — still unsupported in Safari on macOS/iOS as of mid-2026 (experimental flag only); even where Chrome supports it, that's Android's on-device contacts store, not Apple's iCloud/Contacts.app — so it doesn't actually solve "Apple Contacts" for an Apple-first, Safari-using audience.
+3. **vCard (.vcf) export/upload** — the one mechanism that actually works today, fully feasible with zero API/partnership needed (export from Contacts.app, iCloud.com, or the iPhone Files share sheet). But it's precisely the bulk-import shape the MVP already excludes.
+4. **Shortcuts-app webhook bridge** — technically plausible (Shortcuts can read Contacts and POST to a webhook) but adds engineering/support burden for the same weak product fit as option 3, with no advantage over it.
+5. **"Enrichment" via Apple Contacts** — not a real category; Contacts has no server-side directory or arbitrary-lookup surface, unlike LinkedIn profile lookup.
+
+**Suggested next step:** No engineering work now. If product ever revisits "seed the back catalog," vCard upload (option 3) is the realistic route in, but should be designed as a context-required staging flow rather than a one-click import.
+
+**Verification:**
+- `OPENAI_API_KEY=test npm test` — all 171 tests passed, no regressions (docs-only change; one stderr line in the output is an intentional error-path test, not a failure)
+- `grep -P '[^\x00-\x7F]' &lt;file&gt;` returns nothing — confirmed pure ASCII
+
+**Deliverables:**
+- Doc: `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/apple-contacts-research/docs/superpowers/specs/2026-07-20-apple-contacts-integration-research.md`
+- Worktree: `.worktrees/apple-contacts-research` (left in place, branch `docs/apple-contacts-integration-research`)
+- Draft PR: https://github.com/tony-ng-vn/euno/pull/27
+
+One note worth flagging: the sibling LinkedIn doc referenced in the task instructions doesn't exist on `origin/main` — it lives on an unmerged branch (`cursor/linkedin-integration-research-05dc`). I read it from there via `git show` to match structure/tone, and cited that branch explicitly in the Sources section since it isn't yet part of the mainline docs tree.</result>
+<usage><subagent_tokens>97344</subagent_tokens><tool_uses>52</tool_uses><duration_ms>384784</duration_ms></usage>
+</task-notification>
