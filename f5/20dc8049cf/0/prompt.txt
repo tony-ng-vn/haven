@@ -1,0 +1,209 @@
+Base directory for this skill: /Users/minhthiennguyen/.claude/skills/grilling-frontend-prototyping
+
+# Grilling Frontend Prototyping
+
+## Overview
+
+**Grilling** is iterative UI refinement through concrete visual variants, not abstract discussion. You present five radically different design approaches to a feature within a single live artifact, making decisions through visual comparison.
+
+Core principle: Show, don't discuss. Every variant is a complete, interactive implementation in one HTML file that updates in real time as the user navigates.
+
+## When to Use
+
+Use when:
+- User wants to iterate on visual design of a feature (form, page, component, state)
+- Comparing multiple design approaches side-by-side
+- Moving from "which direction?" to "which details?"
+- User has decision fatigue and needs concrete options, not conversation
+- Refining component details after picking overall direction
+
+Do NOT use when:
+- User is building the feature logic (no design yet)
+- User has already chosen a direction and wants refinement in code
+- Comparing one or two narrow variations (use inline variants instead)
+
+## Core Pattern
+
+### One Artifact with Five Variants
+
+Create a single HTML artifact containing five complete, radically different designs for the same feature. Each variant should:
+- Solve the same functional problem
+- Use distinctly different visual approaches (color, typography, layout, spacing)
+- Be interactive and functional (inputs work, buttons respond, states toggle)
+
+### The Picker Interface
+
+Add a draggable picker in the bottom-right corner that lets users navigate between variants without reloading. The picker must:
+- Display variant names clearly (Minimal, Bold, Structured, etc.)
+- Include left/right arrow buttons to switch variants
+- Show which variant is currently active (highlight or bold)
+- Be draggable so it doesn't cover the design being reviewed
+- Include toggle buttons for state transitions (empty/full, default/hover, etc.)
+
+### Variant Navigation
+
+```
+[Minimal] < > [Bold]
+Toggle: Empty / Full
+```
+
+The picker replaces page reloads. When the user clicks an arrow, the same artifact immediately restyled to show the next variant.
+
+### State Toggles
+
+When a feature has multiple states (empty inbox vs full, form default vs filled, error state), include toggle buttons in the picker. This lets users see each variant across all relevant states without variant multiplication.
+
+Example: 5 variants * 2 states = 10 different visual combinations, all accessible through the picker.
+
+### Hierarchy Descent
+
+Start at the feature level (entire form, full page). After picking a direction, refine component by component. Each iteration descends one level:
+
+1. **Overall design** (layout, color, typography, spacing)
+2. **Component groups** (header, form section, footer)
+3. **Individual components** (button, input field, label)
+4. **Component states** (hover, focus, error, disabled)
+
+Create new artifacts for each descent level, starting fresh with five variants at that layer.
+
+## Quick Reference
+
+| Pattern | Implementation |
+|---------|---|
+| **5 Variants** | Complete HTML, functionally identical, radically different styling |
+| **Picker** | Bottom-right draggable element with arrows + state toggles |
+| **Navigation** | Left/right arrows switch variant, immediate visual update |
+| **States** | Toggle buttons for empty/full, default/error, mobile/desktop |
+| **Hierarchy** | Start whole feature, refine down to individual components |
+| **Refinement** | Each round: "does the user pick a direction or descend?" |
+
+## Implementation
+
+### Artifact Structure
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Grilling: [Feature]</title>
+  <style>
+    /* Variant-specific styles, organized by variant */
+    [data-variant="minimal"] { /* Minimal variant */ }
+    [data-variant="bold"] { /* Bold variant */ }
+    /* ... etc for all 5 variants ... */
+    
+    /* Picker styling */
+    .variant-picker { 
+      position: fixed; 
+      bottom: 20px; 
+      right: 20px; 
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+  <div data-variant="minimal"> <!-- Wraps entire content -->
+    <!-- Feature content here -->
+  </div>
+
+  <div class="variant-picker">
+    <button class="prev">←</button>
+    <span class="variant-name">Minimal</span>
+    <button class="next">→</button>
+    <!-- State toggles if needed -->
+  </div>
+
+  <script>
+    const variants = ['minimal', 'bold', 'structured', 'compact', 'luxury'];
+    let current = 0;
+    
+    document.querySelector('.prev').onclick = () => {
+      current = (current - 1 + variants.length) % variants.length;
+      updateVariant();
+    };
+    
+    document.querySelector('.next').onclick = () => {
+      current = (current + 1) % variants.length;
+      updateVariant();
+    };
+    
+    function updateVariant() {
+      document.querySelectorAll('[data-variant]').forEach(el => {
+        el.style.display = 'none';
+      });
+      document.querySelector(`[data-variant="${variants[current]}"]`).style.display = 'block';
+      document.querySelector('.variant-name').textContent = 
+        variants[current].charAt(0).toUpperCase() + variants[current].slice(1);
+    }
+  </script>
+</body>
+</html>
+```
+
+### State Toggles
+
+When a feature has states (empty/full, default/error), add toggles to the picker:
+
+```html
+<div class="variant-picker">
+  <button class="prev">←</button>
+  <span class="variant-name">Minimal</span>
+  <button class="next">→</button>
+  
+  <!-- State toggles -->
+  <div class="state-toggles">
+    <button class="toggle" data-state="empty">Empty</button>
+    <button class="toggle active" data-state="full">Full</button>
+  </div>
+</div>
+```
+
+Show/hide content based on the active state:
+
+```javascript
+let state = 'full';
+
+document.querySelectorAll('.toggle').forEach(btn => {
+  btn.onclick = (e) => {
+    state = e.target.dataset.state;
+    document.querySelectorAll('[data-state]').forEach(el => {
+      el.style.display = el.dataset.state === state ? 'block' : 'none';
+    });
+    updateToggleUI();
+  };
+});
+```
+
+## Common Mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| Showing all 5 variants in a grid on one page | Show ONE variant at a time. Grid view is decision overload and misses the point of grilling. Use the picker to navigate. |
+| Showing 3-4 variants or 8+ variants | Show exactly 5. Fewer = not enough exploration. More = decision overload. |
+| Static page requiring reload to switch | Use JavaScript picker to update in-place. Switching must be instant. |
+| Variants are tweaks of one design | Make them radically different (not "slightly bolder"). Think Bold vs Minimal vs Luxury. |
+| No clear variant names | Name each variant (Bold, Minimal, etc.), not "Option 1" or "v2". |
+| Skipping state toggles | If feature has empty/full or default/error states, include toggles. Don't make user imagine. |
+| Jumping levels in hierarchy | After picking overall direction, refine ONE layer at a time. Don't mix component-level and page-level variants. |
+| Picker blocks the design | Draggable and positioned bottom-right. User should be able to hide it or drag it away. |
+
+## Red Flags - STOP and Reconsider
+
+If you catch yourself thinking:
+- "Let me show all 5 variants in a grid so they can compare" → No. One at a time with picker.
+- "I'll make tabs or buttons to switch variants" → No. Use arrow buttons in a draggable picker.
+- "More than 5 directions would be good here" → No. 5 is the constraint. Cut down to 5 distinct approaches.
+- "I'll add state toggles but the user can look at each variant separately" → No. Toggles must be in the same artifact.
+- "After they pick a direction, I'll keep all 5 variants for comparison" → No. Start fresh with new 5 at the next hierarchy level.
+
+**All of these mean: You're not grilling. Go back to the pattern.**
+
+## Real-World Impact
+
+Grilling shifts design from conversation to comparison. Instead of debating "should the form be minimalist or bold?", you show five approaches and make the decision based on what works visually. This reduces meeting time, increases decision quality, and gives non-designers concrete options instead of abstract feedback.
+
+Hierarchy descent ensures you refine systematically instead of getting lost in component details before establishing overall direction. Pick the direction first, then drill down.
+
+## Example Artifact
+
+A complete, working example is provided in `example-checkout.html` in this skill directory. Open it, click the arrows to switch variants, and observe the pattern. Adapt the structure and styling for your own features.
