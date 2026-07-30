@@ -1,0 +1,30 @@
+# Babysit PR
+
+Meant to be run repeatedly via `/loop 5m /babysit-pr` while a PR is out for review, so you don't have to keep switching back to check it yourself.
+
+Per AGENTS.md, this is the default follow-up when Claude Code itself opens a PR as the last step of a build/ship task -- kick off the loop on that PR rather than stopping. PRs opened outside an agent session stay opt-in.
+
+## Steps
+
+1. Identify the PR. If `` gives a number, use it (`gh pr view `). Otherwise resolve the PR for the current branch (`gh pr view`). If there's no open PR for this branch, say so and stop -- nothing to babysit.
+2. Check CI status (`gh pr checks`). If any check is failing:
+   - Pull the failing job's logs (`gh run view --log-failed` or equivalent).
+   - Diagnose the root cause and fix it in the working tree.
+   - Commit the fix (small, focused commit -- follow this repo's commit conventions) and push.
+3. Check for new, unresolved review comments (`gh pr view --comments` / `gh api` review comments endpoint) that have arrived since the last time you addressed feedback.
+   - For actionable comments: make the change, commit, push.
+   - For comments that are questions or need a judgment call rather than a mechanical fix: leave them for the human, don't guess.
+4. Report concisely what changed this pass: which checks were fixed, which comments were addressed, which comments were left for the human and why. If nothing changed since last pass, say so in one line -- don't repeat the full status.
+
+## Stop conditions
+
+Exit the loop (report this explicitly, don't just go quiet) when:
+- All checks are green AND all actionable review comments are addressed -- the PR is ready, nothing left to babysit.
+- The same check keeps failing after a fix attempt (don't loop on the same failure repeatedly; surface it and stop).
+- A review comment requires a decision only the human can make.
+
+## Guardrails
+
+- Never force-push over commits you didn't just make.
+- Never merge, approve, or dismiss reviews -- those are for the human.
+- If `gh` reports no auth, say so and stop rather than trying workarounds.
