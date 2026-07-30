@@ -1,0 +1,45 @@
+<task-notification>
+<task-id>aafd26a0b6e9b2199</task-id>
+<tool-use-id>toolu_018QWsjtzFpz6bkhaVbbuMdF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/752919c5-b916-4950-b41a-651ba53ec7b8/tasks/aafd26a0b6e9b2199.output</output-file>
+<status>completed</status>
+<summary>Agent "Facebook integration research" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task complete. Draft PR opened and worktree left in place as instructed.
+
+**PR:** [tony-ng-vn/euno#24](https://github.com/tony-ng-vn/euno/pull/24) - "docs: Facebook integration research" (draft, branch `docs/facebook-integration-research`)
+
+**Worktree:** `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/facebook-research`
+
+**Doc:** `docs/superpowers/specs/2026-07-20-facebook-integration-research.md`
+
+## Codebase finding (before writing anything)
+
+Facebook is already a first-class capture platform, with identical treatment to LinkedIn:
+- `convex/openaiClient.ts` - `facebook` sits in the same `PLATFORMS` enum as `linkedin`.
+- `src/lib.ts` - `deriveProfileUrl` returns `null` for Facebook; the existing code comment names Facebook explicitly alongside LinkedIn as a platform whose vanity-slug URL never appears in a screenshot.
+- `src/CaptureTriage.tsx` - `facebook` has a `PLATFORM_LABELS` entry and falls into the same paste-a-link triage path.
+
+No engineering gap exists for Facebook capture today.
+
+## Verdict reached
+
+**Do not build a Facebook data/API integration.** Keep Facebook as capture-only (already done). No real "optional later" beyond generic Facebook Login for auth.
+
+## Options evaluated (mirrors the LinkedIn doc's structure)
+
+1. **Friends import via Graph API** - `user_friends`/`/user/friends` still only returns friends who have *also* authorized the same app and haven't declined the permission (confirmed on Meta's current v25.0 docs, unchanged since 2018). This isn't a partner-approval gate like LinkedIn's - it's self-defeating: it only returns anything once most of a user's friends already use Euno. Recommend: skip.
+2. **Enrich a person from a pasted Facebook URL** - no API exists for third parties to look up an arbitrary other person's profile; `public_profile` only returns id/name for the *authenticated* user. Scraping is ToS-prohibited (Meta Platform Terms bar automated data collection and third-party data transfer). Recommend: don't build, don't scrape.
+3. **Facebook's "Download Your Information" export** - legal, self-service, no API needed, same shape as LinkedIn's CSV option. But weaker: the `friends_and_followers/friends.json` file contains only name + connection timestamp, no email, no company/position/context - even thinner than LinkedIn's connections export, and a worse fit against Euno's anti-social-graph, anti-bulk-import stance. Recommend: not now.
+4. **Sign in with Facebook (Login)** - auth only, same rating as LinkedIn OIDC. Recommend: optional later.
+5. **Post/share to Facebook** - out of scope for Euno's one job. Skip.
+6. **Facebook-aware capture UX** - already implemented identically to LinkedIn; only follow-up is folding `facebook` into the existing LinkedIn link-paste-copy ticket when it ships.
+
+## Verification
+
+- `OPENAI_API_KEY=test npm test` - 171 tests passed (11 files), no regressions.
+- `grep -P '[^\x00-\x7F]' &lt;file&gt;` - no output; file confirmed pure ASCII.
+- Sentence-per-line formatting checked programmatically against prose paragraphs (tables/headings/lists exempted per convention) - no violations found.
+- Sources cited are all real, fetched URLs (Meta developer docs, Facebook Help Center pages, Meta Platform Terms) - no fabricated links.</result>
+<usage><subagent_tokens>76433</subagent_tokens><tool_uses>35</tool_uses><duration_ms>224644</duration_ms></usage>
+</task-notification>
