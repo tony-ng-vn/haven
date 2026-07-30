@@ -1,0 +1,1 @@
+isn't there is a pr and code that looks into this https://github.com/twangodev/ogis to create the open graph image for euno already right? if my domain change would it change?
