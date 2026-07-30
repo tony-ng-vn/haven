@@ -1,0 +1,134 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "faf47faca1fb",
+  "session_id": "31f9c686-6de1-4c39-a3bb-32180ade1593",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-30T08:19:14.884049Z",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "save_step_count": 2,
+  "files_touched": [
+    ".gitignore"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-haiku-4-5-20251001",
+  "turn_id": "7244ffa60e7b",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 207,
+    "cache_creation_tokens": 518241,
+    "cache_read_tokens": 11136175,
+    "output_tokens": 78016,
+    "api_call_count": 79
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_015Pmc3G988a7RPdYMih6ZgR",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "7244ffa60e7b",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 283,
+        "end": 284,
+        "entry_ids": [
+          "77a6bd54-1391-42c9-b9c2-f3bc31f17027"
+        ],
+        "tool_use_id": "toolu_015Pmc3G988a7RPdYMih6ZgR"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_015Pmc3G988a7RPdYMih6ZgR"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_0189mBcggD9i28r5BPyHKjhy",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "claude-in-chrome"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "7244ffa60e7b",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 364,
+        "end": 365,
+        "entry_ids": [
+          "60aba9bb-ab7c-464a-9da5-180c00217e0c"
+        ],
+        "tool_use_id": "toolu_0189mBcggD9i28r5BPyHKjhy"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0189mBcggD9i28r5BPyHKjhy"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: claude-in-chrome",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-30T08:19:14.783322Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 49580,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 49580,
+    "total_lines_changed": 51126,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 10,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9,
+        ".gitignore": 1
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 9,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 9
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

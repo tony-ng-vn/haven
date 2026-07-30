@@ -1,0 +1,295 @@
+ok we just done with phase 0. let's move to phase 1. whats the plan? should we find inspiration first?
+
+---
+
+1. my conversation and answer with chatgpt: yeah — if you want the feeling of **Your Name**, the magic is not just “pretty stars.”
+
+it’s more like:
+
+* **fate**
+* **near-misses**
+* **someone out there is connected to you**
+* **memory**
+* **distance becoming closeness**
+* **quiet wonder**
+
+so for Haven, the onboarding should feel less like “fill out your profile” and more like:
+
+> **you are entering a space where your presence matters, and your connections can begin to take shape**
+
+## what to borrow emotionally from *Your Name*
+
+not copy the movie literally, but borrow these feelings:
+
+### 1. a sense of invisible connection
+
+the user should feel like they are not alone in an empty app
+they are entering a world already filled with soft lights, and they are becoming one of them
+
+### 2. softness and mystery
+
+nothing should feel harsh, corporate, or overly functional
+use slow movement, glow, depth, and gentle transitions
+
+### 3. memory leaving traces
+
+every step in onboarding should leave a visible mark
+their name, photo, interests, city — each one should “build” their presence
+
+### 4. emotional quiet
+
+*Your Name* is magical, but not loud
+the experience should feel intimate, calm, and slightly dreamy
+
+---
+
+# visual direction
+
+## color mood
+
+think:
+
+* deep twilight blue
+* soft indigo
+* warm pink/orange glow
+* faint gold light
+* a little lavender
+
+basically **evening sky + city lights + comet glow**
+
+## shapes
+
+* floating particles
+* glowing threads
+* soft blurred orbs
+* glassy cards
+* circular or rounded containers
+* gentle gradients
+
+## motion
+
+motion matters a lot here
+
+use:
+
+* slow drifting particles
+* subtle parallax
+* lines of light forming between points
+* little glow pulses when user completes a step
+* transitions that feel like “sliding through memory” instead of hard cuts
+
+avoid:
+
+* bouncy startup-app animations
+* loud celebration confetti
+* overly playful gamified motion
+
+---
+
+# how to turn profile setup into a magical experience
+
+instead of plain fields, make each answer **manifest** into the world.
+
+## example onboarding flow
+
+### screen 1 — opening mood
+
+dark, dreamy background with scattered distant lights
+
+copy:
+
+> every connection begins somewhere.
+> some stay for a moment. some stay with us.
+
+button:
+**enter haven**
+
+---
+
+### screen 2 — name
+
+prompt:
+
+> what should people call you?
+
+when they type their name, it appears as a glowing label or softly illuminated signature in the scene
+
+feels like:
+they are not entering text
+they are **placing themselves into the world**
+
+---
+
+### screen 3 — photo / avatar
+
+prompt:
+
+> how should people recognize you?
+
+after upload, their image appears inside a glowing frame or orb
+maybe a little ring of light forms around it
+
+feels like:
+their identity is taking shape
+
+---
+
+### screen 4 — location / world
+
+prompt:
+
+> where are you in the world right now?
+
+instead of a boring location field, maybe a tiny constellation point appears on a map-like glow field
+or a little light settles into the background landscape
+
+feels like:
+they are locating themselves in a wider human network
+
+---
+
+### screen 5 — interests / conversation starters
+
+prompt:
+
+> what feels like you?
+> or
+> what could someone talk to you about for hours?
+
+each selected interest becomes a little floating object, icon, or memory fragment around their space
+
+for example:
+
+* music → glowing note
+* books → small floating book
+* coding → tiny pixel star / terminal spark
+* coffee → warm cup glow
+
+feels like:
+they are building their personal atmosphere
+
+---
+
+### screen 6 — belonging reveal
+
+after the last step, zoom out a bit and show their full “presence” now formed:
+
+* name
+* photo
+* a few interest fragments
+* their little light in the Haven world
+* maybe faint nearby lights hinting at future connections
+
+copy:
+
+> your place in Haven is ready.
+
+button:
+**continue**
+
+that final moment is where the belonging feeling lands
+
+---
+
+# design principle to keep in mind
+
+the core trick is:
+
+> **every input should create a visible emotional result**
+
+if the user answers something and the UI looks basically the same, it will still feel like a form.
+
+if each answer changes the space around them, it starts feeling magical.
+
+---
+
+# copy tone
+
+if you want *Your Name* energy, the copy should be:
+
+* short
+* soft
+* slightly poetic
+* but still clear
+
+good:
+
+* what should people call you?
+* how should people recognize you?
+* where are you these days?
+* what feels like you?
+* your place is ready.
+
+not good:
+
+* please complete your personal profile information
+* enter your full legal name
+* select three interests from the categories below
+
+---
+
+# one strong concept for Haven
+
+you could frame the whole onboarding as:
+
+## **“lighting your place in Haven”**
+
+each step adds light
+
+* name → first spark
+* photo → shape
+* location → anchor
+* interests → warmth
+* final screen → full glow
+
+that gives you a very coherent emotional system
+
+---
+
+# if you want it to feel specifically “Your Name”-like, focus on these 3 motifs
+
+## 1. threads
+
+very subtle glowing lines or ribbons
+symbolize invisible human connection
+
+## 2. twilight
+
+that in-between time of day feels emotional and magical
+great for belonging, longing, memory
+
+## 3. traces
+
+things appear gradually, like memories forming or paths crossing
+
+---
+
+# important caution
+
+don’t make it so magical that people get confused.
+
+the structure should still be dead simple:
+
+* name
+* photo
+* location
+* interests
+* privacy / visibility
+* done
+
+so:
+**simple input mechanics, emotional presentation**
+
+that’s the balance.
+
+if you want, i can next help you with either:
+
+1. a **full 5–7 screen onboarding concept** with exact copy, or
+2. a **visual art direction / moodboard description** for your designer or image generation.
+i want to create the feeling of magical like my name, 1. yes i want a feeling of safe and soft from my app no matter what's the product is
+2. yes: a sense of invisible connection, softness and mystery, memory leaving traces, emotional quiet omg all of these are perfect
+3. in term of the design im thinking of the style like notion, like the ordinary feeling, beloinging, like the feeling of closeness this app is osmething just like us for normal very basic and any of us belong to it
+4. i try to keep it minimalist as the app is a very simple app for user
+5. about the story flow: i really like it. photo hould be optional, location should be optional, about the interesting conversation let skip it now as remember miniamalist, so the core is setup a profile to get some basic info + social profile they want to attach to them (linkedln, phone number, x, instagram, facebook) then done. then other thing like interested, conversation, hoobies, etc are optional that they can edit oin their pfoile
+2. response to you: yes i am still finding inspiration, i think we cannot perfect first try so we can start working on it one by one, maybe now just make a mvp design version, and we can find some undertsanding so we can create a prompt in claude design to try out.
+3. again ignore the development cost (i thought i already have it in my agents.md why u still mention and consider it? can u check again for me (use subagent haiku to check fast and u evaluate)
