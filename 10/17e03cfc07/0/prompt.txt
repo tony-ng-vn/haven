@@ -1,0 +1,142 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - src/LoveAlarmPanel.tsx
+  - src/lib.test.ts
+  - src/lib.ts
+
+Unified diff (only + lines are new):
+
+=== DIFF: src/LoveAlarmPanel.tsx ===
+@@ -2,13 +2,14 @@ import { useEffect, useState, type FormEvent } from "react";
+ import { useMutation, useQuery } from "convex/react";
+ import type { FunctionReturnType } from "convex/server";
+ import { api } from "../convex/_generated/api";
++import { generateRoomCode } from "./lib";
+ 
+ type NearbyResult = FunctionReturnType<typeof api.loveAlarm.nearby>;
+ 
+ const HEARTBEAT_MS = 25_000;
+ 
+ function defaultRoomCode(): string {
+-  return new Date().toISOString().slice(0, 10).replace(/-/g, "");
++  return generateRoomCode();
+ }
+ 
+ export function LoveAlarmPanel({
+@@ -106,8 +107,8 @@ export function LoveAlarmPanel({
+       {joinedRoom === null ? (
+         <form className="love-alarm-form" onSubmit={handleJoin}>
+           <p className="love-alarm-copy">
+-            Share a small code with someone nearby. Euno listens only while this room
+-            is open.
++            Euno made up a one-time code below. Tell it to someone nearby so they can
++            join the same room; Euno listens only while this room is open.
+           </p>
+           <label>
+             <span>Room code</span>
+@@ -115,6 +116,7 @@ export function LoveAlarmPanel({
+               className="love-alarm-input"
+               value={roomCode}
+               onChange={(event) => setRoomCode(event.target.value)}
++              placeholder="Share this with the other person in person"
+               autoCapitalize="characters"
+               autoComplete="off"
+             />
+@@ -146,7 +148,7 @@ export function LoveAlarmPanel({
+           ) : (
+             <ul className="love-alarm-peers" aria-label="Nearby people">
+               {peers.map((peer) => (
+-                <li key={`${peer.displayName}-${peer.lastSeenAt}-${peer.username ?? ""}`}>
++                <li key={peer.username ?? peer.displayName}>
+                   <span className="love-alarm-dot" aria-hidden="true" />
+                   <span className="love-alarm-peer-name">{peer.displayName}</span>
+                   {peer.username !== undefined && onMeetUsername !== undefined && (
+
+
+=== DIFF: src/lib.test.ts ===
+@@ -10,6 +10,7 @@ import {
+   decideSwipe,
+   deriveProfileUrl,
+   formatMonthYear,
++  generateRoomCode,
+   isClerkFlowHash,
+   normalizeUrl,
+   triageCountLabel,
+@@ -292,3 +293,35 @@ describe("composeAtlasField", () => {
+     expect(out.map((x) => x._id)).toEqual(["a", "z", "m"]);
+   });
+ });
++
++describe("generateRoomCode", () => {
++  // Mirrors convex/loveAlarm.ts's ROOM_CODE_RE (applied after normalizeRoomCode
++  // upper-cases the value) -- a generated code must clear that gate untouched.
++  const NORMALIZED_ROOM_CODE_RE = /^[A-Z0-9-]{3,32}$/;
++  // No 0/O or 1/l/I: a code read aloud or glanced at over someone's shoulder
++  // should never be ambiguous.
++  const UNAMBIGUOUS_ALPHABET_RE = /^[REDACTED]+$/;
++
++  test("is six characters long", () => {
++    expect(generateRoomCode()).toHaveLength(6);
++  });
++
++  test("only uses the unambiguous lowercase alphabet", () => {
++    for (let i = 0; i < 50; i++) {
++      expect(generateRoomCode()).toMatch(UNAMBIGUOUS_ALPHABET_RE);
++    }
++  });
++
++  test("passes normalizeRoomCode's validation unchanged", () => {
++    for (let i = 0; i < 50; i++) {
++      expect(generateRoomCode().toUpperCase()).toMatch(
++        NORMALIZED_ROOM_CODE_RE,
++      );
++    }
++  });
++
++  test("is not deterministic", () => {
++    const codes = new Set(Array.from({ length: 20 }, () => generateRoomCode()));
++    expect(codes.size).toBeGreaterThan(1);
++  });
++});
+
+
+=== DIFF: src/lib.ts ===
+@@ -187,6 +187,34 @@ export function triageCountLabel(queueLength: number): string {
+   return `${queueLength} to review`;
+ }
+ 
++// No 0/O or 1/l/I: a Love Alarm room code gets read aloud or glanced at over
++// someone's shoulder, so it must never be ambiguous. convex/loveAlarm.ts's
++// normalizeRoomCode upper-cases whatever we hand it, and every character here
++// survives that unchanged (its ROOM_CODE_RE allows A-Z, 0-9, and dashes).
++const ROOM_CODE_ALPHABET = "REDACTED";
++const ROOM_CODE_LENGTH = 6;
++
++// A room code is something one person generates and speaks to the other in
++// person -- not a value a stranger can guess, so it must come from a real
++// random source rather than e.g. today's date.
++export function generateRoomCode(): string {
++  const alphabetLength = ROOM_CODE_ALPHABET.length;
++  // Reject bytes that would bias the distribution towards the first
++  // (256 % alphabetLength) letters instead of drawing them uniformly.
++  const maxUnbiased = 256 - (256 % alphabetLength);
++  let code = "";
++  while (code.length < ROOM_CODE_LENGTH) {
++    const bytes = new Uint8Array(ROOM_CODE_LENGTH - code.length);
++    crypto.getRandomValues(bytes);
++    for (const byte of bytes) {
++      if (byte < maxUnbiased) {
++        code += ROOM_CODE_ALPHABET[byte % alphabetLength];
++      }
++    }
++  }
++  return code;
++}
++
+ export type SwipeVelocitySample = { t: number; x: number };
+ export type SwipeDecision = "save" | "context" | "settle";
+ 
+
+
+Investigate per the method in your instructions, then return the findings list.
