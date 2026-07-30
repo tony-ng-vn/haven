@@ -1,0 +1,1 @@
+i only set npx convex env set RESEND_API_KEY re_yourkey --prod because i don't have mu own domain for the other yet. we can also did the log thing
