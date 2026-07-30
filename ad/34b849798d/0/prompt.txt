@@ -1,0 +1,118 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - .github/workflows/ios.yml
+  - .github/workflows/test.yml
+  - .github/workflows/time-step.sh
+
+Unified diff (only + lines are new):
+
+=== DIFF: .github/workflows/ios.yml ===
+@@ -28,6 +28,19 @@ jobs:
+     steps:
+       - uses: actions/checkout@v5
+ 
++      # Self-hosted runner, so unlike macos-latest the hardware isn't fixed;
++      # this is what makes a slow run's summary legible later.
++      - name: Runner stats
++        run: |
++          {
++            echo "### Runner"
++            echo "| | |"
++            echo "|---|---|"
++            echo "| host | $(hostname) |"
++            echo "| cpu cores | $(sysctl -n hw.ncpu) |"
++            echo "| total ram | $(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 )) GB |"
++          } >> "$GITHUB_STEP_SUMMARY"
++
+       # A resolve or build failure below does not say which Xcode produced it.
+       - run: xcodebuild -version
+ 
+@@ -70,11 +83,13 @@ jobs:
+           echo "SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+ 
+       # Raw xcodebuild output on purpose. The run logs expected Clerk keychain
+-      # errors (OSStatus -34018, no entitlement without code signing), and a
+-      # formatter pipe would also cost us xcodebuild's exit code.
++      # errors (OSStatus -34018, no entitlement without code signing).
++      # time-step.sh pipes through tee but preserves xcodebuild's exit code
++      # via pipefail + PIPESTATUS.
+       - name: Run tests
+         run: |
+-          xcodebuild test -project Haven.xcodeproj -scheme Haven \
++          ../.github/workflows/time-step.sh "xcodebuild test" \
++            xcodebuild test -project Haven.xcodeproj -scheme Haven \
+             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+             -clonedSourcePackagesDirPath .spm-cache \
+             CODE_SIGNING_ALLOWED=NO
+
+
+=== DIFF: .github/workflows/test.yml ===
+@@ -15,10 +15,29 @@ jobs:
+         with:
+           node-version: 24
+           cache: npm
+-      - run: npm ci
+-      - run: npm test
++
++      # Self-hosted runner, so unlike ubuntu-latest the hardware isn't fixed;
++      # this is what makes a slow run's summary legible later.
++      - name: Runner stats
++        run: |
++          {
++            echo "### Runner"
++            echo "| | |"
++            echo "|---|---|"
++            echo "| host | $(hostname) |"
++            echo "| cpu cores | $(sysctl -n hw.ncpu) |"
++            echo "| total ram | $(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 )) GB |"
++          } >> "$GITHUB_STEP_SUMMARY"
++
++      - name: npm ci
++        run: .github/workflows/time-step.sh "npm ci" npm ci
++
++      - name: npm test
++        run: .github/workflows/time-step.sh "npm test" npm test
+         env:
+           # The convex tests stub all network calls, but the OpenAI client
+           # asserts a key exists before the stubbed fetch is ever reached.
+           OPENAI_API_KEY: ci-dummy-key-network-is-mocked
+-      - run: npm run build
++
++      - name: npm run build
++        run: .github/workflows/time-step.sh "npm run build" npm run build
+
+
+=== DIFF: .github/workflows/time-step.sh ===
+@@ -0,0 +1,28 @@
++#!/usr/bin/env bash
++# Wraps a CI command with /usr/bin/time -l (BSD time, ships with macOS) and
++# appends wall time + peak RSS to the job summary. Only means anything on the
++# self-hosted runner, where the hardware isn't a known fixed quantity like
++# ubuntu-latest/macos-latest.
++set -o pipefail
++
++label="$1"
++shift
++
++log="$(mktemp)"
++{ /usr/bin/time -l "$@"; } 2>&1 | tee "$log"
++status="${PIPESTATUS[0]}"
++
++real="$(grep -E '^ *[0-9.]+ real' "$log" | tail -1 | awk '{print $1}')"
++rss_bytes="$(grep 'maximum resident set size' "$log" | tail -1 | awk '{print $1}')"
++rss_mb="${rss_bytes:+$((rss_bytes / 1024 / 1024))}"
++
++{
++  echo "### ${label}"
++  echo "| metric | value |"
++  echo "|---|---|"
++  echo "| wall time (s) | ${real:-n/a} |"
++  echo "| peak RSS (MB) | ${rss_mb:-n/a} |"
++} >> "$GITHUB_STEP_SUMMARY"
++
++rm -f "$log"
++exit "$status"
+
+
+Investigate per the method in your instructions, then return the findings list.
