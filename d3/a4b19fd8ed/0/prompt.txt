@@ -1,0 +1,250 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - convex/emailClient.test.ts
+  - convex/emailClient.ts
+  - convex/openaiClient.ts
+  - convex/profiles.test.ts
+  - convex/profiles.ts
+  - convex/schema.ts
+  - index.html
+
+Unified diff (only + lines are new):
+
+=== DIFF: convex/emailClient.test.ts ===
+@@ -5,9 +5,9 @@ import { renderConfirmation, sendWaitlistConfirmation } from "./emailClient";
+ describe("renderConfirmation", () => {
+   test("greets the person by name in every part", () => {
+     const { subject, html, text } = renderConfirmation("Ada");
+-    expect(subject).toBe("You're on the Euno waitlist");
+-    expect(html).toContain("Hi Ada, you're on the list.");
+-    expect(text).toContain("Hi Ada,");
++    expect(subject).toBe("You're on the Haven waitlist");
++    expect(html).toContain("Ada, you're on the list.");
++    expect(text).toContain("Ada,");
+   });
+ 
+   test("escapes HTML in the name so a crafted name cannot inject markup", () => {
+@@ -28,7 +28,7 @@ describe("renderConfirmation", () => {
+   test("leaves the plain-text part unescaped", () => {
+     // Text has no markup to break out of, so entities would be noise there.
+     const { text } = renderConfirmation("Tom & Jerry");
+-    expect(text).toContain("Hi Tom & Jerry,");
++    expect(text).toContain("Tom & Jerry,");
+   });
+ });
+ 
+@@ -63,7 +63,7 @@ describe("sendWaitlistConfirmation", () => {
+ 
+   test("posts to Resend and reports sent once both credentials are set", async () => {
+     process.env.RESEND_API_KEY = "re_test_key";
+-    process.env.WAITLIST_FROM_EMAIL = "Euno <hello@euno.app>";
++    process.env.WAITLIST_FROM_EMAIL = "Haven <hello@inhavens.com>";
+     // Typed params so mock.calls[0] is [string, RequestInit], not [] -- the
+     // Convex deploy typechecks this file and rejects a cast from an empty tuple.
+     const fetchSpy = vi.fn((_url: string, _init: RequestInit) =>
+@@ -81,14 +81,14 @@ describe("sendWaitlistConfirmation", () => {
+     const [url, init] = fetchSpy.mock.calls[0];
+     expect(url).toBe("https://api.resend.com/emails");
+     const body = JSON.parse(init.body as string);
+-    expect(body.from).toBe("Euno <hello@euno.app>");
++    expect(body.from).toBe("Haven <hello@inhavens.com>");
+     expect(body.to).toBe("a@b.com");
+-    expect(body.subject).toBe("You're on the Euno waitlist");
++    expect(body.subject).toBe("You're on the Haven waitlist");
+   });
+ 
+   test("reports failed (not thrown) when Resend rejects the request", async () => {
+     process.env.RESEND_API_KEY = "re_test_key";
+-    process.env.WAITLIST_FROM_EMAIL = "hello@euno.app";
++    process.env.WAITLIST_FROM_EMAIL = "hello@inhavens.com";
+     vi.stubGlobal(
+       "fetch",
+       async () => new Response("domain not verified", { status: 403 }),
+
+
+=== DIFF: convex/emailClient.ts ===
+@@ -26,18 +26,18 @@ export type Confirmation = {
+ // part is what non-HTML clients (and spam filters) read, so it is not optional.
+ export function renderConfirmation(name: string): Confirmation {
+   const safeName = escapeHtml(name);
+-  const subject = "You're on the Euno waitlist";
++  const subject = "You're on the Haven waitlist";
+ 
+   const text = [
+-    `Hi ${name},`,
++    `${name},`,
+     "",
+     "You're on the list.",
+     "",
+-    "Euno's mission is to bring everyone together as we move through life. We have a strong belief that while new people are fascinating, it becomes less important to meet them if we eventually forget who they are and lose them along the way. With Euno, we will prevent that, and every connection will become a part of your life.",
++    "Haven's mission is to bring everyone together as we move through life. We have a strong belief that while new people are fascinating, it becomes less important to meet them if we eventually forget who they are and lose them along the way. With Haven, we will prevent that, and every connection will become a part of your life.",
+     "",
+     "Thank you for joining us on this journey. We're looking forward to having you with us.",
+     "",
+-    "- Tony (Euno's founder)",
++    "- Tony (Haven's founder)",
+   ].join("\n");
+ 
+   const html = `<!doctype html>
+@@ -49,11 +49,11 @@ export function renderConfirmation(name: string): Confirmation {
+           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+             <tr>
+               <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#f5f7fb;">
+-                <p style="margin:0 0 24px;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:#7c8496;">Euno &middot; private beta</p>
+-                <h1 style="margin:0 0 16px;font-size:24px;line-height:1.3;font-weight:600;color:#ffffff;">Hi ${safeName}, you're on the list.</h1>
+-                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#c7cdda;">Euno's mission is to bring everyone together as we move through life. We have a strong belief that while new people are fascinating, it becomes less important to meet them if we eventually forget who they are and lose them along the way. With Euno, we will prevent that, and every connection will become a part of your life.</p>
++                <p style="margin:0 0 24px;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:#7c8496;">Haven &middot; private beta</p>
++                <h1 style="margin:0 0 16px;font-size:24px;line-height:1.3;font-weight:600;color:#ffffff;">${safeName}, you're on the list.</h1>
++                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#c7cdda;">Haven's mission is to bring everyone together as we move through life. We have a strong belief that while new people are fascinating, it becomes less important to meet them if we eventually forget who they are and lose them along the way. With Haven, we will prevent that, and every connection will become a part of your life.</p>
+                 <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#c7cdda;">Thank you for joining us on this journey. We're looking forward to having you with us.</p>
+-                <p style="margin:32px 0 0;font-size:14px;color:#7c8496;">- Tony (Euno's founder)</p>
++                <p style="margin:32px 0 0;font-size:14px;color:#7c8496;">- Tony (Haven's founder)</p>
+               </td>
+             </tr>
+           </table>
+
+
+=== DIFF: convex/openaiClient.ts ===
+@@ -1,4 +1,4 @@
+-// Plain helpers for the two OpenAI endpoints Euno uses. Not registered
++// Plain helpers for the two OpenAI endpoints Haven uses. Not registered
+ // Convex functions; call these only from actions (they do network IO).
+ // fetch is available in the default Convex runtime, so no "use node".
+ 
+
+
+=== DIFF: convex/profiles.test.ts ===
+@@ -109,14 +109,14 @@ test("meetExchange creates private people rows for both sides", async () => {
+     name: "@bob",
+     userId: alice.userId,
+     eunoContactUserId: bob.userId,
+-    platform: "Euno",
++    platform: "Haven",
+     handle: "bob",
+   });
+   expect(bobPeople[0]).toMatchObject({
+     name: "@alice",
+     userId: bob.userId,
+     eunoContactUserId: alice.userId,
+-    platform: "Euno",
++    platform: "Haven",
+     handle: "alice",
+   });
+ 
+@@ -167,7 +167,7 @@ test("meetExchange requires a username for self and rejects self exchange", asyn
+ 
+   await expect(
+     alice.as.mutation(api.profiles.meetExchange, { username: "bob" }),
+-  ).rejects.toThrow("Choose your Euno username first");
++  ).rejects.toThrow("Choose your Haven username first");
+ 
+   await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+   await expect(
+
+
+=== DIFF: convex/profiles.ts ===
+@@ -66,9 +66,9 @@ async function ensureMeetPerson(args: {
+     userId: args.ownerUserId,
+     name: displayName,
+     normalizedName: normalizeName(args.contactUsername),
+-    context: "Met in person through Euno Meet.",
++    context: "Met in person through Haven Meet.",
+     updatedAt: args.now,
+-    platform: "Euno",
++    platform: "Haven",
+     handle: args.contactUsername,
+     eunoContactUserId: args.contactUserId,
+   });
+@@ -173,7 +173,7 @@ export const meetExchange = mutation({
+     await checkRateLimit(ctx, userId, "meetExchange", 20, MINUTE_MS);
+     const myProfile = await getProfileByUser(ctx, userId);
+     if (myProfile === null) {
+-      throw new Error("Choose your Euno username first");
++      throw new Error("Choose your Haven username first");
+     }
+ 
+     const username = validateUsername(args.username);
+@@ -182,7 +182,7 @@ export const meetExchange = mutation({
+       .withIndex("by_username", (q) => q.eq("username", username))
+       .unique();
+     if (peerProfile === null) {
+-      throw new Error("No Euno profile found for that username");
++      throw new Error("No Haven profile found for that username");
+     }
+     if (peerProfile.userId === userId) {
+       throw new Error("Enter the other person's username");
+
+
+=== DIFF: convex/schema.ts ===
+@@ -21,7 +21,7 @@ export default defineSchema({
+     handle: v.optional(v.string()),
+     headline: v.optional(v.string()),
+     screenshotId: v.optional(v.id("_storage")),
+-    // Euno Meet provenance. Each side still gets a private people row; this
++    // Haven Meet provenance. Each side still gets a private people row; this
+     // key only lets a repeat in-person exchange stay idempotent.
+     eunoContactUserId: v.optional(v.string()),
+     // Semantic search. embeddedText doubles as the idempotency key so the
+@@ -43,7 +43,7 @@ export default defineSchema({
+       dimensions: 1536,
+       filterFields: ["userId"],
+     }),
+-  // A future mutual-link flow should create one row only after both Euno users
++  // A future mutual-link flow should create one row only after both Haven users
+   // have explicitly connected. Each side binds the relationship to their own
+   // private person row; the shared-note API uses this as its access gate.
+   connections: defineTable({
+@@ -109,7 +109,7 @@ export default defineSchema({
+     count: v.number(),
+   }).index("by_user_action", ["userId", "action"]),
+ 
+-  // A user's public-in-the-moment Euno handle. This is not a social profile:
++  // A user's public-in-the-moment Haven handle. This is not a social profile:
+   // it exists only so two people standing together can intentionally exchange.
+   profiles: defineTable({
+     userId: v.string(),
+
+
+=== DIFF: index.html ===
+@@ -6,30 +6,30 @@
+     <meta name="description" content="A personal memory layer over the people of your life." />
+     <!-- Social preview. og:image is rendered live by ogis (img.ogis.dev), so it is independent of our own domain. -->
+     <meta property="og:type" content="website" />
+-    <meta property="og:url" content="https://eunomious.vercel.app/" />
+-    <meta property="og:title" content="Euno" />
++    <meta property="og:url" content="https://inhavens.com/" />
++    <meta property="og:title" content="Haven" />
+     <meta property="og:description" content="A personal memory layer over the people of your life." />
+-    <meta property="og:image" content="https://img.ogis.dev/?template=twilight&amp;title=Euno&amp;description=A%20personal%20memory%20layer%20over%20the%20people%20of%20your%20life." />
++    <meta property="og:image" content="https://img.ogis.dev/?template=twilight&amp;title=Haven&amp;description=A%20personal%20memory%20layer%20over%20the%20people%20of%20your%20life." />
+     <meta property="og:image:width" content="1200" />
+     <meta property="og:image:height" content="630" />
+     <meta name="twitter:card" content="summary_large_image" />
+-    <meta name="twitter:title" content="Euno" />
++    <meta name="twitter:title" content="Haven" />
+     <meta name="twitter:description" content="A personal memory layer over the people of your life." />
+-    <meta name="twitter:image" content="https://img.ogis.dev/?template=twilight&amp;title=Euno&amp;description=A%20personal%20memory%20layer%20over%20the%20people%20of%20your%20life." />
++    <meta name="twitter:image" content="https://img.ogis.dev/?template=twilight&amp;title=Haven&amp;description=A%20personal%20memory%20layer%20over%20the%20people%20of%20your%20life." />
+     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f5f7" />
+     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000" />
+     <link rel="preconnect" href="https://valued-bonefish-64.clerk.accounts.dev" crossorigin />
+     <link rel="preconnect" href="https://third-hound-186.convex.cloud" crossorigin />
+     <link
+       rel="icon"
+-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230071e3'/%3E%3Ctext x='32' y='43' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif' font-size='34' font-weight='600' text-anchor='middle' fill='%23fff'%3EE%3C/text%3E%3C/svg%3E"
++      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230071e3'/%3E%3Ctext x='32' y='43' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif' font-size='34' font-weight='600' text-anchor='middle' fill='%23fff'%3EH%3C/text%3E%3C/svg%3E"
+     />
+     <link rel="manifest" href="/manifest.webmanifest" />
+     <!-- Safari does not read the manifest icons; apple-touch-icon must be set explicitly. -->
+     <link rel="apple-touch-icon" href="/icon.svg" />
+     <meta name="apple-mobile-web-app-capable" content="yes" />
+     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+-    <title>Euno</title>
++    <title>Haven</title>
+   </head>
+   <body>
+     <div id="root"></div>
+
+
+Investigate per the method in your instructions, then return the findings list.
