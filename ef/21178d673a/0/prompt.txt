@@ -1,0 +1,4 @@
+1. the signin works
+2. i want to change the background of the signin and signup page to match the waitlist. actually signin, signup and waitlist should all be the same page but what u see depends on the state right?
+3. [Image #11] i got a bounced here.  the other email work so is there a way to know why it bounced?
+4. [Image #12] we need to change everything from Euno to Haven. And also remove the hi from here
