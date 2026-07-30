@@ -1,0 +1,60 @@
+<task-notification>
+<task-id>aa09f71de15d145e1</task-id>
+<tool-use-id>toolu_01Tu6gkWqfXN4Pt4fv2z54Sp</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/d7b8885f-65a9-446f-a015-9e53a7c2bf4e/tasks/aa09f71de15d145e1.output</output-file>
+<status>completed</status>
+<summary>Agent "Set up Clerk auth" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All committed and verified. Here is the final report.
+
+## 1. Files changed and why
+
+Backend (Convex):
+- `convex/schema.ts` — removed `authTables` (Convex Auth's `users`, `authAccounts`, `authSessions`, etc.) and its spread into the schema. Changed `people.userId` and `captures.userId` from `v.id("users")` to `v.string()`, since ownership is now keyed on Clerk's `tokenIdentifier` string, not a local user document.
+- `convex/auth.config.ts` — provider domain now reads `process.env.CLERK_JWT_ISSUER_DOMAIN` (was `CONVEX_SITE_URL`), `applicationID: "convex"` unchanged (matches the JWT template name).
+- `convex/auth.ts` — deleted. This was Convex Auth's `convexAuth({ providers: [Password] })` setup; nothing in Clerk needs an equivalent.
+- `convex/http.ts` — deleted. Its only content was `auth.addHttpRoutes(http)`, Convex Auth's Password-provider callback routes. Clerk's client SDK verifies JWTs directly; no Convex HTTP routes are needed.
+- `convex/people.ts`, `convex/captures.ts` — `getAuthUserId(ctx)` replaced with a `requireUser()` helper that calls `ctx.auth.getUserIdentity()` and returns `identity.tokenIdentifier` (the guidelines file explicitly prefers `tokenIdentifier` over the bare `subject` claim for ownership checks). All existing ownership logic (`person.userId !== userId`, etc.) is unchanged, just fed a string from a different source.
+- `convex/people.test.ts`, `convex/captures.test.ts` — `asNewUser()` no longer inserts into a `users` table (deleted). It mints a fake Clerk identity and calls `t.withIdentity({ subject, issuer })`; convex-test synthesizes `tokenIdentifier` the same way Convex does in production (`"issuer|subject"`).
+- `convex/_generated/api.d.ts` — hand-patched to drop the `auth`/`http` module entries (see caveat below).
+
+Frontend:
+- `src/main.tsx` — `ConvexAuthProvider` replaced with `ClerkProvider` (publishable key from `VITE_CLERK_PUBLISHABLE_KEY`) wrapping `ConvexProviderWithClerk` (from `convex/react-clerk`, `useAuth` from `@clerk/react`).
+- `src/App.tsx` — the hand-rolled email/password form (`useAuthActions`, flow/error/shake state) is replaced by `&lt;SignInButton mode="modal"&gt;` around a `.btn-primary` button inside the existing `.auth`/`.auth-card` shell. Sign-out now uses `useClerk().signOut()` instead of `useAuthActions().signOut()`. `Authenticated`/`Unauthenticated`/`AuthLoading` from `convex/react` are untouched — they read Convex's own auth state, which works the same under any provider.
+- `src/clerkAppearance.ts` — new. Passes Clerk's `appearance.variables` (colorPrimary, colorBackground, borderRadius, etc.) mapped to the app's existing Quiet Room CSS custom properties, so the modal doesn't look like a bolted-on third-party widget.
+- `src/index.css` — removed CSS that only existed for the deleted hand-rolled form: `.auth-error`, `.auth-toggle`, the `card-shake` keyframes and its `data-shake` selector (including the reduced-motion reference to it).
+- `src/lib.ts`, `src/lib.test.ts` — removed `mapAuthError()` and the `AuthFlow` type (dead code: Clerk's modal owns its own error/flow states now) and its 6 tests.
+- `package.json` / `package-lock.json` — removed `@convex-dev/auth`, `@auth/core`; added `@clerk/react` (see deviation note below).
+- `.env.local.example` — new, documents the env vars (see checklist below).
+
+Test result: 46 -&gt; 40 tests. The 6 lost are the deleted `mapAuthError` tests; all ownership/auth-gating coverage in `people.test.ts` and `captures.test.ts` is preserved (still 9+9 tests, just re-pointed at Clerk-shaped identities).
+
+## 2. Manual steps you need to do
+
+1. In the Clerk dashboard, create an application (or use an existing one).
+2. In that Clerk app, go to **JWT Templates** and create a new template named exactly **`convex`** (the name must match `applicationID: "convex"` in `convex/auth.config.ts`).
+3. Note the app's **Frontend API URL** (issuer domain), shown in Clerk's dashboard — looks like `https://verb-noun-00.clerk.accounts.dev`.
+4. Set env vars in three separate places — do not mix these up, they are not interchangeable:
+   - **Convex deployment** (dashboard -&gt; Settings -&gt; Environment Variables, or `npx convex env set CLERK_JWT_ISSUER_DOMAIN https://your-app.clerk.accounts.dev`): `CLERK_JWT_ISSUER_DOMAIN`. This is server-side only; it must NOT go in Vercel or any client env.
+   - **Local `.env.local`** (copy from `.env.local.example`): `VITE_CLERK_PUBLISHABLE_KEY` (from Clerk dashboard -&gt; API Keys -&gt; Publishable key, `pk_test_...` or `pk_live_...`). Client-safe.
+   - **Vercel** (project env vars): same `VITE_CLERK_PUBLISHABLE_KEY`, plus a redeploy after setting it (Vite bakes `VITE_*` vars in at build time).
+5. Run `npx convex dev` (or `deploy`) once, authenticated against the linked Convex deployment, so it picks up the schema/auth.config changes and regenerates `convex/_generated/` cleanly from source (I hand-patched `api.d.ts` locally since this sandbox has no linked deployment — see caveat below).
+6. Sign in through the app once with a real Clerk account to confirm the JWT round-trips end to end; this path is unverified by me since I have no real keys.
+
+## 3. Test / build status
+
+```
+Test Files  4 passed (4)
+     Tests  40 passed (40)
+```
+`npm run build` (`tsc -b &amp;&amp; vite build`) succeeds, producing `dist/` with no type errors.
+
+## 4. Things I was unsure about / that need a human decision
+
+- **Package name deviation**: the task named `@clerk/clerk-react`, but I fetched Convex's current official docs (`docs.convex.dev/auth/clerk`) via context7, and they now point at `@clerk/react` for `ConvexProviderWithClerk`. I verified this against the installed `convex@1.42.2` package itself — its `ConvexProviderWithClerk.d.ts` JSDoc explicitly lists `@clerk/react` as the expected provider. I installed `@clerk/react` on that evidence rather than the older `@clerk/clerk-react`. If you specifically need the older package for some other reason, swapping is a one-line import change.
+- **Existing data is orphaned by this migration.** `people.userId` and `captures.userId` changed from `Id&lt;"users"&gt;` to a Clerk `tokenIdentifier` string. Any rows created under Convex Auth will never match a Clerk identity again — they become unreachable, not deleted. This is a data decision, not something I could safely resolve without your input (wipe them, migrate them, or leave them).
+- **Old Convex Auth tables (`users`, `authAccounts`, `authSessions`, etc.) are no longer in `schema.ts` but still exist with data on the live deployment.** Convex does not require every table to be declared in schema.ts (tables not listed are simply unvalidated), so the push should succeed — but those tables and their rows will linger as orphaned, untyped data until you clean them up manually via the dashboard.
+- **Sign-in UX is now a Clerk-styled modal**, not a fully native form. I passed Clerk's `appearance.variables` mapped to the app's own CSS custom properties to keep it visually close, but I can't verify the actual rendered look without real Clerk keys — worth a visual check once you have them.
+- **`convex/_generated/api.d.ts` was hand-edited**, not regenerated, since this environment has no linked Convex deployment to run `npx convex codegen`/`npx convex dev` against. My edit matches what codegen would produce (dropped the deleted `auth`/`http` module entries), and `api.js` (the runtime file, using `anyApi`) needed no change — but the first real `npx convex dev` run should regenerate it properly regardless.</result>
+<usage><subagent_tokens>147236</subagent_tokens><tool_uses>102</tool_uses><duration_ms>1149799</duration_ms></usage>
+</task-notification>
