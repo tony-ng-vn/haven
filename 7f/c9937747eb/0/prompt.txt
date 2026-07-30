@@ -1,0 +1,23 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - index.html
+
+Unified diff (only + lines are new):
+
+=== DIFF: index.html ===
+@@ -12,6 +12,11 @@
+       rel="icon"
+       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230071e3'/%3E%3Ctext x='32' y='43' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif' font-size='34' font-weight='600' text-anchor='middle' fill='%23fff'%3EE%3C/text%3E%3C/svg%3E"
+     />
++    <link rel="manifest" href="/manifest.webmanifest" />
++    <!-- Safari does not read the manifest icons; apple-touch-icon must be set explicitly. -->
++    <link rel="apple-touch-icon" href="/icon.svg" />
++    <meta name="apple-mobile-web-app-capable" content="yes" />
++    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+     <title>Euno</title>
+   </head>
+   <body>
+
+
+Investigate per the method in your instructions, then return the findings list.
