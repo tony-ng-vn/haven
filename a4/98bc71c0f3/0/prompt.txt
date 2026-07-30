@@ -1,0 +1,27 @@
+<task-notification>
+<task-id>a261fe528eac687a9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/752919c5-b916-4950-b41a-651ba53ec7b8/tasks/a261fe528eac687a9.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix and ready PR #27 Apple Contacts" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both fixes are in, pushed, and PR #27 is now marked ready for review (no longer draft).
+
+**What PRODUCT.md actually says (grounding for the fix):** it never contains the phrase "A relationship cannot be captured by data plus a friend list" anywhere — that quote was fabricated. What it does say, verbatim:
+- Anti-references: `"Not a CRM or sales tool: no pipelines, deal stages, lead scoring, or dashboards of metrics. These people are relationships, not leads to work."`
+- Positioning: `"It is the one place built to refind the people you have met, not to collect, rank, or broadcast them."`
+
+**Fix 1 (line 110):** Replaced the fabricated quote with a paraphrase that explicitly notes PRODUCT.md never uses the phrase "bulk import," then grounds the anti-CRM point with the two real quotes above (both verbatim, both attributed to their actual sections).
+
+**Fix 2 (Sources, was line 188):** Changed the sibling-doc citation from `Sibling doc (unmerged branch \`cursor/linkedin-integration-research-05dc\`): docs/superpowers/specs/2026-07-20-linkedin-integration-research.md` to a plain relative path: `Sibling doc: docs/superpowers/specs/2026-07-20-linkedin-integration-research.md` — no branch reference, so it reads correctly once PR #21 merges to main.
+
+**Verification:**
+- ASCII check: `grep -P '[^\x00-\x7F]'` on the doc returned nothing (exit 1) — pure ASCII confirmed.
+- `OPENAI_API_KEY=test npm test`: 11 test files, 171 tests, all passed (one intentional error-path stderr log in `people.test.ts`, not a failure).
+- Commit: `12e2d9e2290b7b600600766efef5b7e5761f746d` — "docs(apple-contacts): fix fabricated quote and dangling source citation"
+- Pushed to `docs/apple-contacts-integration-research`.
+- `gh pr ready 27` succeeded; PR #27 now shows `isDraft: false`, state `OPEN`. https://github.com/tony-ng-vn/euno/pull/27
+
+File touched: `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/apple-contacts-research/docs/superpowers/specs/2026-07-20-apple-contacts-integration-research.md`</result>
+<usage><subagent_tokens>47451</subagent_tokens><tool_uses>15</tool_uses><duration_ms>61474</duration_ms></usage>
+</task-notification>
