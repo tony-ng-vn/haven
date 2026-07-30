@@ -1,0 +1,1 @@
+hmm so this is the logic of duplicate email, do u think this should be implement as one of the core check logic for everything?
