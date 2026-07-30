@@ -1,0 +1,2 @@
+1. i really really like the real effect. can we implement that on top of what we already have? use /grilling-frontend-prototyping to do it
+2. the edit card can be done later as its not part of the onboarding flow
