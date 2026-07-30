@@ -1,0 +1,37 @@
+<task-notification>
+<task-id>a5345d8e443a3e802</task-id>
+<tool-use-id>toolu_01XD2VydyCx3FE48TPFXVTfP</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/45c37739-14ec-4f83-9d43-29f77afa5176/tasks/a5345d8e443a3e802.output</output-file>
+<status>completed</status>
+<summary>Agent "Altitude review" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All six points check out against the actual code. The openaiClient precedent is the key comparison: it throws on missing key (core dependency), while emailClient returns "skipped" (optional side-effect) — a deliberate and correct difference in failure mode. Here is the review.
+
+## ALTITUDE review — waitlist confirmation email
+
+Verdict: implemented at the right depth throughout. No altitude problems found. One trivial asymmetry noted at the end (not worth changing).
+
+**1. Transport separation — CORRECT**
+`convex/emailClient.ts:26` (`renderConfirmation`) / `:81` (`sendWaitlistConfirmation`) / `convex/waitlist.ts:79` (`sendConfirmationEmail` action).
+Textbook three-layer split at the right seams: `renderConfirmation` is pure (name in → `{subject,html,text}` out, no network, no env), so templating + HTML-escaping are unit-testable in isolation. `sendWaitlistConfirmation` owns the env-gate + the entire Resend HTTP shape + the `SendResult` union — swapping providers touches one function. The `internalAction` is genuinely thin: try/catch, dispatch, log. Logic is at the correct layer; nothing leaks up or down.
+
+**2. Env-gating returns "skipped" — CORRECT altitude**
+`convex/emailClient.ts:83-96`. Returning a `skipped` variant of the `SendResult` discriminated union (rather than throwing) is the right call *here specifically*, and it correctly diverges from the sibling `openaiClient.ts:65-73`, which *throws* on a missing key. The distinction is principled: OpenAI is a core dependency of its feature, so absence is a hard error; the confirmation email is a fire-and-forget side-effect scheduled out of band, so a missing provider must be a safe no-op that lets the join flow ship before mail is wired. Config validation belongs exactly where it is (at the transport boundary that reads it), not hoisted elsewhere. The three-way `sent`/`skipped`/`failed` union with per-variant logging in the action is the correct shape.
+
+**3. `name` optional in schema, required in mutation — CORRECT (confirmed)**
+`convex/schema.ts:150` (`v.optional(v.string())`) vs `convex/waitlist.ts:33` (`name: v.string()`). This is the right backward-compat call, and the inline comment already states the reason (prod rows predating the field have no name). Making the schema field required would fail validation on read of existing rows; requiring it in the mutation ensures every *new* row is complete. Standard widen-schema / narrow-at-write pattern. Confirm.
+
+**4. Scheduling from inside the mutation — CORRECT seam**
+`convex/waitlist.ts:66-72`. This is the idiomatic Convex seam, not a lower-altitude hack. A mutation runs in the transactional runtime and cannot do `fetch`; `ctx.scheduler.runAfter(0, internal.waitlist.sendConfirmationEmail, …)` is precisely the documented way to bridge to an action. Placement is right on two counts: it sits *after* the `already` early-return (`:62`), so re-submits never re-email (verified by the test at `waitlist.test.ts`), and *after* the insert, so `runAfter(0)` fires only once the row commits. It `await`s the *scheduling*, not the send, so the join is never blocked by mail. No higher-level hook is warranted — there is exactly one call site.
+
+**5. CSS `.wl-form` → column + `.wl-row` wrapper — CLEAN generalization**
+`src/index.css:2211-2221` and media query `:2390`. This is a proper restructure, not a patch. `.wl-form` becomes the vertical stack (name field full-width on top), `.wl-row` is the new horizontal group (email + submit). The `&lt;380px` media query correctly follows: it previously stacked `.wl-form`'s direct children, and now must stack `.wl-row`'s children, which is exactly the one-line change made (`.wl-form` → `.wl-row` at `:2390`). No dangling reference to the old row semantics remains. Side check: the name `input.wl-field` (`flex:1`) as a direct child of the now-column `.wl-form` still renders at its explicit `height:54px` (no container height to distribute), so nothing collapses. Correct.
+
+**6. `"Enter your name."` as ConvexError — CONSISTENT**
+`convex/waitlist.ts:52-53` mirrors the existing `:49-50` (`"Enter a valid email address."`) exactly — same `ConvexError` type, same terse imperative copy — and the client mirrors both in `src/Waitlist.tsx:85-88` / `:90-92` via `setError`. Consistent with the established pattern.
+
+---
+
+Trivial asymmetry (not an altitude problem, no change needed): client-side validation checks name-before-email (`Waitlist.tsx:85` then `:89`, matching top-to-bottom form order), while the server checks email-before-name (`waitlist.ts:49` then `:52`). If a client ever bypassed the guard with both fields invalid, the two layers would surface different first-error messages. Harmless because the client validates first and the server messages are still individually correct; flagging only for completeness.</result>
+<usage><subagent_tokens>33417</subagent_tokens><tool_uses>6</tool_uses><duration_ms>78599</duration_ms></usage>
+</task-notification>
