@@ -3,7 +3,7 @@ import GraphCore
 
 private func printUsage() {
     FileHandle.standardError.write(
-        Data("usage: graph-cli stats --chat-db PATH [--contacts-db PATH ...]\n".utf8)
+        Data("usage: graph-cli <stats|people> --chat-db PATH [--contacts-db PATH ...]\n".utf8)
     )
 }
 
@@ -101,9 +101,56 @@ private func runStats(_ args: [String]) {
     print("contactsWithEmail \(withEmail)")
 }
 
+private func runPeople(_ args: [String]) {
+    guard let parsed = parseArgs(args), let chatDBPath = parsed.chatDBPath else {
+        printUsage()
+        exit(64)
+    }
+
+    let extract: ChatExtract
+    do {
+        extract = try ChatDatabase.extract(path: chatDBPath)
+    } catch {
+        fail("error: cannot read chat database")
+    }
+
+    var contacts: [ContactRecord] = []
+    for contactsDBPath in parsed.contactsDBPaths {
+        do {
+            contacts += try ContactsDatabase.extract(path: contactsDBPath)
+        } catch {
+            fail("error: cannot read contacts database")
+        }
+    }
+
+    let result = IdentityResolution.resolve(handles: extract.handles, contacts: contacts)
+
+    let personCount = result.people.count
+    let peopleWithContactCard = result.people.filter(\.hasContactCard).count
+    let peopleWithoutContactCard = personCount - peopleWithContactCard
+    let peopleWithPhoto = result.people.filter { $0.thumbnailImageData != nil }.count
+    let multiIdentifierPeople = result.people.filter { $0.identifiers.count >= 2 }.count
+    let identifiersPerPerson = Dictionary(grouping: result.people, by: { $0.identifiers.count })
+        .mapValues(\.count)
+
+    print("personCount \(personCount)")
+    print("peopleWithContactCard \(peopleWithContactCard)")
+    print("peopleWithoutContactCard \(peopleWithoutContactCard)")
+    print("peopleWithPhoto \(peopleWithPhoto)")
+    print("mergeCandidateCount \(result.mergeCandidates.count)")
+    print("multiIdentifierPeople \(multiIdentifierPeople)")
+    for count in identifiersPerPerson.keys.sorted() {
+        print("identifiersPerPerson[\(count)] \(identifiersPerPerson[count]!)")
+    }
+}
+
 let arguments = Array(CommandLine.arguments.dropFirst())
-guard let subcommand = arguments.first, subcommand == "stats" else {
+switch arguments.first {
+case "stats":
+    runStats(Array(arguments.dropFirst()))
+case "people":
+    runPeople(Array(arguments.dropFirst()))
+default:
     printUsage()
     exit(64)
 }
-runStats(Array(arguments.dropFirst()))

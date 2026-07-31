@@ -13,16 +13,16 @@ final class ContactsDatabaseExtractionTests: XCTestCase {
 
         try fixture.insertEntity(entityID: contactEntityID, name: "ABCDContact")
 
-        try fixture.insertRecord(recordID: 1, entityID: contactEntityID, firstName: "Jane", lastName: "Doe")
+        try fixture.insertRecord(recordID: 1, entityID: contactEntityID, uniqueID: "uid-1", firstName: "Jane", lastName: "Doe")
         try fixture.insertPhoneNumber(recordID: 10, ownerID: 1, fullNumber: "+15551230000")
 
-        try fixture.insertRecord(recordID: 2, entityID: contactEntityID)
+        try fixture.insertRecord(recordID: 2, entityID: contactEntityID, uniqueID: "uid-2")
         try fixture.insertEmailAddress(recordID: 20, ownerID: 2, address: "person@example.com")
 
-        try fixture.insertRecord(recordID: 3, entityID: contactEntityID, organization: "Acme Corp")
+        try fixture.insertRecord(recordID: 3, entityID: contactEntityID, uniqueID: "uid-3", organization: "Acme Corp")
 
         // Fully empty record: no name, no organization, no phone, no email.
-        try fixture.insertRecord(recordID: 4, entityID: contactEntityID)
+        try fixture.insertRecord(recordID: 4, entityID: contactEntityID, uniqueID: "uid-4")
 
         fixture.close()
 
@@ -62,11 +62,11 @@ final class ContactsDatabaseExtractionTests: XCTestCase {
         try fixture.insertEntity(entityID: infoEntityID, name: "ABCDInfo")
 
         // A non-contact entity row with a name and a phone: must be excluded.
-        try fixture.insertRecord(recordID: 1, entityID: infoEntityID, firstName: "Ghost", lastName: "Bookkeeping")
+        try fixture.insertRecord(recordID: 1, entityID: infoEntityID, uniqueID: "uid-1", firstName: "Ghost", lastName: "Bookkeeping")
         try fixture.insertPhoneNumber(recordID: 100, ownerID: 1, fullNumber: "+15550009999")
 
         // A real ABCDContact row with the same shape: must be included.
-        try fixture.insertRecord(recordID: 2, entityID: contactEntityID, firstName: "Real", lastName: "Person")
+        try fixture.insertRecord(recordID: 2, entityID: contactEntityID, uniqueID: "uid-2", firstName: "Real", lastName: "Person")
         try fixture.insertPhoneNumber(recordID: 101, ownerID: 2, fullNumber: "+15551112222")
 
         fixture.close()
@@ -87,7 +87,7 @@ final class ContactsDatabaseExtractionTests: XCTestCase {
         defer { fixture.close() }
 
         try fixture.insertEntity(entityID: contactEntityID, name: "ABCDContact")
-        try fixture.insertRecord(recordID: 1, entityID: contactEntityID)
+        try fixture.insertRecord(recordID: 1, entityID: contactEntityID, uniqueID: "uid-1")
         try fixture.insertPhoneNumber(recordID: 10, ownerID: 1, fullNumber: "+15553334444")
         fixture.close()
 
@@ -112,5 +112,50 @@ final class ContactsDatabaseExtractionTests: XCTestCase {
         fixture.close()
 
         XCTAssertThrowsError(try ContactsDatabase.extract(path: fixture.url.path))
+    }
+
+    // A record with a thumbnail blob round-trips it; a record with none yields nil.
+    func testThumbnailImageDataRoundTripsAndNilWhenAbsent() throws {
+        let fixture = try ContactsDBFixture()
+        defer { fixture.close() }
+
+        try fixture.insertEntity(entityID: contactEntityID, name: "ABCDContact")
+
+        let photoBytes = Data([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46])
+        try fixture.insertRecord(recordID: 1, entityID: contactEntityID, uniqueID: "uid-1", firstName: "Photo", thumbnailImageData: photoBytes)
+        try fixture.insertRecord(recordID: 2, entityID: contactEntityID, uniqueID: "uid-2", firstName: "NoPhoto")
+
+        fixture.close()
+
+        let records = try ContactsDatabase.extract(path: fixture.url.path)
+
+        let withPhoto = try XCTUnwrap(records.first { $0.recordID == 1 })
+        XCTAssertEqual(withPhoto.thumbnailImageData, photoBytes)
+
+        let withoutPhoto = try XCTUnwrap(records.first { $0.recordID == 2 })
+        XCTAssertNil(withoutPhoto.thumbnailImageData)
+    }
+
+    // A row with a NULL ZUNIQUEID is not a real synced card (same posture as the entity
+    // filter: do not guess), so it must be skipped even though it otherwise looks like a
+    // perfectly good contact.
+    func testRecordWithNullUniqueIDIsSkipped() throws {
+        let fixture = try ContactsDBFixture()
+        defer { fixture.close() }
+
+        try fixture.insertEntity(entityID: contactEntityID, name: "ABCDContact")
+
+        try fixture.insertRecord(recordID: 1, entityID: contactEntityID, uniqueID: nil, firstName: "No", lastName: "UniqueID")
+        try fixture.insertPhoneNumber(recordID: 10, ownerID: 1, fullNumber: "+15559990000")
+
+        try fixture.insertRecord(recordID: 2, entityID: contactEntityID, uniqueID: "uid-2", firstName: "Has", lastName: "UniqueID")
+
+        fixture.close()
+
+        let records = try ContactsDatabase.extract(path: fixture.url.path)
+
+        XCTAssertEqual(records.count, 1)
+        XCTAssertFalse(records.contains { $0.recordID == 1 }, "a NULL-ZUNIQUEID row leaked in as a contact")
+        XCTAssertTrue(records.contains { $0.recordID == 2 })
     }
 }

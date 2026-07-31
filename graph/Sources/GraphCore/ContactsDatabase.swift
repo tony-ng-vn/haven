@@ -34,17 +34,21 @@ public struct ContactsDatabase: Sendable {
         // input, so interpolating it here carries no injection risk.
         try connection.query(
             """
-            SELECT Z_PK, ZFIRSTNAME, ZLASTNAME, ZORGANIZATION, ZNICKNAME
+            SELECT Z_PK, ZUNIQUEID, ZFIRSTNAME, ZLASTNAME, ZORGANIZATION, ZNICKNAME, ZTHUMBNAILIMAGEDATA
             FROM ZABCDRECORD
             WHERE Z_ENT = \(contactEntityID)
             ORDER BY Z_PK
             """
         ) { statement in
             let recordID = statement.columnInt64(0)
-            let firstName = statement.columnText(1)
-            let lastName = statement.columnText(2)
-            let organization = statement.columnText(3)
-            let nickname = statement.columnText(4)
+            // A NULL ZUNIQUEID is not a real synced card: same posture as the entity
+            // filter above, do not guess, skip it rather than fabricate an identity.
+            guard let uniqueID = statement.columnText(1) else { return }
+            let firstName = statement.columnText(2)
+            let lastName = statement.columnText(3)
+            let organization = statement.columnText(4)
+            let nickname = statement.columnText(5)
+            let thumbnailImageData = statement.columnBlob(6)
             let phones = phonesByOwner[recordID] ?? []
             let emails = emailsByOwner[recordID] ?? []
 
@@ -55,12 +59,14 @@ public struct ContactsDatabase: Sendable {
             records.append(
                 ContactRecord(
                     recordID: recordID,
+                    uniqueID: uniqueID,
                     firstName: firstName,
                     lastName: lastName,
                     organization: organization,
                     nickname: nickname,
                     phoneNumbers: phones,
-                    emails: emails
+                    emails: emails,
+                    thumbnailImageData: thumbnailImageData
                 )
             )
         }
