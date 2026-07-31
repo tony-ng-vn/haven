@@ -3,22 +3,26 @@ import XCTest
 
 final class ContactsDatabaseExtractionTests: XCTestCase {
 
+    private let contactEntityID: Int64 = 1
+
     // Test 11: first+last+phone, email-only, and organization-only all extract with the
     // right phones/emails attached via ZOWNER; a fully empty record is excluded.
     func testMixedRecordShapesExtractCorrectly() throws {
         let fixture = try ContactsDBFixture()
         defer { fixture.close() }
 
-        try fixture.insertRecord(recordID: 1, firstName: "Jane", lastName: "Doe")
+        try fixture.insertEntity(entityID: contactEntityID, name: "ABCDContact")
+
+        try fixture.insertRecord(recordID: 1, entityID: contactEntityID, firstName: "Jane", lastName: "Doe")
         try fixture.insertPhoneNumber(recordID: 10, ownerID: 1, fullNumber: "+15551230000")
 
-        try fixture.insertRecord(recordID: 2)
+        try fixture.insertRecord(recordID: 2, entityID: contactEntityID)
         try fixture.insertEmailAddress(recordID: 20, ownerID: 2, address: "person@example.com")
 
-        try fixture.insertRecord(recordID: 3, organization: "Acme Corp")
+        try fixture.insertRecord(recordID: 3, entityID: contactEntityID, organization: "Acme Corp")
 
         // Fully empty record: no name, no organization, no phone, no email.
-        try fixture.insertRecord(recordID: 4)
+        try fixture.insertRecord(recordID: 4, entityID: contactEntityID)
 
         fixture.close()
 
@@ -44,5 +48,69 @@ final class ContactsDatabaseExtractionTests: XCTestCase {
         XCTAssertNil(organizationOnly.firstName)
         XCTAssertTrue(organizationOnly.phoneNumbers.isEmpty)
         XCTAssertTrue(organizationOnly.emails.isEmpty)
+    }
+
+    // ZABCDRECORD is a Core Data table shared by several entities. A row that carries a
+    // name and a phone but belongs to a non-ABCDContact entity (e.g. ABCDInfo bookkeeping)
+    // must never be extracted as a contact, even though it has the exact same column shape.
+    func testRecordFromNonContactEntityIsExcludedEvenWithNameAndPhone() throws {
+        let fixture = try ContactsDBFixture()
+        defer { fixture.close() }
+
+        let infoEntityID: Int64 = 2
+        try fixture.insertEntity(entityID: contactEntityID, name: "ABCDContact")
+        try fixture.insertEntity(entityID: infoEntityID, name: "ABCDInfo")
+
+        // A non-contact entity row with a name and a phone: must be excluded.
+        try fixture.insertRecord(recordID: 1, entityID: infoEntityID, firstName: "Ghost", lastName: "Bookkeeping")
+        try fixture.insertPhoneNumber(recordID: 100, ownerID: 1, fullNumber: "+15550009999")
+
+        // A real ABCDContact row with the same shape: must be included.
+        try fixture.insertRecord(recordID: 2, entityID: contactEntityID, firstName: "Real", lastName: "Person")
+        try fixture.insertPhoneNumber(recordID: 101, ownerID: 2, fullNumber: "+15551112222")
+
+        fixture.close()
+
+        let records = try ContactsDatabase.extract(path: fixture.url.path)
+
+        XCTAssertEqual(records.count, 1)
+        XCTAssertFalse(records.contains { $0.recordID == 1 }, "a non-ABCDContact entity row leaked in as a contact")
+
+        let realPerson = try XCTUnwrap(records.first { $0.recordID == 2 })
+        XCTAssertEqual(realPerson.firstName, "Real")
+        XCTAssertEqual(realPerson.phoneNumbers, ["+15551112222"])
+    }
+
+    // An ABCDContact row whose only populated field is a phone number is still a real contact.
+    func testABCDContactRecordWithOnlyPhoneIsIncluded() throws {
+        let fixture = try ContactsDBFixture()
+        defer { fixture.close() }
+
+        try fixture.insertEntity(entityID: contactEntityID, name: "ABCDContact")
+        try fixture.insertRecord(recordID: 1, entityID: contactEntityID)
+        try fixture.insertPhoneNumber(recordID: 10, ownerID: 1, fullNumber: "+15553334444")
+        fixture.close()
+
+        let records = try ContactsDatabase.extract(path: fixture.url.path)
+
+        XCTAssertEqual(records.count, 1)
+        let record = try XCTUnwrap(records.first)
+        XCTAssertNil(record.firstName)
+        XCTAssertNil(record.lastName)
+        XCTAssertNil(record.organization)
+        XCTAssertEqual(record.phoneNumbers, ["+15553334444"])
+    }
+
+    // A store with no Z_PRIMARYKEY row named 'ABCDContact' is a schema we do not recognize:
+    // stop with an error rather than guess which rows are contacts.
+    func testMissingABCDContactEntityThrows() throws {
+        let fixture = try ContactsDBFixture()
+        defer { fixture.close() }
+
+        // Some other entity exists, but never one named 'ABCDContact'.
+        try fixture.insertEntity(entityID: 99, name: "ABCDInfo")
+        fixture.close()
+
+        XCTAssertThrowsError(try ContactsDatabase.extract(path: fixture.url.path))
     }
 }

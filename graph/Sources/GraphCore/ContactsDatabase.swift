@@ -1,6 +1,15 @@
 import Foundation
 import SQLite3
 
+/// Thrown when the abcddb store does not match the schema shape this reader understands.
+public enum ContactsDatabaseError: Error, Sendable, Equatable {
+    /// ZABCDRECORD is a Core Data table shared by several entities (contacts, groups,
+    /// containers, internal bookkeeping). Without a Z_PRIMARYKEY row named 'ABCDContact'
+    /// there is no reliable way to tell which rows are contacts, so extraction stops
+    /// rather than guessing from column shape.
+    case contactEntityNotFound
+}
+
 /// Reads AddressBook-v22.abcddb metadata into ContactRecord values.
 /// Same read-only discipline as ChatDatabase: SQLITE_OPEN_READONLY only.
 public struct ContactsDatabase: Sendable {
@@ -16,14 +25,18 @@ public struct ContactsDatabase: Sendable {
 
     public func extract() throws -> [ContactRecord] {
         let connection = try SQLiteReadOnlyConnection(path: path)
+        let contactEntityID = try Self.readContactEntityID(connection)
         let phonesByOwner = try Self.readPhoneNumbers(connection)
         let emailsByOwner = try Self.readEmailAddresses(connection)
 
         var records: [ContactRecord] = []
+        // contactEntityID is an Int64 read back from this same database, not external
+        // input, so interpolating it here carries no injection risk.
         try connection.query(
             """
             SELECT Z_PK, ZFIRSTNAME, ZLASTNAME, ZORGANIZATION, ZNICKNAME
             FROM ZABCDRECORD
+            WHERE Z_ENT = \(contactEntityID)
             ORDER BY Z_PK
             """
         ) { statement in
@@ -52,6 +65,22 @@ public struct ContactsDatabase: Sendable {
             )
         }
         return records
+    }
+
+    /// Core Data assigns entity ids per database, so the ABCDContact Z_ENT cannot be
+    /// hardcoded: it has to be looked up in Z_PRIMARYKEY on every open (constraint: never
+    /// guess which rows are contacts from column shape alone).
+    private static func readContactEntityID(_ connection: SQLiteReadOnlyConnection) throws -> Int64 {
+        var entityID: Int64?
+        try connection.query(
+            "SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ABCDContact'"
+        ) { statement in
+            entityID = statement.columnInt64(0)
+        }
+        guard let entityID else {
+            throw ContactsDatabaseError.contactEntityNotFound
+        }
+        return entityID
     }
 
     private static func readPhoneNumbers(_ connection: SQLiteReadOnlyConnection) throws -> [Int64: [String]] {

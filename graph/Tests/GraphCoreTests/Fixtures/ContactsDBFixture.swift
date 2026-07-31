@@ -10,8 +10,13 @@ final class ContactsDBFixture {
         builder = try SQLiteFixtureBuilder(fileName: "AddressBook-v22.abcddb")
         try builder.exec(
             """
+            CREATE TABLE Z_PRIMARYKEY (
+                Z_ENT INTEGER PRIMARY KEY,
+                Z_NAME TEXT
+            );
             CREATE TABLE ZABCDRECORD (
                 Z_PK INTEGER PRIMARY KEY,
+                Z_ENT INTEGER,
                 ZFIRSTNAME TEXT,
                 ZLASTNAME TEXT,
                 ZORGANIZATION TEXT,
@@ -35,8 +40,20 @@ final class ContactsDBFixture {
         builder.close()
     }
 
+    /// A Core Data entity row: ZABCDRECORD is shared by several entities (ABCDContact,
+    /// ABCDInfo, ABCDGroup, CNCDContainer in the real store), distinguished only by Z_ENT.
+    func insertEntity(entityID: Int64, name: String) throws {
+        try builder.run(
+            "INSERT INTO Z_PRIMARYKEY (Z_ENT, Z_NAME) VALUES (?, ?)"
+        ) { statement in
+            sqlite3_bind_int64(statement, 1, entityID)
+            sqlite3_bind_text(statement, 2, name, -1, SQLITE_TRANSIENT)
+        }
+    }
+
     func insertRecord(
         recordID: Int64,
+        entityID: Int64,
         firstName: String? = nil,
         lastName: String? = nil,
         organization: String? = nil,
@@ -44,15 +61,16 @@ final class ContactsDBFixture {
     ) throws {
         try builder.run(
             """
-            INSERT INTO ZABCDRECORD (Z_PK, ZFIRSTNAME, ZLASTNAME, ZORGANIZATION, ZNICKNAME)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO ZABCDRECORD (Z_PK, Z_ENT, ZFIRSTNAME, ZLASTNAME, ZORGANIZATION, ZNICKNAME)
+            VALUES (?, ?, ?, ?, ?, ?)
             """
         ) { statement in
             sqlite3_bind_int64(statement, 1, recordID)
-            Self.bindOptionalText(statement, 2, firstName)
-            Self.bindOptionalText(statement, 3, lastName)
-            Self.bindOptionalText(statement, 4, organization)
-            Self.bindOptionalText(statement, 5, nickname)
+            sqlite3_bind_int64(statement, 2, entityID)
+            Self.bindOptionalText(statement, 3, firstName)
+            Self.bindOptionalText(statement, 4, lastName)
+            Self.bindOptionalText(statement, 5, organization)
+            Self.bindOptionalText(statement, 6, nickname)
         }
     }
 
