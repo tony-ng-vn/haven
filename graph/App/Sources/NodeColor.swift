@@ -1,18 +1,19 @@
 import SwiftUI
 import GraphCore
 
-/// Trivial, static, and SwiftUI-Color-specific (unlike LabelBudget/EdgeRenderList, which are
-/// pure enough to live in GraphCore and be unit tested there): a lookup table like this one
-/// is not worth a test of its own.
+/// Wraps NodePalette's plain RGBA components in a SwiftUI Color: the actual numbers live in
+/// GraphCore now (NodePalette), shared with the headless GraphImageRenderer, so screen and
+/// export can never drift apart from each other. This file, and the extension below, are the
+/// only place that touches SwiftUI's Color type for a palette value -- not worth a test of
+/// its own, same as before this refactor.
 enum NodeColor {
     static func color(for kind: NodeKind) -> Color {
-        switch kind {
-        case .user:
-            return Color(red: 0.95, green: 0.82, blue: 0.35) // gold: the one node that is never anyone else
-        case .person:
-            return Color(red: 0.40, green: 0.70, blue: 1.0) // cool blue
-        case .group:
-            return Color(red: 1.0, green: 0.55, blue: 0.35) // warm orange
-        }
+        Color(NodePalette.color(for: kind))
+    }
+}
+
+extension Color {
+    init(_ palette: RGBAColor) {
+        self.init(red: palette.red, green: palette.green, blue: palette.blue, opacity: palette.alpha)
     }
 }

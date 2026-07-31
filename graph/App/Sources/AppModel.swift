@@ -399,6 +399,48 @@ final class AppModel {
         focusedNodeID = nil
     }
 
+    /// The toolbar's Export button is enabled only in this state (GraphImageRenderer needs an
+    /// actual graph + simulation to render from).
+    var isReady: Bool {
+        if case .ready = state { return true }
+        return false
+    }
+
+    enum ExportError: Error {
+        case notReady
+    }
+
+    /// Renders THE CURRENT VIEW STATE per PLAN.md's export goal: the whole simulated layout
+    /// at its native canvas-space positions (never the on-screen zoom/pan), always rest-state
+    /// (no focus dimming, regardless of the current focusedNodeID), with whatever time filter/
+    /// dead-group toggle/hidden nodes are already baked into the current `graph`/`simulation`/
+    /// displayOptions. The actual rendering (rasterizing at scale 3 over hundreds of nodes,
+    /// then PNG-encoding) is real CPU work, so it runs off the main actor -- but ForceSimulation
+    /// itself is not Sendable, so positions/radii (plain Sendable dictionaries) are snapshotted
+    /// here on the main actor first, and only those, plus the already-Sendable Graph, cross
+    /// into the detached task.
+    func exportImage(to url: URL) async throws {
+        guard case .ready(let graph, let simulation) = state else {
+            throw ExportError.notReady
+        }
+        let positions = simulation.positions
+        let radii = simulation.radii
+        let hiddenNodeIDs = displayOptions.hiddenNodeIDs
+        let canvasSize = lastWindowSize
+
+        try await Task.detached(priority: .userInitiated) {
+            let image = GraphImageRenderer.render(
+                graph: graph,
+                positions: positions,
+                radii: radii,
+                hiddenNodeIDs: hiddenNodeIDs,
+                canvasSize: canvasSize,
+                scale: 3
+            )
+            try GraphImageExport.writePNG(image: image, to: url)
+        }.value
+    }
+
     private func saveOverrides() {
         do {
             try overridesStore.save(overrides)
