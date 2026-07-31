@@ -1,0 +1,71 @@
+# Loop journal
+
+Newest entry first.
+The loop reads this at every iteration start and appends at every iteration end.
+See `graph/GOAL.md` for the rules. That file is user-owned; the loop never edits it.
+
+Real measurements belong here. Real names and message content do not.
+
+## Standing state
+
+- Open PRs: #179 (graph/extraction -> graph-main), awaiting CI
+- Build position: P2 step 1 (extraction) implemented, pending merge; next is P2 step 2 (identity resolution, names and photos)
+- Integration branch: `graph-main`, created 2026-07-31 per owner directive; the loop merges its own PRs there after green CI and self-review, main stays untouched, user merges graph-main to main
+- Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; the loop mirrors them into the graph-main worktree and commits there, always editing the main-checkout copy first
+- Blocked on user: Ollama, the plan's default local provider, not yet installed (needed only at P2 step 7)
+- Next intent: merge #179 when CI is green, then start P2 step 2
+
+## Entries
+
+### 2026-07-31 iteration 1: extraction (PR #179)
+
+DONE
+
+- Created the `graph-main` integration branch and the `.worktrees/graph-extraction` worktree; committed charter docs plus `graph/.gitignore` before any code.
+- Swift package under `graph/`: GraphCore library, graph-cli executable, 19 tests, zero dependencies. chat.db opened SQLITE_OPEN_READONLY (no immutable flag, busy timeout plus bounded retry); every SELECT names columns; message.text and attributedBody never referenced; a reflection test with a positive control proves no message text reaches the model; a byte-comparison test proves extraction does not modify the database file.
+- Review found the never-replied test was mutation-blind (symmetric fixture: 1 never-replied vs 1 replied, so an inverted predicate produced the same count). Strengthened to 2-vs-1; the mutant now fails the suite.
+- Real-data run, numbers only: joined messages 108,463 plus 1,634 unjoined equals 110,097, matching the profiled 110,096 plus one new message. Handles 2,160 over 1,918 distinct identifiers. Chats 1,320 (1,190 one-to-one, 130 group). One-to-one with messages 1,047, empty 143, never-replied 589. Two-member style-43 chats: 36. Group sizes 2 to 32; the 18-20 bucket holds 21 groups; singles at 26, 28, 31, 32. Services SMS 1,163 / iMessage 655 / RCS 342. All charter calibration numbers reproduced.
+- Shortcode count is 201 under the 4-to-6-digit rule vs the charter's 213 under "fails phone parsing"; definitional difference, to be settled when the non-person filter is built (P2 step 3).
+- Major calibration correction: PLAN.md's "8,342 Contacts records" counted every ZABCDRECORD row; 8,138 of those are ABCDInfo bookkeeping entities. The real address book holds 250 contact cards (237 with a phone, 13 with an email). The reader initially excluded the bookkeeping rows only by accident of their NULL fields; fixed the same day, strict red-then-green, to filter by the ABCDContact entity via Z_PRIMARYKEY lookup and to throw on unrecognized schema.
+- Consequences of that correction, for the user to fold into PLAN.md if agreed: (1) open question 2 is answered in direction: at most ~250 of the ~615 graph people can carry a Contacts name, so the model pass covers the majority of nodes rather than a tail; (2) merge evidence from cards co-listing phone and email is nearly absent (13 cards with any email), so auto-merge will be dominated by exact-identifier equality and the merge queue should be small; (3) the Contacts-card spare rule in the never-replied filter protects at most ~250 handles.
+- Process note: the initial scaffold deviated from TDD (tests written after implementation), mitigated by mutation-testing the two riskiest assertions plus the lead spot-check that exposed the weak never-replied test. The follow-up contacts fix was done strictly red-then-green. Future build steps carry the strict ordering requirement in the brief from the start.
+
+IN-FLIGHT
+
+- PR #179 open against graph-main, waiting on CI (the repo's `test` workflow runs npm tests on the self-hosted mac; graph changes do not touch that surface).
+
+BLOCKED
+
+- Ollama install (P2 step 7 only).
+
+NEXT
+
+- Merge #179 on green CI. Then P2 step 2: identity resolution plus names and photos from Contacts.
+
+### 2026-07-31 design revision, second pass
+
+Plan revised per the second-pass review.
+The user's own node is drawn but its edges are excluded from the force simulation and the rest-state render; ego edges surface only on focus.
+Contacts attach moved before non-person filtering, with a new rule that a Contacts-card match is never removed by the never-replied filter.
+GOAL.md's `?immutable=1` guidance was wrong and is corrected to a plain read-only open that participates in the WAL via the `-shm` sidecar and retries on SQLITE_BUSY.
+The model pass now runs after first render, asynchronously, with guesses cached by normalized identifier and Ollama as the local default; cloud is opt-in.
+Group roster comes from `chat_handle_join`, with liveness and edge strength from message activity, so lurkers keep their edge.
+Two-member `style=43` chats resolve to a one-to-one edge, not a group node.
+Resync curation (hidden nodes, removed nodes, answered merges) now survives rebuild through a separate overrides store keyed by normalized identifier.
+Mentions are deferred by owner decision.
+Stack is stated as Swift and SwiftUI.
+The reciprocity denominator is fixed: 1,047 of the 1,190 one-to-one chat rows contain messages, the other 143 are empty.
+
+No code written yet.
+
+### 2026-07-31 setup
+
+Design settled through a grilling session. `PLAN.md` written and calibrated against the real database.
+
+Measured, metadata only, no content read: 110,096 messages spanning 2022-10-21 to 2026-07-31, 177MB. 2,160 handle rows over 1,918 distinct identifiers. 1,320 chats, of which 1,190 one-to-one and 130 group. Service mix SMS 1,163 / iMessage 655 / RCS 342. 213 shortcode handles. 8,342 Contacts records.
+
+Key calibration: of 1,047 one-to-one conversations, 589 contain no reply from the user, so the reciprocity rule alone removes 56% of noise. Group sizes are bimodal, 81 groups at 5 or fewer members and 21 in the 18-20 range plus singles at 26, 28, 31, 32.
+
+Projected graph under the plan's rules: 615 people plus 74 live group nodes, 820 edges before mentions, giving 1.19 edges per node against 1.04 in the reference image.
+
+No code written yet.
