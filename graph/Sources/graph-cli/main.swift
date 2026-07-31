@@ -4,7 +4,7 @@ import GraphCore
 private func printUsage() {
     FileHandle.standardError.write(
         Data(
-            "usage: graph-cli <stats|people|filter|killlist> --chat-db PATH [--contacts-db PATH ...]\n"
+            "usage: graph-cli <stats|people|filter|killlist|graph> --chat-db PATH [--contacts-db PATH ...]\n"
                 .utf8
         )
     )
@@ -164,14 +164,19 @@ private func runPeople(_ args: [String]) {
     }
 }
 
-private func resolveAndFilter(_ args: [String]) -> FilterResult? {
+/// Shared by `filter`, `killlist`, and `graph`: load, resolve identity, apply the filter.
+private func resolveExtractAndFilter(_ args: [String]) -> (ChatExtract, FilterResult)? {
     guard let parsed = parseArgs(args), let chatDBPath = parsed.chatDBPath else {
         return nil
     }
     let extract = loadChatExtract(chatDBPath)
     let contacts = loadContacts(parsed.contactsDBPaths)
     let identity = IdentityResolution.resolve(handles: extract.handles, contacts: contacts)
-    return PersonFilter.apply(extract: extract, people: identity.people)
+    return (extract, PersonFilter.apply(extract: extract, people: identity.people))
+}
+
+private func resolveAndFilter(_ args: [String]) -> FilterResult? {
+    resolveExtractAndFilter(args)?.1
 }
 
 private func runFilter(_ args: [String]) {
@@ -226,10 +231,67 @@ private func runKilllist(_ args: [String]) {
     }
 }
 
+private func edgeReasonLabel(_ reason: EdgeReason) -> String {
+    switch reason {
+    case .oneToOneThread: return "oneToOneThread"
+    case .groupMembership: return "groupMembership"
+    case .userGroupMembership: return "userGroupMembership"
+    }
+}
+
+private func median(_ values: [Int]) -> Double {
+    let sorted = values.sorted()
+    let mid = sorted.count / 2
+    if sorted.count % 2 == 0 {
+        return Double(sorted[mid - 1] + sorted[mid]) / 2.0
+    }
+    return Double(sorted[mid])
+}
+
+private func runGraph(_ args: [String]) {
+    guard let (extract, filterResult) = resolveExtractAndFilter(args) else {
+        printUsage()
+        exit(64)
+    }
+    let graph = GraphBuilder.build(extract: extract, keptPeople: filterResult.kept)
+
+    let userNodes = graph.nodes.filter { $0.kind == .user }.count
+    let personNodes = graph.nodes.filter { $0.kind == .person }.count
+    let liveGroupNodes = graph.nodes.filter { $0.kind == .group && $0.isLive }.count
+    let deadGroupNodes = graph.nodes.filter { $0.kind == .group && !$0.isLive }.count
+
+    print("userNodes \(userNodes)")
+    print("personNodes \(personNodes)")
+    print("liveGroupNodes \(liveGroupNodes)")
+    print("deadGroupNodes \(deadGroupNodes)")
+
+    for reason in EdgeReason.allCases {
+        let count = graph.edges.filter { $0.reason == reason }.count
+        print("edges[\(edgeReasonLabel(reason))] \(count)")
+    }
+
+    let totalEdges = graph.edges.count
+    let edgesExcludingUser = graph.edges.filter { !$0.involvesUser }.count
+    print("totalEdges \(totalEdges)")
+    print("edgesExcludingUser \(edgesExcludingUser)")
+
+    let degrees = graph.nodes.filter { $0.kind == .person || $0.kind == .group }.map(\.degree)
+    print("personGroupDegreeMin \(degrees.min().map(String.init) ?? "none")")
+    print("personGroupDegreeMedian \(degrees.isEmpty ? "none" : String(format: "%.1f", median(degrees)))")
+    print("personGroupDegreeMax \(degrees.max().map(String.init) ?? "none")")
+
+    // The plan's density calibration number to compare against 1.19. Guarded: an empty or
+    // fully-filtered database has personNodes + liveGroupNodes == 0, and Double(0)/Double(0)
+    // is NaN, which %.2f would print literally as "nan".
+    let denominator = personNodes + liveGroupNodes
+    let edgesPerNode = denominator > 0 ? Double(edgesExcludingUser) / Double(denominator) : 0.0
+    print(String(format: "edgesPerNode %.2f", edgesPerNode))
+}
+
 let arguments = Array(CommandLine.arguments.dropFirst())
 // `killlist` is the one subcommand that is not journal-safe by design: it prints real
 // names and partially-masked identifiers to stdout for the lead's on-screen review of real
-// data (per this step's brief). `stats`, `people`, and `filter` remain counts-only.
+// data (per this step's brief). `stats`, `people`, `filter`, and `graph` remain counts-only.
 switch arguments.first {
 case "stats":
     runStats(Array(arguments.dropFirst()))
@@ -239,6 +301,8 @@ case "filter":
     runFilter(Array(arguments.dropFirst()))
 case "killlist":
     runKilllist(Array(arguments.dropFirst()))
+case "graph":
+    runGraph(Array(arguments.dropFirst()))
 default:
     printUsage()
     exit(64)

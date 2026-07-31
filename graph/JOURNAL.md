@@ -8,14 +8,38 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: #181 (graph/filter -> graph-main), awaiting CI
-- Build position: P2 step 3 (non-person filter) implemented, pending merge; next is P2 step 4 (graph construction: nodes, edges, pruning)
+- Open PRs: #182 (graph/build -> graph-main), awaiting CI
+- Build position: P2 step 4 (graph construction) implemented, pending merge; next is P2 step 5 (layout, render, assembly animation - first visible payoff, first SwiftUI app work)
 - Integration branch: `graph-main`, created 2026-07-31 per owner directive; the loop merges its own PRs there after green CI and self-review, main stays untouched, user merges graph-main to main
 - Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; the loop mirrors them into the graph-main worktree and commits there, always editing the main-checkout copy first
 - Blocked on user: Ollama, the plan's default local provider, not yet installed (needed only at P2 step 7)
 - Next intent: merge #179 when CI is green, then start P2 step 2
 
 ## Entries
+
+### 2026-07-31 iteration 4: graph construction (PR #182)
+
+DONE
+
+- #181 merged to graph-main after green CI and lead review; worktree and branch removed.
+- GraphModel and GraphBuilder: user/person/group nodes; edges with canonical pair ids, source enum (imessage only today, call history rides in later), reason, strength (distinct active days), involvesUser flag for the renderer's ego-edge exclusion. Two-member style-43 chats become one-to-one edges; dead groups built and flagged isLive=false; lurker edges kept at strength 0; removed people produce nothing. Prune mechanism with the never-a-last-edge guard and full user-edge exemption, default threshold keeps everything. 52 tests (9 new), all red-first against a stub with captured failures; prune exemption additionally mutation-verified.
+- Real-data graph, the goal's node and edge counts: 1 user + 574 people + 52 live groups + 42 dead groups = 669 nodes. Edges: 317 oneToOneThread, 532 groupMembership, 94 userGroupMembership, 943 total. Built in 2.3 seconds. The 130 raw groups split exactly as 94 nodes + 36 reclassified two-member chats. Plan projections hit within a few percent (projected ~300 one-to-one, 513 membership).
+- Density bookkeeping: the plan's 1.19 edges/node (820/689) counted one-to-one plus membership edges over people plus live groups. The comparable measured figure is (317+532)/(574+52) = 1.36. The CLI's edgesPerNode prints 0.85 because it excludes ALL user-involving edges from the numerator (including the 317 one-to-one edges the plan counted); note for P3/P4: align that metric's definition with the plan's before using it for pruning decisions.
+- Median person/group degree is 1: most people hang off the user alone (their one-to-one edge) rather than clustering through groups. The rendered rest state (user edges hidden) will show many isolated dots plus group clusters; worth watching at step 5, and the plan anticipates exactly this shape.
+- Builder decisions worth remembering: group liveness counts messages from filtered-out senders too (a spam-heavy group can be live through traffic the person filter discarded); group nodes are built even when every member was filtered, leaving user-only satellite groups; both are deliberate and pinned by tests.
+
+IN-FLIGHT
+
+- PR #182 against graph-main, waiting on CI.
+
+BLOCKED
+
+- Ollama install (P2 step 7 only).
+- Liveness-bar refinement decision from iteration 3.
+
+NEXT
+
+- Merge #182 on green. Then P2 step 5: layout, render, assembly animation - the SwiftUI app target, force simulation, and the first moment this is worth looking at.
 
 ### 2026-07-31 iteration 3: non-person filter (PR #181)
 
