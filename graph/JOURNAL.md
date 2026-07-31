@@ -8,14 +8,43 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: #180 (graph/identity -> graph-main), awaiting CI
-- Build position: P2 step 2 (identity resolution, names and photos) implemented, pending merge; next is P2 step 3 (non-person filter)
+- Open PRs: #181 (graph/filter -> graph-main), awaiting CI
+- Build position: P2 step 3 (non-person filter) implemented, pending merge; next is P2 step 4 (graph construction: nodes, edges, pruning)
 - Integration branch: `graph-main`, created 2026-07-31 per owner directive; the loop merges its own PRs there after green CI and self-review, main stays untouched, user merges graph-main to main
 - Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; the loop mirrors them into the graph-main worktree and commits there, always editing the main-checkout copy first
 - Blocked on user: Ollama, the plan's default local provider, not yet installed (needed only at P2 step 7)
 - Next intent: merge #179 when CI is green, then start P2 step 2
 
 ## Entries
+
+### 2026-07-31 iteration 3: non-person filter (PR #181)
+
+DONE
+
+- #180 merged to graph-main after green CI and lead review; worktree and branch removed.
+- PersonFilter implementing the plan's rules in the plan's order: shortcode, alphanumeric sender (emails structurally exempt), never-replied per person across combined one-to-one threads, then the separate node-eligibility bar notLive (2+ distinct calendar days, injected calendar so tests pin UTC). Card and group-with-humans overrides outrank rules 1-3 only. Two-member style-43 chats count as one-to-one everywhere. CLI gains `filter` (counts) and `killlist` (reason, name or masked id, activity facts; on-screen review only, never committed). 43 tests total, 14 new, all red-first against a stub; one test proven load-bearing by mutation.
+- Real-data run: kept 574 (135 carded, 439 uncarded), removed 1,336: shortcode 201, alphanumeric 46, neverReplied 422, notLive 667. Full pass about 2 seconds. Kept 574 sits close to the plan's 615 projection.
+- Kill-list review with names attached, done on screen; aggregates only here:
+  - The card override provably works: zero carded people were removed by rules 1-3. All 22 carded removals came from the liveness bar.
+  - The liveness bar is the one rule that bites real people: among its removals are heavy single-day mutual conversations (up to 56 messages with 25 replies from the user) and 130 uncarded replied-but-single-day threads. These look like met-once real contacts (events, trips).
+  - Automated buckets look correct: heaviest shortcode shows 520 messages across 316 distinct days (the OTP signature); alphanumeric senders are all business codes. One curiosity: one shortcode carries 25 user replies over 2 days, an interactive SMS service, removed per rule, acceptable.
+  - 3-digit sender codes fall outside the 4-6 digit shortcode rule but are caught by neverReplied or notLive anyway.
+  - Masking degenerates for identifiers of 5 or fewer characters (shortcodes and sender ids print nearly whole); accepted, those are broadcast business codes, and personal numbers always mask to last-4.
+- Suggestion for the user (PLAN refinement, not acted on): let a reply from you (fromMe > 0), or card-plus-reply, satisfy one-to-one liveness. It would move up to roughly 150 replied-to single-day people into the graph (574 to about 720), including the 22 named ones. The plan's two-day bar is explicit, so this stays blocked on your decision; the density calibration (1.19 edges per node) would need rechecking if adopted.
+- Perf note for P4: the filter does a full message scan per person (about 200M iterations); fine at 2 seconds, worth pre-grouping if it ever grows.
+
+IN-FLIGHT
+
+- PR #181 against graph-main, waiting on CI.
+
+BLOCKED
+
+- Ollama install (P2 step 7 only).
+- Liveness-bar refinement decision above.
+
+NEXT
+
+- Merge #181 on green. Then P2 step 4: graph construction (nodes, edges, pruning), where the 574 people plus live groups become the actual node and edge lists.
 
 ### 2026-07-31 iteration 2: identity resolution (PR #180)
 
