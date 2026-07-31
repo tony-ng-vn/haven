@@ -79,29 +79,40 @@ public struct ChatExtract: Sendable, Equatable {
 
 /// A row from the AddressBook `ZABCDRECORD` table, with attached phones and emails.
 public struct ContactRecord: Sendable, Equatable {
+    /// Z_PK: db-local, still useful for ZOWNER joins inside the one db it came from, but
+    /// not distinct across databases. The real store is three separate abcddb files, each
+    /// with its own Z_PK space, so this alone is never safe to key a merged list on.
     public let recordID: Int64
+    /// ZUNIQUEID: non-null and distinct on every ABCDContact row, and stable across resyncs
+    /// unlike recordID. The safe key for anything spanning more than one contacts database.
+    public let uniqueID: String
     public let firstName: String?
     public let lastName: String?
     public let organization: String?
     public let nickname: String?
     public let phoneNumbers: [String]
     public let emails: [String]
+    public let thumbnailImageData: Data?
 
     public init(
         recordID: Int64,
+        uniqueID: String,
         firstName: String?,
         lastName: String?,
         organization: String?,
         nickname: String?,
         phoneNumbers: [String],
-        emails: [String]
+        emails: [String],
+        thumbnailImageData: Data?
     ) {
         self.recordID = recordID
+        self.uniqueID = uniqueID
         self.firstName = firstName
         self.lastName = lastName
         self.organization = organization
         self.nickname = nickname
         self.phoneNumbers = phoneNumbers
         self.emails = emails
+        self.thumbnailImageData = thumbnailImageData
     }
 }

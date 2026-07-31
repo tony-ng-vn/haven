@@ -17,10 +17,12 @@ final class ContactsDBFixture {
             CREATE TABLE ZABCDRECORD (
                 Z_PK INTEGER PRIMARY KEY,
                 Z_ENT INTEGER,
+                ZUNIQUEID TEXT,
                 ZFIRSTNAME TEXT,
                 ZLASTNAME TEXT,
                 ZORGANIZATION TEXT,
-                ZNICKNAME TEXT
+                ZNICKNAME TEXT,
+                ZTHUMBNAILIMAGEDATA BLOB
             );
             CREATE TABLE ZABCDPHONENUMBER (
                 Z_PK INTEGER PRIMARY KEY,
@@ -51,26 +53,42 @@ final class ContactsDBFixture {
         }
     }
 
+    /// uniqueID is required (no default), not optional-with-a-default: every call site must
+    /// say explicitly whether this row has a ZUNIQUEID, since a nil here is what the
+    /// null-uniqueID-is-skipped test exercises.
     func insertRecord(
         recordID: Int64,
         entityID: Int64,
+        uniqueID: String?,
         firstName: String? = nil,
         lastName: String? = nil,
         organization: String? = nil,
-        nickname: String? = nil
+        nickname: String? = nil,
+        thumbnailImageData: Data? = nil
     ) throws {
         try builder.run(
             """
-            INSERT INTO ZABCDRECORD (Z_PK, Z_ENT, ZFIRSTNAME, ZLASTNAME, ZORGANIZATION, ZNICKNAME)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO ZABCDRECORD
+                (Z_PK, Z_ENT, ZUNIQUEID, ZFIRSTNAME, ZLASTNAME, ZORGANIZATION, ZNICKNAME, ZTHUMBNAILIMAGEDATA)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """
         ) { statement in
             sqlite3_bind_int64(statement, 1, recordID)
             sqlite3_bind_int64(statement, 2, entityID)
-            Self.bindOptionalText(statement, 3, firstName)
-            Self.bindOptionalText(statement, 4, lastName)
-            Self.bindOptionalText(statement, 5, organization)
-            Self.bindOptionalText(statement, 6, nickname)
+            Self.bindOptionalText(statement, 3, uniqueID)
+            Self.bindOptionalText(statement, 4, firstName)
+            Self.bindOptionalText(statement, 5, lastName)
+            Self.bindOptionalText(statement, 6, organization)
+            Self.bindOptionalText(statement, 7, nickname)
+            if let thumbnailImageData {
+                thumbnailImageData.withUnsafeBytes { rawBuffer in
+                    _ = sqlite3_bind_blob(
+                        statement, 8, rawBuffer.baseAddress, Int32(rawBuffer.count), SQLITE_TRANSIENT
+                    )
+                }
+            } else {
+                sqlite3_bind_null(statement, 8)
+            }
         }
     }
 

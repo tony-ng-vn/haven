@@ -86,4 +86,16 @@ extension OpaquePointer {
     func columnInt(_ index: Int32) -> Int {
         Int(sqlite3_column_int(self, index))
     }
+
+    /// Reads a nullable BLOB column (e.g. a contact photo) into Data, copying the bytes
+    /// out before the statement is stepped again or finalized. A zero-length BLOB is
+    /// distinct from SQL NULL: sqlite3_column_blob can return a NULL pointer for either,
+    /// so length, not the pointer, decides whether to return empty Data or nil.
+    func columnBlob(_ index: Int32) -> Data? {
+        guard sqlite3_column_type(self, index) != SQLITE_NULL else { return nil }
+        let length = Int(sqlite3_column_bytes(self, index))
+        guard length > 0 else { return Data() }
+        guard let bytes = sqlite3_column_blob(self, index) else { return Data() }
+        return Data(bytes: bytes, count: length)
+    }
 }
