@@ -8,7 +8,7 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: #188 (graph/density-metric -> graph-main), awaiting CI
+- Open PRs: none; #188 (density instrument) merged to graph-main 2026-07-31 with CI green (CodeRabbit, a non-required advisory bot, was stuck at Review queued for 30+ minutes and was not waited on)
 - Build position: ALL NINE build-order steps implemented and merged to graph-main. 141 tests green. The build phase of the standing goal is complete.
 - Goal-criteria status: (1) build order complete: YES. (2) suite green with every charter fixture shape: YES, audited (shortcode, never-replied, two-member style-43, multi-service duplicate, large group, empty chat row - each covered at one or more pipeline layers). (3) real-data pipeline run with journaled counts and a names-attached kill-list review: YES (iterations 3 and 4). (4) fixture e2e resync survival: YES (EndToEndResyncSurvivalTests). (5) export writes a high-resolution image: YES, headlessly proven. (6) app builds and launches with a plain permission explanation: implemented and launch-verified programmatically; ON-SCREEN confirmation is the one remaining gap, blocked on the locked session.
 - Waiting on user: unlock the session (visual pass runs immediately), install Ollama + a model for live guesses, grant the app FDA for the first real in-app import
