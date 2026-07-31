@@ -8,14 +8,42 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: #182 (graph/build -> graph-main), awaiting CI
-- Build position: P2 step 4 (graph construction) implemented, pending merge; next is P2 step 5 (layout, render, assembly animation - first visible payoff, first SwiftUI app work)
+- Open PRs: #183 (graph/render -> graph-main), awaiting CI
+- Build position: P2 step 5 (layout, render, assembly animation) implemented, pending merge; next is P2 step 6 (interaction: focus, time filter, toggles)
+- Pending visual check: the machine's session was locked during iteration 5, so the on-screen look of the permission screen and the real-data render are unverified; first task once the session is unlocked
 - Integration branch: `graph-main`, created 2026-07-31 per owner directive; the loop merges its own PRs there after green CI and self-review, main stays untouched, user merges graph-main to main
 - Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; the loop mirrors them into the graph-main worktree and commits there, always editing the main-checkout copy first
 - Blocked on user: Ollama, the plan's default local provider, not yet installed (needed only at P2 step 7)
 - Next intent: merge #179 when CI is green, then start P2 step 2
 
 ## Entries
+
+### 2026-07-31 iteration 5: layout, render, app (PR #183)
+
+DONE
+
+- #182 merged to graph-main after green CI and lead review; worktree and branch removed.
+- ForceSimulation in GraphCore: deterministic (stable-hash seeding, pinned literals verified across processes), user pinned at center and force-exempt, dead groups and user edges excluded, strength-scaled springs, NaN-safe. 65 tests total. Perf smoke at real scale: 0.36ms per tick release (45x headroom at 60fps), 29ms debug.
+- Two engine bugs found by measurement, not inspection: a spring-force sign inversion (positive feedback that read as slow settling; caught by printing positions against hand-derived expectations) and a damping value that let alpha decay freeze clusters before separation (swept 0.5-0.9, shipped 0.75, separation ratio 2.26; restLength turned out NOT to be the lever, correcting the earlier hypothesis).
+- LabelBudget (top 40 by degree, deterministic ties) and EdgeRenderList (never user edges, never dead groups), both red-first tested.
+- The app: graph/App via XcodeGen (repo iOS precedent), ConnectionGraph.app, no sandbox (FDA requires non-sandboxed), ad-hoc signing. States: loading, needs-permission (plain-language FDA instructions plus an Open System Settings button using the Privacy_AllFiles pane URL and a note that contacts arrive through the same grant), ready (Canvas + TimelineView, assembly animation about 4.4s, zoom and pan), failed. Built clean twice including a fresh-DerivedData rebuild.
+- Launch verification: the app launches and runs its event loop cleanly (process sampled healthy). The session was password-locked at 4am, so macOS deferred window creation and no screenshot was possible; the visual pass (permission screen, then real-data render) is queued as the next unlocked-session task. No lock-screen interaction was attempted.
+- Real-scale layout extent flagged by measurement: settled mean node distance ~608, max ~1045 on a 1200x900 window, so the rest state overflows the window without zooming out. Centering-strength scaling at ~630 nodes is queued for the P3 tuning pass against the real render.
+- Process notes: pass 1 disclosed a TDD-order deviation (tests written first but red captured retroactively via a stub; the retroactive red itself caught a vacuous NaN test, fixed). Pass 2 was red-first properly. TimelineView keeps redrawing after settle; P4 energy nit.
+
+IN-FLIGHT
+
+- PR #183 against graph-main, waiting on CI.
+
+BLOCKED
+
+- Visual verification of the app: needs the user's session unlocked.
+- Ollama install (P2 step 7 only).
+- Liveness-bar refinement decision from iteration 3.
+
+NEXT
+
+- Merge #183 on green. Then P2 step 6 (interaction: focus mode revealing ego edges, time filter, dead-group toggle, hide nodes), with the unlocked-session visual pass first whenever it becomes possible.
 
 ### 2026-07-31 iteration 4: graph construction (PR #182)
 
