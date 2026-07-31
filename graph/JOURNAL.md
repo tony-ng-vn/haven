@@ -8,12 +8,39 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: none
-- Build position: not started, next is P2 step 1 (extraction)
+- Open PRs: #179 (graph/extraction -> graph-main), awaiting CI
+- Build position: P2 step 1 (extraction) implemented, pending merge; next is P2 step 2 (identity resolution, names and photos)
+- Integration branch: `graph-main`, created 2026-07-31 per owner directive; the loop merges its own PRs there after green CI and self-review, main stays untouched, user merges graph-main to main
+- Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; the loop mirrors them into the graph-main worktree and commits there, always editing the main-checkout copy first
 - Blocked on user: Ollama, the plan's default local provider, not yet installed (needed only at P2 step 7)
-- Next intent: scaffold the Xcode project under `graph/`, add `.gitignore` before anything touches real data, then begin extraction
+- Next intent: merge #179 when CI is green, then start P2 step 2
 
 ## Entries
+
+### 2026-07-31 iteration 1: extraction (PR #179)
+
+DONE
+
+- Created the `graph-main` integration branch and the `.worktrees/graph-extraction` worktree; committed charter docs plus `graph/.gitignore` before any code.
+- Swift package under `graph/`: GraphCore library, graph-cli executable, 19 tests, zero dependencies. chat.db opened SQLITE_OPEN_READONLY (no immutable flag, busy timeout plus bounded retry); every SELECT names columns; message.text and attributedBody never referenced; a reflection test with a positive control proves no message text reaches the model; a byte-comparison test proves extraction does not modify the database file.
+- Review found the never-replied test was mutation-blind (symmetric fixture: 1 never-replied vs 1 replied, so an inverted predicate produced the same count). Strengthened to 2-vs-1; the mutant now fails the suite.
+- Real-data run, numbers only: joined messages 108,463 plus 1,634 unjoined equals 110,097, matching the profiled 110,096 plus one new message. Handles 2,160 over 1,918 distinct identifiers. Chats 1,320 (1,190 one-to-one, 130 group). One-to-one with messages 1,047, empty 143, never-replied 589. Two-member style-43 chats: 36. Group sizes 2 to 32; the 18-20 bucket holds 21 groups; singles at 26, 28, 31, 32. Services SMS 1,163 / iMessage 655 / RCS 342. All charter calibration numbers reproduced.
+- Shortcode count is 201 under the 4-to-6-digit rule vs the charter's 213 under "fails phone parsing"; definitional difference, to be settled when the non-person filter is built (P2 step 3).
+- Major calibration correction: PLAN.md's "8,342 Contacts records" counted every ZABCDRECORD row; 8,138 of those are ABCDInfo bookkeeping entities. The real address book holds 250 contact cards (237 with a phone, 13 with an email). The reader initially excluded the bookkeeping rows only by accident of their NULL fields; fixed the same day, strict red-then-green, to filter by the ABCDContact entity via Z_PRIMARYKEY lookup and to throw on unrecognized schema.
+- Consequences of that correction, for the user to fold into PLAN.md if agreed: (1) open question 2 is answered in direction: at most ~250 of the ~615 graph people can carry a Contacts name, so the model pass covers the majority of nodes rather than a tail; (2) merge evidence from cards co-listing phone and email is nearly absent (13 cards with any email), so auto-merge will be dominated by exact-identifier equality and the merge queue should be small; (3) the Contacts-card spare rule in the never-replied filter protects at most ~250 handles.
+- Process note: the initial scaffold deviated from TDD (tests written after implementation), mitigated by mutation-testing the two riskiest assertions plus the lead spot-check that exposed the weak never-replied test. The follow-up contacts fix was done strictly red-then-green. Future build steps carry the strict ordering requirement in the brief from the start.
+
+IN-FLIGHT
+
+- PR #179 open against graph-main, waiting on CI (the repo's `test` workflow runs npm tests on the self-hosted mac; graph changes do not touch that surface).
+
+BLOCKED
+
+- Ollama install (P2 step 7 only).
+
+NEXT
+
+- Merge #179 on green CI. Then P2 step 2: identity resolution plus names and photos from Contacts.
 
 ### 2026-07-31 design revision, second pass
 
