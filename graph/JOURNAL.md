@@ -20,6 +20,20 @@ Real measurements belong here. Real names and message content do not.
 
 ## Entries
 
+### 2026-07-31 iteration 12: visual pass, goal criteria complete
+
+DONE
+
+- The session unlocked at about 10:50; the visual pass ran immediately. The app was built fresh from merged graph-main and launched via `open` (no Full Disk Access identity): the permission state rendered on screen with its explanation text, and System Settings was observed open at exactly the Privacy & Security > Full Disk Access pane. Screenshot was window-region only, viewed, and deleted; nothing committed.
+- The user was present, engaged with the permission flow, and closed the app; no further windows were pushed onto their screen. The real-render moment belongs to them by the goal's own definition.
+- ALL SIX goal criteria now hold: (1) all nine build-order steps implemented and merged; (2) 145 tests green covering every charter fixture shape plus empty-chat-row and two-member style-43; (3) the full pipeline ran against the real chat.db and Contacts from the terminal, node and edge counts journaled (669 nodes, 943 edges), never-replied kill list reviewed with names attached; (4) EndToEndResyncSurvivalTests proves hidden, removed, and merge answers survive a resync with renumbered row ids; (5) export writes a high-resolution PNG, pixel-verified headlessly; (6) the app builds, launches, and a launch without permissions explains exactly what to grant and where, confirmed on screen.
+- The standing loop continues past "done" as a quality program per GOAL.md; the goal directive's build-to-completion condition is met.
+
+REMAINING FOR THE USER (the goal's own closing list)
+
+- Grant Full Disk Access to ConnectionGraph.app (the + button in the FDA pane; the built app is at .worktrees/graph-main-wt/graph/App/DerivedData/Build/Products/Debug/ConnectionGraph.app), press Try Again, and look at the graph.
+- Optionally: install Ollama plus a small model to enable name guesses; decide the iteration-3 liveness-bar proposal; merge graph-main to main whenever wanted (user-only per the charter).
+
 ### 2026-07-31 iteration 11: density instrument (PR #188)
 
 DONE
