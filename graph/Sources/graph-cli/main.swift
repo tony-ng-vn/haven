@@ -3,7 +3,10 @@ import GraphCore
 
 private func printUsage() {
     FileHandle.standardError.write(
-        Data("usage: graph-cli <stats|people> --chat-db PATH [--contacts-db PATH ...]\n".utf8)
+        Data(
+            "usage: graph-cli <stats|people|filter|killlist> --chat-db PATH [--contacts-db PATH ...]\n"
+                .utf8
+        )
     )
 }
 
@@ -101,28 +104,45 @@ private func runStats(_ args: [String]) {
     print("contactsWithEmail \(withEmail)")
 }
 
+/// Shared by every subcommand past `stats`: load chat.db, throw a journal-safe error on
+/// failure rather than echoing the path (constraint 7).
+private func loadChatExtract(_ path: String) -> ChatExtract {
+    do {
+        return try ChatDatabase.extract(path: path)
+    } catch {
+        fail("error: cannot read chat database")
+    }
+}
+
+private func loadContacts(_ paths: [String]) -> [ContactRecord] {
+    var contacts: [ContactRecord] = []
+    for path in paths {
+        do {
+            contacts += try ContactsDatabase.extract(path: path)
+        } catch {
+            fail("error: cannot read contacts database")
+        }
+    }
+    return contacts
+}
+
+private func reasonLabel(_ reason: RemovalReason) -> String {
+    switch reason {
+    case .shortcode: return "shortcode"
+    case .alphanumericSender: return "alphanumericSender"
+    case .neverReplied: return "neverReplied"
+    case .notLive: return "notLive"
+    }
+}
+
 private func runPeople(_ args: [String]) {
     guard let parsed = parseArgs(args), let chatDBPath = parsed.chatDBPath else {
         printUsage()
         exit(64)
     }
 
-    let extract: ChatExtract
-    do {
-        extract = try ChatDatabase.extract(path: chatDBPath)
-    } catch {
-        fail("error: cannot read chat database")
-    }
-
-    var contacts: [ContactRecord] = []
-    for contactsDBPath in parsed.contactsDBPaths {
-        do {
-            contacts += try ContactsDatabase.extract(path: contactsDBPath)
-        } catch {
-            fail("error: cannot read contacts database")
-        }
-    }
-
+    let extract = loadChatExtract(chatDBPath)
+    let contacts = loadContacts(parsed.contactsDBPaths)
     let result = IdentityResolution.resolve(handles: extract.handles, contacts: contacts)
 
     let personCount = result.people.count
@@ -144,12 +164,81 @@ private func runPeople(_ args: [String]) {
     }
 }
 
+private func resolveAndFilter(_ args: [String]) -> FilterResult? {
+    guard let parsed = parseArgs(args), let chatDBPath = parsed.chatDBPath else {
+        return nil
+    }
+    let extract = loadChatExtract(chatDBPath)
+    let contacts = loadContacts(parsed.contactsDBPaths)
+    let identity = IdentityResolution.resolve(handles: extract.handles, contacts: contacts)
+    return PersonFilter.apply(extract: extract, people: identity.people)
+}
+
+private func runFilter(_ args: [String]) {
+    guard let filterResult = resolveAndFilter(args) else {
+        printUsage()
+        exit(64)
+    }
+
+    let keptCount = filterResult.kept.count
+    let keptWithContactCard = filterResult.kept.filter(\.hasContactCard).count
+    let keptWithoutContactCard = keptCount - keptWithContactCard
+
+    print("keptCount \(keptCount)")
+    print("keptWithContactCard \(keptWithContactCard)")
+    print("keptWithoutContactCard \(keptWithoutContactCard)")
+    for reason in RemovalReason.allCases {
+        let count = filterResult.removed.filter { $0.reason == reason }.count
+        print("removed[\(reasonLabel(reason))] \(count)")
+    }
+    print("removedTotalCount \(filterResult.removed.count)")
+}
+
+/// Masks all but the last 4 characters of an identifier with 'x'. Used only by `killlist`,
+/// which is an on-screen review tool, not journal-safe output (see main.swift's doc note
+/// at the bottom): a name or a partially masked identifier may appear, but never a full one.
+private func maskIdentifier(_ identifier: String) -> String {
+    let visibleSuffixLength = 4
+    guard identifier.count > visibleSuffixLength else { return identifier }
+    let maskedCount = identifier.count - visibleSuffixLength
+    return String(repeating: "x", count: maskedCount) + identifier.suffix(visibleSuffixLength)
+}
+
+private func runKilllist(_ args: [String]) {
+    guard let filterResult = resolveAndFilter(args) else {
+        printUsage()
+        exit(64)
+    }
+
+    for removedPerson in filterResult.removed {
+        let label = removedPerson.person.name ?? maskIdentifier(removedPerson.person.id)
+        let facts = removedPerson.facts
+        print(
+            "\(reasonLabel(removedPerson.reason)) \(label) "
+                + "messageCount=\(facts.oneToOneMessageCount) "
+                + "fromMeCount=\(facts.fromMeCount) "
+                + "activeDays=\(facts.distinctActiveDays) "
+                // Without this, a person kept alive only by group activity (a lurker in a
+                // live group later removed for some other reason) would print as
+                // messageCount=0 activeDays=0 and look completely inert on screen.
+                + "groupMemberships=\(facts.groupMemberships)"
+        )
+    }
+}
+
 let arguments = Array(CommandLine.arguments.dropFirst())
+// `killlist` is the one subcommand that is not journal-safe by design: it prints real
+// names and partially-masked identifiers to stdout for the lead's on-screen review of real
+// data (per this step's brief). `stats`, `people`, and `filter` remain counts-only.
 switch arguments.first {
 case "stats":
     runStats(Array(arguments.dropFirst()))
 case "people":
     runPeople(Array(arguments.dropFirst()))
+case "filter":
+    runFilter(Array(arguments.dropFirst()))
+case "killlist":
+    runKilllist(Array(arguments.dropFirst()))
 default:
     printUsage()
     exit(64)
