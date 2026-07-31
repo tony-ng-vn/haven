@@ -8,14 +8,37 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: #179 (graph/extraction -> graph-main), awaiting CI
-- Build position: P2 step 1 (extraction) implemented, pending merge; next is P2 step 2 (identity resolution, names and photos)
+- Open PRs: #180 (graph/identity -> graph-main), awaiting CI
+- Build position: P2 step 2 (identity resolution, names and photos) implemented, pending merge; next is P2 step 3 (non-person filter)
 - Integration branch: `graph-main`, created 2026-07-31 per owner directive; the loop merges its own PRs there after green CI and self-review, main stays untouched, user merges graph-main to main
 - Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; the loop mirrors them into the graph-main worktree and commits there, always editing the main-checkout copy first
 - Blocked on user: Ollama, the plan's default local provider, not yet installed (needed only at P2 step 7)
 - Next intent: merge #179 when CI is green, then start P2 step 2
 
 ## Entries
+
+### 2026-07-31 iteration 2: identity resolution (PR #180)
+
+DONE
+
+- #179 merged to graph-main after green CI (all five checks) and lead review; worktree and branch removed. Vercel builds a preview per PR branch automatically; that is a preview only, production builds come from main, which this loop never touches.
+- Handle normalization (.email lowercased / .phone E.164 with US default / .other untouched), identity resolution via union-find with exactly the plan's two auto-merge rules, names and thumbnail photos attached from cards (ZTHUMBNAILIMAGEDATA blob, measured present on 102 of ~209 cards in the main source db), merge-candidate queue for same-name-no-evidence pairs. CLI `people` subcommand, counts only. Strict red-then-green throughout, with the failing assertion captured per behavior.
+- A first-draft determinism test was caught being vacuous (passed even with sorting removed, proven across 5 process runs); rewritten to pin expected output, mutation now kills it.
+- Real-data crash found and fixed: contact cards were keyed on Z_PK, but the real store is three databases with colliding Z_PK spaces. Reproduced from a two-database fixture (process crash as the red state), then keyed cards on ZUNIQUEID, measured non-null and distinct across all three real databases (3 + 209 + 38 = 250 cards). NULL ZUNIQUEID rows are skipped. Chosen posture: a duplicate ZUNIQUEID traps loudly rather than silently dropping a card; today's data has no cross-database duplicates.
+- Real-data run: 1,910 people from 1,918 raw identifiers (normalization plus card unions net -8). 157 people carry a contact card, 71 a photo, 11 hold multiple identifiers (10 with two, 1 with three), merge queue holds exactly 2 pairs. So of 250 cards, 93 match nobody who appears in Messages.
+- Model-pass sizing sharpened: if roughly 615 people survive the step 3 filter, at most 157 arrive named; roughly 450+ will need the model pass or stay number-labeled. The plan's open question 2 now has a measured ceiling.
+
+IN-FLIGHT
+
+- PR #180 against graph-main, waiting on CI.
+
+BLOCKED
+
+- Ollama install (P2 step 7 only).
+
+NEXT
+
+- Merge #180 on green. Then P2 step 3: the non-person filter, tuned against real results with names attached to the kill list for review.
 
 ### 2026-07-31 iteration 1: extraction (PR #179)
 
