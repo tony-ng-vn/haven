@@ -27,14 +27,19 @@ public final class ForceSimulation {
         /// it outward forever.
         static let centeringStrength: Double = 0.0003
 
-        /// Velocity carried between ticks decays by this factor every tick: an approximation
-        /// of critical damping so the system settles instead of oscillating indefinitely.
-        static let damping: Double = 0.5
+        /// Fraction of velocity kept between ticks (friction is 1 - this). Raised from an
+        /// earlier 0.5 once alphaDecay below was set back to settle in a few seconds rather
+        /// than ~15: at the faster decay, disconnected clusters have fewer ticks to physically
+        /// separate before the simulation freezes, and more retained momentum (less friction)
+        /// is what buys that separation back within the same tick budget -- confirmed against
+        /// the clustering test's fixture, not just by reasoning about it.
+        static let damping: Double = 0.75
 
         /// Alpha ("temperature") starts at 1 and decays geometrically each tick; every force
         /// this tick is scaled by the alpha value in effect *before* that tick's decay, so the
-        /// assembly visibly cools rather than stopping abruptly.
-        static let alphaDecay: Double = 0.006
+        /// assembly visibly cools rather than stopping abruptly. 0.02 settles in ~263 ticks,
+        /// about 4.4s at 60fps, matching PLAN.md's "settles over several seconds".
+        static let alphaDecay: Double = 0.02
 
         /// Once alpha decays to this floor, `isSettled` becomes true and further `tick()`
         /// calls are a no-op: "settled" means positions are frozen bit-for-bit, not merely

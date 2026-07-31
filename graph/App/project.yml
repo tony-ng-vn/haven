@@ -1,0 +1,41 @@
+name: ConnectionGraph
+options:
+  bundleIdPrefix: dev.local
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    GENERATE_INFOPLIST_FILE: "YES"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    # Ad-hoc signing: no Apple team on this machine, and none is needed for a
+    # local-only personal tool that never leaves it.
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGNING_ALLOWED: "YES"
+# Local package one directory up: this is graph/'s own SwiftPM package (GraphCore +
+# graph-cli), not a remote dependency. Kept separate from graph/Package.swift on purpose
+# so the CLI and its tests never gain an Xcode/AppKit dependency.
+packages:
+  GraphCore:
+    path: "../"
+targets:
+  ConnectionGraph:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+    dependencies:
+      - package: GraphCore
+        product: GraphCore
+    settings:
+      base:
+        PRODUCT_NAME: ConnectionGraph
+        PRODUCT_BUNDLE_IDENTIFIER: dev.local.ConnectionGraph
+        # No CODE_SIGN_ENTITLEMENTS and no App Sandbox capability: chat.db and the
+        # AddressBook databases live under Full Disk Access, which a sandboxed app
+        # cannot be granted access to. There is deliberately no entitlements file here.
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""

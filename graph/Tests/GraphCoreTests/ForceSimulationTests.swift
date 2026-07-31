@@ -70,8 +70,8 @@ final class ForceSimulationTests: XCTestCase {
         // Pinned exact values (captured from a real run): guards against a silent behavior
         // change, not just internal self-consistency between simA/simB.
         let person0 = try! XCTUnwrap(simA.positions["person0"])
-        XCTAssertEqual(person0.x, 287.83127537443704, accuracy: 0.000001)
-        XCTAssertEqual(person0.y, 294.52467139331475, accuracy: 0.000001)
+        XCTAssertEqual(person0.x, 325.7689171242289, accuracy: 0.000001)
+        XCTAssertEqual(person0.y, 357.0011061283771, accuracy: 0.000001)
     }
 
     // MARK: - Test 2: no NaN/inf after 500 ticks, forced collision
@@ -154,16 +154,19 @@ final class ForceSimulationTests: XCTestCase {
     // repulsion, centering) -- but it means passing here is not, by itself, evidence about
     // real-data clustering with user edges in the mix.
     //
-    // NOTE on restLength coupling: the required assertion below (mean intra-group member
-    // distance < mean cross-group distance) only has real margin when restLength is small
-    // relative to the initial scatter radius -- a sweep during tuning found the ratio go
-    // 0.83 (restLength 60, fails) -> 1.13 (40) -> 1.48 (30) -> 1.87 (20, the shipped value).
-    // If restLength is retuned upward against the real ~630-node render and this test goes
-    // red, the message will say "clustering failed"; the actual cause will most likely be
-    // restLength approaching the scatter radius, not a broken clustering mechanism. The
-    // second assertion below (hub separation vs. each member's distance to its own hub) is
-    // the more direct read of PLAN.md's actual claim ("people are pulled toward the groups
-    // they belong to") and has a much larger, less restLength-sensitive margin.
+    // NOTE on the tuning coupling: this fixture only has real margin when repulsion has time
+    // to actually separate the two clusters before alpha floors. A sweep during tuning found
+    // `damping` (fraction of velocity kept per tick, i.e. how much momentum survives friction)
+    // is the load-bearing knob here, not restLength or repulsionConstant -- with alphaDecay
+    // fixed at the shipped 0.02 (settle in ~263 ticks), varying restLength from 60 down to 5
+    // barely moved the ratio (0.83 -> 0.90, still failing throughout), while raising damping
+    // from 0.5 to 0.75 alone took it from 0.88 to 2.26. If a future retune drops damping (or
+    // shortens the settle window further) and this test goes red, the message will say
+    // "clustering failed"; the actual cause will most likely be too little momentum surviving
+    // to reach a separated configuration before freezing, not a broken clustering mechanism.
+    // The second assertion below (hub separation vs. each member's distance to its own hub)
+    // is the more direct read of PLAN.md's actual claim ("people are pulled toward the groups
+    // they belong to") but is coupled to the same knob, not immune to it.
     func testSettledClustersAreCloserWithinThanAcross() {
         var nodes: [GraphNode] = [node(id: "user", kind: .user, degree: 0)]
         nodes.append(node(id: "chat:groupA", kind: .group, isLive: true, degree: 4))
