@@ -8,8 +8,10 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: #187 (graph/model-pass -> graph-main), awaiting CI
-- Build position: ALL NINE build-order steps implemented once #187 merges; remaining goal work is the fixture-shape audit (criterion 2), the visual pass (blocked on unlocked session), and the live-Ollama guess pass (blocked on install)
+- Open PRs: none; #187 (model pass) merged to graph-main 2026-07-31 after green CI and lead review
+- Build position: ALL NINE build-order steps implemented and merged to graph-main. 141 tests green. The build phase of the standing goal is complete.
+- Goal-criteria status: (1) build order complete: YES. (2) suite green with every charter fixture shape: YES, audited (shortcode, never-replied, two-member style-43, multi-service duplicate, large group, empty chat row - each covered at one or more pipeline layers). (3) real-data pipeline run with journaled counts and a names-attached kill-list review: YES (iterations 3 and 4). (4) fixture e2e resync survival: YES (EndToEndResyncSurvivalTests). (5) export writes a high-resolution image: YES, headlessly proven. (6) app builds and launches with a plain permission explanation: implemented and launch-verified programmatically; ON-SCREEN confirmation is the one remaining gap, blocked on the locked session.
+- Waiting on user: unlock the session (visual pass runs immediately), install Ollama + a model for live guesses, grant the app FDA for the first real in-app import
 - Pending visual check: the machine's session was locked during iteration 5, so the on-screen look of the permission screen and the real-data render are unverified; first task once the session is unlocked
 - Integration branch: `graph-main`, created 2026-07-31 per owner directive; the loop merges its own PRs there after green CI and self-review, main stays untouched, user merges graph-main to main
 - Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; the loop mirrors them into the graph-main worktree and commits there, always editing the main-checkout copy first
@@ -17,6 +19,22 @@ Real measurements belong here. Real names and message content do not.
 - Next intent: merge #179 when CI is green, then start P2 step 2
 
 ## Entries
+
+### 2026-07-31 iteration 10: build phase closed
+
+DONE
+
+- #187 merged to graph-main after green CI and lead review; worktree and branch removed. All nine PLAN.md build-order steps are now implemented and merged: extraction (#179), identity (#180), filter (#181), construction (#182), render and app (#183), interaction (#184), persistence and resync (#185), export (#186), model pass (#187). Nine PRs, all squash-merged to graph-main by the loop per the owner's goal directive; main untouched throughout.
+- Fixture-shape audit (goal criterion 2) completed: every shape the charter's testing section names, plus the goal's empty-chat-row and two-member style-43 additions, is covered by committed fixture tests, most at several pipeline layers. 141 tests green.
+- Goal-criteria sweep recorded in the standing state above: five of six criteria fully met; criterion 6's on-screen confirmation is the single remaining item, blocked on the locked session. The loop keeps a heartbeat and runs the visual pass the moment the session unlocks.
+
+BLOCKED
+
+- Visual pass (session locked). Live Ollama pass (not installed). Liveness-bar refinement decision (iteration 3 proposal).
+
+NEXT
+
+- Heartbeat per pacing. On unlock: full visual pass (permission screen via open, real render via direct binary run with terminal FDA, gestures, focus, toggles, merge queue, resync, export; screenshots to scratchpad only, deleted after; findings journaled as aggregates). Then P3 tuning against the real render (centering strength at 630 nodes, label density, liveness-bar proposal if approved).
 
 ### 2026-07-31 iteration 9: model pass (PR #187)
 
