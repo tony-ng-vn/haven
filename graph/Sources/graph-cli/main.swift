@@ -280,12 +280,22 @@ private func runGraph(_ args: [String]) {
     print("personGroupDegreeMedian \(degrees.isEmpty ? "none" : String(format: "%.1f", median(degrees)))")
     print("personGroupDegreeMax \(degrees.max().map(String.init) ?? "none")")
 
-    // The plan's density calibration number to compare against 1.19. Guarded: an empty or
+    // Renamed from the old "edgesPerNode": same computation as before (all non-user edges,
+    // including userGroupMembership's absence but NOT oneToOneThread/groupMembership alone --
+    // this is just edgesExcludingUser over the same denominator), clearer about what it is now
+    // that a second, differently-defined density figure exists below. Guarded: an empty or
     // fully-filtered database has personNodes + liveGroupNodes == 0, and Double(0)/Double(0)
     // is NaN, which %.2f would print literally as "nan".
     let denominator = personNodes + liveGroupNodes
-    let edgesPerNode = denominator > 0 ? Double(edgesExcludingUser) / Double(denominator) : 0.0
-    print(String(format: "edgesPerNode %.2f", edgesPerNode))
+    let nonUserEdgesPerNode = denominator > 0 ? Double(edgesExcludingUser) / Double(denominator) : 0.0
+    print(String(format: "nonUserEdgesPerNode %.2f", nonUserEdgesPerNode))
+
+    // The plan's actual calibration figure (1.19, against a 1.04 reference): oneToOneThread
+    // plus groupMembership edges only, over the same denominator. Not the same number as
+    // nonUserEdgesPerNode above (journal iteration 4: the old line quietly compared apples to
+    // oranges against the plan's own target).
+    let edgesPerNodePlanComparable = DensityMetric.planComparable(graph: graph)
+    print(String(format: "edgesPerNodePlanComparable %.2f", edgesPerNodePlanComparable))
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
