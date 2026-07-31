@@ -8,8 +8,8 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: #186 (graph/export -> graph-main), awaiting CI
-- Build position: P2 step 9 (export) implemented, pending merge; next is P2 step 7 (model pass) built against a stubbed local provider interface, live provider blocked on Ollama
+- Open PRs: #187 (graph/model-pass -> graph-main), awaiting CI
+- Build position: ALL NINE build-order steps implemented once #187 merges; remaining goal work is the fixture-shape audit (criterion 2), the visual pass (blocked on unlocked session), and the live-Ollama guess pass (blocked on install)
 - Pending visual check: the machine's session was locked during iteration 5, so the on-screen look of the permission screen and the real-data render are unverified; first task once the session is unlocked
 - Integration branch: `graph-main`, created 2026-07-31 per owner directive; the loop merges its own PRs there after green CI and self-review, main stays untouched, user merges graph-main to main
 - Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; the loop mirrors them into the graph-main worktree and commits there, always editing the main-checkout copy first
@@ -17,6 +17,30 @@ Real measurements belong here. Real names and message content do not.
 - Next intent: merge #179 when CI is green, then start P2 step 2
 
 ## Entries
+
+### 2026-07-31 iteration 9: model pass (PR #187)
+
+DONE
+
+- #186 merged to graph-main after green CI and lead review; worktree and branch removed.
+- The last build-order step: SnippetReader (the single file allowed to SELECT message.text, loudly marked; newest-20 sample, NULL text skipped), GuessPrompt, NameGuessProvider protocol, OllamaProvider (localhost /api/generate, strict JSON, unreachable-vs-bad-response taxonomy, URLProtocol-stubbed tests, ephemeral no-cache URLSession so prompts cannot hit disk via the network stack), GuessEngine (serial, cancelable, skips cached, stops on unreachable, skips bad responses), NodeLabel (tilde-marked guesses on screen AND export). Toolbar progress chip with an install-Ollama note when the provider is missing. 141 tests green (29 new).
+- The privacy proof: the engine runs over sentinel message text, overrides are saved, and the raw JSON bytes on disk contain the guess but never the sentinel. A tree-wide grep confirms sentinels appear nowhere outside test files.
+- Two review-caught bugs fixed red-first: a cancellation race on the final candidate reporting completed instead of cancelled, and the group cache-key transform duplicated on read and write sides (would have silently orphaned every group guess if drifted).
+- Open semantics flagged for the record: guesses sample the full history, not the current time filter (deliberate); all transport errors stop the pass (fine for a local server); the progress chip counts successes only.
+
+IN-FLIGHT
+
+- PR #187 against graph-main, waiting on CI.
+
+BLOCKED
+
+- Live guess pass: Ollama not installed (the code is complete; installing Ollama plus a model is the only remaining step).
+- Visual pass: session still locked.
+- Liveness-bar refinement decision from iteration 3.
+
+NEXT
+
+- Merge #187 on green. Then the charter testing-section fixture audit (goal criterion 2): verify every named shape is covered (shortcode, never-replied thread, degenerate 2-member group, multi-service duplicate handle, large group, empty chat row) and close any gap. Then P3/P4 work until the session unlocks for the visual pass.
 
 ### 2026-07-31 iteration 8: export (PR #186)
 

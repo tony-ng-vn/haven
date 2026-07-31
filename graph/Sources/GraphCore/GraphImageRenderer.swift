@@ -21,7 +21,8 @@ public enum GraphImageRenderer {
         radii: [String: CGFloat],
         hiddenNodeIDs: Set<String>,
         canvasSize: CGSize,
-        scale: CGFloat = 3
+        scale: CGFloat = 3,
+        guesses: [String: NameGuess] = [:]
     ) -> CGImage {
         // Non-finite or non-positive input would otherwise trap converting to Int below (a
         // real caller never passes this, but a defensive floor costs nothing).
@@ -63,7 +64,7 @@ public enum GraphImageRenderer {
         let visibleGraph = graph.excludingNodes(hiddenNodeIDs)
 
         drawEdges(into: context, visibleGraph: visibleGraph, positions: positions, colorSpace: colorSpace, flip: flip)
-        drawNodes(into: context, visibleGraph: visibleGraph, positions: positions, radii: radii, colorSpace: colorSpace, flip: flip)
+        drawNodes(into: context, visibleGraph: visibleGraph, positions: positions, radii: radii, guesses: guesses, colorSpace: colorSpace, flip: flip)
 
         guard let image = context.makeImage() else {
             preconditionFailure("GraphImageRenderer: failed to rasterize the bitmap context")
@@ -109,6 +110,7 @@ public enum GraphImageRenderer {
         visibleGraph: Graph,
         positions: [String: CGPoint],
         radii: [String: CGFloat],
+        guesses: [String: NameGuess],
         colorSpace: CGColorSpace,
         flip: (CGPoint) -> CGPoint
     ) {
@@ -120,12 +122,14 @@ public enum GraphImageRenderer {
             let rect = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
             context.fillEllipse(in: rect)
 
-            // Every visible node that HAS a name gets it drawn -- unlike the screen, this is
-            // never budget-limited to the top 40 (LabelBudget): export is the definitive,
-            // "real names" artifact PLAN.md describes, not an interactive-readability view.
-            // The user node already always has a nil name, so it needs no separate exclusion.
-            guard let name = node.name else { continue }
-            drawLabel(name, at: CGPoint(x: center.x + radius + 4, y: center.y), in: context, colorSpace: colorSpace)
+            // Every visible node that HAS a name OR a cached guess gets a label drawn --
+            // unlike the screen, this is never budget-limited to the top 40 (LabelBudget):
+            // export is the definitive, "real names (or visibly-marked guesses)" artifact
+            // PLAN.md describes, not an interactive-readability view. NodeLabel is the single
+            // shared rule (real name wins, guess is tilde-prefixed, nil otherwise) with the
+            // screen (GraphView), so the two can never disagree on what a label says.
+            guard let label = NodeLabel.resolve(node: node, guesses: guesses) else { continue }
+            drawLabel(label, at: CGPoint(x: center.x + radius + 4, y: center.y), in: context, colorSpace: colorSpace)
         }
     }
 
