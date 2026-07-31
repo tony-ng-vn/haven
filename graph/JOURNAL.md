@@ -8,7 +8,7 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: none; #187 (model pass) merged to graph-main 2026-07-31 after green CI and lead review
+- Open PRs: #188 (graph/density-metric -> graph-main), awaiting CI
 - Build position: ALL NINE build-order steps implemented and merged to graph-main. 141 tests green. The build phase of the standing goal is complete.
 - Goal-criteria status: (1) build order complete: YES. (2) suite green with every charter fixture shape: YES, audited (shortcode, never-replied, two-member style-43, multi-service duplicate, large group, empty chat row - each covered at one or more pipeline layers). (3) real-data pipeline run with journaled counts and a names-attached kill-list review: YES (iterations 3 and 4). (4) fixture e2e resync survival: YES (EndToEndResyncSurvivalTests). (5) export writes a high-resolution image: YES, headlessly proven. (6) app builds and launches with a plain permission explanation: implemented and launch-verified programmatically; ON-SCREEN confirmation is the one remaining gap, blocked on the locked session.
 - Waiting on user: unlock the session (visual pass runs immediately), install Ollama + a model for live guesses, grant the app FDA for the first real in-app import
@@ -19,6 +19,25 @@ Real measurements belong here. Real names and message content do not.
 - Next intent: merge #179 when CI is green, then start P2 step 2
 
 ## Entries
+
+### 2026-07-31 iteration 11: density instrument (PR #188)
+
+DONE
+
+- Heartbeat found the session still locked; picked the one qualifying P4 item from the backlog instead of idling: the CLI's edges-per-node figure was not comparable to the plan's calibration definition (named in iteration 4). DensityMetric.planComparable added with discriminator tests (user-group edges provably not in the numerator, dead groups provably not in the denominator); CLI prints both figures under honest names. 145 tests green (4 new, red-first).
+- Real-data measurement with the corrected instrument: edgesPerNodePlanComparable = 1.36, against the plan's 1.19 projection and the 1.04 reference image. The real graph runs about 14 percent denser than projected; the P3 pruning conversation starts from 1.36, not 0.85 or 1.19. (If the iteration-3 liveness proposal is adopted, re-measure: it adds up to ~150 degree-1 people, which would LOWER this figure.)
+
+IN-FLIGHT
+
+- PR #188 against graph-main, waiting on CI.
+
+BLOCKED
+
+- Visual pass (session locked; unlock monitor armed). Live Ollama pass. Liveness-bar decision.
+
+NEXT
+
+- Merge #188 on green, then back to heartbeat until unlock.
 
 ### 2026-07-31 iteration 10: build phase closed
 
