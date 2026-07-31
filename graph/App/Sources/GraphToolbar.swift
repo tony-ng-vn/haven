@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 import GraphCore
 
 /// Chrome hoisted above GraphView (see ContentView), not owned by it: a rebuild tears
@@ -9,6 +11,7 @@ struct GraphToolbar: View {
     @State private var pendingFrom: Date
     @State private var pendingTo: Date
     @State private var showingMergeQueue = false
+    @State private var exportErrorMessage: String?
 
     init(model: AppModel) {
         self.model = model
@@ -48,6 +51,10 @@ struct GraphToolbar: View {
                 focusChip(name: focusedNodeName)
             }
             Spacer(minLength: 0)
+            Button("Export...") {
+                presentExportPanel()
+            }
+            .disabled(!model.isReady)
             Divider().frame(height: 20)
             Button("Resync") {
                 model.resync()
@@ -59,6 +66,38 @@ struct GraphToolbar: View {
         .padding(.vertical, 10)
         .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
         .padding(14)
+        .alert(
+            "Export failed",
+            isPresented: Binding(
+                get: { exportErrorMessage != nil },
+                set: { isPresented in if !isPresented { exportErrorMessage = nil } }
+            )
+        ) {
+            Button("OK") {}
+        } message: {
+            Text(exportErrorMessage ?? "")
+        }
+    }
+
+    /// A failed export lands in this alert, not AppModel's failed state: the app itself is
+    /// still perfectly fine (graph rendered, simulation running) even if, say, the chosen
+    /// folder turned out to be unwritable.
+    private func presentExportPanel() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "connection-graph.png"
+        if let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
+            panel.directoryURL = downloads
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        Task {
+            do {
+                try await model.exportImage(to: url)
+            } catch {
+                exportErrorMessage = "Could not save the image: \(error)"
+            }
+        }
     }
 
     @ViewBuilder

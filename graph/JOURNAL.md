@@ -8,8 +8,8 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: #185 (graph/persist -> graph-main), awaiting CI
-- Build position: P2 step 8 (persistence, resync, overrides) implemented, pending merge; next is P2 step 9 (export); step 7 (model pass) blocked on Ollama
+- Open PRs: #186 (graph/export -> graph-main), awaiting CI
+- Build position: P2 step 9 (export) implemented, pending merge; next is P2 step 7 (model pass) built against a stubbed local provider interface, live provider blocked on Ollama
 - Pending visual check: the machine's session was locked during iteration 5, so the on-screen look of the permission screen and the real-data render are unverified; first task once the session is unlocked
 - Integration branch: `graph-main`, created 2026-07-31 per owner directive; the loop merges its own PRs there after green CI and self-review, main stays untouched, user merges graph-main to main
 - Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; the loop mirrors them into the graph-main worktree and commits there, always editing the main-checkout copy first
@@ -17,6 +17,29 @@ Real measurements belong here. Real names and message content do not.
 - Next intent: merge #179 when CI is green, then start P2 step 2
 
 ## Entries
+
+### 2026-07-31 iteration 8: export (PR #186)
+
+DONE
+
+- #185 merged to graph-main after green CI and lead review; worktree and branch removed.
+- NodePalette (single color source for screen and export), GraphImageRenderer (pure CoreGraphics/CoreText, headlessly tested down to individual pixels: dimensions, node-center colors, hidden-node absence, label ink tracking name content, byte-identical determinism, the screen's sqrt-strength edge opacity), GraphImageExport (ImageIO PNG writing), and the app's Export button with save panel. Export labels every named node, deliberately ignoring the screen's top-40 budget. 112 tests green (10 new).
+- Real bug caught by an exact pixel probe: CGColor built in generic sRGB against a device-RGB bitmap context shifted stored bytes up to 7 percent; colors now constructed in the context's own space. The y-flip convention was settled by a standalone row-order experiment before the suite depended on it.
+- Goal criterion 5 (export writes a high-resolution image) is implemented and headlessly proven; visual confirmation of a real export rides the unlocked-session pass.
+
+IN-FLIGHT
+
+- PR #186 against graph-main, waiting on CI.
+
+BLOCKED
+
+- Visual verification of the app (permission screen, render, gestures, save panel): needs the user's session unlocked.
+- Ollama install for a LIVE model provider (P2 step 7's code arrives next iteration against a stubbed provider).
+- Liveness-bar refinement decision from iteration 3.
+
+NEXT
+
+- Merge #186 on green. Then P2 step 7: the model pass code - provider protocol with an Ollama HTTP implementation, transient snippet reading (never persisted), guesses cached in the overrides store's nameGuesses slot keyed by normalized identifier, asynchronous label refinement after first render - fully tested against a stubbed provider so only the user's Ollama install stands between the code and live guesses.
 
 ### 2026-07-31 iteration 7: persistence and resync (PR #185)
 

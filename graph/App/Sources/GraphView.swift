@@ -55,7 +55,7 @@ struct GraphView: View {
                     draw(into: context, canvasSize: size)
                 }
             }
-            .background(Color.black)
+            .background(Color(NodePalette.background))
             .gesture(tapGesture(canvasSize: proxy.size))
             .gesture(dragGesture)
             .gesture(magnifyGesture)
@@ -205,7 +205,7 @@ struct GraphView: View {
             var path = Path()
             path.move(to: edge.from)
             path.addLine(to: edge.to)
-            context.stroke(path, with: .color(.white.opacity(opacity)), lineWidth: 0.75)
+            context.stroke(path, with: .color(Color(NodePalette.edge).opacity(opacity)), lineWidth: 0.75)
         }
 
         // Focus can highlight involvesUser edges (a person's own line to the user, or every
@@ -220,7 +220,7 @@ struct GraphView: View {
             var path = Path()
             path.move(to: from)
             path.addLine(to: to)
-            context.stroke(path, with: .color(.white.opacity(0.8)), lineWidth: 1.0)
+            context.stroke(path, with: .color(Color(NodePalette.edge).opacity(0.8)), lineWidth: 1.0)
         }
     }
 
@@ -256,7 +256,7 @@ struct GraphView: View {
             var labelContext = context
             labelContext.opacity = labelOpacity * nodeOpacity
             let label = node.name ?? id
-            let resolvedText = labelContext.resolve(Text(label).font(.system(size: 10)).foregroundColor(.white))
+            let resolvedText = labelContext.resolve(Text(label).font(.system(size: 10)).foregroundColor(Color(NodePalette.label)))
             labelContext.draw(resolvedText, at: CGPoint(x: position.x + radius + 4, y: position.y), anchor: .leading)
         }
     }
