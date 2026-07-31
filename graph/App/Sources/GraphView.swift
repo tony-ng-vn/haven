@@ -157,7 +157,8 @@ struct GraphView: View {
     }
 
     private func displayLabel(for id: String) -> String {
-        nodesByID[id]?.name ?? id
+        guard let node = nodesByID[id] else { return id }
+        return NodeLabel.resolve(node: node, guesses: model.overrides.nameGuesses) ?? id
     }
 
     // MARK: - Drawing
@@ -255,7 +256,11 @@ struct GraphView: View {
             guard labelOpacity > 0, showsLabel else { continue }
             var labelContext = context
             labelContext.opacity = labelOpacity * nodeOpacity
-            let label = node.name ?? id
+            // NodeLabel is the single shared rule with export (GraphImageRenderer): a real
+            // name wins, a cached guess shows tilde-prefixed. The screen keeps its own
+            // fallback to the raw id when neither exists -- export's fallback (no label at
+            // all) is a deliberate difference, not something NodeLabel decides for either.
+            let label = NodeLabel.resolve(node: node, guesses: model.overrides.nameGuesses) ?? id
             let resolvedText = labelContext.resolve(Text(label).font(.system(size: 10)).foregroundColor(Color(NodePalette.label)))
             labelContext.draw(resolvedText, at: CGPoint(x: position.x + radius + 4, y: position.y), anchor: .leading)
         }

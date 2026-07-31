@@ -256,6 +256,35 @@ final class GraphImageRendererTests: XCTestCase {
         XCTAssertEqual(scale3.height, scale1.height * 3)
     }
 
+    /// The step-7 wiring: export shows tilde-marked guesses too (PLAN.md), for a node with no
+    /// real name. bob (unnamed, no edge extends past his position at x=450) is the subject:
+    /// no guess -> no label at all; a guess for his key -> a label now renders. This proves
+    /// the wiring (GraphImageRenderer actually consults `guesses`), not the string format
+    /// itself -- NodeLabelTests already pins the exact "~name" text precisely.
+    func testCachedGuessRendersALabelForAnUnnamedNodeThatHadNoneBefore() {
+        let bobLabelXRange = 474...510
+        let bobLabelYRange = 240...248 // avoids the alice<->bob edge's y=250, same as elsewhere in this file
+
+        let withoutGuess = GraphImageRenderer.render(
+            graph: fixtureGraph(), positions: positions, radii: radii,
+            hiddenNodeIDs: [], canvasSize: canvasSize, scale: 1
+        )
+        XCTAssertFalse(
+            regionHasInk(image: withoutGuess, xRange: bobLabelXRange, yRange: bobLabelYRange),
+            "an unnamed node with no cached guess must show no label at all in export, same as before this step"
+        )
+
+        let withGuess = GraphImageRenderer.render(
+            graph: fixtureGraph(), positions: positions, radii: radii,
+            hiddenNodeIDs: [], canvasSize: canvasSize, scale: 1,
+            guesses: ["bob": NameGuess(name: "Bo")]
+        )
+        XCTAssertTrue(
+            regionHasInk(image: withGuess, xRange: bobLabelXRange, yRange: bobLabelYRange),
+            "a cached guess for an unnamed node must now draw a label in export"
+        )
+    }
+
     private func pngData(for image: CGImage) -> Data {
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else {

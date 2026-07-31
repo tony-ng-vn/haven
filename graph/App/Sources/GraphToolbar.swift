@@ -26,7 +26,21 @@ struct GraphToolbar: View {
     private var focusedNodeName: String? {
         guard let id = model.focusedNodeID else { return nil }
         guard let node = model.lastReadyGraph?.nodes.first(where: { $0.id == id }) else { return id }
-        return node.name ?? id
+        return NodeLabel.resolve(node: node, guesses: model.overrides.nameGuesses) ?? id
+    }
+
+    /// PLAN.md build order step 7: a quiet, easy-to-ignore status for the model pass. Nothing
+    /// shows once idle or finished -- only while there is something to say (in progress, or
+    /// the one actionable failure mode: no local Ollama server to talk to).
+    private var guessingStatusText: String? {
+        switch model.guessingState {
+        case .idle, .finished:
+            return nil
+        case .running(let done, let total):
+            return "Guessing names \(done)/\(total)"
+        case .providerUnavailable:
+            return "Model pass: Ollama not reachable (install Ollama to enable)"
+        }
     }
 
     var body: some View {
@@ -49,6 +63,10 @@ struct GraphToolbar: View {
             if let focusedNodeName {
                 Divider().frame(height: 20)
                 focusChip(name: focusedNodeName)
+            }
+            if let guessingStatusText {
+                Divider().frame(height: 20)
+                Text(guessingStatusText).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
             Button("Export...") {

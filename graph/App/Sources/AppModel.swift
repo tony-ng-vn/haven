@@ -23,6 +23,18 @@ struct DisplayOptions: Equatable {
     var hiddenNodeIDs: Set<String> = []
 }
 
+/// Where the step-7 model pass is, for the toolbar's quiet status chip. `running`'s `total`
+/// counts only non-cached candidates (a resync's whole point is that most keys are already
+/// cached and never even become work); `done` increments only on a successful onGuess, so a
+/// badResponse-skipped target never counts toward it -- the chip can sit a little short of
+/// its own total right up until `.finished` lands, which is expected, not a hang.
+enum GuessingState: Equatable {
+    case idle
+    case running(done: Int, total: Int)
+    case providerUnavailable
+    case finished
+}
+
 /// Orchestrates the one-time load and every later interaction re-derive: extract -> resolve
 /// (with the overrides store's asserted merges) -> filter -> drop removed -> build ->
 /// simulate. Unlike before step 8, resolve can no longer be cached across every rebuild: an
@@ -76,7 +88,10 @@ final class AppModel {
     /// state that must survive a resync). Loaded once at startup, mutated and saved by the
     /// interaction methods below, never edited directly by any view.
     private(set) var overrides = Overrides()
+    /// PLAN.md build order step 7: the model pass. Drives the toolbar's quiet status chip.
+    private(set) var guessingState: GuessingState = .idle
 
+    private var guessTask: Task<Void, Never>?
     private let chatDBPath: String
     private let contactsDBPaths: [String]
     private let overridesStore: OverridesStore
@@ -170,7 +185,12 @@ final class AppModel {
                     self.cachedExtract = extract
                     self.cachedContacts = contacts
                     self.messageDateBounds = Self.dateBounds(of: extract)
-                    self.rebuild()
+                    // Only a REAL load (this branch) starts a guess pass, never a plain
+                    // option rebuild (setDateRange, setShowDeadGroups, ...): those re-derive
+                    // from the exact same extract/contacts already scanned for candidates,
+                    // and (re-)running the model pass on every toggle would be both pointless
+                    // and, for a real Ollama server, slow.
+                    self.rebuild(triggeringGuessPass: true)
                 }
             }
         }
@@ -189,8 +209,9 @@ final class AppModel {
     /// once after the initial load, and again whenever dateRange, showDeadGroups, or a merge
     /// answer changes: a fresh assembly animation on every such change is accepted, even
     /// desirable, behavior (PLAN.md's assembly is not a one-time intro, it is what settling
-    /// looks like).
-    func rebuild() {
+    /// looks like). `triggeringGuessPass` is true only right after a REAL load (see load()):
+    /// that is the only time new candidates could possibly exist to guess names for.
+    func rebuild(triggeringGuessPass: Bool = false) {
         guard let extract = cachedExtract, let contacts = cachedContacts else { return }
         state = .loading
         let options = displayOptions
@@ -210,6 +231,9 @@ final class AppModel {
                 if case .ready(let graph, _) = result.state {
                     self.lastReadyGraph = graph
                 }
+                if triggeringGuessPass {
+                    self.startGuessPassIfNeeded(extract: extract)
+                }
                 // A time filter (or, less plausibly, a dead-groups toggle or a merge) can drop
                 // the currently focused node from the rebuilt graph entirely. A focus chip
                 // pointing at a node that no longer exists is worse than clearing it.
@@ -219,6 +243,158 @@ final class AppModel {
                     self.focusedNodeID = nil
                 }
             }
+        }
+    }
+
+    // MARK: - Model pass (PLAN.md build order step 7)
+
+    private struct GuessCandidateSource {
+        let candidate: GuessCandidate
+        let chatRowIDs: Set<Int64>
+    }
+
+    /// One candidate per kept person with no real name (their one-to-one chat rowIDs -- a
+    /// merged, multi-service person can have several) and per live 3+ member group with no
+    /// display name (its own chat rowID). This is App-layer assembly, not a GraphCore unit:
+    /// it re-derives the same "which chats belong to this person/group" facts GraphBuilder
+    /// computes privately, at the same small-duplication cost PersonFilter/GraphBuilder/
+    /// ExtractStats already accept for their own file-local chat-style constants.
+    nonisolated private static func buildGuessCandidateSources(
+        graph: Graph,
+        keptPeople: [Person],
+        extract: ChatExtract
+    ) -> [GuessCandidateSource] {
+        var sources: [GuessCandidateSource] = []
+
+        for person in keptPeople where person.name == nil {
+            let rowIDs = oneToOneChatRowIDs(for: person, extract: extract)
+            guard !rowIDs.isEmpty else { continue }
+            sources.append(GuessCandidateSource(
+                candidate: GuessCandidate(key: person.id, context: .person(identifier: person.id)),
+                chatRowIDs: rowIDs
+            ))
+        }
+
+        let nodesByID = Dictionary(uniqueKeysWithValues: graph.nodes.map { ($0.id, $0) })
+        for node in graph.nodes where node.kind == .group && node.isLive && node.name == nil {
+            guard let rowID = chatRowID(forGroupNodeID: node.id, extract: extract) else { continue }
+            // NodeLabel.groupGuessKey is the ONLY place this "chat:" -> "group:" transform is
+            // written; calling it here (rather than rebuilding the string locally) is what
+            // keeps this write side and NodeLabel's own read side from ever drifting apart.
+            let key = NodeLabel.groupGuessKey(forNodeID: node.id)
+            let memberNames = memberNames(forGroupNodeID: node.id, graph: graph, nodesByID: nodesByID)
+            sources.append(GuessCandidateSource(
+                candidate: GuessCandidate(key: key, context: .group(memberNames: memberNames)),
+                chatRowIDs: [rowID]
+            ))
+        }
+
+        return sources
+    }
+
+    private enum ChatStyle {
+        static let oneToOne = 45
+        static let group = 43
+    }
+
+    nonisolated private static func oneToOneChatRowIDs(for person: Person, extract: ChatExtract) -> Set<Int64> {
+        var rowIDs: Set<Int64> = []
+        for chat in extract.chats {
+            let isOneToOne = chat.style == ChatStyle.oneToOne
+                || (chat.style == ChatStyle.group && chat.memberHandleRowIDs.count == 2)
+            guard isOneToOne else { continue }
+            if chat.memberHandleRowIDs.contains(where: { person.handleRowIDs.contains($0) }) {
+                rowIDs.insert(chat.rowID)
+            }
+        }
+        return rowIDs
+    }
+
+    nonisolated private static func chatRowID(forGroupNodeID nodeID: String, extract: ChatExtract) -> Int64? {
+        guard nodeID.hasPrefix("chat:") else { return nil }
+        let guid = String(nodeID.dropFirst("chat:".count))
+        return extract.chats.first { $0.guid == guid }?.rowID
+    }
+
+    /// Only members with a real (already-known) name are worth telling the model about --
+    /// an unnamed fellow member is exactly as uninformative as the group itself is.
+    nonisolated private static func memberNames(
+        forGroupNodeID nodeID: String,
+        graph: Graph,
+        nodesByID: [String: GraphNode]
+    ) -> [String] {
+        let memberIDs = graph.edges
+            .filter { $0.reason == .groupMembership && ($0.nodeIDA == nodeID || $0.nodeIDB == nodeID) }
+            .map { $0.nodeIDA == nodeID ? $0.nodeIDB : $0.nodeIDA }
+        return memberIDs.compactMap { nodesByID[$0]?.name }.sorted()
+    }
+
+    /// Cancels any in-flight pass (a quick resync could otherwise overlap two), assembles
+    /// this rebuild's candidates, and -- only if there is new, non-cached work -- starts a
+    /// GuessEngine pass on a background task with an OllamaProvider. SnippetReader is only
+    /// ever reached from inside snippetSource, called lazily by GuessEngine one candidate at
+    /// a time, so message text lives only for the duration of one request (PLAN.md's
+    /// transient-only discipline).
+    private func startGuessPassIfNeeded(extract: ChatExtract) {
+        guessTask?.cancel()
+        guard case .ready(let graph, _) = state else { return }
+
+        let sources = Self.buildGuessCandidateSources(graph: graph, keptPeople: lastKeptPeople, extract: extract)
+        let cache = overrides.nameGuesses
+        let pendingCount = sources.filter { cache[$0.candidate.key] == nil }.count
+        guard pendingCount > 0 else {
+            guessingState = .idle
+            return
+        }
+
+        let candidates = sources.map(\.candidate)
+        let chatRowIDsByKey = Dictionary(uniqueKeysWithValues: sources.map { ($0.candidate.key, $0.chatRowIDs) })
+        let dbPath = chatDBPath
+        let provider = OllamaProvider()
+        guessingState = .running(done: 0, total: pendingCount)
+
+        guessTask = Task.detached(priority: .background) { [weak self] in
+            // Unwrapped once here, not per-closure: a weak capture cannot itself be
+            // re-captured weakly by the nested @MainActor Task blocks below (a Swift 6
+            // strict-concurrency rule, not a real lifetime concern -- this whole pass exists
+            // to update this specific AppModel, so holding a plain reference to it for the
+            // rest of this detached task is the right call anyway).
+            guard let self else { return }
+
+            let snippetSource: @Sendable (String) -> [Snippet] = { key in
+                guard let rowIDs = chatRowIDsByKey[key] else { return [] }
+                // try?, not try: a snippet read failing (e.g. a transient busy-timeout) should
+                // cost this one candidate an empty prompt, not abort the whole pass.
+                return (try? SnippetReader.read(dbPath: dbPath, chatRowIDs: rowIDs)) ?? []
+            }
+
+            await GuessEngine.run(
+                candidates: candidates,
+                cache: cache,
+                snippetSource: snippetSource,
+                provider: provider,
+                onGuess: { key, guess in
+                    Task { @MainActor in
+                        self.overrides.nameGuesses[key] = guess
+                        self.saveOverrides()
+                        if case .running(let done, let total) = self.guessingState {
+                            self.guessingState = .running(done: done + 1, total: total)
+                        }
+                    }
+                },
+                completion: { outcome in
+                    Task { @MainActor in
+                        switch outcome {
+                        case .completed:
+                            self.guessingState = .finished
+                        case .stoppedProviderUnreachable:
+                            self.guessingState = .providerUnavailable
+                        case .cancelled:
+                            break // a newer pass (or a resync) superseded this one
+                        }
+                    }
+                }
+            )
         }
     }
 
@@ -427,6 +603,7 @@ final class AppModel {
         let radii = simulation.radii
         let hiddenNodeIDs = displayOptions.hiddenNodeIDs
         let canvasSize = lastWindowSize
+        let guesses = overrides.nameGuesses
 
         try await Task.detached(priority: .userInitiated) {
             let image = GraphImageRenderer.render(
@@ -435,7 +612,8 @@ final class AppModel {
                 radii: radii,
                 hiddenNodeIDs: hiddenNodeIDs,
                 canvasSize: canvasSize,
-                scale: 3
+                scale: 3,
+                guesses: guesses
             )
             try GraphImageExport.writePNG(image: image, to: url)
         }.value
