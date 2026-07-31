@@ -13,23 +13,54 @@ enum AppState {
     case failed(message: String)
 }
 
-/// Orchestrates the one-time load: extract -> resolve -> filter -> build -> simulate. All of
-/// GraphCore's extraction/resolution/filter/build calls are synchronous and can block on
-/// disk I/O for a real chat.db, so the whole pipeline runs off the main actor and only the
-/// final state hop comes back.
+/// What the user has chosen to see, independent of the underlying data. `hiddenNodeIDs` is
+/// handled entirely differently from the other two fields: it never triggers a rebuild (see
+/// AppModel.hideNode) since it is a render-only concern, applied to what the view draws, not
+/// to the simulation.
+struct DisplayOptions: Equatable {
+    var dateRange: ClosedRange<Date>?
+    var showDeadGroups: Bool = false
+    var hiddenNodeIDs: Set<String> = []
+}
+
+/// Orchestrates the one-time load and every later interaction re-derive: extract -> resolve
+/// (once) -> filter -> build -> simulate (every time displayOptions.dateRange or
+/// showDeadGroups changes). All of GraphCore's calls are synchronous and can block on disk
+/// I/O or just be CPU work over hundreds of messages, so both the initial load and every
+/// later rebuild run off the main actor and only the final state hop comes back.
 @Observable
 @MainActor
 final class AppModel {
     private(set) var state: AppState = .loading
+    private(set) var displayOptions = DisplayOptions()
+    /// The full span of message dates in the raw (unfiltered) extract, for the toolbar's
+    /// date pickers. nil until the first successful load, and nil forever if the account
+    /// turns out to have no messages at all -- the toolbar's date pickers are expected to
+    /// disable themselves in that case rather than show a meaningless range.
+    private(set) var messageDateBounds: ClosedRange<Date>?
+    /// Which node is focused, if any. Lives here rather than in GraphView's own @State: the
+    /// toolbar's Focus chip is chrome hoisted above GraphView (see ContentView), and a
+    /// rebuild tears GraphView down and reconstructs it (a fresh assembly animation, PLAN.md-
+    /// intended behavior) -- view-local state would be silently wiped on every date-range or
+    /// dead-groups change, taking the chip with it.
+    private(set) var focusedNodeID: String?
+    /// The most recent successfully-built graph, kept around after `state` moves back to
+    /// `.loading` for a rebuild. Toolbar chrome (the Focus chip's name) is hoisted above
+    /// GraphView and would otherwise flicker away for the fraction of a second a rebuild's
+    /// `.loading` flash is visible; reading this instead of `state` directly avoids that.
+    private(set) var lastReadyGraph: Graph?
 
     private let chatDBPath: String
     private let contactsDBPaths: [String]
-    /// Guards against a second concurrent/duplicate load. `.task` is documented to fire once
-    /// per view appearance, but that view's identity across the `.loading` -> `.ready`
-    /// transition is not something this target can verify without launching the app, which
-    /// is off limits here -- so this makes a re-fire structurally harmless (a no-op) instead
-    /// of relying on an unverified claim about SwiftUI's view-identity behavior.
     private var hasStartedLoading = false
+
+    /// Cached from the first successful load so every later interaction change (time filter,
+    /// dead-group toggle) re-derives from memory and never re-reads a database. Identity
+    /// resolution in particular has no reason to rerun on a rebuild: it depends only on
+    /// handles and contacts, neither of which a time filter or dead-group toggle touches.
+    private var cachedExtract: ChatExtract?
+    private var cachedPeople: [Person]?
+    private var lastWindowSize = CGSize(width: 1200, height: 900)
 
     init() {
         let home = NSHomeDirectory()
@@ -80,26 +111,134 @@ final class AppModel {
         // -- smaller than any real window this app would run in, big enough to actually
         // scatter nodes.
         let safeWindowSize = CGSize(width: max(windowSize.width, 400), height: max(windowSize.height, 300))
+        lastWindowSize = safeWindowSize
         let chatDBPath = chatDBPath
         let contactsDBPaths = contactsDBPaths
 
         Task.detached(priority: .userInitiated) {
-            let result = Self.runPipeline(
-                chatDBPath: chatDBPath,
-                contactsDBPaths: contactsDBPaths,
-                windowSize: safeWindowSize
-            )
+            let outcome = Self.extractAndResolve(chatDBPath: chatDBPath, contactsDBPaths: contactsDBPaths)
             await MainActor.run { [weak self] in
-                self?.state = result
+                guard let self else { return }
+                switch outcome {
+                case .needsPermission(let explanation):
+                    self.state = .needsPermission(explanation: explanation)
+                case .failed(let message):
+                    self.state = .failed(message: message)
+                case .success(let extract, let people):
+                    self.cachedExtract = extract
+                    self.cachedPeople = people
+                    self.messageDateBounds = Self.dateBounds(of: extract)
+                    self.rebuild()
+                }
             }
         }
     }
 
-    nonisolated private static func runPipeline(
-        chatDBPath: String,
-        contactsDBPaths: [String],
+    /// Re-derives graph + simulation from the cached extract/people using the current
+    /// displayOptions (minus hiddenNodeIDs, which never reach this far -- see hideNode).
+    /// Called once after the initial load, and again whenever dateRange or showDeadGroups
+    /// changes: a fresh assembly animation on every such change is accepted, even desirable,
+    /// behavior (PLAN.md's assembly is not a one-time intro, it is what settling looks like).
+    func rebuild() {
+        guard let extract = cachedExtract, let people = cachedPeople else { return }
+        state = .loading
+        let options = displayOptions
+        let windowSize = lastWindowSize
+
+        Task.detached(priority: .userInitiated) {
+            let result = Self.derive(extract: extract, people: people, options: options, windowSize: windowSize)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.state = result
+                // A time filter (or, less plausibly, a dead-groups toggle) can drop the
+                // currently focused node from the rebuilt graph entirely. A focus chip
+                // pointing at a node that no longer exists is worse than clearing it.
+                if case .ready(let graph, _) = result {
+                    self.lastReadyGraph = graph
+                }
+                if case .ready(let graph, _) = result,
+                   let focusedNodeID = self.focusedNodeID,
+                   !graph.nodes.contains(where: { $0.id == focusedNodeID }) {
+                    self.focusedNodeID = nil
+                }
+            }
+        }
+    }
+
+    nonisolated private static func derive(
+        extract: ChatExtract,
+        people: [Person],
+        options: DisplayOptions,
         windowSize: CGSize
     ) -> AppState {
+        let filteredExtract: ChatExtract
+        if let range = options.dateRange {
+            filteredExtract = TimeFilter.apply(extract: extract, from: range.lowerBound, to: range.upperBound)
+        } else {
+            filteredExtract = extract
+        }
+        let filterResult = PersonFilter.apply(extract: filteredExtract, people: people)
+        let graph = GraphBuilder.build(extract: filteredExtract, keptPeople: filterResult.kept)
+        let simulation = ForceSimulation(graph: graph, size: windowSize, includeDeadGroups: options.showDeadGroups)
+        return .ready(graph: graph, simulation: simulation)
+    }
+
+    private static func dateBounds(of extract: ChatExtract) -> ClosedRange<Date>? {
+        guard var minDate = extract.messages.first?.date else { return nil }
+        var maxDate = minDate
+        for message in extract.messages.dropFirst() {
+            if message.date < minDate { minDate = message.date }
+            if message.date > maxDate { maxDate = message.date }
+        }
+        return minDate...maxDate
+    }
+
+    // MARK: - Interaction
+
+    func setDateRange(_ range: ClosedRange<Date>?) {
+        guard displayOptions.dateRange != range else { return }
+        displayOptions.dateRange = range
+        rebuild()
+    }
+
+    func setShowDeadGroups(_ show: Bool) {
+        guard displayOptions.showDeadGroups != show else { return }
+        displayOptions.showDeadGroups = show
+        rebuild()
+    }
+
+    /// Render-only: never rebuilds, so positions keep their current layout. GraphView applies
+    /// Graph.excludingNodes to what it draws; the simulation itself never hears about this.
+    func hideNode(_ id: String) {
+        displayOptions.hiddenNodeIDs.insert(id)
+        // A focus chip pointing at a node the user just hid is confusing, not useful.
+        if focusedNodeID == id {
+            focusedNodeID = nil
+        }
+    }
+
+    func unhideAll() {
+        displayOptions.hiddenNodeIDs = []
+    }
+
+    func setFocus(_ id: String?) {
+        focusedNodeID = id
+    }
+
+    func clearFocus() {
+        focusedNodeID = nil
+    }
+
+    private enum ExtractionOutcome {
+        case needsPermission(explanation: String)
+        case failed(message: String)
+        case success(extract: ChatExtract, people: [Person])
+    }
+
+    nonisolated private static func extractAndResolve(
+        chatDBPath: String,
+        contactsDBPaths: [String]
+    ) -> ExtractionOutcome {
         let extract: ChatExtract
         do {
             extract = try ChatDatabase.extract(path: chatDBPath)
@@ -122,9 +261,6 @@ final class AppModel {
         }
 
         let identity = IdentityResolution.resolve(handles: extract.handles, contacts: contacts)
-        let filterResult = PersonFilter.apply(extract: extract, people: identity.people)
-        let graph = GraphBuilder.build(extract: extract, keptPeople: filterResult.kept)
-        let simulation = ForceSimulation(graph: graph, size: windowSize)
-        return .ready(graph: graph, simulation: simulation)
+        return .success(extract: extract, people: identity.people)
     }
 }

@@ -8,8 +8,8 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: #183 (graph/render -> graph-main), awaiting CI
-- Build position: P2 step 5 (layout, render, assembly animation) implemented, pending merge; next is P2 step 6 (interaction: focus, time filter, toggles)
+- Open PRs: #184 (graph/interact -> graph-main), awaiting CI
+- Build position: P2 step 6 (interaction) implemented, pending merge; next is P2 step 8 (persistence, resync, overrides store) since step 7 (model pass) is blocked on Ollama
 - Pending visual check: the machine's session was locked during iteration 5, so the on-screen look of the permission screen and the real-data render are unverified; first task once the session is unlocked
 - Integration branch: `graph-main`, created 2026-07-31 per owner directive; the loop merges its own PRs there after green CI and self-review, main stays untouched, user merges graph-main to main
 - Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; the loop mirrors them into the graph-main worktree and commits there, always editing the main-checkout copy first
@@ -17,6 +17,29 @@ Real measurements belong here. Real names and message content do not.
 - Next intent: merge #179 when CI is green, then start P2 step 2
 
 ## Entries
+
+### 2026-07-31 iteration 6: interaction (PR #184)
+
+DONE
+
+- #183 merged to graph-main after green CI and lead review; worktree and branch removed.
+- FocusSet (one-hop highlight; user focus lights all involvesUser edges per the plan's "who connects to me"; a person's own user edge included, a group's not), TimeFilter (inclusive range over messages; end-to-end test proves downstream rules need no changes), Graph.excludingNodes (render-only hide with degree recompute), HitTest (single source of truth for the draw transform and its inverse, 8 tests). ForceSimulation gains includeDeadGroups. App: toolbar with date range, dead-group toggle, hidden count and unhide, focus chip; tap-to-focus; right-click hide; Escape clears. 84 tests green, 19 new, red-first with two test-authoring bugs caught during red.
+- A per-frame linear-scan perf bug in the highlighted-edge draw path (about 200k string compares per frame with the user focused) was caught in second-pass self-review and fixed with init-hoisted dictionaries before handoff.
+- Session still locked; the visual pass now covers both rendering and live gesture behavior (tap vs pan precedence, context-menu hover targeting, Escape routing). All logic beneath the gestures is unit-pinned.
+
+IN-FLIGHT
+
+- PR #184 against graph-main, waiting on CI.
+
+BLOCKED
+
+- Visual verification of the app: needs the user's session unlocked.
+- Ollama install (P2 step 7).
+- Liveness-bar refinement decision from iteration 3.
+
+NEXT
+
+- Merge #184 on green. Then P2 step 8 (persistence and resync with the overrides store keyed by normalized identifier: hidden stays hidden, removed stays removed, merge answers never re-asked), including the charter's required fixture-based end-to-end resync-survival test. Step 7 (model pass) waits on Ollama; step 9 (export) after 8.
 
 ### 2026-07-31 iteration 5: layout, render, app (PR #183)
 

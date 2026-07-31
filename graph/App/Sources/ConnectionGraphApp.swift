@@ -15,14 +15,24 @@ private struct ContentView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            stateView(size: proxy.size)
-                // Meant to fire once, on first appearance. Not verified against a real launch
-                // (which this task is not allowed to do): AppModel.load's own
-                // hasStartedLoading guard is what actually makes a re-fire here harmless,
-                // not an assumption about this view's identity across state changes.
-                .task {
-                    model.load(windowSize: proxy.size)
+            ZStack(alignment: .top) {
+                stateView(size: proxy.size)
+                // Toolbar chrome, hoisted above whatever stateView is currently showing: a
+                // rebuild's brief `.loading` flash must not make the toolbar (and the Focus
+                // chip / date range it holds) flicker away and back. Gated on
+                // messageDateBounds rather than the exact state case, since that field stays
+                // set across every later rebuild once the first load has succeeded.
+                if model.messageDateBounds != nil {
+                    GraphToolbar(model: model)
                 }
+            }
+            // Fires once, on first appearance. Not verified against a real launch (which
+            // this task is not allowed to do): AppModel.load's own hasStartedLoading guard is
+            // what actually makes a re-fire here harmless, not an assumption about this
+            // view's identity across state changes.
+            .task {
+                model.load(windowSize: proxy.size)
+            }
         }
         .frame(minWidth: 800, minHeight: 600)
     }
@@ -37,7 +47,7 @@ private struct ContentView: View {
                 model.load(windowSize: size, force: true)
             }
         case .ready(let graph, let simulation):
-            GraphView(graph: graph, simulation: simulation)
+            GraphView(model: model, graph: graph, simulation: simulation)
         case .failed(let message):
             failedView(message: message)
         }

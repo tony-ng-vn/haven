@@ -113,20 +113,22 @@ public final class ForceSimulation {
         Dictionary(uniqueKeysWithValues: nodeStates.map { ($0.id, $0.position) })
     }
 
-    public convenience init(graph: Graph, size: CGSize) {
-        self.init(graph: graph, size: size, positionOverrides: [:])
+    public convenience init(graph: Graph, size: CGSize, includeDeadGroups: Bool = false) {
+        self.init(graph: graph, size: size, includeDeadGroups: includeDeadGroups, positionOverrides: [:])
     }
 
     /// Test seam: force exact starting positions for named ids (e.g. a deterministic
     /// zero-distance collision) instead of hunting for a natural hash collision.
-    internal init(graph: Graph, size: CGSize, positionOverrides: [String: CGPoint]) {
+    internal init(graph: Graph, size: CGSize, includeDeadGroups: Bool = false, positionOverrides: [String: CGPoint]) {
         let center = CGPoint(x: size.width / 2, y: size.height / 2)
         self.center = center
 
-        // Visible set: user + person nodes + LIVE group nodes only. A dead group's edges are
-        // automatically excluded below since both endpoints of an edge must be visible.
+        // Visible set: user + person nodes + LIVE group nodes, plus dead groups too when the
+        // dead-groups toggle (AppModel.DisplayOptions.showDeadGroups) is on. A dead group's
+        // edges are automatically excluded below since both endpoints of an edge must be
+        // visible -- unchanged when includeDeadGroups is false, which is still the default.
         let visibleNodes = graph.nodes
-            .filter { $0.kind != .group || $0.isLive }
+            .filter { $0.kind != .group || $0.isLive || includeDeadGroups }
             .sorted { $0.id < $1.id }
 
         var states: [NodeState] = []
