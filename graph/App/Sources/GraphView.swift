@@ -123,6 +123,14 @@ struct GraphView: View {
             Button("Hide \(displayLabel(for: hitID))") {
                 model.hideNode(hitID)
             }
+            // Remove is structural (drops the person before GraphBuilder, not just from what
+            // draws), so it only makes sense for a person: there is no "removed" concept for
+            // the user node or a group (a group's equivalent is Hide, already offered above).
+            if nodesByID[hitID]?.kind == .person {
+                Button("Remove \(displayLabel(for: hitID))") {
+                    model.removePerson(hitID)
+                }
+            }
         } else {
             Button("Hide") {}
                 .disabled(true)

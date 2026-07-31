@@ -64,7 +64,11 @@ public struct IdentityResolutionResult: Sendable, Equatable {
 }
 
 public enum IdentityResolution {
-    public static func resolve(handles: [RawHandle], contacts: [ContactRecord]) -> IdentityResolutionResult {
+    public static func resolve(
+        handles: [RawHandle],
+        contacts: [ContactRecord],
+        assertedMerges: [(String, String)] = []
+    ) -> IdentityResolutionResult {
         var unionFind = UnionFind()
 
         // Seed every handle's normalized identifier. Rule 1 (two handles that normalize to
@@ -96,6 +100,17 @@ public enum IdentityResolution {
             for identifier in cardIdentifiers.dropFirst() {
                 unionFind.union(cardIdentifiers[0], identifier)
             }
+        }
+
+        // Step 8: user-asserted merges (an answered merge question with decision .merged),
+        // applied as extra unions on top of the automatic rules above, using the same
+        // normalized strings the rest of this function already works in. union()'s own find()
+        // calls makeSet() first, so an identifier neither side above has ever seen (e.g. a
+        // stale answer from a resync where that side's handle disappeared) is harmless: it
+        // just becomes an orphan root with no handle behind it, same as any other identifier
+        // that never appears in normalizedByHandleRowID below.
+        for (identifierA, identifierB) in assertedMerges {
+            unionFind.union(identifierA, identifierB)
         }
 
         // Only handles create people (Contacts never creates a node): group handle rowIDs

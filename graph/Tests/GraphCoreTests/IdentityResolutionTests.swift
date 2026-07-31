@@ -173,4 +173,43 @@ final class IdentityResolutionTests: XCTestCase {
         let names = Set(result.people.compactMap(\.name))
         XCTAssertEqual(names, ["Alice First", "Bob Second"])
     }
+
+    // A user-asserted merge (step 8: an answered merge question with decision .merged) is an
+    // extra union on top of the automatic identifier/card rules -- two people who share
+    // neither an identifier nor a card still collapse into one when told to.
+    func testAssertedMergeCollapsesTwoOtherwiseDistinctPeopleIntoOne() {
+        let handles = [
+            RawHandle(rowID: 1, identifier: "+14155550020", service: "iMessage"),
+            RawHandle(rowID: 2, identifier: "+14155550021", service: "iMessage"),
+        ]
+
+        let result = IdentityResolution.resolve(
+            handles: handles,
+            contacts: [],
+            assertedMerges: [("+14155550020", "+14155550021")]
+        )
+
+        XCTAssertEqual(result.people.count, 1)
+        let person = try? XCTUnwrap(result.people.first)
+        XCTAssertEqual(person?.identifiers, ["+14155550020", "+14155550021"])
+        XCTAssertEqual(person?.handleRowIDs, [1, 2])
+    }
+
+    // An asserted merge naming an identifier this dataset has never seen (e.g. a stale
+    // answer from a resync where that side's handle disappeared) must not crash -- it simply
+    // never becomes a person, same as any other identifier with no handle behind it.
+    func testAssertedMergeWithAnUnknownIdentifierDoesNotCrash() {
+        let handles = [
+            RawHandle(rowID: 1, identifier: "+14155550022", service: "iMessage"),
+        ]
+
+        let result = IdentityResolution.resolve(
+            handles: handles,
+            contacts: [],
+            assertedMerges: [("+14155550022", "+19995551234")]
+        )
+
+        XCTAssertEqual(result.people.count, 1)
+        XCTAssertEqual(result.people.first?.id, "+14155550022")
+    }
 }

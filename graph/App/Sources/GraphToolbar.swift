@@ -8,6 +8,7 @@ struct GraphToolbar: View {
 
     @State private var pendingFrom: Date
     @State private var pendingTo: Date
+    @State private var showingMergeQueue = false
 
     init(model: AppModel) {
         self.model = model
@@ -34,11 +35,23 @@ struct GraphToolbar: View {
                 Divider().frame(height: 20)
                 hiddenIndicator
             }
+            if model.removedPersonCount > 0 {
+                Divider().frame(height: 20)
+                removedIndicator
+            }
+            if !model.mergeQueue.isEmpty {
+                Divider().frame(height: 20)
+                mergeQueueButton
+            }
             if let focusedNodeName {
                 Divider().frame(height: 20)
                 focusChip(name: focusedNodeName)
             }
             Spacer(minLength: 0)
+            Divider().frame(height: 20)
+            Button("Resync") {
+                model.resync()
+            }
         }
         .font(.system(size: 12))
         .foregroundStyle(.white)
@@ -91,6 +104,24 @@ struct GraphToolbar: View {
             Button("Unhide All") {
                 model.unhideAll()
             }
+        }
+    }
+
+    private var removedIndicator: some View {
+        HStack(spacing: 8) {
+            Text("Removed: \(model.removedPersonCount)")
+            Button("Restore All") {
+                model.restoreAllRemoved()
+            }
+        }
+    }
+
+    private var mergeQueueButton: some View {
+        Button("Merge questions: \(model.mergeQueue.count)") {
+            showingMergeQueue = true
+        }
+        .popover(isPresented: $showingMergeQueue) {
+            MergeQueueView(model: model)
         }
     }
 
