@@ -8,8 +8,8 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: #184 (graph/interact -> graph-main), awaiting CI
-- Build position: P2 step 6 (interaction) implemented, pending merge; next is P2 step 8 (persistence, resync, overrides store) since step 7 (model pass) is blocked on Ollama
+- Open PRs: #185 (graph/persist -> graph-main), awaiting CI
+- Build position: P2 step 8 (persistence, resync, overrides) implemented, pending merge; next is P2 step 9 (export); step 7 (model pass) blocked on Ollama
 - Pending visual check: the machine's session was locked during iteration 5, so the on-screen look of the permission screen and the real-data render are unverified; first task once the session is unlocked
 - Integration branch: `graph-main`, created 2026-07-31 per owner directive; the loop merges its own PRs there after green CI and self-review, main stays untouched, user merges graph-main to main
 - Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; the loop mirrors them into the graph-main worktree and commits there, always editing the main-checkout copy first
@@ -17,6 +17,30 @@ Real measurements belong here. Real names and message content do not.
 - Next intent: merge #179 when CI is green, then start P2 step 2
 
 ## Entries
+
+### 2026-07-31 iteration 7: persistence and resync (PR #185)
+
+DONE
+
+- #184 merged to graph-main after green CI and lead review; worktree and branch removed.
+- Overrides store (JSON at Application Support/ConnectionGraph/overrides.json, injectable path, atomic writes, backward-compatible decode, corrupt file fails loudly): hidden person identifiers, hidden group guids, removed identifiers, merge answers, and an empty name-guess slot for step 7. IdentityResolution accepts asserted merges; suppression, removal, and hidden-mapping helpers; app gains Remove person, Restore All, merge-questions popover, Resync. 102 tests green (18 new), red-first per area.
+- The goal's acceptance criterion 4 is now proven by EndToEndResyncSurvivalTests: two independently built chat.db fixtures with all ROWIDs shifted +100 between them, overrides round-tripped through disk with a fresh store instance, asserting hidden person AND hidden group survive, removed stays removed, user-merged pair stays one person, answered candidate is regenerated then suppressed. Mutation-verified non-vacuous.
+- Two bugs caught in second-pass self-review before handoff: Keep separate suppressed against the wrong people list (post-filter instead of pre-filter) and Removed:N counted identifiers not people.
+- Still unverified by launch: all new UI, queued for the unlocked-session pass.
+
+IN-FLIGHT
+
+- PR #185 against graph-main, waiting on CI.
+
+BLOCKED
+
+- Visual verification of the app: needs the user's session unlocked.
+- Ollama install (P2 step 7).
+- Liveness-bar refinement decision from iteration 3.
+
+NEXT
+
+- Merge #185 on green. Then P2 step 9 (export: high-resolution image with real names, hide-before-export already exists via the hidden mechanism). After that, the remaining goal criteria are the model pass (Ollama) and the visual pass (unlocked session).
 
 ### 2026-07-31 iteration 6: interaction (PR #184)
 
