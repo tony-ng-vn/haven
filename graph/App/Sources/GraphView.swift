@@ -2,45 +2,95 @@ import SwiftUI
 import GraphCore
 
 /// Renders a settled-or-settling ForceSimulation. Deliberately thin: node/edge selection and
-/// styling decisions that are pure computation (which edges draw, which nodes label) live in
-/// GraphCore/NodeColor, not here -- this view's own job is just driving `tick()` and drawing.
+/// styling decisions that are pure computation (which edges draw, which nodes label, focus
+/// highlighting, hit testing) live in GraphCore, not here -- this view's own job is driving
+/// `tick()`, drawing, and translating raw input events into calls on those pure helpers.
 struct GraphView: View {
+    let model: AppModel
     let graph: Graph
     let simulation: ForceSimulation
 
-    private let nodesByID: [String: GraphNode]
     private let labelNodeIDs: Set<String>
+    // graph never changes across GraphView's lifetime (a rebuild tears the whole view down and
+    // reconstructs it with a new `graph`), so these lookups are built once here rather than
+    // rebuilt every frame inside draw(). Without this, the focus-highlight edge loop below was
+    // an O(highlighted edges x total edges) linear scan per frame -- at real-data scale with the
+    // user focused (~300+ highlighted involvesUser edges against ~850 total edges), that is
+    // hundreds of thousands of string comparisons every single animation tick.
+    // Only `kind` and `name` are ever read off these -- both stable for a node's whole life.
+    // `degree` is NOT: it reflects the full pre-hide graph, not what excludingNodes recomputes
+    // per frame. That is the correct semantics (hiding removes a node from what draws; it does
+    // not restate the rest of the graph's numbers), same as simulation.radius(for:) already
+    // being pre-hide by design -- but it means nothing here should ever start reading degree.
+    private let edgesByID: [String: GraphEdge]
+    private let nodesByID: [String: GraphNode]
 
     @State private var scale: CGFloat = 1.0
     @State private var committedScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var committedOffset: CGSize = .zero
+    @State private var lastHoverLocation: CGPoint?
+    @FocusState private var keyInputFocused: Bool
 
-    init(graph: Graph, simulation: ForceSimulation) {
+    init(model: AppModel, graph: Graph, simulation: ForceSimulation) {
+        self.model = model
         self.graph = graph
         self.simulation = simulation
-        self.nodesByID = Dictionary(uniqueKeysWithValues: graph.nodes.map { ($0.id, $0) })
         self.labelNodeIDs = LabelBudget.selectedNodeIDs(nodes: graph.nodes)
+        self.edgesByID = Dictionary(uniqueKeysWithValues: graph.edges.map { ($0.id, $0) })
+        self.nodesByID = Dictionary(uniqueKeysWithValues: graph.nodes.map { ($0.id, $0) })
     }
 
     var body: some View {
-        TimelineView(.animation) { _ in
-            Canvas { context, size in
-                // The assembly animation IS the simulation settling (PLAN.md): once alpha
-                // floors, tick() is already a no-op inside ForceSimulation, so there is no
-                // need to gate this call on isSettled for correctness -- only to avoid
-                // pointlessly calling it forever, which the guard below still does.
-                if !simulation.isSettled {
-                    simulation.tick()
+        GeometryReader { proxy in
+            TimelineView(.animation) { _ in
+                Canvas { context, size in
+                    // The assembly animation IS the simulation settling (PLAN.md): once alpha
+                    // floors, tick() is already a no-op inside ForceSimulation, so there is no
+                    // need to gate this call on isSettled for correctness -- only to avoid
+                    // pointlessly calling it forever, which the guard below still does.
+                    if !simulation.isSettled {
+                        simulation.tick()
+                    }
+                    draw(into: context, canvasSize: size)
                 }
-                draw(into: context, canvasSize: size)
+            }
+            .background(Color.black)
+            .gesture(tapGesture(canvasSize: proxy.size))
+            .gesture(dragGesture)
+            .gesture(magnifyGesture)
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let location):
+                    lastHoverLocation = location
+                case .ended:
+                    lastHoverLocation = nil
+                }
+            }
+            .contextMenu {
+                contextMenuContent(canvasSize: proxy.size)
+            }
+            .focusable()
+            .focused($keyInputFocused)
+            .onAppear { keyInputFocused = true }
+            .onKeyPress(.escape) {
+                model.clearFocus()
+                return .handled
             }
         }
-        .background(Color.black)
-        .scaleEffect(scale)
-        .offset(offset)
-        .gesture(magnifyGesture)
-        .gesture(dragGesture)
+    }
+
+    // MARK: - Gestures
+
+    private func tapGesture(canvasSize: CGSize) -> some Gesture {
+        SpatialTapGesture()
+            .onEnded { value in
+                if let hitID = hitTestNode(at: value.location, canvasSize: canvasSize) {
+                    model.setFocus(hitID)
+                } else {
+                    model.clearFocus()
+                }
+            }
     }
 
     private var magnifyGesture: some Gesture {
@@ -66,36 +116,137 @@ struct GraphView: View {
             }
     }
 
+    @ViewBuilder
+    private func contextMenuContent(canvasSize: CGSize) -> some View {
+        let hitID = lastHoverLocation.flatMap { hitTestNode(at: $0, canvasSize: canvasSize) }
+        if let hitID {
+            Button("Hide \(displayLabel(for: hitID))") {
+                model.hideNode(hitID)
+            }
+        } else {
+            Button("Hide") {}
+                .disabled(true)
+        }
+    }
+
+    // MARK: - Hit testing
+
+    /// Shared by the click gesture and the context menu: hidden nodes are excluded from both
+    /// (still present in `simulation.positions` since hiding is render-only, but nothing the
+    /// user can see should be clickable).
+    private func hitTestNode(at screenPoint: CGPoint, canvasSize: CGSize) -> String? {
+        let hidden = model.displayOptions.hiddenNodeIDs
+        let positions = simulation.positions.filter { !hidden.contains($0.key) }
+        let radii = simulation.radii.filter { !hidden.contains($0.key) }
+        return HitTest.nodeID(
+            atScreenPoint: screenPoint,
+            canvasSize: canvasSize,
+            scale: scale,
+            offset: offset,
+            positions: positions,
+            radii: radii
+        )
+    }
+
+    private func displayLabel(for id: String) -> String {
+        nodesByID[id]?.name ?? id
+    }
+
+    // MARK: - Drawing
+
     private func draw(into context: GraphicsContext, canvasSize: CGSize) {
+        var context = context
+        // The one transform GraphView applies, and the only one: HitTest inverts this exact
+        // same function to convert a click back into canvas space, so drawing and hit
+        // testing can never drift apart from each other.
+        context.concatenate(HitTest.canvasToScreenTransform(canvasSize: canvasSize, scale: scale, offset: offset))
+
+        let visibleGraph = graph.excludingNodes(model.displayOptions.hiddenNodeIDs)
         let positions = simulation.positions
+        let focus = model.focusedNodeID.map { FocusSet.compute(graph: visibleGraph, focusedNodeID: $0) }
+        // An unknown or now-hidden focus id resolves to an empty FocusSet; treat that as "no
+        // focus" rather than dimming the entire graph to nothing highlighted.
+        let hasActiveFocus = (focus?.highlightedNodeIDs.isEmpty == false)
+
         // While settling: no labels at all. Once settled, full opacity; PLAN.md also allows
         // a fade-in keyed on (1 - alpha), which reads as "labels resolve as the graph does".
         let labelOpacity = simulation.isSettled ? 1.0 : max(0, 1.0 - simulation.alpha)
 
-        for edge in EdgeRenderList.visibleEdges(graph: graph, positions: positions) {
+        drawEdges(into: &context, visibleGraph: visibleGraph, positions: positions, focus: hasActiveFocus ? focus : nil)
+        drawNodes(
+            into: &context,
+            visibleGraph: visibleGraph,
+            positions: positions,
+            focus: hasActiveFocus ? focus : nil,
+            labelOpacity: labelOpacity
+        )
+    }
+
+    private func drawEdges(
+        into context: inout GraphicsContext,
+        visibleGraph: Graph,
+        positions: [String: CGPoint],
+        focus: FocusSet?
+    ) {
+        // Rest-state edges: everything EdgeRenderList already excludes (user edges, edges to
+        // hidden/dead-and-unincluded nodes) stays excluded here too.
+        for edge in EdgeRenderList.visibleEdges(graph: visibleGraph, positions: positions) {
+            let isHighlighted = focus?.highlightedEdgeIDs.contains(edge.id) ?? true
+            let baseOpacity = min(1.0, 0.08 + 0.12 * (edge.strength + 1).squareRoot())
+            let opacity = focus == nil ? baseOpacity : (isHighlighted ? baseOpacity : 0.03)
             var path = Path()
             path.move(to: edge.from)
             path.addLine(to: edge.to)
-            // Weak edges stay faint but visible, never fully transparent: an invisible edge
-            // would read as "no relationship" rather than "a weak one", losing exactly the
-            // clustering signal the layout exists to show. Real strength is a distinct-day
-            // count that reaches into the hundreds for a long-running thread; a linear
-            // opacity ramp saturates at strength ~9 and every real edge would render
-            // identically. sqrt (same treatment ForceSimulation gives spring stiffness, for
-            // the same reason) keeps the ramp meaningful across that whole range.
-            let opacity = min(1.0, 0.08 + 0.12 * (edge.strength + 1).squareRoot())
             context.stroke(path, with: .color(.white.opacity(opacity)), lineWidth: 0.75)
         }
 
-        for id in simulation.orderedNodeIDs {
-            guard let position = positions[id], let node = nodesByID[id] else { continue }
-            let radius = simulation.radius(for: id) ?? 6
-            let rect = CGRect(x: position.x - radius, y: position.y - radius, width: radius * 2, height: radius * 2)
-            context.fill(Path(ellipseIn: rect), with: .color(NodeColor.color(for: node.kind)))
+        // Focus can highlight involvesUser edges (a person's own line to the user, or every
+        // such edge when the user itself is focused) that EdgeRenderList never draws at rest.
+        // FocusSet's edge list is the single source of truth for what to draw highlighted, so
+        // the user-focus case lights the ego edges with zero special-casing here.
+        guard let focus else { return }
+        for edgeID in focus.highlightedEdgeIDs {
+            // Lookup, not a scan: edgesByID is hoisted once in init (see its declaration).
+            guard let edge = edgesByID[edgeID], edge.involvesUser else { continue }
+            guard let from = positions[edge.nodeIDA], let to = positions[edge.nodeIDB] else { continue }
+            var path = Path()
+            path.move(to: from)
+            path.addLine(to: to)
+            context.stroke(path, with: .color(.white.opacity(0.8)), lineWidth: 1.0)
+        }
+    }
 
-            guard labelOpacity > 0, labelNodeIDs.contains(id) else { continue }
+    private func drawNodes(
+        into context: inout GraphicsContext,
+        visibleGraph: Graph,
+        positions: [String: CGPoint],
+        focus: FocusSet?,
+        labelOpacity: Double
+    ) {
+        // Just the id set, not a rebuild of the metadata dictionary: nodesByID is hoisted once
+        // in init since node kind/name never change across GraphView's lifetime, only which
+        // ids are currently visible does.
+        let visibleNodeIDs = Set(visibleGraph.nodes.map(\.id))
+
+        for id in simulation.orderedNodeIDs {
+            guard visibleNodeIDs.contains(id), let position = positions[id], let node = nodesByID[id] else { continue }
+            let radius = simulation.radius(for: id) ?? 6
+            let isHighlighted = focus?.highlightedNodeIDs.contains(id) ?? true
+            let nodeOpacity = focus == nil ? 1.0 : (isHighlighted ? 1.0 : 0.15)
+
+            let rect = CGRect(x: position.x - radius, y: position.y - radius, width: radius * 2, height: radius * 2)
+            context.fill(Path(ellipseIn: rect), with: .color(NodeColor.color(for: node.kind).opacity(nodeOpacity)))
+
+            if id == model.focusedNodeID {
+                let ringRect = rect.insetBy(dx: -3, dy: -3)
+                context.stroke(Path(ellipseIn: ringRect), with: .color(.white.opacity(0.9)), lineWidth: 1.5)
+            }
+
+            // The focused node always shows its label, regardless of the top-40 budget.
+            let showsLabel = labelNodeIDs.contains(id) || id == model.focusedNodeID
+            guard labelOpacity > 0, showsLabel else { continue }
             var labelContext = context
-            labelContext.opacity = labelOpacity
+            labelContext.opacity = labelOpacity * nodeOpacity
             let label = node.name ?? id
             let resolvedText = labelContext.resolve(Text(label).font(.system(size: 10)).foregroundColor(.white))
             labelContext.draw(resolvedText, at: CGPoint(x: position.x + radius + 4, y: position.y), anchor: .leading)

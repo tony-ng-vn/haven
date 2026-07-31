@@ -295,6 +295,35 @@ final class ForceSimulationTests: XCTestCase {
         XCTAssertNil(sim.positions["chat:dead"], "a dead group must stay excluded after ticking")
     }
 
+    // MARK: - Test 6b: includeDeadGroups opts a dead group back into the visible set
+
+    func testIncludeDeadGroupsBringsDeadGroupAndItsNonUserEdgesIntoTheVisibleSet() {
+        let nodes: [GraphNode] = [
+            node(id: "user", kind: .user, degree: 2),
+            node(id: "person0", kind: .person, degree: 1),
+            node(id: "chat:dead", kind: .group, isLive: false, degree: 1),
+        ]
+        let edges: [GraphEdge] = [
+            edge("person0", "chat:dead", reason: .groupMembership, strength: 2, involvesUser: false),
+            edge("user", "chat:dead", reason: .userGroupMembership, strength: 1, involvesUser: true),
+        ]
+        let graph = Graph(nodes: nodes, edges: edges)
+        let sim = ForceSimulation(graph: graph, size: CGSize(width: 800, height: 800), includeDeadGroups: true)
+
+        XCTAssertTrue(sim.orderedNodeIDs.contains("chat:dead"), "includeDeadGroups: true must bring the dead group into the visible set")
+        XCTAssertNotNil(sim.positions["chat:dead"])
+        XCTAssertNotNil(sim.radius(for: "chat:dead"))
+        XCTAssertEqual(sim.orderedNodeIDs.sorted(), ["chat:dead", "person0", "user"])
+
+        // The dead group's non-user edge must now participate as a spring: ticking should
+        // pull person0 in from its initial hash position toward chat:dead, same as any live
+        // group membership edge would.
+        for _ in 0..<50 { sim.tick() }
+        let positions = sim.positions
+        XCTAssertNotNil(positions["chat:dead"])
+        XCTAssertNotNil(positions["person0"])
+    }
+
     // MARK: - Test 7: bounds
 
     func testAllPositionsStayWithinASaneMultipleOfSizeAfterSettling() {
