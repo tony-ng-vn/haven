@@ -3,11 +3,17 @@ import {
   LANDING2_SEEDS,
   cellEdges,
   cellPolygon,
+  centerRightScore,
   centroid,
   computeCells,
+  edgeOpacity,
+  frostyShardIndices,
   hashUnit,
+  insetPolygon,
   junctionVertices,
   polygonArea,
+  selectGlowDots,
+  shardMaterial,
   shardMotion,
   sharedEdges,
   type Point,
@@ -163,11 +169,15 @@ describe("shardMotion", () => {
     });
   });
 
+  // Widened from an original 10-22px after the owner's headless comparison
+  // against the reference images: at that range shards thickened their
+  // seams but never visibly separated. This is the one style-contract value
+  // this file deliberately updates, per that brief.
   test("distance and rotation stay within the specified bounds", () => {
     cells.forEach((cell, i) => {
       const motion = shardMotion(cellPolygon(cell), i);
-      expect(motion.distance).toBeGreaterThanOrEqual(10);
-      expect(motion.distance).toBeLessThanOrEqual(22);
+      expect(motion.distance).toBeGreaterThanOrEqual(26);
+      expect(motion.distance).toBeLessThanOrEqual(48);
       expect(motion.rotationDeg).toBeGreaterThanOrEqual(-1.6);
       expect(motion.rotationDeg).toBeLessThanOrEqual(1.6);
       expect(motion.scale).toBeCloseTo(0.985, 5);
@@ -179,5 +189,119 @@ describe("shardMotion", () => {
     const a = shardMotion(polygon, 5);
     const b = shardMotion(polygon, 5);
     expect(a).toEqual(b);
+  });
+});
+
+describe("centerRightScore", () => {
+  test("prefers a point further right at the same height", () => {
+    expect(centerRightScore({ x: 80, y: 50 })).toBeGreaterThan(
+      centerRightScore({ x: 20, y: 50 }),
+    );
+  });
+
+  test("prefers a point closer to vertical centre at the same x", () => {
+    expect(centerRightScore({ x: 50, y: 50 })).toBeGreaterThan(
+      centerRightScore({ x: 50, y: 5 }),
+    );
+  });
+});
+
+describe("selectGlowDots", () => {
+  const cells = computeCells(LANDING2_SEEDS);
+  const junctions = junctionVertices(cells);
+
+  test("returns exactly the requested count, ranked by centerRightScore", () => {
+    const picked = selectGlowDots(junctions, 10);
+    expect(picked).toHaveLength(10);
+    const scores = picked.map(centerRightScore);
+    for (let i = 1; i < scores.length; i++) {
+      expect(scores[i]).toBeLessThanOrEqual(scores[i - 1]);
+    }
+    // Every returned point is one of the actual junctions, not invented.
+    picked.forEach((p) => expect(junctions.some((j) => j.x === p.x && j.y === p.y)).toBe(true));
+  });
+
+  test("never returns more than the vertices given", () => {
+    expect(selectGlowDots(junctions, 1000)).toHaveLength(junctions.length);
+  });
+});
+
+describe("shardMaterial", () => {
+  test("is deterministic and stays within its documented ranges", () => {
+    for (let i = 0; i < 22; i++) {
+      const a = shardMaterial(i);
+      const b = shardMaterial(i);
+      expect(a).toEqual(b);
+      expect(a.angleDeg).toBeGreaterThanOrEqual(0);
+      expect(a.angleDeg).toBeLessThan(360);
+      expect(a.lightnessT).toBeGreaterThanOrEqual(0);
+      expect(a.lightnessT).toBeLessThanOrEqual(1);
+      expect(a.restAlpha).toBeGreaterThanOrEqual(0.35);
+      expect(a.restAlpha).toBeLessThanOrEqual(0.6);
+    }
+  });
+
+  test("varies across shards rather than collapsing to one material", () => {
+    const angles = new Set(Array.from({ length: 22 }, (_, i) => shardMaterial(i).angleDeg));
+    expect(angles.size).toBeGreaterThan(15);
+  });
+});
+
+describe("frostyShardIndices", () => {
+  test("picks exactly 6 of 22, all valid indices, deterministically", () => {
+    const a = frostyShardIndices(22);
+    const b = frostyShardIndices(22);
+    expect(a.size).toBe(6);
+    expect(a).toEqual(b);
+    for (const i of a) {
+      expect(i).toBeGreaterThanOrEqual(0);
+      expect(i).toBeLessThan(22);
+    }
+  });
+});
+
+describe("insetPolygon", () => {
+  const cells = computeCells(LANDING2_SEEDS);
+  const polygon = cellPolygon(cells[1]);
+
+  test("factor 1 returns the polygon unchanged", () => {
+    const same = insetPolygon(polygon, 1);
+    polygon.forEach((p, i) => {
+      expect(same[i].x).toBeCloseTo(p.x, 9);
+      expect(same[i].y).toBeCloseTo(p.y, 9);
+    });
+  });
+
+  test("a factor below 1 shrinks every vertex toward the centroid", () => {
+    const c = centroid(polygon);
+    const shrunk = insetPolygon(polygon, 0.9);
+    polygon.forEach((p, i) => {
+      const before = Math.hypot(p.x - c.x, p.y - c.y);
+      const after = Math.hypot(shrunk[i].x - c.x, shrunk[i].y - c.y);
+      expect(after).toBeLessThan(before);
+    });
+    // The centroid itself does not move -- it is a uniform scale about it.
+    const shrunkCentroid = centroid(shrunk);
+    expect(shrunkCentroid.x).toBeCloseTo(c.x, 6);
+    expect(shrunkCentroid.y).toBeCloseTo(c.y, 6);
+  });
+});
+
+describe("edgeOpacity", () => {
+  test("stays within the documented range for every real seam", () => {
+    const cells = computeCells(LANDING2_SEEDS);
+    const edges = sharedEdges(cells);
+    expect(edges.length).toBeGreaterThan(0);
+    edges.forEach((edge) => {
+      const o = edgeOpacity(edge);
+      expect(o).toBeGreaterThanOrEqual(0.12);
+      expect(o).toBeLessThanOrEqual(0.4);
+    });
+  });
+
+  test("is deterministic for the same edge", () => {
+    const cells = computeCells(LANDING2_SEEDS);
+    const edge = sharedEdges(cells)[0];
+    expect(edgeOpacity(edge)).toBe(edgeOpacity({ ...edge }));
   });
 });

@@ -226,6 +226,10 @@ export function centroid(points: readonly Point[]): Point {
 
 // The revealed-state motion for one shard, entirely derived from its polygon
 // and index -- no per-shard art direction to keep in sync by hand.
+//
+// Distance range widened from an original 10-22px: at that range the shards
+// thickened their seams but did not visibly separate, so the "dark openings
+// between shards" the composition depends on never read as openings.
 export function shardMotion(polygon: readonly Point[], shardIndex: number): ShardMotion {
   const c = centroid(polygon);
   const dist = Math.hypot(c.x - CENTRE.x, c.y - CENTRE.y);
@@ -235,8 +239,97 @@ export function shardMotion(polygon: readonly Point[], shardIndex: number): Shar
   // top of the range -- roughly the [90,8]/[92,72] corner seeds.
   const maxDist = 55;
   const t = Math.min(dist / maxDist, 1);
-  const distance = 10 + t * (22 - 10);
+  const distance = 26 + t * (48 - 26);
   const rotationDeg = (hashUnit(shardIndex) * 2 - 1) * 1.6;
   const scale = 0.985;
   return { dx, dy, distance, rotationDeg, scale };
+}
+
+// Favors the center-right of the composition (centre x=50): a higher x
+// scores better, softened near the very top/bottom edges where a bright
+// point would sit too close to the frame. Shared by junction-dot selection
+// and per-edge seam brightness, so "brightest toward center-right" means the
+// same thing in both places rather than two independently-tuned biases.
+export function centerRightScore(p: Point): number {
+  return p.x - Math.abs(p.y - 50) * 0.3;
+}
+
+// The ~10 (or however many are asked for) junction vertices that get a gold
+// glow, chosen from the whole set by centerRightScore rather than every
+// junction glowing equally.
+export function selectGlowDots(vertices: readonly Point[], count: number): Point[] {
+  return [...vertices]
+    .sort((a, b) => centerRightScore(b) - centerRightScore(a))
+    .slice(0, count);
+}
+
+// Per-shard "material": a deterministic gradient axis and lightness so the
+// glass reads as a patchwork of distinct panes -- 22 shards with the same
+// flat tint read as a diagram, not glass.
+export type ShardMaterial = {
+  angleDeg: number;
+  // Where in the base-to-light range this shard's own two-tone gradient
+  // centres -- 0 sits toward the darker end, 1 toward the lighter end.
+  lightnessT: number;
+  // The gradient's own baked-in alpha at rest, 0.35-0.6. Kept baked into the
+  // fill rather than applied as a separate CSS opacity so the fill itself
+  // never needs to be re-computed between rest and revealed -- only a
+  // multiplier on top of it changes (see Landing2Page.tsx's shardOpacity).
+  restAlpha: number;
+};
+
+export function shardMaterial(shardIndex: number): ShardMaterial {
+  const angleDeg = hashUnit(shardIndex * 13 + 3) * 360;
+  const lightnessT = hashUnit(shardIndex * 13 + 5);
+  const restAlpha = 0.35 + hashUnit(shardIndex * 13 + 9) * 0.25;
+  return { angleDeg, lightnessT, restAlpha };
+}
+
+// Exactly 6 of the shards read frostier (a whiter cast) -- picked by ranking
+// a hash score rather than rolling each shard independently, so the count is
+// guaranteed rather than merely likely across a set this small.
+const FROSTY_COUNT = 6;
+
+export function frostyShardIndices(shardCount: number): Set<number> {
+  const scored = Array.from({ length: shardCount }, (_, i) => ({
+    i,
+    score: hashUnit(i * 13 + 11),
+  }));
+  scored.sort((a, b) => b.score - a.score);
+  return new Set(scored.slice(0, FROSTY_COUNT).map((s) => s.i));
+}
+
+// A polygon shrunk toward its own centroid by `factor` (e.g. 0.94 for a 6%
+// inset) -- the rim's "inset duplicate of the shard's own boundary" rather
+// than an exact overlay of the seam lines, which would fight them visually.
+export function insetPolygon(polygon: readonly Point[], factor: number): Point[] {
+  const c = centroid(polygon);
+  return polygon.map((p) => ({
+    x: c.x + (p.x - c.x) * factor,
+    y: c.y + (p.y - c.y) * factor,
+  }));
+}
+
+// "seed-pair:i-j" -> [i, j], or null for a boundary edge (which edgeOpacity
+// never sees, since sharedEdges already excludes those).
+function parsePairIndices(tag: string): [number, number] | null {
+  const match = /^seed-pair:(\d+)-(\d+)$/.exec(tag);
+  if (match === null) return null;
+  return [Number(match[1]), Number(match[2])];
+}
+
+// A per-edge rest opacity in [0.12, 0.4]: 60% the edge's own hash, 40% the
+// same center-right bias as the junction dots, so the brightest seams are
+// varied but still cluster toward center-right rather than being uniformly
+// random across the composition.
+export function edgeOpacity(edge: TaggedEdge): number {
+  const parsed = parsePairIndices(edge.tag);
+  const hashSeed = parsed !== null ? parsed[0] * 1000 + parsed[1] : 0;
+  const mid = { x: (edge.from.x + edge.to.x) / 2, y: (edge.from.y + edge.to.y) / 2 };
+  // centerRightScore spans roughly -35..65 across this composition; folded
+  // into 0..1 for blending against the hash term.
+  const positionT = Math.min(Math.max((centerRightScore(mid) + 35) / 100, 0), 1);
+  const hashT = hashUnit(hashSeed * 7 + 17);
+  const t = hashT * 0.6 + positionT * 0.4;
+  return 0.12 + t * (0.4 - 0.12);
 }

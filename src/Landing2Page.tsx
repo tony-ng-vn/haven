@@ -4,11 +4,17 @@ import {
   LANDING2_SEEDS,
   cellPolygon,
   computeCells,
+  edgeOpacity,
+  frostyShardIndices,
   hashUnit,
+  insetPolygon,
   junctionVertices,
+  selectGlowDots,
+  shardMaterial,
   shardMotion,
   sharedEdges,
   type Point,
+  type ShardMaterial,
 } from "./landing2Geometry";
 
 // inhavens.com/#/landing2, linked from nowhere.
@@ -111,25 +117,10 @@ const CONSTELLATION_FIGURES: Array<{ x: number; y: number; points: Array<[number
 ];
 
 // Junction vertices are shared by three cells; ~10 get a small gold glow,
-// chosen from the whole set by a center-right bias (composition centre is
-// x=50, so this simply prefers a higher x, softened near the very top/bottom
-// edges where a glow would sit too close to the frame).
+// chosen from the whole set by centerRightScore (see landing2Geometry.ts --
+// shared with the seams' own brightness bias, so "brightest toward
+// center-right" means the same thing in both places).
 const GLOW_DOT_COUNT = 10;
-
-// Named rather than inlined into the sort: verified equivalent to the
-// previous inline expression (both reduce to score(b) - score(a)), but a
-// three-term subtraction chain is exactly the kind of thing that reads as a
-// sign error even when it is not one -- not worth that ambiguity in a
-// comparator nobody will re-derive from memory later.
-function centerRightScore(p: Point): number {
-  return p.x - Math.abs(p.y - 50) * 0.3;
-}
-
-export function selectGlowDots(vertices: Point[], count: number): Point[] {
-  return [...vertices]
-    .sort((a, b) => centerRightScore(b) - centerRightScore(a))
-    .slice(0, count);
-}
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
@@ -139,8 +130,78 @@ export function clipPathFor(polygon: Point[]): string {
   return `polygon(${polygon.map((p) => `${round(p.x)}% ${round(p.y)}%`).join(", ")})`;
 }
 
+function polygonPoints(polygon: readonly Point[]): string {
+  return polygon.map((p) => `${round(p.x)},${round(p.y)}`).join(" ");
+}
+
 const SHARD_TRANSITION = "opacity 900ms cubic-bezier(.22,.61,.36,1)";
 const SHARD_TRANSITION_WITH_TRANSFORM = `transform 900ms cubic-bezier(.22,.61,.36,1), ${SHARD_TRANSITION}`;
+
+// Shard material: a per-shard two-tone gradient between a dark and a lighter
+// navy-indigo base, angled per shard, so the glass reads as 22 distinct
+// panes rather than one flat tint. lightnessT (from shardMaterial) picks
+// where in that range this shard's own gradient centres; a small fixed
+// spread around it is what gives each shard its own two-tone read.
+const SHARD_DARK: readonly [number, number, number] = [38, 44, 84];
+const SHARD_LIGHT: readonly [number, number, number] = [64, 72, 118];
+const SHARD_LIGHTNESS_SPREAD = 0.22;
+
+function mixChannel(a: number, b: number, t: number): number {
+  return Math.round(a + (b - a) * t);
+}
+
+function mixRgb(t: number): [number, number, number] {
+  return [
+    mixChannel(SHARD_DARK[0], SHARD_LIGHT[0], t),
+    mixChannel(SHARD_DARK[1], SHARD_LIGHT[1], t),
+    mixChannel(SHARD_DARK[2], SHARD_LIGHT[2], t),
+  ];
+}
+
+// The fill's own alpha is baked into these rgba() stops at material.restAlpha
+// and never recomputed between rest and revealed -- see shardOpacity below
+// for how the darker "glossy" revealed look is layered on top via a plain
+// opacity multiplier instead, which is what makes it transitionable at all
+// (a change in background-image/gradient stops does not animate smoothly).
+//
+// Exported for a direct string-content unit test: happy-dom's CSSStyleDeclaration
+// cannot parse rgba() used inside a gradient function at all (confirmed by
+// probing it directly -- a single-layer linear-gradient with rgba() stops
+// alone comes back empty), so style.background is unreadable in jsdom-family
+// test environments here. That is a test-tool limitation, not invalid CSS --
+// real browsers render layered rgba() gradients correctly -- so the fix is
+// testing this function's return value directly rather than reading it back
+// through a DOM style object.
+export function shardFillCss(material: ShardMaterial, frosty: boolean): string {
+  const t0 = Math.max(0, material.lightnessT - SHARD_LIGHTNESS_SPREAD / 2);
+  const t1 = Math.min(1, material.lightnessT + SHARD_LIGHTNESS_SPREAD / 2);
+  const [r0, g0, b0] = mixRgb(t0);
+  const [r1, g1, b1] = mixRgb(t1);
+  const a = material.restAlpha.toFixed(2);
+  const base = `linear-gradient(${round(material.angleDeg)}deg, rgba(${r0},${g0},${b0},${a}) 0%, rgba(${r1},${g1},${b1},${a}) 100%)`;
+  const highlight = "radial-gradient(circle at 18% 14%, rgba(255,255,255,0.1), transparent 42%)";
+  const frost = frosty
+    ? "radial-gradient(circle at 30% 22%, rgba(255,255,255,0.16), transparent 55%), "
+    : "";
+  return `${frost}${highlight}, ${base}`;
+}
+
+// The alpha-multiplier trick: restAlpha is already baked into the gradient
+// (shardFillCss), so a plain CSS opacity of 1 shows it exactly as-is. On
+// reveal, the shard should darken by a fixed +0.08 of alpha regardless of
+// its own restAlpha (0.35-0.6, per shard) -- the multiplier that adds a
+// constant amount to a per-shard base is restAlpha+0.08 divided by
+// restAlpha, computed per shard rather than one shared constant.
+function shardOpacity(restAlpha: number, revealed: boolean): number {
+  return revealed ? (restAlpha + 0.08) / restAlpha : 1;
+}
+
+// Seams double in brightness on reveal (per edge, since edgeOpacity is
+// per-edge already), capped so the brightest edges do not blow out past a
+// believable seam glow.
+function seamOpacity(rest: number, revealed: boolean): number {
+  return revealed ? Math.min(rest * 2, 0.85) : rest;
+}
 
 function SkyGlyph() {
   return (
@@ -190,6 +251,7 @@ export function Landing2Page() {
     () => selectGlowDots(junctionVertices(cells), GLOW_DOT_COUNT),
     [cells],
   );
+  const frostySet = useMemo(() => frostyShardIndices(cells.length), [cells]);
 
   // Coarse pointers toggle on tap; nothing here calls preventDefault, so a
   // tap that lands on a link or button still navigates or activates exactly
@@ -225,33 +287,74 @@ export function Landing2Page() {
               <stop offset="0%" stopColor="#232a4d" stopOpacity="0.55" />
               <stop offset="100%" stopColor="#232a4d" stopOpacity="0" />
             </linearGradient>
+            <linearGradient id="landing2-water-shimmer" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#f2efe9" stopOpacity="0.35" />
+              <stop offset="100%" stopColor="#f2efe9" stopOpacity="0" />
+            </linearGradient>
             <radialGradient id="landing2-window">
               <stop offset="0%" stopColor="#ffd9a0" stopOpacity="0.95" />
               <stop offset="100%" stopColor="#ffd9a0" stopOpacity="0" />
             </radialGradient>
+            <radialGradient id="landing2-window-bloom">
+              <stop offset="0%" stopColor="#ffd9a0" stopOpacity="0.75" />
+              <stop offset="100%" stopColor="#ffd9a0" stopOpacity="0" />
+            </radialGradient>
           </defs>
 
-          {/* crescent moon, ~62,12 */}
-          <circle cx="62" cy="12" r="3.2" fill="#f2e7d5" opacity="0.9" />
-          <circle cx="63.3" cy="11.2" r="3.2" fill="var(--night)" />
+          {/* crescent moon, ~62,12 -- pale grey at rest, warm gold revealed
+              (.landing2-moon-disc), nested in the scene-el opacity fade */}
+          <g className="landing2-scene-el">
+            <circle cx="62" cy="12" r="3.2" className="landing2-moon-disc" />
+            <circle cx="63.3" cy="11.2" r="3.2" fill="var(--night)" />
+          </g>
 
-          {/* two mountain ridges, 35-75% x at 15-30% y, near-black indigo */}
-          <polygon points="35,29 44,18 54,25 65,16 75,28 75,32 35,32" fill="#141936" />
-          <polygon points="35,31 47,23 60,28 75,30 75,32 35,32" fill="#0c0e20" opacity="0.92" />
-          {/* water reflection band directly below the ridges */}
-          <rect x="35" y="32" width="40" height="7" fill="url(#landing2-water)" />
+          {/* two mountain ridges, 35-75% x at 15-30% y, near-black indigo, a
+              moonlit rim along the top ridge and a shimmer on the water
+              band, both invisible until revealed */}
+          <g className="landing2-scene-el">
+            <polygon points="35,29 44,18 54,25 65,16 75,28 75,32 35,32" fill="#141936" />
+            <polygon points="35,31 47,23 60,28 75,30 75,32 35,32" fill="#0c0e20" opacity="0.92" />
+            <polyline
+              className="landing2-mountain-rim"
+              points="35,29 44,18 54,25 65,16 75,28"
+              fill="none"
+            />
+            <rect x="35" y="32" width="40" height="7" fill="url(#landing2-water)" />
+            <rect
+              className="landing2-water-shimmer"
+              x="35"
+              y="32"
+              width="40"
+              height="7"
+              fill="url(#landing2-water-shimmer)"
+            />
+          </g>
 
-          {/* tree silhouette cluster, lower-center-left, one glowing window */}
-          <polygon points="40,80 42,67 44.4,80" fill="#0b0d1e" />
-          <polygon points="43,80 45.6,66 48.2,80" fill="#0b0d1e" />
-          <polygon points="46.2,80 48.8,68.5 51.4,80" fill="#0b0d1e" />
-          <circle cx="45.6" cy="75" r="0.9" fill="url(#landing2-window)" />
+          {/* tree silhouette cluster, lower-center-left, one glowing window
+              with a bloom halo that only appears on reveal */}
+          <g className="landing2-scene-el">
+            <polygon points="40,80 42,67 44.4,80" fill="#0b0d1e" />
+            <polygon points="43,80 45.6,66 48.2,80" fill="#0b0d1e" />
+            <polygon points="46.2,80 48.8,68.5 51.4,80" fill="#0b0d1e" />
+            <circle className="landing2-window-bloom" cx="45.6" cy="75" r="2.6" fill="url(#landing2-window-bloom)" />
+            <circle cx="45.6" cy="75" r="0.9" fill="url(#landing2-window)" />
+          </g>
+
+          {/* a hint of foliage and warm light near the left edge, so the
+              reveal is not center-only (matches the left-edge foliage in the
+              reference the owner compared this against) */}
+          <g className="landing2-scene-el">
+            <polygon points="3,79 5.2,64 7.4,79" fill="#0b0d1e" />
+            <polygon points="6.4,80 8.8,62.5 11.2,80" fill="#0b0d1e" />
+            <circle className="landing2-window-bloom" cx="7" cy="71" r="1.8" fill="url(#landing2-window-bloom)" />
+            <circle cx="7" cy="71" r="0.6" fill="url(#landing2-window)" />
+          </g>
         </svg>
 
         {MEMORY_FRAGMENTS.map((block, i) => (
           <div
             key={i}
-            className="landing2-memory"
+            className="landing2-memory landing2-scene-el"
             style={{
               left: `${block.x}%`,
               top: `${block.y}%`,
@@ -267,7 +370,7 @@ export function Landing2Page() {
         {POLAROIDS.map((p, i) => (
           <div
             key={i}
-            className="landing2-polaroid"
+            className="landing2-polaroid landing2-scene-el"
             style={{
               left: `${p.x}%`,
               top: `${p.y}%`,
@@ -294,24 +397,38 @@ export function Landing2Page() {
           preserveAspectRatio="none"
           aria-hidden="true"
         >
-          {PARTICLES.map((particle, i) => (
-            <circle
-              key={i}
-              className="sky-tw"
-              cx={particle.x}
-              cy={particle.y}
-              r={0.35}
-              fill="var(--accent)"
-              style={
-                {
-                  "--d": `${particle.dur.toFixed(1)}s`,
-                  "--dl": `${particle.delay.toFixed(1)}s`,
-                  "--hi": particle.hi.toFixed(2),
-                  "--lo": particle.lo.toFixed(2),
-                } as CSSProperties
-              }
-            />
-          ))}
+          {PARTICLES.map((particle, i) => {
+            // Brighter twinkle band once revealed, capped well short of 1 so
+            // they stay particles, not new stars.
+            const hi = revealed ? Math.min(particle.hi + 0.15, 0.95) : particle.hi;
+            const lo = revealed ? Math.min(particle.lo + 0.12, 0.4) : particle.lo;
+            const style: CSSProperties = {
+              "--d": `${particle.dur.toFixed(1)}s`,
+              "--dl": `${particle.delay.toFixed(1)}s`,
+              "--hi": hi.toFixed(2),
+              "--lo": lo.toFixed(2),
+            } as CSSProperties;
+            if (!reducedMotion) {
+              // A small per-particle drift, direction from its own hash so it
+              // is stable across renders -- "a few px", not a flight path.
+              const angle = hashUnit(i * 5 + 2) * Math.PI * 2;
+              style.transform = revealed
+                ? `translate(${round(Math.cos(angle) * 0.3)}px, ${round(Math.sin(angle) * 0.3)}px)`
+                : "translate(0px, 0px)";
+              style.transition = "transform 900ms cubic-bezier(.22,.61,.36,1)";
+            }
+            return (
+              <circle
+                key={i}
+                className="sky-tw"
+                cx={particle.x}
+                cy={particle.y}
+                r={0.35}
+                fill="var(--accent)"
+                style={style}
+              />
+            );
+          })}
         </svg>
 
         <div className="landing2-veil" />
@@ -322,7 +439,16 @@ export function Landing2Page() {
         {cells.map((cell) => {
           const polygon = cellPolygon(cell);
           const motion = shardMotion(polygon, cell.seedIndex);
-          const style: CSSProperties = { clipPath: clipPathFor(polygon) };
+          const material = shardMaterial(cell.seedIndex);
+          const frosty = frostySet.has(cell.seedIndex);
+          const style: CSSProperties = {
+            clipPath: clipPathFor(polygon),
+            background: shardFillCss(material, frosty),
+            // Opacity is set here, in both branches below, not just the
+            // transform one: reduced motion keeps every brightness/opacity
+            // half of the reveal, only the movement drops out.
+            opacity: shardOpacity(material.restAlpha, revealed),
+          };
           if (!reducedMotion) {
             style.transform = revealed
               ? `translate(${round(motion.dx * motion.distance)}px, ${round(
@@ -332,8 +458,8 @@ export function Landing2Page() {
             style.transition = SHARD_TRANSITION_WITH_TRANSFORM;
           } else {
             // No transform at all under reduced motion -- the reveal is a
-            // pure opacity crossfade (opacity itself comes from the shared
-            // .landing2-shard / .landing2-revealed rule, not inline).
+            // pure crossfade of opacity and color (the fill's own gradient
+            // stops never change; only the opacity multiplier above does).
             style.transition = SHARD_TRANSITION;
           }
           return <div key={cell.seedIndex} className="landing2-shard" style={style} />;
@@ -350,7 +476,43 @@ export function Landing2Page() {
               <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.9" />
               <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
             </radialGradient>
+            {/* One global light direction, one gradient: applied to every
+                shard's rim via objectBoundingBox units (the default), so it
+                independently reruns upper-left-to-lower-right across each
+                shard's own bounding box rather than needing 22 copies. */}
+            <linearGradient id="landing2-rim" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#dfe8f7" stopOpacity="0.9" />
+              <stop offset="100%" stopColor="#dfe8f7" stopOpacity="0" />
+            </linearGradient>
+            {/* Filter region widened past the element's own bounding box --
+                the default -10%/+10% clips a blurred seam that runs near the
+                viewport edge, and applying this once to the whole group
+                (rather than per line) computes the region once, not 44
+                times. */}
+            <filter id="landing2-seam-blur-filter" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="0.35" />
+            </filter>
           </defs>
+
+          {/* Inner bevel rim, one inset polygon per shard, all sharing the
+              one light-direction gradient above. Drawn under the seam lines
+              so a crisp seam still reads as the brighter of the two. */}
+          {cells.map((cell) => (
+            <polygon
+              key={cell.seedIndex}
+              className="landing2-rim"
+              points={polygonPoints(insetPolygon(cellPolygon(cell), 0.94))}
+              fill="none"
+            />
+          ))}
+
+          {/* Blurred duplicate of every seam, painted before the crisp lines
+              so the bloom sits underneath them. */}
+          <g className="landing2-seam-blur" filter="url(#landing2-seam-blur-filter)">
+            {edges.map((edge, i) => (
+              <line key={i} x1={edge.from.x} y1={edge.from.y} x2={edge.to.x} y2={edge.to.y} />
+            ))}
+          </g>
 
           {edges.map((edge, i) => (
             <line
@@ -360,12 +522,23 @@ export function Landing2Page() {
               y1={edge.from.y}
               x2={edge.to.x}
               y2={edge.to.y}
+              style={{ opacity: seamOpacity(edgeOpacity(edge), revealed) }}
             />
           ))}
 
-          {glowDots.map((v, i) => (
-            <circle key={i} cx={v.x} cy={v.y} r={0.5} fill="url(#landing2-glow)" />
-          ))}
+          {/* Junction glow: a soft halo under a small bright core, both
+              scaled by rank -- glowDots is already sorted center-right-first
+              by selectGlowDots, so the earliest (most center-right) dots
+              read as the brightest. */}
+          {glowDots.map((v, i) => {
+            const strength = 1 - (i / Math.max(glowDots.length - 1, 1)) * 0.4;
+            return (
+              <g key={i}>
+                <circle cx={v.x} cy={v.y} r={0.9 * strength} fill="url(#landing2-glow)" opacity={strength} />
+                <circle cx={v.x} cy={v.y} r={0.32 * strength} fill="var(--accent)" opacity={0.9 * strength} />
+              </g>
+            );
+          })}
 
           {CONSTELLATION_FIGURES.map((figure, i) => (
             <g key={i} className="landing2-mini-figure">

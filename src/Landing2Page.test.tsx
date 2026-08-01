@@ -18,7 +18,7 @@ vi.mock("./DriftSky", () => ({
   },
 }));
 
-const { Landing2Page } = await import("./Landing2Page");
+const { Landing2Page, shardFillCss } = await import("./Landing2Page");
 
 const originalMatchMedia = window.matchMedia;
 
@@ -179,13 +179,90 @@ describe("Landing2Page", () => {
     shards.forEach((shard) => expect(shard.style.transform).toBe(""));
   });
 
+  // Asserts inequality against the known rest string rather than substring
+  // matching "translate(0px, 0px)" -- a shard whose centroid sits nearly on
+  // the composition's horizontal or vertical centreline can produce a
+  // revealed transform like "translate(0px, 31.2px)", which still contains
+  // that substring and would let a broken (never-actually-moves) shard pass.
   test("ordinary motion sets a transform once revealed", () => {
     stubMedia({ fine: true, reduced: false });
     const { container } = render(<Landing2Page />);
     const root = container.querySelector(".landing2")!;
     const shard = container.querySelector<HTMLElement>(".landing2-shard")!;
-    expect(shard.style.transform).toContain("translate(0px, 0px)");
+    const restTransform = shard.style.transform;
+    expect(restTransform).toBe("translate(0px, 0px) rotate(0deg) scale(1)");
     fireEvent.mouseEnter(root);
-    expect(shard.style.transform).not.toContain("translate(0px, 0px)");
+    expect(shard.style.transform).not.toBe(restTransform);
+  });
+
+  // Item 6 of the visual-correction pass: shards darken (fill opacity +0.08)
+  // rather than fading out on reveal, a deliberate reversal of the previous
+  // rest 0.5 / revealed 0.34 pair.
+  test("shards darken (opacity rises above 1x) rather than fade out on reveal", () => {
+    stubMedia({ fine: true, reduced: false });
+    const { container } = render(<Landing2Page />);
+    const root = container.querySelector(".landing2")!;
+    const shard = container.querySelector<HTMLElement>(".landing2-shard")!;
+    expect(shard.style.opacity).toBe("1");
+    fireEvent.mouseEnter(root);
+    expect(Number(shard.style.opacity)).toBeGreaterThan(1);
+  });
+
+  // Reduced motion keeps every brightness/opacity half of the reveal; only
+  // the movement drops out (the transform test above covers that half).
+  test("reduced motion still darkens shards on reveal, just without moving them", () => {
+    stubMedia({ fine: true, reduced: true });
+    const { container } = render(<Landing2Page />);
+    const root = container.querySelector(".landing2")!;
+    const shard = container.querySelector<HTMLElement>(".landing2-shard")!;
+    expect(shard.style.opacity).toBe("1");
+    fireEvent.mouseEnter(root);
+    expect(Number(shard.style.opacity)).toBeGreaterThan(1);
+    expect(shard.style.transform).toBe("");
+  });
+
+  // style.background itself is not readable back here -- see shardFillCss's
+  // own doc comment: happy-dom cannot parse rgba() inside a gradient
+  // function at all, in any browser-family test environment this repo runs
+  // in. clip-path has no such problem and is a reliable proxy that each
+  // shard's per-cell styling actually ran (22 distinct polygons, not one
+  // shape repeated).
+  test("22 shards and 22 rim outlines render, each shard its own clip-path", () => {
+    stubMedia({ fine: true });
+    const { container } = render(<Landing2Page />);
+    const shards = container.querySelectorAll<HTMLElement>(".landing2-shard");
+    const rims = container.querySelectorAll(".landing2-rim");
+    expect(shards).toHaveLength(22);
+    expect(rims).toHaveLength(22);
+    const clipPaths = new Set(Array.from(shards, (s) => s.style.clipPath));
+    expect(clipPaths.size).toBe(22);
+  });
+});
+
+// shardFillCss builds the per-shard gradient string directly (see its own
+// doc comment for why this is a plain-function test rather than a
+// render-and-read-the-DOM one).
+describe("shardFillCss", () => {
+  test("bakes the given restAlpha into both stops of the base gradient", () => {
+    const css = shardFillCss({ angleDeg: 90, lightnessT: 0.5, restAlpha: 0.47 }, false);
+    // The base gradient is the last layer in the string (after the fixed
+    // 0.1-alpha highlight, which must not be confused for restAlpha here).
+    const base = css.split(", linear-gradient(")[1];
+    expect(base, "base linear-gradient layer not found").toBeTruthy();
+    const alphas = [...base.matchAll(/rgba\([^)]+,\s*([0-9.]+)\)/g)].map((m) => Number(m[1]));
+    expect(alphas).toHaveLength(2);
+    alphas.forEach((a) => expect(a).toBeCloseTo(0.47, 5));
+  });
+
+  test("frosty shards carry an extra white-tint layer; others do not", () => {
+    const material = { angleDeg: 0, lightnessT: 0.5, restAlpha: 0.5 };
+    expect(shardFillCss(material, true)).toContain("255,255,255,0.16");
+    expect(shardFillCss(material, false)).not.toContain("255,255,255,0.16");
+  });
+
+  test("the gradient axis reflects the given angle", () => {
+    expect(shardFillCss({ angleDeg: 47.3, lightnessT: 0.2, restAlpha: 0.4 }, false)).toContain(
+      "linear-gradient(47.3deg",
+    );
   });
 });

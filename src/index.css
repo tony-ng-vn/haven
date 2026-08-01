@@ -3091,7 +3091,7 @@ a.card-handle:focus-visible {
    position: fixed to the viewport.
    ------------------------------------------------------------------------ */
 /* overflow: hidden is deliberate, not a default: revealed shards translate
-   10-22px outward from the composition's centre, and an edge or corner shard
+   26-48px outward from the composition's centre, and an edge or corner shard
    moving further outward should look like glass shifting against a window
    frame -- clipped cleanly at the boundary -- not like a gap of bare page
    background (or a scrollbar) appearing at the edge of the screen. The
@@ -3184,42 +3184,123 @@ a.card-handle:focus-visible {
   display: block;
 }
 
+/* Shared by every "hidden world" element that must read as almost fully
+   hidden at rest and in full presence on reveal: the moon, the mountains,
+   the trees, and (via this same class added alongside their own) the memory
+   fragments and polaroids. One rule, so "how obscured is the world at rest"
+   is a single number to tune, not one per element. */
+.landing2-scene-el {
+  opacity: 0.06;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-scene-el {
+  opacity: 1;
+}
+
+/* The moon at rest is a barely-there pale disc (its exact hue hardly reads
+   at 0.06 opacity anyway); on reveal it warms to pale gold rather than
+   staying a cold grey. */
+.landing2-moon-disc {
+  fill: #d8dced;
+  transition: fill 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-moon-disc {
+  fill: #ffd9a0;
+}
+
+/* A moonlit rim along the ridge line, invisible at rest, and a shimmer
+   overlay on the water band underneath it -- both fade in only on reveal
+   (their own opacity: 0, nested inside .landing2-scene-el's 0.06 -> 1 fade,
+   so the combined rest opacity is exactly 0 rather than a faint 0.06). */
+.landing2-mountain-rim {
+  stroke: rgba(223, 232, 247, 0.55);
+  stroke-width: 0.15;
+  opacity: 0;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-mountain-rim {
+  opacity: 0.6;
+}
+
+.landing2-water-shimmer {
+  opacity: 0;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-water-shimmer {
+  opacity: 1;
+}
+
+/* The cabin window's bloom halo, same nested-zero trick as the water
+   shimmer: present only once revealed, not a brighter version of the
+   whisper-level rest state. */
+.landing2-window-bloom {
+  opacity: 0;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-window-bloom {
+  opacity: 1;
+}
+
 /* The dimming veil: opaque enough at rest that the beneath layer only shows
-   through as faint suggestion, dropping away on reveal. This single div is
-   the entire "mostly obscured at rest" mechanism -- individual beneath
-   elements need no opacity state of their own. */
+   through as faint suggestion, dropping away on reveal. Raised from an
+   original 0.82/0.28 -- paired with the scene elements above now carrying
+   their own near-invisible rest opacity, the veil no longer has to do all
+   of the hiding by itself, but 0.9 keeps rest reading as calm and dark
+   rather than merely dim. */
 .landing2-veil {
   position: absolute;
   inset: 0;
   background: var(--night);
-  opacity: 0.82;
+  opacity: 0.9;
   transition: opacity 700ms var(--ease-out);
 }
 
 .landing2-revealed .landing2-veil {
-  opacity: 0.28;
+  opacity: 0.06;
 }
 
-/* Each shard covers the full layer and cuts itself down to one Voronoi cell
-   with an inline clip-path (unique per shard, from landing2Geometry.ts) --
-   only clip-path and, when the page allows transforms, transform/transition
-   are set inline; everything shared lives here. No backdrop-filter: 22
+/* Each shard covers the full layer and cuts itself down to one Voronoi cell.
+   clip-path, the per-shard gradient fill, and (when the page allows
+   transforms) transform/opacity/transition are all set inline --
+   Landing2Page.tsx's shardMaterial/shardFillCss -- because both the fill and
+   the opacity multiplier vary per shard (see the comment on
+   landing2Geometry.ts's ShardMaterial for why the fill's own alpha is baked
+   in rather than layered under a separate opacity). No backdrop-filter: 22
    blurred layers is a compositor cost the veil's own opacity already buys
-   the same frosted-obscurity read without. */
+   the same frosted-obscurity read without.
+
+   opacity is NOT set here: it used to be (a flat 0.5 rest / 0.34 revealed
+   pair), but once it became per-shard and inline, a class rule here would
+   silently lose that fight every time -- inline always wins over a
+   non-important external rule for the same property, so the symptom would
+   be "the CSS looks right but does nothing," not a visible break. */
 .landing2-shard {
   /* A plain div, unlike .landing2-sky's canvas: inset: 0 alone stretches a
      non-replaced element to fill its box, no explicit width/height needed. */
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.1), transparent 42%),
-    linear-gradient(135deg, rgba(35, 42, 77, 0.92) 0%, rgba(14, 17, 35, 0.88) 100%);
-  opacity: 0.5;
   will-change: transform, opacity;
 }
 
-.landing2-revealed .landing2-shard {
-  opacity: 0.34;
+/* The inner bevel rim: an inset duplicate of each shard's own boundary
+   (landing2Geometry.ts's insetPolygon), stroked with one shared
+   upper-left-bright/lower-right-faint gradient (#landing2-rim, defined once
+   in Landing2Page.tsx and reused per shard via objectBoundingBox units, so
+   "one global light direction" is one gradient, not 22 copies). */
+.landing2-rim {
+  stroke: url(#landing2-rim);
+  stroke-width: 0.14;
+  opacity: 0.18;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-rim {
+  opacity: 0.5;
 }
 
 .landing2-seams {
@@ -3230,14 +3311,34 @@ a.card-handle:focus-visible {
   pointer-events: none;
 }
 
+/* opacity is set inline per line (landing2Geometry.ts's edgeOpacity, doubled
+   on reveal and capped) for the same reason shard opacity is inline: it
+   varies per edge, so a shared class rule here could not express it and
+   would only risk fighting the inline value. stroke and stroke-width are
+   uniform across every seam, so they stay here. */
 .landing2-seam-line {
   stroke: #dfe8f7;
   stroke-width: 0.12;
-  opacity: 0.28;
   transition: opacity 700ms var(--ease-out);
 }
 
-.landing2-revealed .landing2-seam-line {
+/* A blurred duplicate of every seam, painted underneath the crisp lines, so
+   the seams bloom softly rather than reading as thin drawn strokes on a flat
+   sky. One filter over the whole group (not one per line): cheaper, and it
+   is also what keeps a seam near the viewport edge from having its blur
+   clipped by a per-element filter region. */
+.landing2-seam-blur {
+  stroke: #dfe8f7;
+  /* Deliberately close to the crisp line's own 0.12 rather than a wide band
+     -- the blur (stdDeviation 0.35, in Landing2Page.tsx's filter def) is what
+     does the softening; a wide pre-blur stroke on top of that much blur reads
+     as a fat halo rather than a glow. */
+  stroke-width: 0.18;
+  opacity: 0.25;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-seam-blur {
   opacity: 0.45;
 }
 
