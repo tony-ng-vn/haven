@@ -14,7 +14,7 @@
       ]
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!demo-sky\\.html).*)",
       "headers": [
         {
           "key": "X-Content-Type-Options",
@@ -34,7 +34,32 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com; connect-src 'self' https://third-hound-186.convex.cloud wss://third-hound-186.convex.cloud https://brilliant-puma-925.convex.cloud wss://brilliant-puma-925.convex.cloud https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com https://glorious-gerbil-332.convex.site; img-src 'self' data: blob: https://third-hound-186.convex.cloud https://brilliant-puma-925.convex.cloud https://img.clerk.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; frame-src https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com https://challenges.cloudflare.com; base-uri 'self'; form-action 'self'"
+          "value": "default-src 'self'; script-src 'self' https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com; connect-src 'self' https://third-hound-186.convex.cloud wss://third-hound-186.convex.cloud https://brilliant-puma-925.convex.cloud wss://brilliant-puma-925.convex.cloud https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com https://glorious-gerbil-332.convex.site; img-src 'self' data: blob: https://third-hound-186.convex.cloud https://brilliant-puma-925.convex.cloud https://img.clerk.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; frame-src 'self' https://valued-bonefish-64.clerk.accounts.dev https://clerk.inhavens.com https://challenges.cloudflare.com; base-uri 'self'; form-action 'self'"
+        }
+      ]
+    },
+    {
+      "source": "/demo-sky.html",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'none'"
         }
       ]
     }

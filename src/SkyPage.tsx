@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { DriftSky } from "./DriftSky";
+import { TopNav } from "./TopNav";
 
 // inhavens.com/#/sky.
 //
@@ -48,11 +49,8 @@ export function SkyPage() {
   return (
     <div className="card-page">
       <DriftSky className="card-sky" />
+      <TopNav />
       <main className="sky-page">
-        <a className="legal-back" href="/">
-          Haven
-        </a>
-
         <div className="sky-hero">
           <span className="sky-eyebrow">Your Sky, for Mac</span>
           <h1 className="sky-title">Every person you know, in one map.</h1>

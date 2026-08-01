@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { DriftSky } from "./DriftSky";
+import { TopNav } from "./TopNav";
 import { WaitlistForm } from "./WaitlistForm";
 import { WAITLIST_COPY } from "./waitlistCopy";
 
@@ -38,11 +39,8 @@ export function IosPage() {
   return (
     <div className="card-page">
       <DriftSky className="card-sky" />
+      <TopNav />
       <main className="ios-page">
-        <a className="legal-back" href="/">
-          Haven
-        </a>
-
         <div className="ios-hero">
           <span className="ios-eyebrow">{WAITLIST_COPY.eyebrow}</span>
           <h1 className="ios-title">{WAITLIST_COPY.headline}</h1>

@@ -1,0 +1,1653 @@
+<!DOCTYPE html>
+<!--
+  Connection graph viewer v4 -- the acquaintance map.
+
+  What this shows: every person you have a live connection to, as a dot on a 2D map you pan and zoom.
+  Position means shared context: people who share group chats and who the data implies know each other are pulled together, so the canvas reads as social regions (family, work, a college thread) rather than as a hierarchy ranked around you.
+  You are implicit -- there is no center node, no rings, no "closeness tier".
+  Group chats are never drawn as map objects; they exist only as invisible layout anchors and as evidence you can inspect (the groups drawer, or a person's connection panel).
+  A line between two people is a derived acquaintance, not a raw group-membership edge: confidence is `confirmed` (you vouched for it), `strong`, or `likely`, and line style encodes which.
+  Absence of a line means no observed evidence, never "these people do not know each other".
+
+  Product sentence this implements (graph/PLAN.md): messages are evidence, group chats are contexts, people are nodes, and the page is a navigable map of the connections among them.
+
+  Data contract: this file is a TEMPLATE and holds no data.
+  viewer/build.py replaces two placeholder tokens inside the single script block below (see that script's own opening comment for the literal placeholder names, kept out of this prose so build.py's substitution has exactly one target apiece):
+    - the viewer-core placeholder is replaced with viewer_core.mjs verbatim (its `export` keywords stripped, nothing else touched) -- see build.py's header comment for the exact mechanism and how to verify it.
+      That file is also what graph/viewer/tests.mjs imports and runs under plain node, so the code under test here is the code that ships, not a copy of it.
+    - the graph-json placeholder is replaced with a `graph-cli json` export (or, for development, graph/viewer/fixtures/synthetic.json): {nodes, edges, acquaintances?, fullyAcquaintedChatIds?}.
+      The last two fields are optional -- an older export without them still renders (dots and regions from co-membership alone, no acquaintance lines), never errors.
+  The rendered output holds real names and belongs in graph/exports/, which is gitignored; this template itself is safe to commit.
+
+  How to build:
+    graph-cli json --chat-db ... --contacts-db ... > exports/graph.json
+    python3 viewer/build.py exports/graph.json exports/my-map.html viewer/template-v4.html
+
+  This file is fully self-contained: no external requests of any kind (no CDN, no fonts, no telemetry), safe to open straight from file://.
+
+  Interaction: type in the search box to find someone (most dots are unlabeled at rest, so search is a primary way in) and press Enter or click a result.
+  Hover a dot for its name.
+  Click a person to see who they know, grouped by confidence, each group expandable to its evidence.
+  With one person selected, click a second: pair mode, showing whether they connect, the most-confident path between them, and evidence for every hop.
+  Esc clears the current selection.
+  Drag to pan, scroll to zoom.
+  The groups drawer lists every group chat as evidence, including a per-chat "everyone here knows each other" toggle that promotes every pair of that chat's members to confirmed for as long as this browser remembers it (localStorage only -- nothing leaves the page -- with a button to copy those marks as JSON).
+  First load animates dots settling into place; prefers-reduced-motion skips straight to the resting layout.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Connection Graph</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0908; }
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  canvas.dragging { cursor: grabbing; }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+
+  /* The browser's own `[hidden] { display: none }` is low-specificity and loses
+     to any author rule that also sets `display` on the same element (several
+     panels below set `display: flex`) -- !important here, once, beats chasing
+     that collision element by element. */
+  [hidden] { display: none !important; }
+
+  /* ---- shared panel chrome: warm brass on deep night, matching template-v3's redesign pass ---- */
+  .panel {
+    position: fixed; z-index: 9990;
+    background: linear-gradient(180deg, rgba(22,19,14,0.94), rgba(12,11,9,0.96));
+    border: 1px solid rgba(235,205,150,0.16); border-radius: 14px;
+    box-shadow: 0 1px 0 rgba(255,244,214,0.07) inset, 0 24px 60px rgba(0,0,0,0.55);
+    backdrop-filter: blur(14px); color: #efe6d4;
+  }
+  button { font-family: inherit; }
+  .iconbtn {
+    background: none; border: 1px solid rgba(235,205,150,0.25); border-radius: 999px;
+    color: rgba(242,231,210,0.65); width: 22px; height: 22px; font-size: 12px; cursor: pointer;
+    line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .iconbtn:hover { border-color: rgba(235,205,150,0.6); color: #fff; }
+  .iconbtn:focus-visible, button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid rgba(235,205,150,0.65); outline-offset: 2px;
+  }
+
+  /* ---- masthead ---- */
+  .mast { position: fixed; top: 22px; left: 24px; z-index: 9980; user-select: none; pointer-events: none; }
+  .mast .t { font: 600 14px Georgia, serif; letter-spacing: 0.3em; color: rgba(242,231,210,0.92); }
+  .mast .s { margin-top: 4px; font: 500 8.5px -apple-system, BlinkMacSystemFont, sans-serif;
+             letter-spacing: 0.22em; color: rgba(214,164,94,0.78); }
+  .mast .rule { width: 40px; height: 1px; margin-top: 8px;
+                background: linear-gradient(90deg, rgba(214,164,94,0.8), rgba(214,164,94,0)); }
+
+  /* ---- search: always visible and in normal tab order, not a shortcut overlay ---- */
+  .searchwrap { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9991; width: min(380px, 84vw); }
+  .searchbar {
+    display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(180deg, rgba(22,19,14,0.93), rgba(12,11,9,0.95));
+    border: 1px solid rgba(235,205,150,0.18); border-radius: 999px;
+    padding: 9px 16px; box-shadow: 0 12px 30px rgba(0,0,0,0.45);
+  }
+  .searchbar input {
+    flex: 1; background: none; border: none; outline: none; color: #f2e7d2;
+    font: italic 14px Georgia, serif;
+  }
+  .searchbar input::placeholder { color: rgba(242,231,210,0.4); font-style: italic; }
+  .search-res {
+    margin-top: 6px; max-height: 280px; overflow-y: auto; padding: 6px;
+    background: linear-gradient(180deg, rgba(22,19,14,0.96), rgba(12,11,9,0.97));
+    border: 1px solid rgba(235,205,150,0.16); border-radius: 12px;
+    box-shadow: 0 18px 44px rgba(0,0,0,0.5);
+  }
+  .sres {
+    display: flex; width: 100%; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 8px;
+    background: none; border: none; color: #efe6d4; font-family: Georgia, serif; font-size: 13.5px;
+    cursor: pointer; text-align: left;
+  }
+  .sres:hover, .sres:focus-visible { background: rgba(235,205,150,0.1); }
+  .sres .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .sres .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sres .mt { font: 500 9px -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: 0.1em;
+              text-transform: uppercase; color: rgba(214,164,94,0.75); flex: none; }
+  .snone { padding: 10px 9px; font: italic 12.5px Georgia, serif; color: rgba(242,231,210,0.45); }
+
+  /* ---- hover tooltip ---- */
+  .tooltip {
+    position: fixed; z-index: 9985; pointer-events: none; transform: translate(-50%, -130%);
+    background: rgba(12,11,9,0.92); border: 1px solid rgba(235,205,150,0.25); border-radius: 8px;
+    padding: 5px 10px; font: 600 12.5px Georgia, serif; color: #f2e7d2; white-space: nowrap;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+  }
+
+  /* ---- person / pair panel ---- */
+  .person-panel { top: 78px; right: 22px; width: 300px; max-height: min(72vh, calc(100vh - 100px));
+                  display: none; flex-direction: column; overflow: hidden; }
+  .person-panel.open { display: flex; }
+  .pp-head { padding: 13px 40px 11px 14px; border-bottom: 1px solid rgba(235,205,150,0.14); position: relative; }
+  .pp-x { position: absolute; top: 10px; right: 10px; }
+  .pp-name { font: 650 15.5px Georgia, serif; color: #f4ead6; line-height: 1.3; }
+  .pp-sub { font: 500 9px -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: 0.16em;
+            text-transform: uppercase; color: rgba(214,164,94,0.85); margin-top: 4px; }
+  .copybtn {
+    display: inline-flex; align-items: center; gap: 4px; margin-top: 8px;
+    background: none; border: 1px solid rgba(235,205,150,0.3); border-radius: 999px;
+    padding: 3px 10px; font: 500 9.5px -apple-system, BlinkMacSystemFont, sans-serif;
+    letter-spacing: 0.08em; text-transform: uppercase; color: rgba(214,164,94,0.85); cursor: pointer;
+  }
+  .copybtn:hover { border-color: rgba(235,205,150,0.6); color: #f2e7d2; }
+  .copybtn.copied { border-color: rgba(150,215,150,0.55); color: #d7f2c4; }
+  .copybtn.copyfail { border-color: rgba(215,140,140,0.55); color: #f2c4c4; }
+  .pp-stats { display: flex; border-bottom: 1px solid rgba(235,205,150,0.14); background: rgba(235,205,150,0.03); }
+  .stat { flex: 1; padding: 8px 4px 7px; text-align: center; }
+  .stat + .stat { border-left: 1px solid rgba(235,205,150,0.1); }
+  .stat b { display: block; font: 600 16px Georgia, serif; color: #f2e7d2; }
+  .stat span { font-size: 8px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(214,164,94,0.8); }
+  .pp-body { overflow-y: auto; padding: 6px 8px 12px; scrollbar-width: thin; scrollbar-color: rgba(235,205,150,0.2) transparent; }
+  .sec {
+    font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(214,164,94,0.78);
+    margin: 12px 6px 6px; display: flex; align-items: center; gap: 8px;
+  }
+  .sec::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(235,205,150,0.22), rgba(235,205,150,0)); }
+  .tiergrp summary {
+    list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px;
+    padding: 6px 7px; border-radius: 8px; font: 600 12px Georgia, serif; color: #efe6d4;
+  }
+  .tiergrp summary::-webkit-details-marker { display: none; }
+  .tiergrp summary:hover { background: rgba(235,205,150,0.08); }
+  .tiergrp summary .car { font-size: 10px; color: rgba(214,164,94,0.7); transition: transform 0.15s; }
+  .tiergrp[open] summary .car { transform: rotate(90deg); }
+  .tiergrp .tag { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .tiergrp .cnt { margin-left: auto; font-size: 10.5px; color: rgba(214,164,94,0.7); }
+  .conn-item {
+    display: flex; align-items: center; gap: 8px; padding: 5px 7px 5px 26px; border-radius: 8px; cursor: pointer;
+    background: none; border: none; width: 100%; text-align: left; color: #efe6d4;
+  }
+  .conn-item:hover, .conn-item:focus-visible { background: rgba(235,205,150,0.08); }
+  .conn-item .nm { flex: 1; min-width: 0; font: 12px Georgia, serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .evbox { margin: 2px 6px 6px 26px; padding: 7px 9px; border-radius: 8px; background: rgba(235,205,150,0.05); }
+  .evrow { font-size: 11.5px; line-height: 1.5; color: rgba(242,231,210,0.78); }
+  .evrow b { color: #f0e5cf; font-weight: 600; }
+  .evrow + .evrow { margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(235,205,150,0.09); }
+  .pathhop { display: flex; align-items: center; gap: 6px; padding: 5px 7px; }
+  .pathhop .nm { font: 12px Georgia, serif; }
+  .patharrow { color: rgba(214,164,94,0.7); font-size: 11px; }
+  .more { font: italic 11.5px Georgia, serif; color: rgba(242,231,210,0.42); padding: 4px 7px; }
+
+  /* ---- groups drawer ---- */
+  .drawer-tab {
+    position: fixed; top: 78px; left: 22px; z-index: 9989;
+    background: linear-gradient(180deg, rgba(22,19,14,0.93), rgba(12,11,9,0.95));
+    border: 1px solid rgba(235,205,150,0.18); border-radius: 999px; color: rgba(242,231,210,0.75);
+    font: 500 10.5px -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 8px 15px; cursor: pointer; box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+  }
+  .drawer-tab:hover { color: #f2e7d2; border-color: rgba(235,205,150,0.5); }
+  .drawer { top: 128px; left: 22px; width: 320px; max-height: min(64vh, calc(100vh - 150px));
+            display: none; flex-direction: column; overflow: hidden; }
+  .drawer.open { display: flex; }
+  .drawer-head { padding: 11px 40px 10px 14px; border-bottom: 1px solid rgba(235,205,150,0.14); position: relative; }
+  .drawer-head .dt { font: 650 12.5px Georgia, serif; letter-spacing: 0.14em; text-transform: uppercase; color: #f2e7d2; }
+  .drawer-head .dx { position: absolute; top: 9px; right: 10px; }
+  .drawer-list { overflow-y: auto; padding: 6px 7px; scrollbar-width: thin; scrollbar-color: rgba(235,205,150,0.2) transparent; }
+  .grow { padding: 8px 8px; border-radius: 9px; margin-bottom: 2px; }
+  .grow:hover, .grow.hover { background: rgba(235,205,150,0.08); }
+  .grow .gtop { display: flex; align-items: baseline; gap: 7px; }
+  .grow .gname { font: 600 12.5px Georgia, serif; color: #efe6d4; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .grow .gname.unnamed { font-style: italic; color: rgba(239,230,212,0.55); }
+  .grow .gname.dead { color: rgba(239,230,212,0.5); }
+  .grow .gmeta { font-size: 9.5px; letter-spacing: 0.06em; color: rgba(214,164,94,0.72); flex: none; white-space: nowrap; }
+  .grow .gtoggle { display: flex; align-items: center; gap: 7px; margin-top: 6px; font-size: 11px; color: rgba(242,231,210,0.75); }
+  .grow .gtoggle input { accent-color: #cf9f56; width: 14px; height: 14px; }
+  .drawer-foot { padding: 10px 12px 12px; border-top: 1px solid rgba(235,205,150,0.14); }
+  .drawer-note { font-size: 10.5px; line-height: 1.5; color: rgba(242,231,210,0.45); margin-bottom: 8px; }
+  .btn {
+    width: 100%; background: none; border: 1px solid rgba(235,205,150,0.25); border-radius: 9px;
+    letter-spacing: 0.1em; text-transform: uppercase; font-size: 10.5px; padding: 8px; color: #ecd9b0; cursor: pointer;
+  }
+  .btn:hover { background: rgba(235,205,150,0.12); border-color: rgba(235,205,150,0.5); }
+  .btn.copied { border-color: rgba(150,215,150,0.55); color: #d7f2c4; }
+  .btn.copyfail { border-color: rgba(215,140,140,0.55); color: #f2c4c4; }
+
+  /* ---- legend / controls ---- */
+  .legend { bottom: 22px; right: 22px; width: 240px; padding: 12px 13px; font-size: 10.5px; line-height: 1.6; color: rgba(242,231,210,0.55); }
+  .legend b { color: rgba(236,217,176,0.85); }
+  .legend .row { display: flex; align-items: center; gap: 7px; margin-top: 4px; }
+  .legend .swatch { width: 14px; height: 2px; flex: none; }
+  .zoomctl {
+    position: fixed; bottom: 22px; left: 22px; z-index: 9989; display: flex; flex-direction: column;
+    border: 1px solid rgba(235,205,150,0.16); border-radius: 10px; overflow: hidden;
+    background: linear-gradient(180deg, rgba(22,19,14,0.93), rgba(12,11,9,0.95));
+    box-shadow: 0 12px 30px rgba(0,0,0,0.45);
+  }
+  .zoomctl button { width: 32px; height: 30px; background: none; border: none; color: #ecd9b0; font-size: 15px; cursor: pointer; font-family: Georgia, serif; }
+  .zoomctl button:hover { background: rgba(235,205,150,0.12); }
+  .zoomctl button + button { border-top: 1px solid rgba(235,205,150,0.12); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .person-panel, .drawer { transition: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="cv" role="img" aria-label="A map of the people you know. Dots are people, position is shared context, lines are confidence-weighted acquaintance. Use the search box to find someone by name."></canvas>
+
+<div class="mast">
+  <div class="t">CONNECTION MAP</div>
+  <div class="s">PEOPLE, NOT PLUMBING</div>
+  <div class="rule"></div>
+</div>
+
+<div class="searchwrap">
+  <div class="searchbar">
+    <label for="search-in" class="sr-only">Search people by name</label>
+    <input id="search-in" type="text" placeholder="Search people..." autocomplete="off" spellcheck="false"
+           aria-describedby="search-help">
+  </div>
+  <p id="search-help" class="sr-only">Most people on the map have no visible label until you search or select them. Type a name and press Enter, or use Tab to reach a result.</p>
+  <!-- Plain focusable buttons, not an ARIA combobox/listbox: keyboard use here
+       moves real DOM focus between buttons rather than tracking
+       aria-activedescendant, so labeling it as a combobox would promise
+       behavior screen readers don't actually get. -->
+  <div class="search-res" id="search-res" hidden aria-label="Search results"></div>
+</div>
+
+<div class="tooltip" id="tooltip" hidden></div>
+
+<div id="live" class="sr-only" aria-live="polite"></div>
+
+<button type="button" class="drawer-tab" id="drawer-tab" aria-expanded="false" aria-controls="drawer">Groups</button>
+<div class="panel drawer" id="drawer">
+  <div class="drawer-head">
+    <span class="dt" id="drawer-title">Group chats</span>
+    <button type="button" class="iconbtn dx" id="drawer-x" aria-label="Close groups drawer">&#10005;</button>
+  </div>
+  <div class="drawer-list" id="drawer-list"></div>
+  <div class="drawer-foot">
+    <p class="drawer-note">Marks made here (the "everyone knows each other" checkboxes) live in this browser only, until you copy them out.</p>
+    <button type="button" class="btn" id="copy-marks"><span class="cp-label">Copy marks as JSON</span></button>
+  </div>
+</div>
+
+<div class="panel person-panel" id="panel">
+  <div class="pp-head" id="pp-head"></div>
+  <div class="pp-stats" id="pp-stats"></div>
+  <div class="pp-body" id="pp-body"></div>
+</div>
+
+<div class="panel legend">
+  <div><b>Drag</b> to pan, <b>scroll</b> to zoom.</div>
+  <div>Click a person to see who they know. Click a second to see how they connect. <b>Esc</b> clears.</div>
+  <div class="row"><span class="swatch" style="background:rgba(233,195,132,0.85)"></span>confirmed / strong tie</div>
+  <div class="row"><span class="swatch" style="background:rgba(214,164,94,0.35)"></span>likely tie (shown on selection)</div>
+  <div id="motion-note" class="row" hidden>Reduced motion: the assembly animation is skipped.</div>
+</div>
+
+<div class="zoomctl">
+  <button type="button" id="z-in" title="Zoom in" aria-label="Zoom in">+</button>
+  <button type="button" id="z-out" title="Zoom out" aria-label="Zoom out">&minus;</button>
+</div>
+
+<script>
+/* Connection graph viewer v4 -- pure core logic.
+ *
+ * This module is the single source of truth for every non-DOM computation the viewer does: adapting/degrading a RAW export, community + region detection, the "everyone here knows each other" tier recompute, shortest-path pair mode, stale-mark rejection, and the deterministic force layout.
+ * tests.mjs imports this file directly and runs under plain `node`, with zero dependencies.
+ *
+ * build.py inlines this exact file (export keywords stripped, nothing else touched) into template-v4.html's single script block, so the code under test is byte-for-byte the code that ships.
+ * See build.py's header comment for the extraction mechanism and how to verify it.
+ *
+ * No DOM, no canvas, no localStorage, no browser globals of any kind belong in this file -- that is what keeps it runnable under plain `node`.
+ * Anything that needs document/window/navigator lives only in template-v4.html's own script, written directly against the functions exported here.
+ */
+"use strict";
+
+/* ============================================================
+   Seeded PRNG
+   ============================================================
+   Same Numerical Recipes LCG already used by template-v3.html's star field,
+   kept identical for house consistency. Deterministic: a given seed always
+   produces the same sequence, which is what "two loads of the same file must
+   produce the same layout" rests on. */
+function makeRng(seed) {
+  let state = (typeof seed === "number" ? seed : 0) >>> 0;
+  return function rng() {
+    state = (state * 1664525 + 1013904223) % 4294967296;
+    return state / 4294967296;
+  };
+}
+
+// Fixed, arbitrary, and distinct so the two stochastic passes (community
+// shuffling, layout jitter) never accidentally correlate with each other.
+const DEFAULT_LAYOUT_SEED = 20260731;
+const DEFAULT_COMMUNITY_SEED = 13072026;
+
+// Ordering used wherever a "keep the strongest tier" decision is needed.
+const TIER_RANK = { likely: 0, strong: 1, confirmed: 2 };
+
+/* ============================================================
+   RAW adaptation / degrade
+   ============================================================
+   Turns the exported {nodes, edges, acquaintances?, fullyAcquaintedChatIds?}
+   into the shape the rest of this module and the template want. Missing
+   acquaintances/fullyAcquaintedChatIds degrade to empty rather than throwing,
+   per the DATA CONTRACT: an older export must still render (dots + regions
+   from co-membership, no acquaintance lines), never error. */
+function adaptRaw(raw) {
+  const rawNodes = Array.isArray(raw && raw.nodes) ? raw.nodes : [];
+  const rawEdges = Array.isArray(raw && raw.edges) ? raw.edges : [];
+  const rawAcquaintances = Array.isArray(raw && raw.acquaintances) ? raw.acquaintances : [];
+  const rawFully = Array.isArray(raw && raw.fullyAcquaintedChatIds) ? raw.fullyAcquaintedChatIds : [];
+
+  const personById = new Map();
+  const groupById = new Map();
+  // "user" is intentionally never modeled past this point: PLAN.md's Visual
+  // contract says the user is implicit, so their node and every edge that
+  // touches them are dropped by construction (they simply never enter either
+  // map below, and the edge loop after this skips anything that cannot
+  // resolve both ends to a known person/group).
+  for (const n of rawNodes) {
+    if (!n || typeof n.id !== "string") continue;
+    if (n.kind === "person") {
+      personById.set(n.id, {
+        id: n.id,
+        name: typeof n.name === "string" ? n.name : null,
+        hasContactCard: !!n.hasContactCard,
+        degree: typeof n.degree === "number" ? n.degree : 0
+      });
+    } else if (n.kind === "group") {
+      groupById.set(n.id, {
+        id: n.id,
+        name: typeof n.name === "string" ? n.name : null,
+        isLive: !!n.isLive,
+        degree: typeof n.degree === "number" ? n.degree : 0,
+        members: []
+      });
+    }
+  }
+
+  const membership = new Map();
+  for (const id of personById.keys()) membership.set(id, []);
+
+  for (const e of rawEdges) {
+    if (!e || e.reason !== "groupMembership") continue;
+    const aIsGroup = groupById.has(e.a), bIsGroup = groupById.has(e.b);
+    const groupId = aIsGroup ? e.a : (bIsGroup ? e.b : null);
+    const personId = aIsGroup ? e.b : (bIsGroup ? e.a : null);
+    if (groupId == null || personId == null) continue;
+    if (!personById.has(personId) || !groupById.has(groupId)) continue;
+    const strength = typeof e.strength === "number" ? e.strength : 0;
+    membership.get(personId).push({ groupId, strength });
+    groupById.get(groupId).members.push(personId);
+  }
+  // oneToOneThread and userGroupMembership edges always name "user" on one end
+  // (a one-to-one thread is definitionally you plus one other person), so they
+  // are excluded above without any special-casing: "user" never entered
+  // personById/groupById, so an edge naming it can never resolve both ends.
+
+  for (const g of groupById.values()) g.members.sort();
+
+  // Keyed by pair so a malformed export naming the same pair twice merges rather
+  // than silently losing whichever entry a plain array push would have shadowed.
+  // PLAN.md's acquaintance layer promises "one acquaintance edge per pair, however
+  // many chats underlie it", so a well-formed export never has two; this is a
+  // defensive fallback, not the normal path.
+  const acquaintanceByPair = new Map();
+  for (const a of rawAcquaintances) {
+    if (!a || !personById.has(a.a) || !personById.has(a.b) || a.a === a.b) continue;
+    const evidence = Array.isArray(a.evidence)
+      ? a.evidence.map((ev) => ({
+          chatId: ev && typeof ev.chatId === "string" ? ev.chatId : null,
+          chatName: ev && typeof ev.chatName === "string" ? ev.chatName : null,
+          memberCount: ev && typeof ev.memberCount === "number" ? ev.memberCount : 0,
+          coActiveDays: ev && typeof ev.coActiveDays === "number" ? ev.coActiveDays : 0
+        }))
+      : [];
+    const tier = a.tier === "confirmed" || a.tier === "strong" ? a.tier : "likely";
+    const score = typeof a.score === "number" && a.score > 0 ? a.score : 0.2;
+    const pa = a.a < a.b ? a.a : a.b, pb = a.a < a.b ? a.b : a.a;
+    const key = pa + "|" + pb;
+    const existing = acquaintanceByPair.get(key);
+    if (!existing) {
+      acquaintanceByPair.set(key, { a: pa, b: pb, tier, score, evidence });
+      continue;
+    }
+    // Sum scores (PLAN.md: "the score is the sum over all shared chats"), keep the
+    // strongest tier seen, union evidence by chat id.
+    existing.score += score;
+    if (TIER_RANK[tier] > TIER_RANK[existing.tier]) existing.tier = tier;
+    for (const ev of evidence) {
+      if (!existing.evidence.some((e) => e.chatId === ev.chatId)) existing.evidence.push(ev);
+    }
+  }
+  const acquaintances = [...acquaintanceByPair.values()];
+
+  const fullyAcquaintedChatIds = new Set(rawFully.filter((id) => typeof id === "string" && groupById.has(id)));
+
+  const idOrder = (x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0);
+  return {
+    people: [...personById.values()].sort(idOrder),
+    groups: [...groupById.values()].sort(idOrder),
+    personById,
+    groupById,
+    membership,
+    acquaintances,
+    fullyAcquaintedChatIds
+  };
+}
+
+/* ============================================================
+   Display names
+   ============================================================ */
+// A leading "~" on a name marks a model guess (GraphCore's NodeLabel
+// convention, PLAN.md's "always visibly marked as a guess"); strip it for
+// display and flag it so the caller can style it distinctly. A null name
+// falls back to the raw id, same fallback template-v3.html already used.
+function personDisplayName(person) {
+  const raw = person && person.name;
+  if (typeof raw === "string" && raw.length > 0) {
+    if (raw.charAt(0) === "~") return { text: raw.slice(1), isGuess: true };
+    return { text: raw, isGuess: false };
+  }
+  return { text: (person && person.id) || "", isGuess: false };
+}
+
+function chatDisplayName(name, memberCount) {
+  return typeof name === "string" && name.length > 0 ? name : "unnamed chat of " + memberCount;
+}
+
+/* ============================================================
+   Co-membership + acquaintance affinity, community detection, region labels
+   ============================================================
+   Each shared chat contributes 1 / (memberCount - 1) to a pair's affinity --
+   PLAN.md's own base-weight formula for acquaintance scoring, reused here so a
+   large broadcast chat cannot weld unrelated regions together the way a flat
+   per-shared-chat weight would. Acquaintance score, when present, adds on top:
+   a pair the backend already scored is a stronger signal than co-membership
+   alone. */
+function shareWeight(memberCount) {
+  return 1 / Math.max(1, memberCount - 1);
+}
+
+function buildAffinity(model) {
+  const affinity = new Map();
+  const add = (i, j, w) => {
+    if (i === j || w <= 0) return;
+    if (!affinity.has(i)) affinity.set(i, new Map());
+    const row = affinity.get(i);
+    row.set(j, (row.get(j) || 0) + w);
+  };
+  for (const g of model.groups) {
+    const w = shareWeight(g.members.length);
+    for (let i = 0; i < g.members.length; i++) {
+      for (let j = i + 1; j < g.members.length; j++) {
+        add(g.members[i], g.members[j], w);
+        add(g.members[j], g.members[i], w);
+      }
+    }
+  }
+  for (const e of model.acquaintances) {
+    add(e.a, e.b, e.score);
+    add(e.b, e.a, e.score);
+  }
+  return affinity;
+}
+
+// Fisher-Yates over a deterministic rng: reproducible for a fixed seed, but a
+// different draw order each pass, which is the standard label-propagation
+// trick for avoiding two-community oscillation.
+function shuffled(list, rng) {
+  const out = list.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const tmp = out[i];
+    out[i] = out[j];
+    out[j] = tmp;
+  }
+  return out;
+}
+
+// Label propagation over the affinity graph. Ties (equal total weight toward
+// two different labels) are broken by comparing the label strings, never by
+// the rng, so the same input always settles on the same partition regardless
+// of how the shuffle order happened to fall.
+function assignCommunities(model, affinity, opts) {
+  const maxIters = (opts && opts.maxIters) || 20;
+  const rng = makeRng((opts && opts.seed) || DEFAULT_COMMUNITY_SEED);
+  const ids = model.people.map((p) => p.id).sort();
+  const label = new Map(ids.map((id) => [id, id]));
+
+  for (let iter = 0; iter < maxIters; iter++) {
+    const order = shuffled(ids, rng);
+    let changed = false;
+    for (const id of order) {
+      const neighbors = affinity.get(id);
+      if (!neighbors || neighbors.size === 0) continue;
+      const scoreByLabel = new Map();
+      for (const [nb, w] of neighbors) {
+        const nbLabel = label.get(nb);
+        if (nbLabel === undefined) continue;
+        scoreByLabel.set(nbLabel, (scoreByLabel.get(nbLabel) || 0) + w);
+      }
+      if (scoreByLabel.size === 0) continue;
+      const ranked = [...scoreByLabel.entries()].sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0));
+      let best = ranked[0][0], bestScore = ranked[0][1];
+      for (let k = 1; k < ranked.length; k++) {
+        if (ranked[k][1] > bestScore) { best = ranked[k][0]; bestScore = ranked[k][1]; }
+      }
+      if (best !== label.get(id)) { label.set(id, best); changed = true; }
+    }
+    if (!changed) break;
+  }
+  return label;
+}
+
+// Groups people by final label, then picks each region's label from its
+// dominant NAMED group chat (most of the region's own members, ties broken by
+// smallest group id since model.groups is id-sorted). A region whose dominant
+// chat has no name gets no label -- labels are read off evidence, never
+// invented.
+function labelRegions(model, communityByPersonId) {
+  const membersByCommunity = new Map();
+  for (const p of model.people) {
+    const c = communityByPersonId.get(p.id);
+    if (c === undefined) continue;
+    if (!membersByCommunity.has(c)) membersByCommunity.set(c, []);
+    membersByCommunity.get(c).push(p.id);
+  }
+  const groupsById = model.groups.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+  const regions = [];
+  for (const [communityId, memberIds] of membersByCommunity) {
+    memberIds.sort();
+    const memberSet = new Set(memberIds);
+    let bestGroup = null, bestCount = 0;
+    for (const g of groupsById) {
+      let count = 0;
+      for (const m of g.members) if (memberSet.has(m)) count++;
+      if (count > bestCount) { bestCount = count; bestGroup = g; }
+    }
+    const label = bestGroup && bestGroup.name ? bestGroup.name : null;
+    regions.push({ id: communityId, memberIds, dominantGroupId: bestGroup ? bestGroup.id : null, label });
+  }
+  regions.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return regions;
+}
+
+/* ============================================================
+   Top-N acquaintance-degree names
+   ============================================================
+   "Acquaintance degree" is a count of distinct acquaintance-edge neighbors,
+   not a weighted sum -- deliberately a simple, legible measure since it only
+   drives which ~20 names stay on screen at rest. */
+function topAcquaintanceDegree(people, acquaintances, n) {
+  const degree = new Map();
+  for (const p of people) degree.set(p.id, 0);
+  for (const e of acquaintances) {
+    if (degree.has(e.a)) degree.set(e.a, degree.get(e.a) + 1);
+    if (degree.has(e.b)) degree.set(e.b, degree.get(e.b) + 1);
+  }
+  return people
+    .map((p) => ({ id: p.id, degree: degree.get(p.id) || 0 }))
+    .filter((x) => x.degree > 0)
+    .sort((x, y) => y.degree - x.degree || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))
+    .slice(0, n)
+    .map((x) => x.id);
+}
+
+/* ============================================================
+   Marks / "everyone here knows each other" tier recompute
+   ============================================================ */
+// Canonical key for a group's current roster: JSON-encoding a sorted array
+// (rather than joining with a delimiter) so no id's own content can ever be
+// mistaken for a separator.
+function memberKeyOf(memberIds) {
+  return JSON.stringify(memberIds.slice().sort());
+}
+
+// A stored mark survives only if its chat still exists AND its recorded
+// member-set key still matches the chat's current roster; a regenerated
+// export with a changed roster silently drops the stale mark rather than
+// misapplying it to a different set of people.
+function filterValidMarks(marks, groupById) {
+  if (!Array.isArray(marks)) return [];
+  const out = [];
+  for (const m of marks) {
+    if (!m || typeof m.chatId !== "string" || typeof m.memberKey !== "string") continue;
+    const g = groupById.get(m.chatId);
+    if (!g) continue;
+    if (memberKeyOf(g.members) !== m.memberKey) continue;
+    out.push({ chatId: m.chatId, memberKey: m.memberKey, checked: !!m.checked });
+  }
+  return out;
+}
+
+// Shipped defaults (fullyAcquaintedChatIds) union/overridden by any valid
+// explicit mark -- a mark is only ever recorded when the user actually
+// toggled a checkbox, so its `checked` value always wins over the default for
+// that chat, in either direction.
+function effectiveCheckedChatIds(fullyAcquaintedChatIds, validMarks, groupById) {
+  const checked = new Set([...fullyAcquaintedChatIds].filter((id) => groupById.has(id)));
+  for (const m of validMarks) {
+    if (!groupById.has(m.chatId)) continue;
+    if (m.checked) checked.add(m.chatId);
+    else checked.delete(m.chatId);
+  }
+  return checked;
+}
+
+// A hand-confirmed pair is treated as more certain than anything scoring
+// alone can produce (the "strong" cutoff is 1.0), so it gets a floor above
+// that: cheap to traverse in shortest-path's 1/score hop weighting, and never
+// lower than a score the pair had already earned on its own.
+const CONFIRMED_MARKER_SCORE = 2;
+
+function pairKey(a, b) {
+  return a < b ? a + "|" + b : b + "|" + a;
+}
+
+// Pure: never mutates baseAcquaintances or anything reachable from model.
+// Re-derives the full effective set from scratch every call, so checking a
+// chat and then unchecking it (two independent calls with different
+// checkedChatIds) reproduces exactly the base state -- there is no mutable
+// intermediate for a bug to leave stale.
+function recomputeAcquaintances(baseAcquaintances, model, checkedChatIds) {
+  const byPair = new Map();
+  for (const e of baseAcquaintances) {
+    const a = e.a < e.b ? e.a : e.b;
+    const b = e.a < e.b ? e.b : e.a;
+    byPair.set(pairKey(a, b), { a, b, tier: e.tier, score: e.score, evidence: e.evidence.map((ev) => ({ ...ev })) });
+  }
+
+  for (const chatId of checkedChatIds) {
+    const g = model.groupById.get(chatId);
+    if (!g) continue;
+    const members = g.members;
+    for (let i = 0; i < members.length; i++) {
+      for (let j = i + 1; j < members.length; j++) {
+        const a = members[i] < members[j] ? members[i] : members[j];
+        const b = members[i] < members[j] ? members[j] : members[i];
+        const key = pairKey(a, b);
+        const existing = byPair.get(key);
+        const priorEvidenceForChat = existing ? existing.evidence.find((ev) => ev.chatId === chatId) : null;
+        const evidenceEntry = {
+          chatId,
+          chatName: g.name,
+          memberCount: members.length,
+          coActiveDays: priorEvidenceForChat ? priorEvidenceForChat.coActiveDays : 0
+        };
+        if (existing) {
+          existing.tier = "confirmed";
+          existing.score = Math.max(existing.score, CONFIRMED_MARKER_SCORE);
+          if (!priorEvidenceForChat) existing.evidence.push(evidenceEntry);
+        } else {
+          byPair.set(key, { a, b, tier: "confirmed", score: CONFIRMED_MARKER_SCORE, evidence: [evidenceEntry] });
+        }
+      }
+    }
+  }
+
+  return [...byPair.values()].sort((x, y) => (x.a === y.a ? (x.b < y.b ? -1 : 1) : x.a < y.a ? -1 : 1));
+}
+
+// The page's own record of what it promoted, exported verbatim as
+// {"fullyAcquainted": [[sorted member ids], ...]} for the "copy marks as
+// JSON" button.
+function marksExportPayload(checkedChatIds, groupById) {
+  const chatIds = [...checkedChatIds].filter((id) => groupById.has(id)).sort();
+  return { fullyAcquainted: chatIds.map((id) => groupById.get(id).members.slice().sort()) };
+}
+
+/* ============================================================
+   Groups drawer ordering
+   ============================================================
+   Named before unnamed, live before dead, then name then id -- both
+   deterministic and readable as "most identifiable, most current first". */
+function compareGroupsForDrawer(g1, g2) {
+  const namedRank = (g) => (g.name ? 0 : 1);
+  if (namedRank(g1) !== namedRank(g2)) return namedRank(g1) - namedRank(g2);
+  const liveRank = (g) => (g.isLive ? 0 : 1);
+  if (liveRank(g1) !== liveRank(g2)) return liveRank(g1) - liveRank(g2);
+  const n1 = g1.name || "", n2 = g2.name || "";
+  if (n1 !== n2) return n1 < n2 ? -1 : 1;
+  return g1.id < g2.id ? -1 : g1.id > g2.id ? 1 : 0;
+}
+
+/* ============================================================
+   Pair mode: shortest path + shared-group fallback evidence
+   ============================================================ */
+function buildAcquaintanceAdjacency(acquaintances) {
+  const adj = new Map();
+  const add = (from, to, e) => {
+    if (!adj.has(from)) adj.set(from, []);
+    adj.get(from).push({ to, weight: 1 / e.score, tier: e.tier, score: e.score, evidence: e.evidence });
+  };
+  for (const e of acquaintances) {
+    add(e.a, e.b, e);
+    add(e.b, e.a, e);
+  }
+  for (const list of adj.values()) list.sort((x, y) => (x.to < y.to ? -1 : x.to > y.to ? 1 : 0));
+  return adj;
+}
+
+// Plain O(V^2) Dijkstra: acquaintance graphs here run in the hundreds of
+// nodes, so a priority queue buys nothing but complexity. Every acquaintance
+// edge has score > 0 by construction (adaptRaw enforces it), so 1/score is
+// always finite and positive -- Dijkstra's non-negative-weight precondition
+// holds. Deterministic: the frontier always expands the smallest id among
+// distance ties, and a strictly-less-than relaxation means whichever edge
+// reaches a node first (in that deterministic order) is the one that sticks.
+function shortestPath(adjacency, fromId, toId) {
+  if (fromId === toId) return { path: [fromId], hops: [], totalWeight: 0 };
+  const dist = new Map([[fromId, 0]]);
+  const prevEdge = new Map();
+  const visited = new Set();
+  for (;;) {
+    let currentId = null, currentDist = Infinity;
+    for (const [id, d] of dist) {
+      if (visited.has(id)) continue;
+      if (d < currentDist || (d === currentDist && (currentId === null || id < currentId))) {
+        currentDist = d; currentId = id;
+      }
+    }
+    if (currentId === null || currentId === toId) break;
+    visited.add(currentId);
+    for (const edge of adjacency.get(currentId) || []) {
+      if (visited.has(edge.to)) continue;
+      const nd = currentDist + edge.weight;
+      const existing = dist.has(edge.to) ? dist.get(edge.to) : Infinity;
+      if (nd < existing) {
+        dist.set(edge.to, nd);
+        prevEdge.set(edge.to, { from: currentId, hop: edge });
+      }
+    }
+  }
+  if (!dist.has(toId)) return null;
+  const hops = [];
+  let cursor = toId;
+  while (cursor !== fromId) {
+    const pe = prevEdge.get(cursor);
+    if (!pe) return null;
+    hops.unshift({ a: pe.from, b: cursor, tier: pe.hop.tier, score: pe.hop.score, evidence: pe.hop.evidence });
+    cursor = pe.from;
+  }
+  return { path: [fromId, ...hops.map((h) => h.b)], hops, totalWeight: dist.get(toId) };
+}
+
+// Fallback for "no observed path": any group chats the two share regardless
+// of acquaintance tier, so the panel still has something to point at instead
+// of a flat dead end.
+function sharedGroupsOf(model, personAId, personBId) {
+  const aGroups = new Set((model.membership.get(personAId) || []).map((m) => m.groupId));
+  const shared = (model.membership.get(personBId) || []).filter((m) => aGroups.has(m.groupId));
+  return shared
+    .map((m) => model.groupById.get(m.groupId))
+    .filter(Boolean)
+    .map((g) => ({ chatId: g.id, chatName: g.name, memberCount: g.members.length }))
+    .sort((x, y) => (x.chatId < y.chatId ? -1 : x.chatId > y.chatId ? 1 : 0));
+}
+
+/* ============================================================
+   Deterministic force layout
+   ============================================================
+   Runs synchronously to completion (a fixed iteration count, no timers, no
+   wall-clock) so the result is reproducible and the "assembly animation" can
+   be a pure visual interpolation toward an already-known destination rather
+   than a live physics loop whose outcome depends on frame timing. */
+function initialPositions(people, rng, spread) {
+  const pos = new Map();
+  for (const p of people) {
+    const angle = rng() * Math.PI * 2;
+    const radius = spread * Math.sqrt(rng());
+    pos.set(p.id, { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
+  }
+  return pos;
+}
+
+function simulateLayout(model, opts) {
+  const iterations = (opts && opts.iterations) || 180;
+  const seed = (opts && opts.seed) || DEFAULT_LAYOUT_SEED;
+  const spread = (opts && opts.spread) || 420;
+  const repulsion = (opts && opts.repulsion) || 6000;
+  const anchorPull = (opts && opts.anchorPull) || 0.9;
+  const springPull = (opts && opts.springPull) || 0.02;
+  const springCap = (opts && opts.springCap) || 3;
+  const centerPull = (opts && opts.centerPull) || 0.004;
+
+  const rng = makeRng(seed);
+  const ids = model.people.map((p) => p.id); // model.people is id-sorted: fixed iteration order
+  const pos = initialPositions(model.people, rng, spread);
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const force = new Map(ids.map((id) => [id, { x: 0, y: 0 }]));
+
+    // Pairwise repulsion. O(n^2) per iteration; fine for a one-time
+    // synchronous layout pass at the hundreds-of-nodes scale PLAN.md measures
+    // (~690 people). A quadtree approximation is future tuning, not needed yet.
+    for (let i = 0; i < ids.length; i++) {
+      const pi = pos.get(ids[i]);
+      for (let j = i + 1; j < ids.length; j++) {
+        const pj = pos.get(ids[j]);
+        let dx = pi.x - pj.x, dy = pi.y - pj.y;
+        let d2 = dx * dx + dy * dy;
+        if (d2 < 1) d2 = 1;
+        const d = Math.sqrt(d2);
+        const f = repulsion / d2;
+        const fx = (dx / d) * f, fy = (dy / d) * f;
+        const fi = force.get(ids[i]), fj = force.get(ids[j]);
+        fi.x += fx; fi.y += fy;
+        fj.x -= fx; fj.y -= fy;
+      }
+    }
+
+    // Group anchors: each group's anchor is the centroid of its current
+    // members, recomputed every iteration, so no separate physics body is
+    // needed for the group itself. Diluted by member count -- same principle
+    // as the acquaintance base weight -- so a 20-person broadcast chat barely
+    // tugs at all next to a small tight group.
+    for (const g of model.groups) {
+      if (g.members.length === 0) continue;
+      let ax = 0, ay = 0;
+      for (const m of g.members) { const p = pos.get(m); ax += p.x; ay += p.y; }
+      ax /= g.members.length; ay /= g.members.length;
+      const w = (anchorPull * shareWeight(g.members.length)) / g.members.length;
+      for (const m of g.members) {
+        const p = pos.get(m), f = force.get(m);
+        f.x += (ax - p.x) * w;
+        f.y += (ay - p.y) * w;
+      }
+    }
+
+    // Acquaintance springs: tension increases with score, capped so one very
+    // high-score pair cannot fling itself out of the map.
+    for (const e of model.acquaintances) {
+      const pa = pos.get(e.a), pb = pos.get(e.b);
+      if (!pa || !pb) continue;
+      const dx = pb.x - pa.x, dy = pb.y - pa.y;
+      const w = springPull * Math.min(e.score, springCap);
+      const fa = force.get(e.a), fb = force.get(e.b);
+      fa.x += dx * w; fa.y += dy * w;
+      fb.x -= dx * w; fb.y -= dy * w;
+    }
+
+    // Gentle centering: repulsion alone has nothing anchoring it to the
+    // origin, so the whole map would otherwise drift.
+    for (const id of ids) {
+      const p = pos.get(id), f = force.get(id);
+      f.x -= p.x * centerPull;
+      f.y -= p.y * centerPull;
+    }
+
+    for (const id of ids) {
+      const p = pos.get(id), f = force.get(id);
+      p.x += f.x; p.y += f.y;
+    }
+  }
+
+  return pos;
+}
+
+/* ============================================================
+   Whole-pipeline entry point
+   ============================================================
+   The one function the template calls to go from a parsed RAW export plus
+   whatever marks localStorage held to everything rendering needs. Keeping
+   this wiring here (rather than re-assembled ad hoc in the template) is part
+   of what keeps the shipped code identical to the tested code. */
+function buildViewModel(raw, storedMarksRaw, opts) {
+  const model = adaptRaw(raw);
+  const validMarks = filterValidMarks(storedMarksRaw, model.groupById);
+  const checkedChatIds = effectiveCheckedChatIds(model.fullyAcquaintedChatIds, validMarks, model.groupById);
+  const acquaintances = recomputeAcquaintances(model.acquaintances, model, checkedChatIds);
+  const effectiveModel = { ...model, acquaintances };
+  const affinity = buildAffinity(effectiveModel);
+  const communityByPersonId = assignCommunities(effectiveModel, affinity, opts && opts.community);
+  const regions = labelRegions(effectiveModel, communityByPersonId);
+  const topNames = topAcquaintanceDegree(model.people, acquaintances, (opts && opts.topN) || 20);
+  const adjacency = buildAcquaintanceAdjacency(acquaintances);
+  return {
+    model,
+    effectiveModel,
+    validMarks,
+    checkedChatIds,
+    acquaintances,
+    affinity,
+    communityByPersonId,
+    regions,
+    topNames,
+    adjacency
+  };
+}
+
+/* ============================================================
+   Template driving code below. Everything above this point is
+   viewer_core.mjs, inlined verbatim (export stripped) by build.py.
+   Only DOM/canvas/localStorage/clipboard glue belongs past here --
+   any actual graph logic added down here instead of in
+   viewer_core.mjs would not be covered by tests.mjs.
+   ============================================================ */
+const RAW = {"nodes":[{"id":"user","kind":"user","name":null,"hasContactCard":false,"isLive":false,"degree":15},{"id":"ana-vray","kind":"person","name":"Ana Vray","hasContactCard":false,"isLive":false,"degree":3},{"id":"bo-marrow","kind":"person","name":"Bo Marrow","hasContactCard":true,"isLive":false,"degree":2},{"id":"cass-ashcombe","kind":"person","name":"Cass Ashcombe","hasContactCard":true,"isLive":false,"degree":1},{"id":"dev-brenlow","kind":"person","name":"Dev Brenlow","hasContactCard":true,"isLive":false,"degree":1},{"id":"eno-cotter","kind":"person","name":"Eno Cotter","hasContactCard":true,"isLive":false,"degree":1},{"id":"fen-dunmoor","kind":"person","name":"Fen Dunmoor","hasContactCard":false,"isLive":false,"degree":1},{"id":"gia-ellery","kind":"person","name":"Gia Ellery","hasContactCard":true,"isLive":false,"degree":1},{"id":"hux-frostane","kind":"person","name":"Hux Frostane","hasContactCard":true,"isLive":false,"degree":1},{"id":"ira-gabler","kind":"person","name":"Ira Gabler","hasContactCard":true,"isLive":false,"degree":3},{"id":"jol-holtwick","kind":"person","name":"Jol Holtwick","hasContactCard":true,"isLive":false,"degree":3},{"id":"kip-ivesmere","kind":"person","name":"Kip Ivesmere","hasContactCard":false,"isLive":false,"degree":2},{"id":"lior-jaspyr","kind":"person","name":"Lior Jaspyr","hasContactCard":true,"isLive":false,"degree":1},{"id":"mira-kestrel","kind":"person","name":"Mira Kestrel","hasContactCard":true,"isLive":false,"degree":1},{"id":"nyx-lumenne","kind":"person","name":"Nyx Lumenne","hasContactCard":true,"isLive":false,"degree":1},{"id":"ossa-mothra","kind":"person","name":"Ossa Mothra","hasContactCard":true,"isLive":false,"degree":1},{"id":"piv-nashvale","kind":"person","name":"Piv Nashvale","hasContactCard":false,"isLive":false,"degree":1},{"id":"quen-oxleigh","kind":"person","name":"Quen Oxleigh","hasContactCard":true,"isLive":false,"degree":1},{"id":"ren-pryorn","kind":"person","name":"Ren Pryorn","hasContactCard":true,"isLive":false,"degree":1},{"id":"sil-quaden","kind":"person","name":"Sil Quaden","hasContactCard":true,"isLive":false,"degree":1},{"id":"tavi-rowley","kind":"person","name":"Tavi Rowley","hasContactCard":true,"isLive":false,"degree":1},{"id":"uma-sabelle","kind":"person","name":"Uma Sabelle","hasContactCard":false,"isLive":false,"degree":3},{"id":"vex-thornwick","kind":"person","name":"Vex Thornwick","hasContactCard":true,"isLive":false,"degree":2},{"id":"wren-ulveren","kind":"person","name":"Wren Ulveren","hasContactCard":true,"isLive":false,"degree":2},{"id":"xan-vaneford","kind":"person","name":"Xan Vaneford","hasContactCard":true,"isLive":false,"degree":1},{"id":"yara-wicklow","kind":"person","name":"Yara Wicklow","hasContactCard":true,"isLive":false,"degree":1},{"id":"zeph-yarrowe","kind":"person","name":"Zeph Yarrowe","hasContactCard":false,"isLive":false,"degree":2},{"id":"arlo-zalefen","kind":"person","name":"Arlo Zalefen","hasContactCard":true,"isLive":false,"degree":2},{"id":"bela-briarcombe","kind":"person","name":"Bela Briarcombe","hasContactCard":true,"isLive":false,"degree":2},{"id":"coen-corvinne","kind":"person","name":"Coen Corvinne","hasContactCard":true,"isLive":false,"degree":1},{"id":"dax-dellmere","kind":"person","name":"Dax Dellmere","hasContactCard":true,"isLive":false,"degree":2},{"id":"ember-emberlyn","kind":"person","name":"Ember Emberlyn","hasContactCard":false,"isLive":false,"degree":2},{"id":"finch-fenwicke","kind":"person","name":"Finch Fenwicke","hasContactCard":true,"isLive":false,"degree":2},{"id":"gale-grovane","kind":"person","name":"Gale Grovane","hasContactCard":true,"isLive":false,"degree":2},{"id":"halo-halewynn","kind":"person","name":"Halo Halewynn","hasContactCard":true,"isLive":false,"degree":2},{"id":"idra-ionisk","kind":"person","name":"Idra Ionisk","hasContactCard":true,"isLive":false,"degree":2},{"id":"jute-junot","kind":"person","name":"Jute Junot","hasContactCard":false,"isLive":false,"degree":3},{"id":"koa-kaderly","kind":"person","name":"Koa Kaderly","hasContactCard":true,"isLive":false,"degree":2},{"id":"lark-loomer","kind":"person","name":"Lark Loomer","hasContactCard":true,"isLive":false,"degree":2},{"id":"mox-mistvale","kind":"person","name":"Mox Mistvale","hasContactCard":true,"isLive":false,"degree":1},{"id":"nell-nettlow","kind":"person","name":"Nell Nettlow","hasContactCard":true,"isLive":false,"degree":3},{"id":"orin-orinwick","kind":"person","name":"Orin Orinwick","hasContactCard":false,"isLive":false,"degree":2},{"id":"pax-pikeholm","kind":"person","name":"Pax Pikeholm","hasContactCard":true,"isLive":false,"degree":2},{"id":"quill-quellyn","kind":"person","name":"Quill Quellyn","hasContactCard":true,"isLive":false,"degree":1},{"id":"rue-rillstone","kind":"person","name":"Rue Rillstone","hasContactCard":true,"isLive":false,"degree":1},{"id":"sable-sorrelby","kind":"person","name":"Sable Sorrelby","hasContactCard":true,"isLive":false,"degree":1},{"id":"g-ivy","kind":"group","name":"Ivy Study Circle","hasContactCard":false,"isLive":true,"degree":10},{"id":"g-riverside","kind":"group","name":"Riverside Alumni","hasContactCard":false,"isLive":true,"degree":10},{"id":"g-poker","kind":"group","name":"Poker Night","hasContactCard":false,"isLive":true,"degree":6},{"id":"g-neighborhood","kind":"group","name":"Neighborhood Watch Updates","hasContactCard":false,"isLive":true,"degree":21},{"id":"g-quartet","kind":"group","name":null,"hasContactCard":false,"isLive":true,"degree":5},{"id":"g-bookclub","kind":"group","name":"Old Book Club","hasContactCard":false,"isLive":false,"degree":6},{"id":"g-trivia","kind":"group","name":"Trivia Night","hasContactCard":false,"isLive":true,"degree":6},{"id":"g-family","kind":"group","name":"Family Thread","hasContactCard":false,"isLive":true,"degree":5},{"id":"g-gym","kind":"group","name":"Gym Buddies","hasContactCard":false,"isLive":true,"degree":8}],"edges":[{"a":"ana-vray","b":"g-ivy","reason":"groupMembership","strength":1},{"a":"bo-marrow","b":"g-ivy","reason":"groupMembership","strength":2},{"a":"cass-ashcombe","b":"g-ivy","reason":"groupMembership","strength":3},{"a":"dev-brenlow","b":"g-ivy","reason":"groupMembership","strength":4},{"a":"eno-cotter","b":"g-ivy","reason":"groupMembership","strength":5},{"a":"fen-dunmoor","b":"g-ivy","reason":"groupMembership","strength":6},{"a":"gia-ellery","b":"g-ivy","reason":"groupMembership","strength":1},{"a":"hux-frostane","b":"g-ivy","reason":"groupMembership","strength":2},{"a":"ira-gabler","b":"g-ivy","reason":"groupMembership","strength":3},{"a":"user","b":"g-ivy","reason":"userGroupMembership","strength":3},{"a":"jol-holtwick","b":"g-riverside","reason":"groupMembership","strength":1},{"a":"kip-ivesmere","b":"g-riverside","reason":"groupMembership","strength":2},{"a":"lior-jaspyr","b":"g-riverside","reason":"groupMembership","strength":3},{"a":"mira-kestrel","b":"g-riverside","reason":"groupMembership","strength":4},{"a":"nyx-lumenne","b":"g-riverside","reason":"groupMembership","strength":5},{"a":"ossa-mothra","b":"g-riverside","reason":"groupMembership","strength":6},{"a":"piv-nashvale","b":"g-riverside","reason":"groupMembership","strength":1},{"a":"quen-oxleigh","b":"g-riverside","reason":"groupMembership","strength":2},{"a":"ira-gabler","b":"g-riverside","reason":"groupMembership","strength":3},{"a":"user","b":"g-riverside","reason":"userGroupMembership","strength":3},{"a":"uma-sabelle","b":"g-poker","reason":"groupMembership","strength":1},{"a":"vex-thornwick","b":"g-poker","reason":"groupMembership","strength":2},{"a":"wren-ulveren","b":"g-poker","reason":"groupMembership","strength":3},{"a":"xan-vaneford","b":"g-poker","reason":"groupMembership","strength":4},{"a":"yara-wicklow","b":"g-poker","reason":"groupMembership","strength":5},{"a":"user","b":"g-poker","reason":"userGroupMembership","strength":3},{"a":"ira-gabler","b":"g-neighborhood","reason":"groupMembership","strength":1},{"a":"ren-pryorn","b":"g-neighborhood","reason":"groupMembership","strength":0},{"a":"uma-sabelle","b":"g-neighborhood","reason":"groupMembership","strength":3},{"a":"vex-thornwick","b":"g-neighborhood","reason":"groupMembership","strength":4},{"a":"wren-ulveren","b":"g-neighborhood","reason":"groupMembership","strength":5},{"a":"zeph-yarrowe","b":"g-neighborhood","reason":"groupMembership","strength":6},{"a":"arlo-zalefen","b":"g-neighborhood","reason":"groupMembership","strength":1},{"a":"bela-briarcombe","b":"g-neighborhood","reason":"groupMembership","strength":2},{"a":"jute-junot","b":"g-neighborhood","reason":"groupMembership","strength":3},{"a":"koa-kaderly","b":"g-neighborhood","reason":"groupMembership","strength":4},{"a":"lark-loomer","b":"g-neighborhood","reason":"groupMembership","strength":5},{"a":"nell-nettlow","b":"g-neighborhood","reason":"groupMembership","strength":6},{"a":"orin-orinwick","b":"g-neighborhood","reason":"groupMembership","strength":1},{"a":"pax-pikeholm","b":"g-neighborhood","reason":"groupMembership","strength":2},{"a":"dax-dellmere","b":"g-neighborhood","reason":"groupMembership","strength":3},{"a":"ember-emberlyn","b":"g-neighborhood","reason":"groupMembership","strength":4},{"a":"finch-fenwicke","b":"g-neighborhood","reason":"groupMembership","strength":5},{"a":"gale-grovane","b":"g-neighborhood","reason":"groupMembership","strength":6},{"a":"halo-halewynn","b":"g-neighborhood","reason":"groupMembership","strength":1},{"a":"idra-ionisk","b":"g-neighborhood","reason":"groupMembership","strength":2},{"a":"user","b":"g-neighborhood","reason":"userGroupMembership","strength":3},{"a":"zeph-yarrowe","b":"g-quartet","reason":"groupMembership","strength":1},{"a":"arlo-zalefen","b":"g-quartet","reason":"groupMembership","strength":2},{"a":"bela-briarcombe","b":"g-quartet","reason":"groupMembership","strength":3},{"a":"coen-corvinne","b":"g-quartet","reason":"groupMembership","strength":4},{"a":"user","b":"g-quartet","reason":"userGroupMembership","strength":3},{"a":"ana-vray","b":"g-bookclub","reason":"groupMembership","strength":1},{"a":"bo-marrow","b":"g-bookclub","reason":"groupMembership","strength":2},{"a":"dax-dellmere","b":"g-bookclub","reason":"groupMembership","strength":3},{"a":"ember-emberlyn","b":"g-bookclub","reason":"groupMembership","strength":4},{"a":"finch-fenwicke","b":"g-bookclub","reason":"groupMembership","strength":5},{"a":"user","b":"g-bookclub","reason":"userGroupMembership","strength":3},{"a":"jol-holtwick","b":"g-trivia","reason":"groupMembership","strength":1},{"a":"kip-ivesmere","b":"g-trivia","reason":"groupMembership","strength":2},{"a":"gale-grovane","b":"g-trivia","reason":"groupMembership","strength":3},{"a":"halo-halewynn","b":"g-trivia","reason":"groupMembership","strength":4},{"a":"idra-ionisk","b":"g-trivia","reason":"groupMembership","strength":5},{"a":"user","b":"g-trivia","reason":"userGroupMembership","strength":3},{"a":"jute-junot","b":"g-family","reason":"groupMembership","strength":1},{"a":"koa-kaderly","b":"g-family","reason":"groupMembership","strength":2},{"a":"lark-loomer","b":"g-family","reason":"groupMembership","strength":3},{"a":"mox-mistvale","b":"g-family","reason":"groupMembership","strength":4},{"a":"user","b":"g-family","reason":"userGroupMembership","strength":3},{"a":"nell-nettlow","b":"g-gym","reason":"groupMembership","strength":1},{"a":"orin-orinwick","b":"g-gym","reason":"groupMembership","strength":2},{"a":"pax-pikeholm","b":"g-gym","reason":"groupMembership","strength":3},{"a":"quill-quellyn","b":"g-gym","reason":"groupMembership","strength":4},{"a":"rue-rillstone","b":"g-gym","reason":"groupMembership","strength":5},{"a":"sil-quaden","b":"g-gym","reason":"groupMembership","strength":6},{"a":"tavi-rowley","b":"g-gym","reason":"groupMembership","strength":1},{"a":"user","b":"g-gym","reason":"userGroupMembership","strength":3},{"a":"user","b":"ana-vray","reason":"oneToOneThread","strength":4},{"a":"user","b":"jol-holtwick","reason":"oneToOneThread","strength":4},{"a":"user","b":"uma-sabelle","reason":"oneToOneThread","strength":4},{"a":"user","b":"jute-junot","reason":"oneToOneThread","strength":4},{"a":"user","b":"nell-nettlow","reason":"oneToOneThread","strength":4},{"a":"user","b":"sable-sorrelby","reason":"oneToOneThread","strength":4}],"acquaintances":[{"a":"ana-vray","b":"bo-marrow","tier":"strong","score":1.1,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":1},{"chatId":"g-bookclub","chatName":"Old Book Club","memberCount":5,"coActiveDays":1}]},{"a":"ana-vray","b":"cass-ashcombe","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":3}]},{"a":"ana-vray","b":"dev-brenlow","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":4}]},{"a":"ana-vray","b":"eno-cotter","tier":"likely","score":0.6,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":4}]},{"a":"ana-vray","b":"fen-dunmoor","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":2}]},{"a":"ana-vray","b":"gia-ellery","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":3}]},{"a":"ana-vray","b":"hux-frostane","tier":"likely","score":0.6,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":3}]},{"a":"ana-vray","b":"ira-gabler","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":5}]},{"a":"bo-marrow","b":"cass-ashcombe","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":2}]},{"a":"bo-marrow","b":"dev-brenlow","tier":"likely","score":0.6,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":2}]},{"a":"bo-marrow","b":"eno-cotter","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":4}]},{"a":"bo-marrow","b":"fen-dunmoor","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":5}]},{"a":"bo-marrow","b":"gia-ellery","tier":"likely","score":0.6,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":1}]},{"a":"bo-marrow","b":"hux-frostane","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":3}]},{"a":"bo-marrow","b":"ira-gabler","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":4}]},{"a":"cass-ashcombe","b":"dev-brenlow","tier":"likely","score":0.6,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":4}]},{"a":"cass-ashcombe","b":"eno-cotter","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":2}]},{"a":"cass-ashcombe","b":"fen-dunmoor","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":3}]},{"a":"cass-ashcombe","b":"gia-ellery","tier":"likely","score":0.6,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":3}]},{"a":"cass-ashcombe","b":"hux-frostane","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":5}]},{"a":"cass-ashcombe","b":"ira-gabler","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":2}]},{"a":"dev-brenlow","b":"eno-cotter","tier":"likely","score":0.6,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":2}]},{"a":"dev-brenlow","b":"fen-dunmoor","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":4}]},{"a":"dev-brenlow","b":"gia-ellery","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":5}]},{"a":"dev-brenlow","b":"hux-frostane","tier":"likely","score":0.6,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":1}]},{"a":"dev-brenlow","b":"ira-gabler","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":3}]},{"a":"eno-cotter","b":"fen-dunmoor","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":4}]},{"a":"eno-cotter","b":"gia-ellery","tier":"likely","score":0.6,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":4}]},{"a":"eno-cotter","b":"hux-frostane","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":2}]},{"a":"eno-cotter","b":"ira-gabler","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":3}]},{"a":"fen-dunmoor","b":"gia-ellery","tier":"likely","score":0.6,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":3}]},{"a":"fen-dunmoor","b":"hux-frostane","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":5}]},{"a":"fen-dunmoor","b":"ira-gabler","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":2}]},{"a":"gia-ellery","b":"hux-frostane","tier":"likely","score":0.6,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":2}]},{"a":"gia-ellery","b":"ira-gabler","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":4}]},{"a":"hux-frostane","b":"ira-gabler","tier":"strong","score":1.3,"evidence":[{"chatId":"g-ivy","chatName":"Ivy Study Circle","memberCount":9,"coActiveDays":5}]},{"a":"ira-gabler","b":"jol-holtwick","tier":"likely","score":0.55,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":1}]},{"a":"ira-gabler","b":"kip-ivesmere","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":3}]},{"a":"ira-gabler","b":"lior-jaspyr","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":4}]},{"a":"ira-gabler","b":"mira-kestrel","tier":"likely","score":0.55,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":4}]},{"a":"ira-gabler","b":"nyx-lumenne","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":2}]},{"a":"ira-gabler","b":"ossa-mothra","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":3}]},{"a":"ira-gabler","b":"piv-nashvale","tier":"likely","score":0.55,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":3}]},{"a":"ira-gabler","b":"quen-oxleigh","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":5}]},{"a":"jol-holtwick","b":"kip-ivesmere","tier":"strong","score":2.3,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":2},{"chatId":"g-trivia","chatName":"Trivia Night","memberCount":5,"coActiveDays":3}]},{"a":"jol-holtwick","b":"lior-jaspyr","tier":"likely","score":0.55,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":2}]},{"a":"jol-holtwick","b":"mira-kestrel","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":4}]},{"a":"jol-holtwick","b":"nyx-lumenne","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":5}]},{"a":"jol-holtwick","b":"ossa-mothra","tier":"likely","score":0.55,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":1}]},{"a":"jol-holtwick","b":"piv-nashvale","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":3}]},{"a":"jol-holtwick","b":"quen-oxleigh","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":4}]},{"a":"kip-ivesmere","b":"lior-jaspyr","tier":"likely","score":0.55,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":4}]},{"a":"kip-ivesmere","b":"mira-kestrel","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":2}]},{"a":"kip-ivesmere","b":"nyx-lumenne","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":3}]},{"a":"kip-ivesmere","b":"ossa-mothra","tier":"likely","score":0.55,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":3}]},{"a":"kip-ivesmere","b":"piv-nashvale","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":5}]},{"a":"kip-ivesmere","b":"quen-oxleigh","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":2}]},{"a":"lior-jaspyr","b":"mira-kestrel","tier":"likely","score":0.55,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":2}]},{"a":"lior-jaspyr","b":"nyx-lumenne","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":4}]},{"a":"lior-jaspyr","b":"ossa-mothra","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":5}]},{"a":"lior-jaspyr","b":"piv-nashvale","tier":"likely","score":0.55,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":1}]},{"a":"lior-jaspyr","b":"quen-oxleigh","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":3}]},{"a":"mira-kestrel","b":"nyx-lumenne","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":4}]},{"a":"mira-kestrel","b":"ossa-mothra","tier":"likely","score":0.55,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":4}]},{"a":"mira-kestrel","b":"piv-nashvale","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":2}]},{"a":"mira-kestrel","b":"quen-oxleigh","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":3}]},{"a":"nyx-lumenne","b":"ossa-mothra","tier":"likely","score":0.55,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":3}]},{"a":"nyx-lumenne","b":"piv-nashvale","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":5}]},{"a":"nyx-lumenne","b":"quen-oxleigh","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":2}]},{"a":"ossa-mothra","b":"piv-nashvale","tier":"likely","score":0.55,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":2}]},{"a":"ossa-mothra","b":"quen-oxleigh","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":4}]},{"a":"piv-nashvale","b":"quen-oxleigh","tier":"strong","score":1.25,"evidence":[{"chatId":"g-riverside","chatName":"Riverside Alumni","memberCount":9,"coActiveDays":5}]},{"a":"arlo-zalefen","b":"bela-briarcombe","tier":"likely","score":0.7,"evidence":[{"chatId":"g-quartet","chatName":null,"memberCount":4,"coActiveDays":1}]},{"a":"arlo-zalefen","b":"coen-corvinne","tier":"strong","score":1.6,"evidence":[{"chatId":"g-quartet","chatName":null,"memberCount":4,"coActiveDays":3}]},{"a":"arlo-zalefen","b":"zeph-yarrowe","tier":"strong","score":1.6,"evidence":[{"chatId":"g-quartet","chatName":null,"memberCount":4,"coActiveDays":4}]},{"a":"bela-briarcombe","b":"coen-corvinne","tier":"strong","score":1.6,"evidence":[{"chatId":"g-quartet","chatName":null,"memberCount":4,"coActiveDays":5}]},{"a":"bela-briarcombe","b":"zeph-yarrowe","tier":"likely","score":0.7,"evidence":[{"chatId":"g-quartet","chatName":null,"memberCount":4,"coActiveDays":1}]},{"a":"coen-corvinne","b":"zeph-yarrowe","tier":"strong","score":1.6,"evidence":[{"chatId":"g-quartet","chatName":null,"memberCount":4,"coActiveDays":3}]},{"a":"ana-vray","b":"dax-dellmere","tier":"strong","score":1.1,"evidence":[{"chatId":"g-bookclub","chatName":"Old Book Club","memberCount":5,"coActiveDays":3}]},{"a":"ana-vray","b":"ember-emberlyn","tier":"strong","score":1.1,"evidence":[{"chatId":"g-bookclub","chatName":"Old Book Club","memberCount":5,"coActiveDays":4}]},{"a":"ana-vray","b":"finch-fenwicke","tier":"strong","score":1.1,"evidence":[{"chatId":"g-bookclub","chatName":"Old Book Club","memberCount":5,"coActiveDays":5}]},{"a":"bo-marrow","b":"dax-dellmere","tier":"likely","score":0.5,"evidence":[{"chatId":"g-bookclub","chatName":"Old Book Club","memberCount":5,"coActiveDays":1}]},{"a":"bo-marrow","b":"ember-emberlyn","tier":"strong","score":1.1,"evidence":[{"chatId":"g-bookclub","chatName":"Old Book Club","memberCount":5,"coActiveDays":3}]},{"a":"bo-marrow","b":"finch-fenwicke","tier":"strong","score":1.1,"evidence":[{"chatId":"g-bookclub","chatName":"Old Book Club","memberCount":5,"coActiveDays":4}]},{"a":"dax-dellmere","b":"ember-emberlyn","tier":"strong","score":1.1,"evidence":[{"chatId":"g-bookclub","chatName":"Old Book Club","memberCount":5,"coActiveDays":5}]},{"a":"dax-dellmere","b":"finch-fenwicke","tier":"likely","score":0.5,"evidence":[{"chatId":"g-bookclub","chatName":"Old Book Club","memberCount":5,"coActiveDays":1}]},{"a":"ember-emberlyn","b":"finch-fenwicke","tier":"strong","score":1.1,"evidence":[{"chatId":"g-bookclub","chatName":"Old Book Club","memberCount":5,"coActiveDays":3}]},{"a":"gale-grovane","b":"halo-halewynn","tier":"likely","score":0.45,"evidence":[{"chatId":"g-trivia","chatName":"Trivia Night","memberCount":5,"coActiveDays":1}]},{"a":"gale-grovane","b":"idra-ionisk","tier":"strong","score":1.05,"evidence":[{"chatId":"g-trivia","chatName":"Trivia Night","memberCount":5,"coActiveDays":3}]},{"a":"gale-grovane","b":"jol-holtwick","tier":"strong","score":1.05,"evidence":[{"chatId":"g-trivia","chatName":"Trivia Night","memberCount":5,"coActiveDays":4}]},{"a":"gale-grovane","b":"kip-ivesmere","tier":"strong","score":1.05,"evidence":[{"chatId":"g-trivia","chatName":"Trivia Night","memberCount":5,"coActiveDays":5}]},{"a":"halo-halewynn","b":"idra-ionisk","tier":"likely","score":0.45,"evidence":[{"chatId":"g-trivia","chatName":"Trivia Night","memberCount":5,"coActiveDays":1}]},{"a":"halo-halewynn","b":"jol-holtwick","tier":"strong","score":1.05,"evidence":[{"chatId":"g-trivia","chatName":"Trivia Night","memberCount":5,"coActiveDays":3}]},{"a":"halo-halewynn","b":"kip-ivesmere","tier":"strong","score":1.05,"evidence":[{"chatId":"g-trivia","chatName":"Trivia Night","memberCount":5,"coActiveDays":4}]},{"a":"idra-ionisk","b":"jol-holtwick","tier":"strong","score":1.05,"evidence":[{"chatId":"g-trivia","chatName":"Trivia Night","memberCount":5,"coActiveDays":5}]},{"a":"idra-ionisk","b":"kip-ivesmere","tier":"likely","score":0.45,"evidence":[{"chatId":"g-trivia","chatName":"Trivia Night","memberCount":5,"coActiveDays":1}]},{"a":"jute-junot","b":"koa-kaderly","tier":"likely","score":0.65,"evidence":[{"chatId":"g-family","chatName":"Family Thread","memberCount":4,"coActiveDays":1}]},{"a":"jute-junot","b":"lark-loomer","tier":"strong","score":1.5,"evidence":[{"chatId":"g-family","chatName":"Family Thread","memberCount":4,"coActiveDays":3}]},{"a":"jute-junot","b":"mox-mistvale","tier":"strong","score":1.5,"evidence":[{"chatId":"g-family","chatName":"Family Thread","memberCount":4,"coActiveDays":4}]},{"a":"koa-kaderly","b":"lark-loomer","tier":"strong","score":1.5,"evidence":[{"chatId":"g-family","chatName":"Family Thread","memberCount":4,"coActiveDays":5}]},{"a":"koa-kaderly","b":"mox-mistvale","tier":"likely","score":0.65,"evidence":[{"chatId":"g-family","chatName":"Family Thread","memberCount":4,"coActiveDays":1}]},{"a":"lark-loomer","b":"mox-mistvale","tier":"strong","score":1.5,"evidence":[{"chatId":"g-family","chatName":"Family Thread","memberCount":4,"coActiveDays":3}]},{"a":"nell-nettlow","b":"orin-orinwick","tier":"likely","score":0.5,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":1}]},{"a":"nell-nettlow","b":"pax-pikeholm","tier":"strong","score":1.15,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":3}]},{"a":"nell-nettlow","b":"quill-quellyn","tier":"strong","score":1.15,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":4}]},{"a":"nell-nettlow","b":"rue-rillstone","tier":"strong","score":1.15,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":5}]},{"a":"nell-nettlow","b":"sil-quaden","tier":"likely","score":0.5,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":1}]},{"a":"nell-nettlow","b":"tavi-rowley","tier":"strong","score":1.15,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":3}]},{"a":"orin-orinwick","b":"pax-pikeholm","tier":"strong","score":1.15,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":4}]},{"a":"orin-orinwick","b":"quill-quellyn","tier":"strong","score":1.15,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":5}]},{"a":"orin-orinwick","b":"rue-rillstone","tier":"likely","score":0.5,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":1}]},{"a":"orin-orinwick","b":"sil-quaden","tier":"strong","score":1.15,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":3}]},{"a":"orin-orinwick","b":"tavi-rowley","tier":"strong","score":1.15,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":4}]},{"a":"pax-pikeholm","b":"quill-quellyn","tier":"strong","score":1.15,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":5}]},{"a":"pax-pikeholm","b":"rue-rillstone","tier":"likely","score":0.5,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":1}]},{"a":"pax-pikeholm","b":"sil-quaden","tier":"strong","score":1.15,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":3}]},{"a":"pax-pikeholm","b":"tavi-rowley","tier":"strong","score":1.15,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":4}]},{"a":"quill-quellyn","b":"rue-rillstone","tier":"strong","score":1.15,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":5}]},{"a":"quill-quellyn","b":"sil-quaden","tier":"likely","score":0.5,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":1}]},{"a":"quill-quellyn","b":"tavi-rowley","tier":"strong","score":1.15,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":3}]},{"a":"rue-rillstone","b":"sil-quaden","tier":"strong","score":1.15,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":4}]},{"a":"rue-rillstone","b":"tavi-rowley","tier":"strong","score":1.15,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":5}]},{"a":"sil-quaden","b":"tavi-rowley","tier":"likely","score":0.5,"evidence":[{"chatId":"g-gym","chatName":"Gym Buddies","memberCount":7,"coActiveDays":1}]},{"a":"uma-sabelle","b":"vex-thornwick","tier":"likely","score":0.45,"evidence":[{"chatId":"g-poker","chatName":"Poker Night","memberCount":5,"coActiveDays":2}]},{"a":"uma-sabelle","b":"wren-ulveren","tier":"likely","score":0.45,"evidence":[{"chatId":"g-poker","chatName":"Poker Night","memberCount":5,"coActiveDays":2}]},{"a":"uma-sabelle","b":"xan-vaneford","tier":"likely","score":0.45,"evidence":[{"chatId":"g-poker","chatName":"Poker Night","memberCount":5,"coActiveDays":2}]},{"a":"uma-sabelle","b":"yara-wicklow","tier":"likely","score":0.45,"evidence":[{"chatId":"g-poker","chatName":"Poker Night","memberCount":5,"coActiveDays":2}]}],"fullyAcquaintedChatIds":["g-poker"]};
+
+/* ---- reduced motion ---- */
+const REDUCE_MOTION = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+if (REDUCE_MOTION) document.getElementById("motion-note").hidden = false;
+
+/* ---- marks: this browser's own "everyone here knows each other" overrides ----
+   Namespaced and versioned so a future schema change can detect and discard an
+   old one instead of misreading it, same convention template-v3.html used. */
+const MARKS_KEY = "connectionGraphV4.marks.v1";
+function loadStoredMarks() {
+  try {
+    const raw = localStorage.getItem(MARKS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.marks)) return [];
+    return parsed.marks;
+  } catch (err) {
+    return []; // file:// / private-mode storage can throw -- fall back to no marks
+  }
+}
+let marksRaw = loadStoredMarks();
+function persistMarks() {
+  try { localStorage.setItem(MARKS_KEY, JSON.stringify({ v: 1, marks: marksRaw })); } catch (err) { /* in-memory only this session */ }
+}
+function setMark(chatId, memberKey, checked) {
+  const idx = marksRaw.findIndex((m) => m.chatId === chatId);
+  const entry = { chatId, memberKey, checked };
+  if (idx >= 0) marksRaw[idx] = entry; else marksRaw.push(entry);
+  persistMarks();
+}
+
+/* ---- build the view model (buildViewModel is the exact function tests.mjs
+   exercises -- this is the one place the whole pipeline gets wired together) ---- */
+let VM = buildViewModel(RAW, marksRaw);
+
+/* ---- deterministic layout, computed once up front so "the map rests" after
+   settle rather than re-simulating on every interaction ---- */
+const LAYOUT_ITERATIONS = VM.model.people.length > 300 ? 140 : 200;
+let positions = simulateLayout(VM.effectiveModel, { iterations: LAYOUT_ITERATIONS });
+
+/* ---- region color: stable per community id, assigned in the same id-sorted
+   order labelRegions already produced, so two loads pick the same colors ---- */
+const REGION_HUES = [206, 34, 96, 268, 16, 152, 310, 48, 178, 344, 232, 8];
+function hsla(h, s, l, a) {
+  return "hsla(" + h + "," + s + "%," + l + "%," + a + ")";
+}
+const regionIndexById = new Map();
+VM.regions.forEach((r, i) => regionIndexById.set(r.id, i));
+const communityByPersonId = VM.communityByPersonId;
+function regionIndexOfPerson(id) {
+  const c = communityByPersonId.get(id);
+  return regionIndexById.has(c) ? regionIndexById.get(c) : 0;
+}
+function dotColor(id, alpha) {
+  const h = REGION_HUES[regionIndexOfPerson(id) % REGION_HUES.length];
+  return hsla(h, 52, 68, alpha);
+}
+
+/* ---- bridge emphasis: a person whose acquaintance neighbors span more than
+   one community sits between regions, per PLAN.md's Visual contract ---- */
+const bridgeIds = new Set();
+for (const p of VM.model.people) {
+  const own = communityByPersonId.get(p.id);
+  const neighbors = VM.adjacency.get(p.id) || [];
+  if (neighbors.some((n) => communityByPersonId.get(n.to) !== own)) bridgeIds.add(p.id);
+}
+
+/* ---- acquaintance degree (for dot size and the top-N label set) ---- */
+const acqDegree = new Map();
+for (const p of VM.model.people) acqDegree.set(p.id, 0);
+for (const e of VM.acquaintances) {
+  acqDegree.set(e.a, (acqDegree.get(e.a) || 0) + 1);
+  acqDegree.set(e.b, (acqDegree.get(e.b) || 0) + 1);
+}
+function radiusFor(id) {
+  return Math.min(11, 3 + 1.7 * Math.sqrt(acqDegree.get(id) || 0));
+}
+let topNameSet = new Set(VM.topNames);
+
+/* ============================================================
+   Canvas + camera
+   ============================================================ */
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+let W = 0, H = 0, DPR = Math.max(1, window.devicePixelRatio || 1);
+const camera = { x: 0, y: 0, scale: 1 };
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  requestRender();
+}
+window.addEventListener("resize", resize);
+
+function worldToScreen(p) {
+  return { x: (p.x - camera.x) * camera.scale + W / 2, y: (p.y - camera.y) * camera.scale + H / 2 };
+}
+function screenToWorld(sx, sy) {
+  return { x: (sx - W / 2) / camera.scale + camera.x, y: (sy - H / 2) / camera.scale + camera.y };
+}
+
+/* ---- assembly animation: a pure visual interpolation from a scattered start
+   toward the already-computed final layout, so the outcome never depends on
+   frame timing. Skipped entirely under reduced motion. ---- */
+const ASSEMBLY_START_SEED = 19700101;
+const assemblyStart = initialPositions(VM.model.people, makeRng(ASSEMBLY_START_SEED), 2600);
+let assemblyT = REDUCE_MOTION ? 1 : 0;
+const ASSEMBLY_MS = 2200;
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+function currentPositions() {
+  if (assemblyT >= 1) return positions;
+  const t = easeOutCubic(assemblyT);
+  const out = new Map();
+  for (const p of VM.model.people) {
+    const a = assemblyStart.get(p.id), b = positions.get(p.id);
+    out.set(p.id, { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  }
+  return out;
+}
+
+/* ============================================================
+   Selection state: null | {type:"single", id} | {type:"pair", ids:[a,b]}
+   ============================================================ */
+let selection = null;
+let hoveredId = null;
+let hoveredGroupId = null;
+
+function relevantIds() {
+  if (!selection) return null; // null means "everyone is relevant" (rest state)
+  if (selection.type === "single") {
+    const ids = new Set([selection.id]);
+    for (const n of VM.adjacency.get(selection.id) || []) ids.add(n.to);
+    return ids;
+  }
+  const [a, b] = selection.ids;
+  const path = shortestPath(VM.adjacency, a, b);
+  const ids = new Set([a, b]);
+  if (path) for (const id of path.path) ids.add(id);
+  return ids;
+}
+
+/* ============================================================
+   Render
+   ============================================================ */
+let renderQueued = false;
+function requestRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(render);
+}
+
+function drawBackground() {
+  ctx.fillStyle = "#0a0908";
+  ctx.fillRect(0, 0, W, H);
+  const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.25, W / 2, H / 2, Math.hypot(W, H) * 0.65);
+  vg.addColorStop(0, "rgba(20,18,15,0)");
+  vg.addColorStop(1, "rgba(0,0,0,0.55)");
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function edgeStyleFor(tier) {
+  if (tier === "confirmed") return { color: "rgba(233,195,132,0.8)", width: 1.7 };
+  if (tier === "strong") return { color: "rgba(214,164,94,0.5)", width: 1.1 };
+  return { color: "rgba(214,164,94,0.32)", width: 0.8 }; // likely
+}
+
+function render() {
+  renderQueued = false;
+  drawBackground();
+  const pos = currentPositions();
+  const rel = relevantIds();
+  const fadeIn = REDUCE_MOTION ? 1 : Math.min(1, assemblyT * 1.4);
+
+  // region labels, behind everything else
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = "italic 15px Georgia, serif";
+  for (const r of VM.regions) {
+    if (!r.label || r.memberIds.length < 2) continue;
+    let cx = 0, cy = 0, n = 0;
+    for (const id of r.memberIds) { const p = pos.get(id); if (!p) continue; cx += p.x; cy += p.y; n++; }
+    if (!n) continue;
+    const s = worldToScreen({ x: cx / n, y: cy / n });
+    ctx.fillStyle = "rgba(240,229,207," + (0.34 * fadeIn).toFixed(3) + ")";
+    ctx.fillText(r.label, s.x, s.y);
+  }
+
+  // connection lines
+  const showLikely = !!selection; // at rest, likely edges are hidden (semantic zoom floor)
+  let pathHopSet = null;
+  if (selection && selection.type === "pair") {
+    const p = shortestPath(VM.adjacency, selection.ids[0], selection.ids[1]);
+    if (p) { pathHopSet = new Set(p.hops.map((h) => h.a + "|" + h.b)); }
+  }
+  for (const e of VM.acquaintances) {
+    if (e.tier === "likely" && !showLikely) continue;
+    const pa = pos.get(e.a), pb = pos.get(e.b);
+    if (!pa || !pb) continue;
+    const relBoth = !rel || (rel.has(e.a) && rel.has(e.b));
+    if (selection && !relBoth) continue; // only the selected person's/pair's structure draws while dimmed elsewhere
+    const style = edgeStyleFor(e.tier);
+    const onPath = pathHopSet && (pathHopSet.has(e.a + "|" + e.b) || pathHopSet.has(e.b + "|" + e.a));
+    const sa = worldToScreen(pa), sb = worldToScreen(pb);
+    ctx.beginPath();
+    ctx.moveTo(sa.x, sa.y);
+    ctx.lineTo(sb.x, sb.y);
+    ctx.strokeStyle = onPath ? "rgba(255,238,200,0.95)" : style.color;
+    ctx.lineWidth = (onPath ? style.width + 1.1 : style.width) * fadeIn;
+    ctx.globalAlpha = fadeIn;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // dots
+  for (const p of VM.model.people) {
+    const wp = pos.get(p.id);
+    if (!wp) continue;
+    const s = worldToScreen(wp);
+    const r = radiusFor(p.id) * camera.scale ** 0.15;
+    const isRelevant = !rel || rel.has(p.id);
+    const inHoveredGroup = hoveredGroupId && (VM.model.groupById.get(hoveredGroupId).members.includes(p.id));
+    let alpha = isRelevant ? 1 : 0.16;
+    if (hoveredGroupId) alpha = inHoveredGroup ? 1 : Math.min(alpha, 0.16);
+    alpha *= fadeIn;
+    ctx.globalAlpha = alpha;
+    if (bridgeIds.has(p.id)) {
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r + 3, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(233,195,132,0.55)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    if (inHoveredGroup) {
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r + 4, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,238,200,0.85)";
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = dotColor(p.id, 0.95);
+    ctx.fill();
+    if (selection && (p.id === selectionPrimaryId() || (selection.type === "pair" && selection.ids.includes(p.id)))) {
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = "rgba(255,244,220,0.95)";
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    const showLabel = topNameSet.has(p.id) || p.id === hoveredId || (rel && rel.has(p.id) && selection);
+    if (showLabel && fadeIn > 0.4) {
+      const nm = personDisplayName(p).text;
+      ctx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.fillStyle = "rgba(240,232,214," + (0.85 * fadeIn).toFixed(3) + ")";
+      ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.fillText(nm, s.x + r + 5, s.y);
+    }
+  }
+}
+function selectionPrimaryId() {
+  if (!selection) return null;
+  return selection.type === "single" ? selection.id : null;
+}
+
+/* ---- assembly loop ---- */
+function tickAssembly(now) {
+  if (assemblyT < 1) {
+    if (!tickAssembly._t0) tickAssembly._t0 = now;
+    assemblyT = Math.min(1, (now - tickAssembly._t0) / ASSEMBLY_MS);
+    renderQueued = false;
+    render();
+    requestAnimationFrame(tickAssembly);
+  }
+}
+
+/* ============================================================
+   Hit testing
+   ============================================================ */
+function hitTest(sx, sy) {
+  const pos = currentPositions();
+  let best = null, bestD = 14; // px tolerance
+  for (const p of VM.model.people) {
+    const wp = pos.get(p.id);
+    if (!wp) continue;
+    const s = worldToScreen(wp);
+    const d = Math.hypot(s.x - sx, s.y - sy);
+    const r = radiusFor(p.id) * camera.scale ** 0.15 + 4;
+    if (d <= Math.max(r, bestD) && d < bestD + r) {
+      if (!best || d < best.d) best = { id: p.id, d };
+    }
+  }
+  return best ? best.id : null;
+}
+
+/* ============================================================
+   Pan / zoom
+   ============================================================ */
+let dragging = false, dragMoved = false, dragStart = null, camStart = null;
+cv.addEventListener("pointerdown", (e) => {
+  dragging = true; dragMoved = false;
+  dragStart = { x: e.clientX, y: e.clientY };
+  camStart = { x: camera.x, y: camera.y };
+  cv.classList.add("dragging");
+  cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener("pointermove", (e) => {
+  if (dragging) {
+    const dx = e.clientX - dragStart.x, dy = e.clientY - dragStart.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) dragMoved = true;
+    camera.x = camStart.x - dx / camera.scale;
+    camera.y = camStart.y - dy / camera.scale;
+    requestRender();
+    return;
+  }
+  const id = hitTest(e.clientX, e.clientY);
+  if (id !== hoveredId) {
+    hoveredId = id;
+    const tt = document.getElementById("tooltip");
+    if (id) {
+      tt.hidden = false;
+      tt.textContent = personDisplayName(VM.model.personById.get(id)).text;
+      tt.style.left = e.clientX + "px";
+      tt.style.top = e.clientY + "px";
+    } else {
+      tt.hidden = true;
+    }
+    requestRender();
+  } else if (id) {
+    const tt = document.getElementById("tooltip");
+    tt.style.left = e.clientX + "px";
+    tt.style.top = e.clientY + "px";
+  }
+});
+cv.addEventListener("pointerup", (e) => {
+  dragging = false;
+  cv.classList.remove("dragging");
+  if (!dragMoved) {
+    const id = hitTest(e.clientX, e.clientY);
+    if (id) onPersonClicked(id); else clearSelection();
+  }
+});
+cv.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const before = screenToWorld(e.clientX, e.clientY);
+  const factor = Math.exp(-e.deltaY * 0.0015);
+  camera.scale = Math.min(6, Math.max(0.15, camera.scale * factor));
+  const after = screenToWorld(e.clientX, e.clientY);
+  camera.x += before.x - after.x;
+  camera.y += before.y - after.y;
+  requestRender();
+}, { passive: false });
+document.getElementById("z-in").addEventListener("click", () => { camera.scale = Math.min(6, camera.scale * 1.3); requestRender(); });
+document.getElementById("z-out").addEventListener("click", () => { camera.scale = Math.max(0.15, camera.scale / 1.3); requestRender(); });
+
+function panTo(id, opts) {
+  const p = positions.get(id);
+  if (!p) return;
+  camera.x = p.x; camera.y = p.y;
+  if (opts && opts.zoom) camera.scale = Math.max(camera.scale, 1.4);
+  requestRender();
+}
+
+/* ============================================================
+   Selection + panel rendering
+   ============================================================ */
+const panelEl = document.getElementById("panel");
+const liveEl = document.getElementById("live");
+function announce(text) { liveEl.textContent = text; }
+
+function onPersonClicked(id) {
+  if (!selection) { selection = { type: "single", id }; }
+  else if (selection.type === "single") {
+    if (selection.id === id) { selection = null; }
+    else { selection = { type: "pair", ids: [selection.id, id] }; }
+  } else {
+    selection = { type: "single", id };
+  }
+  renderPanel();
+  requestRender();
+}
+function clearSelection() {
+  if (!selection) return;
+  selection = null;
+  renderPanel();
+  requestRender();
+}
+
+// Escapes " too, not just & and <: this is used to build both text nodes and
+// several quoted attribute values below (data-copy, data-group, data-id), and
+// an id containing a stray " would otherwise break out of the attribute.
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+}
+
+function evidenceRowsHTML(evidence) {
+  if (!evidence || !evidence.length) return '<div class="evrow">No shared-chat evidence recorded.</div>';
+  return evidence.map((ev) => {
+    const nm = chatDisplayName(ev.chatName, ev.memberCount);
+    return '<div class="evrow"><b>' + esc(nm) + "</b> &middot; " + ev.memberCount + " members &middot; " +
+      ev.coActiveDays + " co-active day" + (ev.coActiveDays === 1 ? "" : "s") + "</div>";
+  }).join("");
+}
+
+function copyChip(id) {
+  return '<button type="button" class="copybtn" data-copy="' + esc(id) +
+    '" aria-label="Copy ' + esc(id) + ' to clipboard"><span class="cp-label">Copy id</span></button>';
+}
+
+function connectionsByTier(personId) {
+  const groups = { confirmed: [], strong: [], likely: [] };
+  for (const n of VM.adjacency.get(personId) || []) groups[n.tier].push(n);
+  for (const k of Object.keys(groups)) groups[k].sort((a, b) => b.score - a.score);
+  return groups;
+}
+
+function renderSinglePanel(id) {
+  const person = VM.model.personById.get(id);
+  const name = personDisplayName(person);
+  const groups = connectionsByTier(id);
+  const total = groups.confirmed.length + groups.strong.length + groups.likely.length;
+  document.getElementById("pp-head").innerHTML =
+    '<button type="button" class="iconbtn pp-x" id="pp-x" aria-label="Close panel">&#10005;</button>' +
+    '<div class="pp-name">' + esc(name.text) + (name.isGuess ? " <span style=\"opacity:.6\">(guess)</span>" : "") + '</div>' +
+    '<div class="pp-sub">' + (bridgeIds.has(id) ? "Bridges regions" : "Person") + '</div>' +
+    copyChip(id);
+  document.getElementById("pp-stats").innerHTML =
+    '<div class="stat"><b>' + total + '</b><span>acquaintances</span></div>' +
+    '<div class="stat"><b>' + groups.confirmed.length + '</b><span>confirmed</span></div>' +
+    '<div class="stat"><b>' + (VM.model.membership.get(id) || []).length + '</b><span>group chats</span></div>';
+
+  const TIER_LABEL = { confirmed: "Confirmed", strong: "Strong", likely: "Likely" };
+  const TIER_COLOR = { confirmed: "rgba(233,195,132,0.9)", strong: "rgba(214,164,94,0.65)", likely: "rgba(214,164,94,0.35)" };
+  let body = "";
+  for (const tier of ["confirmed", "strong", "likely"]) {
+    const items = groups[tier];
+    if (!items.length) continue;
+    body += '<details class="tiergrp"><summary><span class="car">&#9656;</span><span class="tag" style="background:' +
+      TIER_COLOR[tier] + '"></span>' + TIER_LABEL[tier] + '<span class="cnt">' + items.length + '</span></summary>';
+    for (const n of items) {
+      const p = VM.model.personById.get(n.to);
+      const pname = personDisplayName(p).text;
+      // No data-goto here on purpose: this row's only job is expanding its own
+      // evidence. A click on a <summary> both toggles the <details> AND bubbles
+      // to the panel's click handler in the same event -- if that handler also
+      // navigated (onPersonClicked), a person already selected would flip into
+      // pair mode and overwrite pp-body mid-click, destroying the <details> the
+      // same click had just opened. Navigating to a connection already works
+      // via their dot on the map or via search.
+      body += '<details><summary class="conn-item" style="list-style:none;cursor:pointer">' +
+        '<span class="nm">' + esc(pname) + '</span></summary>' +
+        '<div class="evbox">' + evidenceRowsHTML(n.evidence) + '</div></details>';
+    }
+    body += "</details>";
+  }
+  if (!total) body += '<div class="more">No observed acquaintances yet -- shared context may be sub-threshold; see the groups drawer.</div>';
+  document.getElementById("pp-body").innerHTML = body;
+  announce(name.text + ", " + total + " acquaintance" + (total === 1 ? "" : "s") + (bridgeIds.has(id) ? ", bridges regions" : ""));
+}
+
+function renderPairPanel(idA, idB) {
+  const a = VM.model.personById.get(idA), b = VM.model.personById.get(idB);
+  const nameA = personDisplayName(a).text, nameB = personDisplayName(b).text;
+  document.getElementById("pp-head").innerHTML =
+    '<button type="button" class="iconbtn pp-x" id="pp-x" aria-label="Close panel">&#10005;</button>' +
+    '<div class="pp-name">' + esc(nameA) + " &amp; " + esc(nameB) + '</div>' +
+    '<div class="pp-sub">Pair</div>';
+  const path = shortestPath(VM.adjacency, idA, idB);
+  let statusText, body;
+  if (path) {
+    statusText = "Connected";
+    document.getElementById("pp-stats").innerHTML =
+      '<div class="stat"><b>Yes</b><span>connected</span></div>' +
+      '<div class="stat"><b>' + path.hops.length + '</b><span>hop' + (path.hops.length === 1 ? "" : "s") + '</span></div>';
+    body = '<div class="sec">Most-confident path</div>';
+    path.path.forEach((id, i) => {
+      const nm = personDisplayName(VM.model.personById.get(id)).text;
+      body += '<div class="pathhop">' + (i > 0 ? '<span class="patharrow">&rarr;</span>' : "") + '<span class="nm">' + esc(nm) + '</span></div>';
+    });
+    body += '<div class="sec">Evidence per hop</div>';
+    path.hops.forEach((h) => {
+      const nmA = personDisplayName(VM.model.personById.get(h.a)).text;
+      const nmB = personDisplayName(VM.model.personById.get(h.b)).text;
+      body += '<div class="more" style="font-style:normal;color:rgba(242,231,210,0.7)">' + esc(nmA) + ' &rarr; ' + esc(nmB) + '</div>' +
+        '<div class="evbox" style="margin-left:6px">' + evidenceRowsHTML(h.evidence) + '</div>';
+    });
+  } else {
+    statusText = "No observed path";
+    document.getElementById("pp-stats").innerHTML = '<div class="stat"><b>No</b><span>observed path</span></div>';
+    const shared = sharedGroupsOf(VM.model, idA, idB);
+    body = '<div class="more">No observed path between ' + esc(nameA) + ' and ' + esc(nameB) + '.</div>';
+    if (shared.length) {
+      body += '<div class="sec">Shared chats (sub-threshold evidence)</div>';
+      for (const g of shared) {
+        body += '<div class="evbox" style="margin-left:6px"><div class="evrow"><b>' + esc(chatDisplayName(g.chatName, g.memberCount)) +
+          '</b> &middot; ' + g.memberCount + ' members</div></div>';
+      }
+    } else {
+      body += '<div class="more">No group chats in common either.</div>';
+    }
+  }
+  document.getElementById("pp-body").innerHTML = body;
+  announce(nameA + " and " + nameB + ": " + statusText.toLowerCase());
+}
+
+function renderPanel() {
+  if (!selection) { panelEl.classList.remove("open"); return; }
+  if (selection.type === "single") renderSinglePanel(selection.id);
+  else renderPairPanel(selection.ids[0], selection.ids[1]);
+  panelEl.classList.add("open");
+  document.getElementById("pp-body").scrollTop = 0;
+}
+panelEl.addEventListener("click", (e) => {
+  if (e.target.id === "pp-x" || e.target.closest("#pp-x")) { clearSelection(); return; }
+  const cp = e.target.closest(".copybtn");
+  if (cp) { handleCopyClick(cp); return; }
+});
+
+/* ============================================================
+   Clipboard: async clipboard API with an execCommand fallback, and a visible
+   success/failure state either way -- this page is opened straight off disk,
+   where the async API can be missing or refused outright, and a silent no-op
+   button reads as broken.
+   ============================================================ */
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+  return new Promise((resolve, reject) => {
+    const scratch = document.createElement("textarea");
+    scratch.value = text;
+    scratch.setAttribute("readonly", "");
+    scratch.style.position = "fixed";
+    scratch.style.opacity = "0";
+    document.body.appendChild(scratch);
+    scratch.select();
+    let copied = false;
+    try { copied = document.execCommand("copy"); } catch (err) { copied = false; }
+    document.body.removeChild(scratch);
+    copied ? resolve() : reject(new Error("clipboard unavailable"));
+  });
+}
+function flashCopyFeedback(btn, promise, idleLabel) {
+  const label = btn.querySelector(".cp-label") || btn;
+  const set = (text, cls) => {
+    btn.classList.toggle("copied", cls === "copied");
+    btn.classList.toggle("copyfail", cls === "copyfail");
+    label.textContent = text;
+    clearTimeout(btn._copyRevert);
+    btn._copyRevert = setTimeout(() => {
+      btn.classList.remove("copied", "copyfail");
+      label.textContent = idleLabel;
+    }, 1400);
+  };
+  promise.then(() => set("Copied", "copied")).catch(() => set("Copy failed", "copyfail"));
+}
+function handleCopyClick(btn) {
+  flashCopyFeedback(btn, copyText(btn.dataset.copy), "Copy id");
+}
+
+/* ============================================================
+   Groups drawer
+   ============================================================ */
+const drawerEl = document.getElementById("drawer");
+const drawerTab = document.getElementById("drawer-tab");
+function setDrawerOpen(open) {
+  drawerEl.classList.toggle("open", open);
+  drawerTab.setAttribute("aria-expanded", String(open));
+  if (open) renderDrawer();
+}
+drawerTab.addEventListener("click", () => setDrawerOpen(!drawerEl.classList.contains("open")));
+document.getElementById("drawer-x").addEventListener("click", () => setDrawerOpen(false));
+
+function renderDrawer() {
+  document.getElementById("drawer-title").textContent = "Group chats (" + VM.model.groups.length + ")";
+  const sorted = VM.model.groups.slice().sort(compareGroupsForDrawer);
+  const html = sorted.map((g) => {
+    const nm = chatDisplayName(g.name, g.members.length);
+    const nameCls = (g.name ? "" : "unnamed") + (g.isLive ? "" : " dead");
+    const checked = VM.checkedChatIds.has(g.id);
+    const key = memberKeyOf(g.members);
+    const cbId = "gtoggle-" + g.id;
+    return '<div class="grow" data-group="' + esc(g.id) + '">' +
+      '<div class="gtop"><span class="gname ' + nameCls.trim() + '">' + esc(nm) + '</span>' +
+      '<span class="gmeta">' + g.members.length + (g.isLive ? "" : " &middot; dead") + '</span></div>' +
+      '<label class="gtoggle" for="' + cbId + '">' +
+      '<input type="checkbox" id="' + cbId + '" data-chat="' + esc(g.id) + '" data-key="' + esc(key) + '"' +
+      (checked ? " checked" : "") + '> Everyone here knows each other</label>' +
+      '</div>';
+  }).join("");
+  document.getElementById("drawer-list").innerHTML = html || '<div class="more">No group chats in this export.</div>';
+}
+
+document.getElementById("drawer-list").addEventListener("mouseover", (e) => {
+  const row = e.target.closest(".grow");
+  const id = row ? row.dataset.group : null;
+  if (id !== hoveredGroupId) { hoveredGroupId = id; requestRender(); }
+});
+document.getElementById("drawer-list").addEventListener("mouseleave", () => {
+  if (hoveredGroupId) { hoveredGroupId = null; requestRender(); }
+});
+document.getElementById("drawer-list").addEventListener("change", (e) => {
+  const input = e.target.closest("input[type=checkbox]");
+  if (!input) return;
+  setMark(input.dataset.chat, input.dataset.key, input.checked);
+  recomputeEffective();
+  renderDrawer();
+  requestRender();
+});
+document.getElementById("copy-marks").addEventListener("click", (e) => {
+  const btn = e.currentTarget;
+  const payload = marksExportPayload(VM.checkedChatIds, VM.model.groupById);
+  flashCopyFeedback(btn, copyText(JSON.stringify(payload)), "Copy marks as JSON");
+});
+
+/* ---- live re-derivation on a toggle: recomputes tiers/adjacency/top names
+   only. Layout and community/region assignment stay put -- the map already
+   settled, and reshuffling positions or region colors on a checkbox click
+   would be a bigger surprise than the toggle itself. ---- */
+function recomputeEffective() {
+  const validMarks = filterValidMarks(marksRaw, VM.model.groupById);
+  const checkedChatIds = effectiveCheckedChatIds(VM.model.fullyAcquaintedChatIds, validMarks, VM.model.groupById);
+  const acquaintances = recomputeAcquaintances(VM.model.acquaintances, VM.model, checkedChatIds);
+  const adjacency = buildAcquaintanceAdjacency(acquaintances);
+  const topNames = topAcquaintanceDegree(VM.model.people, acquaintances, 20);
+  VM = Object.assign({}, VM, { validMarks, checkedChatIds, acquaintances, adjacency, topNames });
+  topNameSet = new Set(VM.topNames);
+  acqDegree.clear();
+  for (const p of VM.model.people) acqDegree.set(p.id, 0);
+  for (const e of VM.acquaintances) {
+    acqDegree.set(e.a, (acqDegree.get(e.a) || 0) + 1);
+    acqDegree.set(e.b, (acqDegree.get(e.b) || 0) + 1);
+  }
+  if (selection) renderPanel();
+}
+
+/* ============================================================
+   Search
+   ============================================================ */
+const searchIn = document.getElementById("search-in");
+const searchRes = document.getElementById("search-res");
+function searchMatches(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return VM.model.people
+    .map((p) => ({ p, name: personDisplayName(p).text }))
+    .filter((x) => x.name.toLowerCase().includes(q))
+    .sort((x, y) => x.name.localeCompare(y.name))
+    .slice(0, 8);
+}
+function renderSearchResults(query) {
+  const matches = searchMatches(query);
+  if (!query.trim()) { searchRes.hidden = true; searchRes.innerHTML = ""; return; }
+  if (!matches.length) {
+    searchRes.hidden = false;
+    searchRes.innerHTML = '<div class="snone">No one matches "' + esc(query) + '".</div>';
+    return;
+  }
+  searchRes.hidden = false;
+  searchRes.innerHTML = matches.map((m) => {
+    const region = regionIndexOfPerson(m.p.id);
+    return '<button type="button" class="sres" data-id="' + esc(m.p.id) + '">' +
+      '<span class="dot" style="background:' + dotColor(m.p.id, 0.9) + '"></span>' +
+      '<span class="nm">' + esc(m.name) + '</span>' +
+      (VM.regions[region] && VM.regions[region].label ? '<span class="mt">' + esc(VM.regions[region].label) + '</span>' : "") +
+      '</button>';
+  }).join("");
+}
+function chooseSearchResult(id) {
+  onPersonClicked(id);
+  panTo(id, { zoom: true });
+  searchRes.hidden = true;
+  searchIn.value = "";
+}
+searchIn.addEventListener("input", () => renderSearchResults(searchIn.value));
+searchIn.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    const first = searchRes.querySelector(".sres");
+    if (first) chooseSearchResult(first.dataset.id);
+  } else if (e.key === "ArrowDown") {
+    const first = searchRes.querySelector(".sres");
+    if (first) { e.preventDefault(); first.focus(); }
+  } else if (e.key === "Escape") {
+    searchIn.value = "";
+    searchRes.hidden = true;
+    searchIn.blur();
+  }
+});
+searchRes.addEventListener("click", (e) => {
+  const btn = e.target.closest(".sres");
+  if (btn) chooseSearchResult(btn.dataset.id);
+});
+searchRes.addEventListener("keydown", (e) => {
+  const btn = e.target.closest(".sres");
+  if (!btn) return;
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); chooseSearchResult(btn.dataset.id); }
+  else if (e.key === "ArrowDown") { e.preventDefault(); const n = btn.nextElementSibling; if (n) n.focus(); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); const p = btn.previousElementSibling; if (p) p.focus(); else searchIn.focus(); }
+});
+
+/* ============================================================
+   Global keyboard
+   ============================================================ */
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (document.activeElement === searchIn && searchIn.value) { searchIn.value = ""; searchRes.hidden = true; return; }
+    clearSelection();
+    return;
+  }
+  if (e.key === "/" && document.activeElement !== searchIn && document.activeElement.tagName !== "INPUT") {
+    e.preventDefault();
+    searchIn.focus();
+  }
+});
+
+/* ============================================================
+   Boot
+   ============================================================ */
+resize();
+renderPanel();
+if (REDUCE_MOTION) { render(); } else { requestAnimationFrame(tickAssembly); }
+</script>
+</body>
+</html>

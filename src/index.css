@@ -2456,9 +2456,9 @@ a.card-handle:focus-visible {
 .legal-back,
 .legal-title,
 .sky-title,
-.landing-brand,
-.landing-card-title,
-.ios-title {
+.ios-title,
+.top-nav-brand,
+.landing-hero-title {
   font-family: var(--font-serif);
 }
 
@@ -2552,7 +2552,9 @@ a.card-handle:focus-visible {
   z-index: 1;
   max-width: 34rem;
   margin: 0 auto;
-  padding: 40px 24px 96px;
+  /* Extra top padding clears the absolutely positioned .top-nav overlaid on
+     .card-page above it (see TopNav). */
+  padding: 88px 24px 96px;
   text-align: left;
   color: rgba(242, 239, 233, 0.78);
 }
@@ -2694,109 +2696,227 @@ a.card-handle:focus-visible {
 /* ---------------------------------------------------------------------------
    Haven landing (inhavens.com/, signed out)
 
-   The family's front door: what Haven is in a sentence, then the two
-   products, each its own card. Shares the card-page/card-sky backdrop with
-   the other public pages, but its own column runs wider than the reading
-   pages -- two cards side by side above ~560px, not prose.
+   The front door: a full-viewport hero that puts the product's own world on
+   screen, then two full-width sections (not cards) introducing each product,
+   and a quiet footer. Ordinary document flow, unlike .card-page: the hero is
+   the one fixed-height box (one viewport tall, position: relative), and the
+   rest of the page scrolls past it.
    ------------------------------------------------------------------------ */
-.landing-page {
+.landing-hero {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: var(--night);
+}
+
+/* Full presence, not the .card-sky 0.55 dim -- the sky is the hero's subject
+   here, not a backdrop behind reading copy. */
+.landing-hero-sky {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.landing-hero-content {
   position: relative;
   z-index: 1;
-  max-width: 50rem;
-  margin: 0 auto;
-  padding: 40px 24px 96px;
-  text-align: left;
-}
-
-.landing-hero {
-  max-width: 40ch;
+  min-height: 100%;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.landing-brand {
-  display: block;
-  font-size: 26px;
-  font-weight: 500;
-  color: var(--text);
-}
-
-/* An h1 (the page's one heading -- see LandingPage.tsx), but visually it is
-   the same quiet weight as the sub-copy on the sibling product pages, not a
-   shouted headline. */
-.landing-tagline {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 400;
-  line-height: 1.5;
-  color: rgba(242, 239, 233, 0.85);
-}
-
-/* The iPhone card is first in the markup (see LandingPage.tsx) so it is the
-   one still visible if a narrow screen cannot fit both without a scroll --
-   people holding a link to the root expecting the waitlist land on it in one
-   click, not two. */
-.landing-products {
-  margin-top: 28px;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  align-items: center;
+  /* Lower-third, not centered: the open sky above is where the constellation
+     gesture has room to breathe. */
+  justify-content: flex-end;
+  text-align: center;
   gap: 16px;
+  padding: 96px 24px clamp(56px, 11vh, 128px);
 }
 
-.landing-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 20px;
-  border-radius: var(--radius-lg);
-  background: rgba(242, 239, 233, 0.05);
-  border: 1px solid rgba(242, 239, 233, 0.12);
-}
-
-.landing-card-kicker {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent-text);
-}
-
-.landing-card-title {
+.landing-hero-title {
   margin: 0;
-  font-size: 21px;
+  max-width: 18ch;
+  font-size: clamp(40px, 8vw, 84px);
   font-weight: 500;
-  line-height: 1.25;
-  color: var(--text);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: #fff;
+  text-shadow: 0 2px 28px rgba(0, 0, 0, 0.55);
 }
 
-.landing-card-body {
+.landing-hero-sub {
   margin: 0;
-  flex: 1;
-  font-size: 14px;
+  max-width: 40ch;
+  font-size: clamp(16px, 2vw, 19px);
   line-height: 1.5;
-  color: rgba(242, 239, 233, 0.72);
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.4);
 }
 
-.landing-card-cta {
-  margin-top: 6px;
-  min-height: 44px;
+.landing-hero-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+/* The secondary iPhone/waitlist action, everywhere it appears (hero and the
+   iPhone section below): an outline, deliberately quieter than .sky-download's
+   gold fill -- available-today and join-the-waitlist should not read as the
+   same weight of ask. */
+.landing-cta-secondary {
+  min-height: 48px;
   display: inline-flex;
   align-items: center;
-  padding: 0 20px;
+  padding: 0 24px;
   border-radius: 999px;
-  background: rgba(242, 239, 233, 0.1);
-  border: 1px solid rgba(242, 239, 233, 0.18);
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #fff;
   text-decoration: none;
-  font-size: 15px;
+  font-size: 16px;
+  font-weight: 500;
   transition: background var(--t-fast) var(--ease-out);
 }
 
-.landing-card-cta:hover,
-.landing-card-cta:focus-visible {
-  background: rgba(242, 239, 233, 0.16);
+.landing-cta-secondary:hover,
+.landing-cta-secondary:focus-visible {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.landing-hero-note {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Shared by the landing hero, Your Sky, and the iOS page: wordmark left,
+   three plain links right, no pill chrome. Absolutely positioned so it drops
+   onto either a position: relative hero or a position: fixed .card-page
+   without needing to know which. */
+.top-nav {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+}
+
+.top-nav-brand {
+  font-size: 19px;
+  font-weight: 500;
+  color: #fff;
+  text-decoration: none;
+}
+
+.top-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+
+.top-nav-links a {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.75);
+  text-decoration: none;
+}
+
+.top-nav-links a:hover,
+.top-nav-links a:focus-visible {
+  color: #fff;
+}
+
+/* Below the fold: generous full-width sections, not cards. */
+.landing-section {
+  position: relative;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 88px 24px;
+  text-align: left;
+}
+
+.landing-section-title {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-text);
+}
+
+.landing-section-body {
+  margin: 0 0 28px;
+  max-width: 46ch;
+  font-size: 18px;
+  line-height: 1.6;
+  color: rgba(242, 239, 233, 0.85);
+}
+
+.landing-footer {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 24px 64px;
+  font-size: 13px;
+  color: rgba(242, 239, 233, 0.5);
+}
+
+.landing-footer a {
+  padding: 4px 6px;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(242, 239, 233, 0.3);
+}
+
+.landing-footer a:hover,
+.landing-footer a:focus-visible {
+  color: var(--text);
+}
+
+/* The live sample-sky embed in the Your Sky section: a dark framed teaser
+   that swaps for an iframe on click (heyclicky-video style), or on a narrow
+   screen is a direct link that opens the demo in its own tab -- a pan-zoom
+   canvas has little room in a small inline frame and would fight the page's
+   own scroll. */
+.demo-embed {
+  margin-bottom: 28px;
+}
+
+.demo-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  padding: 0;
+  border-radius: var(--radius-lg);
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(242, 239, 233, 0.14);
+  color: inherit;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.demo-frame {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(242, 239, 233, 0.14);
+}
+
+.demo-caption {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: rgba(242, 239, 233, 0.5);
 }
 
 /* ---------------------------------------------------------------------------
@@ -2812,7 +2932,9 @@ a.card-handle:focus-visible {
   z-index: 1;
   max-width: 34rem;
   margin: 0 auto;
-  padding: 40px 24px 96px;
+  /* Extra top padding clears the absolutely positioned .top-nav overlaid on
+     .card-page above it (see TopNav). */
+  padding: 88px 24px 96px;
   text-align: left;
   color: rgba(242, 239, 233, 0.78);
 }
