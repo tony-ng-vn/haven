@@ -27,8 +27,16 @@ import { describe, expect, test } from "vitest";
 const css = readFileSync("src/index.css", "utf8");
 
 // Every class known to host a <DriftSky>. See App.tsx (SignIn -> .wl-sky),
-// SkyPage.tsx / IosPage.tsx (-> .card-sky), and LandingPage.tsx (-> .landing-sky).
-const DRIFTSKY_HOST_CLASSES = [".wl-sky", ".card-sky", ".landing-sky"] as const;
+// SkyPage.tsx / IosPage.tsx (-> .card-sky), LandingPage.tsx (-> .landing-sky),
+// and Landing2Page.tsx (-> .landing2-sky). A new host class belongs in this
+// array in the same edit that creates it -- the whole point of this file is
+// that the bug does not get to wait for someone to notice a broken preview.
+const DRIFTSKY_HOST_CLASSES = [
+  ".wl-sky",
+  ".card-sky",
+  ".landing-sky",
+  ".landing2-sky",
+] as const;
 
 // The bare rule block for a single top-level class selector, e.g.
 // ".wl-sky { ... }". Assumes (true for all three today) that the selector

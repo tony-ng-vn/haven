@@ -22,6 +22,7 @@ import { CLERK_ROUTING } from "./clerkConfig";
 import { SupportPage } from "./SupportPage";
 import { SkyPage } from "./SkyPage";
 import { IosPage } from "./IosPage";
+import { Landing2Page } from "./Landing2Page";
 
 function ChevronLeft() {
   return (
@@ -289,6 +290,7 @@ export default function App() {
   if (view === "support") return <SupportPage />;
   if (view === "sky") return <SkyPage />;
   if (view === "ios") return <IosPage />;
+  if (view === "landing2") return <Landing2Page />;
   if (view === "home") return <Home />;
   if (view === "signin") return <SignIn />;
   if (view === "splash") return <Splash />;

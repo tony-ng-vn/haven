@@ -3074,3 +3074,267 @@ a.card-handle:focus-visible {
   color: rgba(242, 239, 233, 0.92);
   font-weight: 600;
 }
+
+/* ---------------------------------------------------------------------------
+   Landing page 2 (inhavens.com/#/landing2), unlinked
+
+   An experimental concept the owner is evaluating alongside the default
+   landing: the whole viewport as one pane of broken midnight-blue glass over
+   a hidden memory world, mostly assembled at rest and breathing apart on
+   hover (desktop) or tap (touch) to reveal it through the gaps. Three
+   explicit layers, painted in this order (see Landing2Page.tsx):
+     z 0 .landing2-beneath -- the hidden world: sky, scenery, memory text
+     z 1 .landing2-glass   -- the shards, their seams, faint in-glass text
+     z 2 .landing2-content -- the Sky and iPhone product copy
+   No scrolling ancestor here (unlike .landing-sky's page-long scroll), so
+   every layer is position: absolute within .landing2 itself rather than
+   position: fixed to the viewport.
+   ------------------------------------------------------------------------ */
+/* overflow: hidden is deliberate, not a default: revealed shards translate
+   10-22px outward from the composition's centre, and an edge or corner shard
+   moving further outward should look like glass shifting against a window
+   frame -- clipped cleanly at the boundary -- not like a gap of bare page
+   background (or a scrollbar) appearing at the edge of the screen. The
+   tradeoff: on an unusually short viewport, content anchored low (the iPhone
+   copy at top: 66%, the second memory fragment at 90%) can end up clipped
+   rather than reachable by scrolling. Accepted for a single-screen desktop
+   composition; revisit if this concept ever needs to work on a short window. */
+.landing2 {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--night);
+  color: var(--text);
+  overflow: hidden;
+  cursor: default;
+}
+
+.landing2-beneath,
+.landing2-glass,
+.landing2-content {
+  position: absolute;
+  inset: 0;
+}
+
+.landing2-beneath {
+  z-index: 0;
+  overflow: hidden;
+}
+
+.landing2-glass {
+  z-index: 1;
+}
+
+/* pointer-events: none so the layer's own empty space never becomes the
+   click/hover target; landing2-copy below opts back in, since its links and
+   buttons must still receive the pointer. */
+.landing2-content {
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* width/height: 100% is load-bearing -- see driftSkyCanvasSizing.test.ts and
+   .landing-sky's own comment: without it a fixed/absolute canvas falls back
+   to its 300x150 intrinsic size instead of filling this layer. */
+.landing2-sky {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.landing2-scene,
+.landing2-particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Handwritten memory fragments -- a cursive stack distinct from the site's
+   reserved --font-serif (see designTokens.test.ts's serif-count guard, which
+   this page must not touch), warm gold, low opacity, no motion of its own:
+   the veil is what hides and reveals it. */
+.landing2-memory {
+  position: absolute;
+  font-family: "Snell Roundhand", "Apple Chancery", cursive;
+  font-style: italic;
+  font-size: 20px;
+  line-height: 1.35;
+  color: rgba(255, 217, 160, 0.42);
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.landing2-polaroid {
+  position: absolute;
+  width: 64px;
+  height: 48px;
+  padding: 4px;
+  border-radius: 3px;
+  background: rgba(12, 14, 28, 0.55);
+  border: 2px solid rgba(242, 231, 213, 0.35);
+  pointer-events: none;
+}
+
+.landing2-polaroid svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* The dimming veil: opaque enough at rest that the beneath layer only shows
+   through as faint suggestion, dropping away on reveal. This single div is
+   the entire "mostly obscured at rest" mechanism -- individual beneath
+   elements need no opacity state of their own. */
+.landing2-veil {
+  position: absolute;
+  inset: 0;
+  background: var(--night);
+  opacity: 0.82;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-veil {
+  opacity: 0.28;
+}
+
+/* Each shard covers the full layer and cuts itself down to one Voronoi cell
+   with an inline clip-path (unique per shard, from landing2Geometry.ts) --
+   only clip-path and, when the page allows transforms, transform/transition
+   are set inline; everything shared lives here. No backdrop-filter: 22
+   blurred layers is a compositor cost the veil's own opacity already buys
+   the same frosted-obscurity read without. */
+.landing2-shard {
+  /* A plain div, unlike .landing2-sky's canvas: inset: 0 alone stretches a
+     non-replaced element to fill its box, no explicit width/height needed. */
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.1), transparent 42%),
+    linear-gradient(135deg, rgba(35, 42, 77, 0.92) 0%, rgba(14, 17, 35, 0.88) 100%);
+  opacity: 0.5;
+  will-change: transform, opacity;
+}
+
+.landing2-revealed .landing2-shard {
+  opacity: 0.34;
+}
+
+.landing2-seams {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.landing2-seam-line {
+  stroke: #dfe8f7;
+  stroke-width: 0.12;
+  opacity: 0.28;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-seam-line {
+  opacity: 0.45;
+}
+
+.landing2-mini-figure polyline {
+  stroke: var(--accent);
+  stroke-width: 0.1;
+  opacity: 0.25;
+}
+
+.landing2-mini-figure circle {
+  fill: var(--accent);
+  opacity: 0.25;
+}
+
+/* Faint in-glass fragments: plain positioned text, not part of the seam SVG,
+   since "sans, letter-spaced" is ordinary CSS type rather than SVG text. */
+.landing2-fragment {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  color: rgba(157, 163, 190, 0.18);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.landing2-copy {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(380px, 34vw);
+  pointer-events: auto;
+}
+
+.landing2-copy-sky {
+  left: 6%;
+  top: 26%;
+}
+
+.landing2-copy-iphone {
+  left: 4%;
+  top: 66%;
+}
+
+.landing2-glyph {
+  display: block;
+}
+
+/* Letter-spaced sans caps, like .sky-eyebrow -- this page's headings are
+   deliberately not --font-serif; designTokens.test.ts's serif-count guard
+   pins that token to exactly two uses (person names, the editorial rule) and
+   must stay at two. */
+.landing2-eyebrow {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+.landing2-body {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: rgba(242, 239, 233, 0.85);
+  text-shadow: 0 2px 14px rgba(5, 6, 16, 0.65);
+}
+
+.landing2-caption {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(242, 239, 233, 0.5);
+}
+
+.landing2-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 22px;
+  border-radius: 999px;
+  background: rgba(8, 10, 22, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out);
+}
+
+.landing2-pill:hover,
+.landing2-pill:focus-visible {
+  background: rgba(8, 10, 22, 0.78);
+  border-color: rgba(255, 255, 255, 0.28);
+}

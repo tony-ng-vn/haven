@@ -16,6 +16,7 @@ import {
   isClerkFlowHash,
   isIosHash,
   isJoinHash,
+  isLanding2Hash,
   isSkyHash,
   isValidEmail,
   legalDocFromPath,
@@ -99,6 +100,17 @@ describe("resolveView", () => {
   test("a signed-in visitor on the ios route still gets home", () => {
     expect(
       resolveView({ ...base, isAuthenticated: true, hash: "#/ios" }),
+    ).toBe("home");
+  });
+
+  test("the landing2 route is public, with or without a trailing slash", () => {
+    expect(resolveView({ ...base, hash: "#/landing2" })).toBe("landing2");
+    expect(resolveView({ ...base, hash: "#/landing2/" })).toBe("landing2");
+  });
+
+  test("a signed-in visitor on the landing2 route still gets home", () => {
+    expect(
+      resolveView({ ...base, isAuthenticated: true, hash: "#/landing2" }),
     ).toBe("home");
   });
 });
@@ -211,6 +223,20 @@ describe("isIosHash", () => {
     expect(isIosHash("#/")).toBe(false);
     expect(isIosHash("#/sso-callback")).toBe(false);
     expect(isIosHash("#/iostream")).toBe(false);
+  });
+});
+
+describe("isLanding2Hash", () => {
+  test("matches the unlinked landing2 route with or without a trailing slash", () => {
+    expect(isLanding2Hash("#/landing2")).toBe(true);
+    expect(isLanding2Hash("#/landing2/")).toBe(true);
+  });
+
+  test("does not match the app or Clerk flow hashes", () => {
+    expect(isLanding2Hash("")).toBe(false);
+    expect(isLanding2Hash("#/")).toBe(false);
+    expect(isLanding2Hash("#/sso-callback")).toBe(false);
+    expect(isLanding2Hash("#/landing2extra")).toBe(false);
   });
 });
 

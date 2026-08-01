@@ -127,6 +127,15 @@ export function isIosHash(hash: string): boolean {
   return /^#\/ios\/?$/.test(hash);
 }
 
+// An unlinked, experimental second landing concept lives at "#/landing2" (a
+// trailing slash tolerated), same shape as isSkyHash/isIosHash. Nothing on
+// the site links to it -- reached only by typing the url -- so it needs the
+// same carve-out ahead of the generic Clerk-flow check below, or it would
+// read as an OAuth callback and bounce to sign-in.
+export function isLanding2Hash(hash: string): boolean {
+  return /^#\/landing2\/?$/.test(hash);
+}
+
 // "June 2026" -- the quiet memory anchor under a person's name.
 export function formatMonthYear(ms: number, locale?: string): string {
   return new Intl.DateTimeFormat(locale, {
@@ -496,7 +505,8 @@ export type View =
   | "legal"
   | "support"
   | "sky"
-  | "ios";
+  | "ios"
+  | "landing2";
 
 /// The one path segment a url names, lowercased, or null when it names none or
 /// more than one.
@@ -579,6 +589,9 @@ export function resolveView(input: {
   // The iOS product page, public for the same reason -- and "#/join" is kept
   // as an alias into it, since it is where the waitlist signup lives now.
   if (isIosHash(input.hash) || isJoinHash(input.hash)) return "ios";
+  // An unlinked second landing concept the owner is evaluating -- public and
+  // unauthenticated like sky/ios above, reached only by typing the url.
+  if (isLanding2Hash(input.hash)) return "landing2";
   if (isClerkFlowHash(input.hash)) return "signin";
   if (input.isLoading && bootMode(input) === "splash") return "splash";
   return "landing";
