@@ -8,7 +8,7 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: #192 (two-plane sky restoration) against graph-main, CI pending at entry time; #189 and #190 merged earlier today
+- Open PRs: none; #189, #190, and #192 all merged to graph-main 2026-07-31 with CI green
 - Build position: all nine build-order steps merged, and the acquaintance layer now sits on top of them (derivation, marker override, JSON export, viewer v4, app bundling). 227 Swift tests plus 31 viewer node tests green. The native Canvas render still presents the bipartite model; its migration is the next build item.
 - Goal-criteria status: (1) build order complete: YES. (2) suite green with every charter fixture shape: YES, audited (shortcode, never-replied, two-member style-43, multi-service duplicate, large group, empty chat row - each covered at one or more pipeline layers). (3) real-data pipeline run with journaled counts and a names-attached kill-list review: YES (iterations 3 and 4). (4) fixture e2e resync survival: YES (EndToEndResyncSurvivalTests). (5) export writes a high-resolution image: YES, headlessly proven. (6) app builds and launches with a plain permission explanation: implemented and launch-verified programmatically; ON-SCREEN confirmation is the one remaining gap, blocked on the locked session.
 - Waiting on user: unlock the session (visual pass runs immediately), install Ollama + a model for live guesses, grant the app FDA for the first real in-app import
