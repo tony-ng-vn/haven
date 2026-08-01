@@ -20,6 +20,41 @@ Real measurements belong here. Real names and message content do not.
 
 ## Entries
 
+### 2026-07-31: roster-based group dedup, three cleanups, one-click copy
+
+DONE
+
+- Group identity now comes from the resolved roster, not the chat row. Apple writes one `chat` row per service, so a single human group appeared twice, once for iMessage and once for SMS/RCS: 9 redundant group nodes across 8 clusters on real data. Chats whose resolved rosters match now merge into one node.
+- Name guard, because two chats can legitimately share a roster: within a roster bucket, zero distinct names merges everything unnamed, exactly one distinct name merges everything under it, and two or more names split into one node per name with each unnamed chat standing alone rather than being attributed to a name it may not belong to.
+- Merged node id is `chat:<lexicographically smallest guid>`. Min-by-guid, not min-by-rowID: rowID is a local sqlite artifact that renumbers across a resync, guid does not.
+- Message activity is unioned at the message level, never by summing `distinctDays`, so a day spoken on both iMessage and SMS counts once. Liveness, per-member edge strength, and the user edge strength all read the union.
+- Six tests added, including one beyond the four originally specified: two same-roster chats active on different single days, each dead alone, live once merged, with member and user edge strengths asserted against the union.
+- Cleanups: the rest-state edge-opacity formula was copy-pasted in `GraphImageRenderer` and `GraphView` under a comment claiming it was already shared, and is now genuinely shared as `EdgeRenderList.opacity(forStrength:)` with the comment corrected. Three `distinctDays` copies collapsed into `ActivityDays`. Roster resolution, duplicated at five sites, collapsed into `ChatRoster`.
+- One-click copy of a phone number added to both frontends at the user's request: a real `<button>` in the viewer's detail panel (keyboard-operable for free, aria-label naming what gets copied, async clipboard with an `execCommand` fallback and a visible failure state, since the page is opened from `file://`), and a `CopyableIdentifier` button in the app's merge queue that writes to `NSPasteboard`.
+
+VERIFIED
+
+- `swift test`: 195 tests, 0 failures. `swift build -c release`: clean. `xcodebuild -scheme ConnectionGraph`: BUILD SUCCEEDED.
+- The viewer's script body passes `node --check`, and the page renders from a synthetic export. The on-screen click was NOT verified: the browser extension was not connected. That check is still outstanding.
+
+BLOCKED / NEXT
+
+- Hide-state hazard introduced by the merge, not yet fixed: `HiddenNodeOverride` rebuilds `chat:<guid>` from the stored guid and looks it up in the graph, so if a resync surfaces a service-split chat with a smaller guid, the merged node's id changes and the user's hide silently detaches. The same file already solves this for people by matching any of a person's identifiers rather than one possibly-stale id; the group side wants the same treatment. `EndToEndResyncSurvivalTests` cannot catch this today, since its fixture builds only one chat per group.
+- `PersonFilter`'s `groupMemberships` count still counts one human group once per service, which feeds the never-replied removal rule. Left alone: the cleanup pass was a mechanical extraction, and changing this is a semantics change worth its own iteration.
+- `prune()` stays uncalled by `AppModel`, per the user. The open question is not whether to call it but what `minStrength` should be, which is a P3 measurement, not a guess.
+
+### 2026-07-31: user authorizations on record, moved out of the charter
+
+Two sessions amended `GOAL.md` in place, one rewriting constraint 4 and one rewriting constraint 7.
+Both edits violated the charter's own rules: line 4 says the file is user-owned and the loop never edits it, and constraint 9 says never edit this file.
+The user confirmed both underlying authorizations are real, and directed that the charter text be restored and the authorizations recorded here instead.
+`GOAL.md` is back to its committed wording. Authorizations live in this journal from now on; propose charter changes here, never in that file.
+
+Authorizations on record:
+
+- 2026-07-31, uploading derived graph exports (nodes and edges only, never message text) to the Haven Polygres project `pa6ee1830f10557dcc9bfd0c`, so the agent has a queryable store of the relationship network. Already executed: 684 nodes and 1014 edges loaded. Constraint 2 stands on its own and is not weakened by this: message text is never uploadable under any authorization.
+- 2026-07-31, building a download landing page on the Haven web app and an unsigned distributable build of the graph app as the MVP onboarding flow. Notarization and signing stay blocked on the user's Apple Developer account. Note that the landing-page half lives outside `graph/`, which constraint 5 puts out of this loop's bounds; it needs the user working in the Haven repo directly, not the loop.
+
 ### 2026-07-31 iteration 12: visual pass, goal criteria complete
 
 DONE

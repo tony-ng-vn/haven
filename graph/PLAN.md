@@ -143,9 +143,15 @@ Dead groups are hidden behind a toggle, never deleted, so the bar can be loosene
 Unnamed groups get the same model-derived guess as unnamed numbers.
 
 36 chats have `style=43` (group) but only 2 members.
-When the roster is exactly the user plus one other person, it renders as a one-to-one edge, not a group node.
-The 74-live-group projection was computed before this reclassification, so any 2-member rows inside the 74 shift from group nodes to one-to-one edges; the exact split is measured at build time.
-A synthetic fixture must cover this shape.
+A chat's roster comes from `chat_handle_join`, which lists the *other* participants and never the user.
+This was verified against the real database: all 1,191 `style=45` one-to-one chats have a roster of exactly 1.
+A 2-member roster is therefore you plus two other people -- a real three-person group, not a one-to-one conversation.
+
+Classification keys on the number of *distinct resolved people* in the roster, not on the raw row count, because two handle rows can be the same human on two services.
+One distinct person renders as a one-to-one edge; two or more render as a group node.
+Measured against the real database, correcting this surfaced 33 group chats that had previously been collapsed into one-to-one threads, three of which carry a real group name that was being discarded.
+The same pass stopped rendering 22 groups whose every member is removed by the person filter, since a group with no surviving members is a node with nothing in it.
+A synthetic fixture must cover both shapes: a 2-handle roster of two different people, and a 2-handle roster that resolves to one person.
 
 ---
 

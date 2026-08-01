@@ -1,21 +1,5 @@
 import Foundation
 
-/// Chat style constants from the real chat.db schema (mirrors the small private copies in
-/// ExtractStats and PersonFilter; each is file-local and not worth sharing across a module
-/// boundary for two integer literals).
-private enum ChatStyle {
-    static let oneToOne = 45
-    static let group = 43
-}
-
-/// A two-member style-43 chat is a one-to-one edge, never a group node (PLAN.md: a roster
-/// of exactly the user plus one other renders as a one-to-one edge). 0-1 member rosters are
-/// degenerate and contribute to neither kind.
-private enum ChatKind {
-    case oneToOne
-    case group
-}
-
 public enum GraphBuilder {
     public static func build(
         extract: ChatExtract,
@@ -28,7 +12,7 @@ public enum GraphBuilder {
             uniqueKeysWithValues: keptPeople.flatMap { person in person.handleRowIDs.map { ($0, person.id) } }
         )
         let personByID = Dictionary(uniqueKeysWithValues: keptPeople.map { ($0.id, $0) })
-        let chatKindByRowID = classifyChats(extract.chats)
+        let chatKindByRowID = ChatClassification.classify(chats: extract.chats, handleToPersonID: handleToPersonID)
 
         var messagesByChat: [Int64: [RawMessage]] = [:]
         for message in extract.messages {
@@ -41,7 +25,7 @@ public enum GraphBuilder {
         var oneToOneChatRowIDsByPersonID: [String: Set<Int64>] = [:]
         for chat in extract.chats {
             guard chatKindByRowID[chat.rowID] == .oneToOne else { continue }
-            for personID in Set(chat.memberHandleRowIDs.compactMap({ handleToPersonID[$0] })) {
+            for personID in ChatRoster.resolvedPersonIDs(chat, handleToPersonID: handleToPersonID) {
                 oneToOneChatRowIDsByPersonID[personID, default: []].insert(chat.rowID)
             }
         }
@@ -67,24 +51,36 @@ public enum GraphBuilder {
             }
         }
 
-        // Group nodes: one per style-43 chat with a RAW roster of 3+, built unconditionally
-        // (a dead group, or one with zero kept members, is still a real structural artifact
-        // of message history; only person-level filtering decides whether an edge exists).
+        // Group nodes: one per style-43 chat classified as .group (2+ distinct resolved
+        // people, per ChatClassification). A dead group (few days of activity, isLive below)
+        // is still built -- liveness alone never decides whether a node exists.
+        //
+        // A group where every member was filtered out (bulk/spam rosters: shortcode senders,
+        // never-replied handles, etc., 16-20 "members" apiece in real data) is different:
+        // handleToPersonID above contains only KEPT people, so an all-filtered roster resolves
+        // to 0 distinct people and never reaches .group classification at all -- no node is
+        // built for it. This is an intentional behavior change from the old raw-roster-count
+        // rule, which built a node for any 3+-handle roster regardless of who survived
+        // filtering: an empty group connected to nothing but the user was noise, not signal.
+        // Verified against real data: 22 such all-filtered groups stopped rendering when this
+        // fix landed, alongside 33 real groups (previously miscounted as one-to-one, 3 of
+        // them losing a real user-set name in the process) that started rendering correctly.
         var groupNodes: [GraphNode] = []
-        let groupChats = extract.chats
-            .filter { chatKindByRowID[$0.rowID] == .group }
-            .sorted { $0.rowID < $1.rowID }
+        let groupChats = extract.chats.filter { chatKindByRowID[$0.rowID] == .group }
 
-        for chat in groupChats {
-            let groupID = "chat:\(chat.guid)"
-            let chatMessages = messagesByChat[chat.rowID] ?? []
-            let isLive = distinctDays(chatMessages, calendar: calendar) >= 2
+        for merged in mergedGroupChats(groupChats, handleToPersonID: handleToPersonID) {
+            let groupID = merged.id
+            // Union at the message level: flatten every merged chat's messages into one array
+            // first, then compute distinctDays/filters once, so a day the user texted on both
+            // iMessage and SMS is never counted twice.
+            let combinedMessages = merged.chatRowIDs.sorted().flatMap { messagesByChat[$0] ?? [] }
+            let isLive = distinctDays(combinedMessages, calendar: calendar) >= 2
 
             groupNodes.append(
                 GraphNode(
                     id: groupID,
                     kind: .group,
-                    name: chat.displayName,
+                    name: merged.name,
                     thumbnailImageData: nil,
                     hasContactCard: false,
                     isLive: isLive,
@@ -94,10 +90,9 @@ public enum GraphBuilder {
 
             // groupMembership: every kept member, even a lurker with zero messages of their
             // own (roster is historical truth from chat_handle_join, not message activity).
-            let memberPersonIDs = Set(chat.memberHandleRowIDs.compactMap { handleToPersonID[$0] })
-            for personID in memberPersonIDs.sorted() {
+            for personID in merged.roster.sorted() {
                 guard let person = personByID[personID] else { continue }
-                let ownMessages = chatMessages.filter {
+                let ownMessages = combinedMessages.filter {
                     guard let handleRowID = $0.handleRowID else { return false }
                     return person.handleRowIDs.contains(handleRowID)
                 }
@@ -115,8 +110,8 @@ public enum GraphBuilder {
             }
 
             // userGroupMembership: one per group node, always, strength from the user's own
-            // is_from_me activity in that specific chat.
-            let fromMeMessages = chatMessages.filter(\.isFromMe)
+            // is_from_me activity across the union of merged chats.
+            let fromMeMessages = combinedMessages.filter(\.isFromMe)
             let userEdge = GraphEdge(
                 nodeIDA: "user",
                 nodeIDB: groupID,
@@ -209,26 +204,73 @@ public enum GraphBuilder {
     }
 
     private static func distinctDays(_ messages: [RawMessage], calendar: Calendar) -> Int {
-        Set(messages.map { calendar.startOfDay(for: $0.date) }).count
+        ActivityDays.distinctDays(messages, calendar: calendar)
     }
 
-    private static func classifyChats(_ chats: [RawChat]) -> [Int64: ChatKind] {
-        var kinds: [Int64: ChatKind] = [:]
-        for chat in chats {
-            switch chat.style {
-            case ChatStyle.oneToOne:
-                kinds[chat.rowID] = .oneToOne
-            case ChatStyle.group:
-                if chat.memberHandleRowIDs.count == 2 {
-                    kinds[chat.rowID] = .oneToOne
-                } else if chat.memberHandleRowIDs.count >= 3 {
-                    kinds[chat.rowID] = .group
-                }
-                // 0 or 1 members: degenerate roster, ignored.
+    /// One group node's worth of merged chats: their union roster/name, and the chat rowIDs
+    /// whose messages get combined for liveness and edge strength.
+    private struct MergedGroupChat {
+        let id: String
+        let name: String?
+        let roster: Set<String>
+        let chatRowIDs: [Int64]
+    }
+
+    /// Apple gives one human group a separate `chat` row per service (iMessage vs SMS/RCS), so
+    /// group identity is keyed on the RESOLVED roster, not the chat row: chats whose resolved
+    /// rosters are identical merge into one node.
+    ///
+    /// Name guard, because two chats CAN legitimately have the same roster and be different
+    /// conversations: within a roster bucket, group by distinct non-nil (non-empty) display
+    /// name. Zero distinct names -> merge everything, unnamed. Exactly one distinct name ->
+    /// merge everything (named and unnamed alike) under that name. Two or more distinct names
+    /// -> one merged node per name (same-named chats merge together), and each unnamed chat
+    /// stands alone -- it cannot be attributed to one of several competing names.
+    ///
+    /// The merged node's id is `"chat:\(guid)"` for the lexicographically SMALLEST guid among
+    /// the chats merged into it (min-by-guid, not min-by-rowID: rowID is a local sqlite
+    /// artifact, not stable across a resync).
+    private static func mergedGroupChats(
+        _ groupChats: [RawChat],
+        handleToPersonID: [Int64: String]
+    ) -> [MergedGroupChat] {
+        var chatsByRoster: [Set<String>: [RawChat]] = [:]
+        for chat in groupChats {
+            let roster = ChatRoster.resolvedPersonIDs(chat, handleToPersonID: handleToPersonID)
+            chatsByRoster[roster, default: []].append(chat)
+        }
+
+        var merged: [MergedGroupChat] = []
+        for (roster, chats) in chatsByRoster {
+            let distinctNames = Set(chats.compactMap { chat -> String? in
+                guard let name = chat.displayName, !name.isEmpty else { return nil }
+                return name
+            })
+
+            func makeMerged(_ chats: [RawChat], name: String?) -> MergedGroupChat {
+                let minGUID = chats.map(\.guid).min()!
+                return MergedGroupChat(
+                    id: "chat:\(minGUID)",
+                    name: name,
+                    roster: roster,
+                    chatRowIDs: chats.map(\.rowID)
+                )
+            }
+
+            switch distinctNames.count {
+            case 0, 1:
+                merged.append(makeMerged(chats, name: distinctNames.first))
             default:
-                break
+                for name in distinctNames {
+                    let named = chats.filter { $0.displayName == name }
+                    merged.append(makeMerged(named, name: name))
+                }
+                for unnamed in chats where unnamed.displayName == nil || unnamed.displayName?.isEmpty == true {
+                    merged.append(makeMerged([unnamed], name: nil))
+                }
             }
         }
-        return kinds
+
+        return merged.sorted { $0.id < $1.id }
     }
 }

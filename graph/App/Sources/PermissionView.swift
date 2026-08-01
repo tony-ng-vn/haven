@@ -8,7 +8,9 @@ struct PermissionView: View {
 
     /// Full Disk Access is a category inside Privacy & Security, not its own settings pane;
     /// this URL scheme opens straight to that category so there is no navigating to find it.
-    private static let fullDiskAccessURL = URL(
+    /// Not private: AuthorizeView's "Open System Settings" button reuses this exact constant
+    /// rather than redeclaring it, so the two screens can never point at different URLs.
+    static let fullDiskAccessURL = URL(
         string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
     )!
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import GraphCore
 
 /// The merge queue popover content: each still-open MergeCandidate (already suppressed
@@ -32,9 +33,11 @@ struct MergeQueueView: View {
     private func candidateRow(_ candidate: MergeCandidate) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(candidate.sharedName).bold()
-            Text("\(masked(candidate.personID1))  vs.  \(masked(candidate.personID2))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                CopyableIdentifier(maskedLabel: masked(candidate.personID1), fullValue: candidate.personID1)
+                Text("vs.").font(.caption).foregroundStyle(.secondary)
+                CopyableIdentifier(maskedLabel: masked(candidate.personID2), fullValue: candidate.personID2)
+            }
             HStack {
                 Button("Merge") {
                     model.answerMerge(candidate, decision: .merged)
@@ -52,5 +55,33 @@ struct MergeQueueView: View {
     private func masked(_ identifier: String) -> String {
         guard identifier.count > 4 else { return identifier }
         return "..." + identifier.suffix(4)
+    }
+}
+
+/// A masked identifier that copies its *full* value in one click. The mask above is about
+/// a shoulder-surfer glancing at the screen, not about the window's own owner deliberately
+/// clicking to paste the real number/handle into Messages or Contacts to tell the two
+/// candidates apart -- that deliberate click is exactly what this button is for.
+private struct CopyableIdentifier: View {
+    let maskedLabel: String
+    let fullValue: String
+    @State private var justCopied = false
+
+    var body: some View {
+        Button {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(fullValue, forType: .string)
+            justCopied = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { justCopied = false }
+        } label: {
+            Text(justCopied ? "Copied" : maskedLabel)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        // Deliberately does not speak the digits: the label is masked on screen against a
+        // shoulder-surfer, and a screen reader reading the full number aloud undoes that.
+        .accessibilityLabel("Copy full number")
     }
 }
