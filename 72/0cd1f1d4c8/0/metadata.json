@@ -1,0 +1,124 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "720cd1f1d4c8",
+  "session_id": "f8bd6ddf-192a-4b10-af58-9371cf1cfccf",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-01T08:14:56.766596Z",
+  "branch": "web/landing-pages",
+  "checkpoints_count": 4,
+  "save_step_count": 5,
+  "files_touched": [
+    "src/lib.test.ts",
+    "src/lib.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "2542dc659055",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 397,
+    "cache_creation_tokens": 1574205,
+    "cache_read_tokens": 30461703,
+    "output_tokens": 206527,
+    "api_call_count": 128
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01Mxh6ckCfXiik1V113W26Er",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "fusion"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "2542dc659055",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 42,
+        "end": 43,
+        "entry_ids": [
+          "d25ea04b-b9f1-495d-a6bb-fe739d1553fd"
+        ],
+        "tool_use_id": "toolu_01Mxh6ckCfXiik1V113W26Er"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Mxh6ckCfXiik1V113W26Er"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: fusion",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 28
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-01T08:14:56.351058Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 1365,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 1365,
+    "total_lines_changed": 1368,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 50,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4350,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 10,
+        ".cursor/hooks.json": 40
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 50,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4388,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 10,
+        ".cursor/hooks.json": 40
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 577,
+      "user_lines_removed": 1,
+      "agent_lines_added": 4388,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 10,
+        ".cursor/hooks.json": 40,
+        "src/RaccoonMascot.tsx": 62,
+        "src/landing2Geometry.test.ts": 183,
+        "src/landing2Geometry.ts": 242,
+        "src/lib.test.ts": 26,
+        "src/lib.ts": 14
+      },
+      "user_removed_per_file": {
+        "src/lib.ts": 1
+      }
+    }
+  ]
+}
