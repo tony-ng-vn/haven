@@ -300,8 +300,14 @@ This is not only spectacle: watching regions separate teaches the viewer how to 
 
 Node size scales with acquaintance count. Tunable.
 
-The HTML viewer implements this presentation first.
-The native app's render still shows the earlier bipartite presentation (user node drawn, group nodes as objects, ego edges on focus) and migrates to this contract as follow-up work; the derivation and the override live in core either way.
+**Owner decision, 2026-07-31 evening: the product has two presentations over the one model.**
+The **Sky** is the two-plane render from the original design artifact: the group chats float above as a labeled constellation plane, the people sit below ranked by closeness in rings, and evidence lines cascade between the planes.
+It is the emotional first-run view: what the app shows after "Map relationships", and what marketing embeds.
+This deliberately restores the rings for the Sky view only, superseding the "no rings" line above for that view; closeness-to-you is the Sky's organizing question.
+The **Map** is the people-only acquaintance presentation specified above (regions, semantic zoom, pair paths, evidence): the analysis view, built by the exports workflow (`template-v4.html`).
+The acquaintance derivation, tiers, and the fully-acquainted marker are the shared model underneath both.
+
+The native app's Canvas render still shows the earlier bipartite presentation (user node drawn, group nodes as objects, ego edges on focus); aligning it is follow-up work; the derivation and the override live in core either way.
 
 ---
 

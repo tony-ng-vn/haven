@@ -225,8 +225,10 @@ final class AppModel {
                 guesses: overrides.nameGuesses
             )
             let template = try String(contentsOf: Self.templateURL(), encoding: .utf8)
-            let viewerCoreSource = try String(contentsOf: Self.viewerCoreURL(), encoding: .utf8)
-            let html = try SkyExportBuilder.build(template: template, viewerCoreSource: viewerCoreSource, graphJSON: json)
+            // template-sky.html's viewer logic is already inline -- no separate core .mjs
+            // resource to look up or splice in (SkyExportBuilder.build treats a template with
+            // no __VIEWER_CORE_JS__ placeholder as a valid shape and a nil source as correct).
+            let html = try SkyExportBuilder.build(template: template, viewerCoreSource: nil, graphJSON: json)
             let url = Self.skyHTMLURL()
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
@@ -245,25 +247,15 @@ final class AppModel {
         }
     }
 
-    /// The bundled viewer/template-v4.html resource. Xcode resolves this via project.yml's
-    /// resource entry; nonisolated because SkyExportBuilder's caller runs on the main actor
-    /// but the resource lookup itself has no actor affinity.
+    /// The bundled viewer/template-sky.html resource (the two-plane ringed sky). Xcode
+    /// resolves this via project.yml's resource entry; nonisolated because SkyExportBuilder's
+    /// caller runs on the main actor but the resource lookup itself has no actor affinity.
     nonisolated private static func templateURL() -> URL {
-        guard let url = Bundle.main.url(forResource: "template-v4", withExtension: "html") else {
+        guard let url = Bundle.main.url(forResource: "template-sky", withExtension: "html") else {
             // A missing bundled resource is a build/packaging bug, not a runtime condition a
             // user can fix -- fail loudly at the one call site that needs it rather than
             // letting every future caller re-discover the same nil.
-            fatalError("template-v4.html was not found in the app bundle -- check project.yml's resources entry")
-        }
-        return url
-    }
-
-    /// The bundled viewer/viewer_core.mjs resource: template-v4.html's SECOND placeholder
-    /// (__VIEWER_CORE_JS__) needs this file's own text, not just the graph JSON -- same loud-
-    /// fatalError posture as templateURL() above, for the same reason.
-    nonisolated private static func viewerCoreURL() -> URL {
-        guard let url = Bundle.main.url(forResource: "viewer_core", withExtension: "mjs") else {
-            fatalError("viewer_core.mjs was not found in the app bundle -- check project.yml's resources entry")
+            fatalError("template-sky.html was not found in the app bundle -- check project.yml's resources entry")
         }
         return url
     }
