@@ -1,6 +1,6 @@
 # Connection graph: product plan
 
-Status: design settled, nothing built.
+Status: built through the original nine steps; design amended 2026-07-31 with the acquaintance layer below.
 Date: 2026-07-31.
 Location: `graph/` inside the euno-app repo. Separate product from Haven, shares no code with it.
 Product name: TBD.
@@ -14,14 +14,20 @@ Platform research behind the hard constraints: `docs/2026-07-30-imessage-connect
 
 ## What this is
 
-A macOS app that reads your own iMessage history and Contacts, and draws the graph of everyone you know and how they connect to each other.
+A macOS app that reads your own iMessage history and Contacts, and draws your personal acquaintance graph: everyone in your social world, and how those people appear to be connected to one another.
 
 The graph is the product.
 
+Messages are evidence, group chats are contexts, people are nodes, and the product is a navigable map of the connections among them.
+The messages themselves are implementation detail: the user never browses threads here, they see the map those threads imply.
+
 It answers two questions:
 
-1. Who connects to me.
-2. Who in my network connects to each other.
+1. Who is in my world.
+2. Who in my world appears to know whom.
+
+Because everyone on the map is someone the user knows, the user themself is implicit.
+A line from the user to every node adds no information; the canvas as a whole is already "your world".
 
 It is a tool you keep using, not a one-time artifact.
 It stays current through resync, and you explore it rather than just look at it.
@@ -166,6 +172,7 @@ This bipartite model is chosen deliberately.
 It costs 513 edges instead of many thousands, and it tells the truth: these people share a context, which is known, rather than these people know each other, which is not.
 The relationship remains visible as two nodes hanging off a shared neighbor.
 It is simply not a line.
+What can honestly be drawn between two members is a derived edge with explicit confidence; that is the acquaintance layer below, and it never replaces the bipartite record, it summarizes it.
 
 **One line per pair**, however many reasons underlie it.
 
@@ -173,6 +180,50 @@ It is simply not a line.
 
 Reason and strength are computed and stored on every edge.
 Strength is required whether or not it is displayed, because it decides which edges survive pruning.
+
+---
+
+## The acquaintance layer
+
+The bipartite model above stores what is observed.
+The acquaintance layer derives what it implies: person-to-person edges that answer "who appears to know whom", each carrying explicit confidence and inspectable evidence.
+
+A shared group chat is a shared room, not proof of friendship.
+That 32-person chat would manufacture 496 pairwise friendships under naive projection.
+So co-membership is converted into confidence instead of asserted as fact.
+
+Derivation runs over the built graph only, with no new database reads:
+
+- A candidate pair is two surviving people who share at least one group chat's resolved roster.
+- Each shared chat contributes a base weight of 1 / (n - 1), where n is the number of distinct resolved members in that chat, the user excluded.
+  Two people alone in a trio chat with the user contribute 1.0; two members of a 20-person chat contribute about 0.05.
+- Each shared chat adds 0.1 for every day both people were active in it, capped at 5 such days per chat.
+  Lurkers who share a room but never overlap keep the base weight only.
+- Dead groups count in full.
+  Acquaintance does not expire when a chat goes quiet; liveness gates group-node rendering, not evidence.
+- The score is the sum over all shared chats.
+
+Tiers, from score:
+
+- `confirmed`: the user has vouched for the pair via the marker below. Never produced by scoring alone.
+- `strong`: score at or above 1.0.
+- `likely`: score at or above 0.2.
+- Below 0.2, no acquaintance edge is recorded.
+
+Absence of an edge means "no observed evidence", never "these people do not know each other".
+The weights and thresholds are calibrated guesses in the P3 sense: measure against the real graph, journal the numbers, tune.
+
+**"Everyone here knows each other."**
+The user can mark a group chat as fully acquainted, which promotes every pair among its resolved members to `confirmed`.
+The marking is an override, stored with the rest of the curation, and it survives resync.
+It is keyed by the chat's sorted resolved member identifiers, never by chat guid or row id: the people are the durable identity of the marking, so the key survives both resync renumbering and service-split merges.
+Unmarking demotes the pairs back to whatever their observed score earns.
+
+Evidence is stored on every acquaintance edge: each shared chat with its name, member count, and count of co-active days.
+The interface can always answer "why do you think these two know each other" by listing exactly that.
+
+One acquaintance edge per pair, however many chats underlie it.
+The JSON export gains an `acquaintances` array (pair, tier, score, evidence) and a `fullyAcquaintedChatIds` echo, so the HTML viewer renders the same derivation the app computes.
 
 ---
 
@@ -188,6 +239,7 @@ Strength is required whether or not it is displayed, because it decides which ed
    Err toward not merging.
 5. Filter non-people. A handle matching a Contacts card is never removed by the never-replied filter.
 6. Build nodes and edges. Group roster from `chat_handle_join`; liveness and edge strength from message activity.
+   Acquaintance edges are derived in this step too, from the built graph alone.
 7. Prune edges by strength, never a node's last edge.
 8. Lay out, render, animate.
 9. Model pass, asynchronous, after first render.
@@ -216,26 +268,40 @@ This is not a compliance requirement here, it is a design discipline that keeps 
 
 ## Visual
 
-Force-directed layout.
+The map shows people, not plumbing.
 
-Clustering needs no community detection.
-It falls out of the bipartite structure: people are pulled toward the groups they belong to, so college friends bunch around the college thread and coworkers around the work thread.
+- People are the visible objects.
+- Connections between people are the visible structure.
+- Group chats are hidden evidence, surfaced only when someone asks why a connection exists.
+- The user is implicit: no center node, no rings, no depth hierarchy.
+  Roughly half of all edges in the graph terminate at the user, which is exactly why they are not structure: rendered, they collapse every region toward one hub.
+  The whole canvas is "your world", and the meaningful structure is the relationships among everyone else.
 
-The user is drawn as a node, but the user's edges are excluded from the force simulation and from the rest-state render.
-Roughly 300 one-to-one edges plus 74 group memberships, close to half of all edges in the graph, terminate at the user.
-Rendered and simulated, they make the user a giant hub whose springs pull every cluster toward center, destroying exactly the cluster separation the layout exists to show, and node-size-by-degree would make the user the largest object on screen.
-The user's edges appear when the user's node is focused.
-"Who connects to me" is answered by presence in the graph plus focus mode, not by permanent lines.
+Position means shared context.
+People sit near one another because they share conversations and mutual connections, so the canvas reads as social regions (family, work, the college thread) rather than as a solar system ranked around the user.
+Force-directed layout still does the work: group chats act as invisible anchors pulling their members together, and acquaintance edges add springs between people, so regions fall out without a separate pass deciding positions.
+
+Regions are labeled from evidence, not invented.
+A region label comes from the dominant named group chat among its members; unnamed regions stay unlabeled rather than guessing.
+
+Semantic zoom manages scale: every person is always present, but not every label and every line.
+
+- At rest: every person as a dot, region labels, a few high-degree names, `confirmed` and `strong` edges as faint structure, `likely` edges hidden.
+- Hover: the person's name.
+- Select a person: their acquaintances light up with their lines, everything else dims, and a panel lists connections by tier with the shared-chat evidence behind each.
+- Select two people: whether they connect, the shortest observed path between them, and the evidence for every hop.
+- Bridge people, whose edges span regions, sit between regions and may be subtly emphasized; their position already tells the story.
+
+Line style encodes confidence: solid for `confirmed` and `strong`, soft for `likely`, no line where there is no evidence.
 
 **First run animates the assembly.**
 Nodes fly in, the simulation settles over several seconds, then rests.
-This is not only spectacle: watching clusters separate teaches the viewer how to read the layout, which a static render cannot.
+This is not only spectacle: watching regions separate teaches the viewer how to read the layout, which a static render cannot.
 
-At rest, roughly the forty most connected nodes carry labels; everything else labels on zoom.
-This is what keeps ~690 nodes reading as dense-but-organized rather than as noise.
+Node size scales with acquaintance count. Tunable.
 
-Node size scales with connection count, except the user's node. Tunable.
-Node color distinguishes people from groups. Tunable.
+The HTML viewer implements this presentation first.
+The native app's render still shows the earlier bipartite presentation (user node drawn, group nodes as objects, ego edges on focus) and migrates to this contract as follow-up work; the derivation and the override live in core either way.
 
 ---
 
@@ -250,9 +316,11 @@ Rendering ~690 nodes with Canvas is comfortable, Contacts access is native, and 
 
 In scope, because this is a tool used over time rather than a one-shot artifact.
 
-- Click a node to focus it: highlight its neighborhood, dim everything else. Focusing your own node reveals your direct edges.
+- Select a person to see who they know; select two people to see how they connect. Both per the Visual contract above.
+- Search by name, since most dots are unlabeled at rest.
+- Mark a group chat "everyone here knows each other", or unmark it.
 - Filter by time, so the graph can show a chosen period rather than all history.
-- Toggle dead groups on and off.
+- Toggle dead groups on and off (native app; the viewer shows groups only as evidence).
 - Hide nodes, both for readability and before export.
 - Resync on demand.
 
@@ -280,7 +348,9 @@ Get there fast, then iterate.
 - Stranger nodes: people mentioned but never contacted.
 - Mention-derived edges: Sarah naming Mike creates a Sarah-to-Mike edge. Deferred because density already sits at 1.19 edges per node against the 1.04 reference before any mention lands, and because resolving a first name in text to one node among 615 people is guesswork. Would ride the existing edge source field when revisited.
 - Call history as a second source. The edge source field keeps this cheap.
-- Displaying edge reason and strength.
+- Displaying reason and strength on the bipartite edges in the native render; the viewer's evidence panel already does this for acquaintance edges.
+- Per-edge manual confirmation or denial of a single acquaintance, beyond the per-chat marker.
+- Migrating the native app's Canvas render and sky onboarding view to the acquaintance presentation.
 - Anonymized structure-only sharing.
 - Incremental resync. Full rebuild is fast enough.
 

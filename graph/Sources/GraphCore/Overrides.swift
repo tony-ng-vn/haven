@@ -54,30 +54,33 @@ public struct Overrides: Sendable, Equatable, Codable {
     public var removedPersonIdentifiers: Set<String>
     public var mergeAnswers: [MergeAnswer]
     public var nameGuesses: [String: NameGuess]
+    /// "Everyone here knows each other" (PLAN.md): one canonical roster key
+    /// (AcquaintanceRosterKey.canonicalize) per marked group chat. Keyed by the chat's
+    /// resolved member identifiers, never its guid or a row id -- see AcquaintanceRosterKey's
+    /// own doc comment for why.
+    public var fullyAcquaintedRosterKeys: Set<[String]>
 
     public init(
         hiddenPersonIdentifiers: Set<String> = [],
         hiddenGroupGUIDs: Set<String> = [],
         removedPersonIdentifiers: Set<String> = [],
         mergeAnswers: [MergeAnswer] = [],
-        nameGuesses: [String: NameGuess] = [:]
+        nameGuesses: [String: NameGuess] = [:],
+        fullyAcquaintedRosterKeys: Set<[String]> = []
     ) {
         self.hiddenPersonIdentifiers = hiddenPersonIdentifiers
         self.hiddenGroupGUIDs = hiddenGroupGUIDs
         self.removedPersonIdentifiers = removedPersonIdentifiers
         self.mergeAnswers = mergeAnswers
         self.nameGuesses = nameGuesses
+        self.fullyAcquaintedRosterKeys = fullyAcquaintedRosterKeys
     }
 
     private enum CodingKeys: String, CodingKey {
         case hiddenPersonIdentifiers, hiddenGroupGUIDs, removedPersonIdentifiers, mergeAnswers, nameGuesses
+        case fullyAcquaintedRosterKeys
     }
 
-    // Hand-written, not synthesized: every field decodes with decodeIfPresent so a file
-    // written before a field existed (or a stripped-down hand edit) still loads instead of
-    // throwing, and a future field can be added the same way without breaking old files.
-    // Encoding is still the compiler-synthesized Encodable, generated from CodingKeys plus
-    // these same stored properties.
     // Hand-written, not synthesized: every field decodes with decodeIfPresent so a file
     // written before a field existed (or a stripped-down hand edit) still loads instead of
     // throwing, and a future field can be added the same way without breaking old files.
@@ -90,5 +93,6 @@ public struct Overrides: Sendable, Equatable, Codable {
         removedPersonIdentifiers = try container.decodeIfPresent(Set<String>.self, forKey: .removedPersonIdentifiers) ?? []
         mergeAnswers = try container.decodeIfPresent([MergeAnswer].self, forKey: .mergeAnswers) ?? []
         nameGuesses = try container.decodeIfPresent([String: NameGuess].self, forKey: .nameGuesses) ?? [:]
+        fullyAcquaintedRosterKeys = try container.decodeIfPresent(Set<[String]>.self, forKey: .fullyAcquaintedRosterKeys) ?? []
     }
 }

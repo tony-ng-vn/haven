@@ -91,6 +91,11 @@ final class AppModel {
     /// the identifiers Overrides actually keys on -- both only ever act on a node that is
     /// actually rendered, so it is correct for them to see the post-drop list.
     private(set) var lastKeptPeople: [Person] = []
+    /// The acquaintance layer's per-chat activity for the current graph (PLAN.md, "The
+    /// acquaintance layer"): what the group-node context menu reads to find a clicked group's
+    /// roster (for the "everyone here knows each other" toggle) and what the Sky JSON export
+    /// hands to GraphJSON, so the viewer renders the same derivation the app computes.
+    private(set) var lastGroupChatActivity: [GroupChatActivity] = []
     /// Every resolved person BEFORE PersonFilter/RemovedPeopleOverride, i.e. the same list
     /// mergeQueue's candidates were generated against. A MergeCandidate can name a person who
     /// does not survive filtering (both sides only need a contact card to become a candidate,
@@ -212,9 +217,16 @@ final class AppModel {
         }
 
         do {
-            let json = try GraphJSON.encode(graph: graph, guesses: overrides.nameGuesses)
+            let json = try GraphJSON.encode(
+                graph: graph,
+                groupChatActivity: lastGroupChatActivity,
+                fullyAcquaintedRosterKeys: overrides.fullyAcquaintedRosterKeys,
+                people: lastKeptPeople,
+                guesses: overrides.nameGuesses
+            )
             let template = try String(contentsOf: Self.templateURL(), encoding: .utf8)
-            let html = try SkyExportBuilder.build(template: template, graphJSON: json)
+            let viewerCoreSource = try String(contentsOf: Self.viewerCoreURL(), encoding: .utf8)
+            let html = try SkyExportBuilder.build(template: template, viewerCoreSource: viewerCoreSource, graphJSON: json)
             let url = Self.skyHTMLURL()
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
@@ -233,15 +245,25 @@ final class AppModel {
         }
     }
 
-    /// The bundled viewer/template-v3.html resource. Xcode resolves this via project.yml's
+    /// The bundled viewer/template-v4.html resource. Xcode resolves this via project.yml's
     /// resource entry; nonisolated because SkyExportBuilder's caller runs on the main actor
     /// but the resource lookup itself has no actor affinity.
     nonisolated private static func templateURL() -> URL {
-        guard let url = Bundle.main.url(forResource: "template-v3", withExtension: "html") else {
+        guard let url = Bundle.main.url(forResource: "template-v4", withExtension: "html") else {
             // A missing bundled resource is a build/packaging bug, not a runtime condition a
             // user can fix -- fail loudly at the one call site that needs it rather than
             // letting every future caller re-discover the same nil.
-            fatalError("template-v3.html was not found in the app bundle -- check project.yml's resources entry")
+            fatalError("template-v4.html was not found in the app bundle -- check project.yml's resources entry")
+        }
+        return url
+    }
+
+    /// The bundled viewer/viewer_core.mjs resource: template-v4.html's SECOND placeholder
+    /// (__VIEWER_CORE_JS__) needs this file's own text, not just the graph JSON -- same loud-
+    /// fatalError posture as templateURL() above, for the same reason.
+    nonisolated private static func viewerCoreURL() -> URL {
+        guard let url = Bundle.main.url(forResource: "viewer_core", withExtension: "mjs") else {
+            fatalError("viewer_core.mjs was not found in the app bundle -- check project.yml's resources entry")
         }
         return url
     }
@@ -488,6 +510,7 @@ final class AppModel {
                 self.state = result.state
                 self.lastResolvedPeople = result.resolvedPeople
                 self.lastKeptPeople = result.keptPeople
+                self.lastGroupChatActivity = result.groupChatActivity
                 self.mergeQueue = result.mergeQueue
                 self.displayOptions.hiddenNodeIDs = result.hiddenNodeIDs
                 self.removedPersonCount = result.removedPersonCount
@@ -605,6 +628,7 @@ final class AppModel {
         let state: AppState
         let resolvedPeople: [Person]
         let keptPeople: [Person]
+        let groupChatActivity: [GroupChatActivity]
         let mergeQueue: [MergeCandidate]
         let hiddenNodeIDs: Set<String>
         let removedPersonCount: Int
@@ -639,7 +663,8 @@ final class AppModel {
             removedPersonIdentifiers: overrides.removedPersonIdentifiers
         )
 
-        let graph = GraphBuilder.build(extract: filteredExtract, keptPeople: keptPeople)
+        let built = GraphBuilder.buildDetailed(extract: filteredExtract, keptPeople: keptPeople)
+        let graph = built.graph
         let simulation = ForceSimulation(graph: graph, size: windowSize, includeDeadGroups: options.showDeadGroups)
 
         let hiddenNodeIDs = HiddenNodeOverride.nodeIDs(
@@ -658,6 +683,7 @@ final class AppModel {
             state: .ready(graph: graph, simulation: simulation),
             resolvedPeople: identity.people,
             keptPeople: keptPeople,
+            groupChatActivity: built.groupChatActivity,
             mergeQueue: mergeQueue,
             hiddenNodeIDs: hiddenNodeIDs,
             // Only what RemovedPeopleOverride itself dropped, not PersonFilter's own rules:
@@ -726,6 +752,42 @@ final class AppModel {
             hiddenPersonIdentifiers: overrides.hiddenPersonIdentifiers,
             hiddenGroupGUIDs: overrides.hiddenGroupGUIDs
         )
+    }
+
+    // MARK: - Acquaintance layer: "everyone here knows each other" (PLAN.md)
+
+    /// The canonical roster key PLAN.md's marker uses for a CURRENTLY-rendered group node --
+    /// nil for anything that is not actually a group in the current graph (a stale id after a
+    /// rebuild, or a person/user node), which every call site below treats as "not marked".
+    private func rosterKey(forGroupNodeID id: String) -> [String]? {
+        guard let activity = lastGroupChatActivity.first(where: { $0.chatId == id }) else { return nil }
+        return AcquaintanceRosterKey.canonicalize(activity.roster)
+    }
+
+    /// Reads the override store directly (never any view-local state), so the context menu's
+    /// checkmark reflects what actually survives a relaunch. Translates the stored keys
+    /// against `lastKeptPeople` first: a mark captured before a resync may still be keyed by a
+    /// member's now-stale Person.id, which exact equality against the raw stored set would
+    /// silently fail to match -- see AcquaintanceRosterKey.resolve's own doc comment.
+    func isFullyAcquainted(groupNodeID: String) -> Bool {
+        guard let key = rosterKey(forGroupNodeID: groupNodeID) else { return false }
+        let translatedRosterKeys = AcquaintanceRosterKey.resolve(stored: overrides.fullyAcquaintedRosterKeys, people: lastKeptPeople)
+        return translatedRosterKeys.contains(key)
+    }
+
+    /// Nothing here changes what draws: the app does not render acquaintance edges yet
+    /// (PLAN.md). Only the override store changes, keyed by the group's CURRENT roster so the
+    /// marking survives both a resync and a service-split merge that reassigns the group's own
+    /// node id -- see AcquaintanceRosterKey's own doc comment for why chat guid/row id cannot
+    /// be used for this instead.
+    func setFullyAcquainted(groupNodeID: String, isFullyAcquainted: Bool) {
+        guard let key = rosterKey(forGroupNodeID: groupNodeID) else { return }
+        if isFullyAcquainted {
+            overrides.fullyAcquaintedRosterKeys.insert(key)
+        } else {
+            overrides.fullyAcquaintedRosterKeys.remove(key)
+        }
+        saveOverrides()
     }
 
     /// Structural, unlike hideNode: a removed person drops out before GraphBuilder ever sees

@@ -4,7 +4,7 @@ import GraphCore
 private func printUsage() {
     FileHandle.standardError.write(
         Data(
-            "usage: graph-cli <stats|people|filter|killlist|graph|json|guess> --chat-db PATH [--contacts-db PATH ...]\n"
+            "usage: graph-cli <stats|people|filter|killlist|graph|json|acquaintances|guess> --chat-db PATH [--contacts-db PATH ...]\n"
                 .utf8
         )
     )
@@ -306,21 +306,72 @@ private func runJSON(_ args: [String]) {
         printUsage()
         exit(64)
     }
-    let graph = GraphBuilder.build(extract: extract, keptPeople: filterResult.kept)
+    let built = GraphBuilder.buildDetailed(extract: extract, keptPeople: filterResult.kept)
 
     // Same overrides file `guess` writes to and the app reads/writes: a name guessed by
     // either one shows up (tilde-prefixed, per NodeLabel) in every later `json` export,
-    // never just in the app's own in-memory session.
+    // never just in the app's own in-memory session. The same load also supplies the
+    // "everyone here knows each other" markers, so a chat marked in the app shows up
+    // confirmed in this export too.
     let overridesStore = OverridesStore(fileURL: OverridesStore.defaultFileURL())
-    let guesses = (try? overridesStore.load())?.nameGuesses ?? [:]
+    let overrides = (try? overridesStore.load()) ?? Overrides()
 
     let data: Data
     do {
-        data = try GraphJSON.encode(graph: graph, guesses: guesses)
+        data = try GraphJSON.encode(
+            graph: built.graph,
+            groupChatActivity: built.groupChatActivity,
+            fullyAcquaintedRosterKeys: overrides.fullyAcquaintedRosterKeys,
+            people: filterResult.kept,
+            guesses: overrides.nameGuesses
+        )
     } catch {
         fail("error: cannot encode graph")
     }
     FileHandle.standardOutput.write(data)
+}
+
+private func tierLabel(_ tier: AcquaintanceTier) -> String {
+    switch tier {
+    case .confirmed: return "confirmed"
+    case .strong: return "strong"
+    case .likely: return "likely"
+    }
+}
+
+/// Aggregate counts only, like `stats`/`people`/`filter`/`graph`: pairs per tier, the total,
+/// and how many chats are currently marked "everyone here knows each other" -- never a name or
+/// an identifier (constraint 7).
+private func runAcquaintances(_ args: [String]) {
+    guard let (extract, filterResult) = resolveExtractAndFilter(args) else {
+        printUsage()
+        exit(64)
+    }
+    let built = GraphBuilder.buildDetailed(extract: extract, keptPeople: filterResult.kept)
+
+    let overridesStore = OverridesStore(fileURL: OverridesStore.defaultFileURL())
+    let fullyAcquaintedRosterKeys = (try? overridesStore.load())?.fullyAcquaintedRosterKeys ?? []
+    // Translated ONCE against the CURRENT people list: a stored key may still be built from a
+    // member's now-stale Person.id (see AcquaintanceRosterKey.resolve), so exact equality
+    // against the raw stored set would silently drop a real marking after a resync.
+    let translatedRosterKeys = AcquaintanceRosterKey.resolve(stored: fullyAcquaintedRosterKeys, people: filterResult.kept)
+
+    let acquaintances = AcquaintanceDerivation.derive(
+        groupChatActivity: built.groupChatActivity,
+        fullyAcquaintedRosterKeys: translatedRosterKeys
+    )
+    let markedChatCount = built.groupChatActivity.filter {
+        translatedRosterKeys.contains(AcquaintanceRosterKey.canonicalize($0.roster))
+    }.count
+
+    // Declaration order (confirmed, strong, likely) matches the tier hierarchy, strongest
+    // evidence first, not alphabetical.
+    for tier in AcquaintanceTier.allCases {
+        let count = acquaintances.filter { $0.tier == tier }.count
+        print("acquaintances[\(tierLabel(tier))] \(count)")
+    }
+    print("acquaintancesTotal \(acquaintances.count)")
+    print("markedChatCount \(markedChatCount)")
 }
 
 /// Accumulates guesses and persists them through the same OverridesStore the app writes to,
@@ -445,7 +496,7 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 // `killlist` prints real names and partially-masked identifiers to stdout for the lead's
 // on-screen review of real data, and `json` prints real contact and group display names as
 // stdout JSON for an external HTML viewer (per this step's brief). `stats`, `people`,
-// `filter`, and `graph` remain counts-only.
+// `filter`, `graph`, and `acquaintances` remain counts-only.
 switch arguments.first {
 case "stats":
     runStats(Array(arguments.dropFirst()))
@@ -459,6 +510,8 @@ case "graph":
     runGraph(Array(arguments.dropFirst()))
 case "json":
     runJSON(Array(arguments.dropFirst()))
+case "acquaintances":
+    runAcquaintances(Array(arguments.dropFirst()))
 case "guess":
     await runGuess(Array(arguments.dropFirst()))
 default:
