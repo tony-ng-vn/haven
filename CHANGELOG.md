@@ -6,14 +6,15 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
-## v0.43.1
+## v0.45.0
 
-2026-08-03
+2026-07-31
 
-**CI**
+**Web**
 
-- The daily check on Haven's live sign-in settings now actually runs. It had failed within seconds of starting every morning since the day it was written, so it had never once looked at anything -- a check that has never passed and a check that broke overnight are indistinguishable in a list of red marks, which is how it went unnoticed for six days. It found two real things on its first honest run, both since fixed: Clerk, the service behind signing in, was still calling the app "Euno" on its own screens and in every sign-in email, and it was still sending people to its own hosted sign-in pages rather than Haven's. The second one is the failure that broke sign-in in production once before -- Haven's own code has been overriding it since, so nobody was stuck, but the setting behind it had never been corrected. Both halves of that guard are now in place, and the check passes for the first time.
-- The bot that opened an automatic pull request every morning with one suggested improvement has been removed. It had been failing daily rather than proposing anything.
+- inhavens.com now opens on a real Haven landing page instead of jumping straight to a signup form: one line about what Haven is, then two cards -- Your Sky for Mac, which you can try today, and Haven for iPhone, which is still in development and worth joining the waitlist for. Anyone who had a link to the root expecting to join the waitlist still finds it one tap away, right at the top of the page.
+- Haven now has a download page for Your Sky, its Mac companion app, at inhavens.com/#/sky. It walks through the whole flow -- download, authorize access on your Mac, click "Map relationships" -- and says exactly what happens to your data: the analysis runs on your Mac, your messages are never uploaded, and the map is built from who you talked to and how often, never from what you said.
+- Haven for iPhone now has its own page at inhavens.com/#/ios, carrying the waitlist signup that used to live at the root. It introduces what the iPhone app will do -- one profile, connecting with someone in one tap, finding anyone later by any detail you remember -- and says plainly that it is still in development. A quiet link at the bottom of the form points to Your Sky, for anyone who wants a Mac companion in the meantime.
 
 ---
 

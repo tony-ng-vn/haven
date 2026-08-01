@@ -112,6 +112,21 @@ export function isJoinHash(hash: string): boolean {
   return /^#\/join\/?$/.test(hash);
 }
 
+// The download landing for Your Sky lives at "#/sky" (a trailing slash is
+// tolerated), same tolerance as isJoinHash. Public and unauthenticated, so it
+// gets the same carve-out ahead of the generic Clerk-flow check below.
+export function isSkyHash(hash: string): boolean {
+  return /^#\/sky\/?$/.test(hash);
+}
+
+// The iOS product landing -- which carries the waitlist signup -- lives at
+// "#/ios" (a trailing slash tolerated), same shape as isSkyHash. Public and
+// unauthenticated, so it gets the same carve-out ahead of the generic
+// Clerk-flow check below.
+export function isIosHash(hash: string): boolean {
+  return /^#\/ios\/?$/.test(hash);
+}
+
 // "June 2026" -- the quiet memory anchor under a person's name.
 export function formatMonthYear(ms: number, locale?: string): string {
   return new Intl.DateTimeFormat(locale, {
@@ -464,20 +479,24 @@ export function bootMode(input: {
 }
 
 // The single source of truth for which top-level screen App renders. The
-// signed-out default is the public waitlist -- that is the shareable root URL.
-// Existing users still reach sign-in: Clerk OAuth/verification callbacks and
-// the explicit "#/sign-in" route mount it, and a returning visitor with a live
+// signed-out default is the Haven landing -- that is the shareable root URL,
+// telling people what Haven is and pointing them at the two products. Existing
+// users still reach sign-in: Clerk OAuth/verification callbacks and the
+// explicit "#/sign-in" route mount it, and a returning visitor with a live
 // session resolves straight to Home (via the splash) without ever seeing the
-// waitlist. The "#/join" route stays public even though it matches the generic
-// Clerk-flow shape.
+// landing. The "#/join" route stays public even though it matches the generic
+// Clerk-flow shape, and lands on "ios" -- the waitlist signup now lives on the
+// iOS product page rather than at the root.
 export type View =
   | "home"
   | "signin"
   | "splash"
-  | "waitlist"
+  | "landing"
   | "card"
   | "legal"
-  | "support";
+  | "support"
+  | "sky"
+  | "ios";
 
 /// The one path segment a url names, lowercased, or null when it names none or
 /// more than one.
@@ -553,9 +572,16 @@ export function resolveView(input: {
   // Checked after the auth test, so somebody already signed in who lands on
   // /signin gets their people rather than a form asking them to do it again.
   if (isAuthPath(input.pathname ?? "/")) return "signin";
-  if (!isJoinHash(input.hash) && isClerkFlowHash(input.hash)) return "signin";
+  // The Your Sky download page, public like "#/join" -- checked before the
+  // generic Clerk-flow test below, which would otherwise treat "#/sky" as an
+  // OAuth callback and route it to sign-in.
+  if (isSkyHash(input.hash)) return "sky";
+  // The iOS product page, public for the same reason -- and "#/join" is kept
+  // as an alias into it, since it is where the waitlist signup lives now.
+  if (isIosHash(input.hash) || isJoinHash(input.hash)) return "ios";
+  if (isClerkFlowHash(input.hash)) return "signin";
   if (input.isLoading && bootMode(input) === "splash") return "splash";
-  return "waitlist";
+  return "landing";
 }
 
 // The triage card's drag gesture: scroll-style momentum projection for

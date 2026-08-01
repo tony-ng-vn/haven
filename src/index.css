@@ -1984,30 +1984,15 @@ feedback-widget.feedback-fab {
   }
 }
 
-/* ============================================================ waitlist (/#/join)
-   The public join page. A world of its own -- flat at rest, one warm light,
-   motion only as confirmation -- laid out around a drifting star field. Ported
-   from the approved prototype. Layout and copy flip at 620px via the
-   [data-mode] attribute React sets from the page width. */
+/* ============================================================ waitlist form
+   The join capture: a name field, an email field that folds in once the name
+   is engaged, and the honest joined/already/error states. Ported from the
+   original full-page join prototype, but it is no longer a page of its own --
+   it is embedded in the iOS product page now (WaitlistForm.tsx, "#/ios"),
+   which owns the headline and framing around it. */
 
-.waitlist {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  background: var(--night);
-  color: var(--text);
-  overflow: hidden;
-  /* Finger drags must aim the constellation, not rubber-band / pan the page
-     (which reads as "the whole sky moves" and steals the gesture). */
-  touch-action: none;
-  overscroll-behavior: none;
-}
-
-.waitlist input,
-.waitlist button {
-  touch-action: manipulation;
-}
-
+/* Shared with the sign-in landing (see .auth-sky): both public pages ride the
+   same drifting star field canvas. */
 .wl-sky {
   position: absolute;
   inset: 0;
@@ -2016,39 +2001,14 @@ feedback-widget.feedback-fab {
   z-index: 0;
 }
 
-.wl-content {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-  padding: clamp(30px, 7vh, 72px) 28px;
-  text-align: left;
-}
-
-.wl-eyebrow {
-  display: block;
-  margin-bottom: 22px;
-  font-size: 13px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.wl-headline {
-  margin: 0;
-  text-wrap: balance;
-}
-
+/* Used today only by the success state below (wl-sub wl-joined-sub), which
+   overrides the margin -- kept as its own rule rather than folded into
+   wl-joined-sub so the type scale stays in one place. */
 .wl-sub {
   margin: 0 0 22px;
   font-size: 18px;
   line-height: 1.55;
   color: var(--muted);
-}
-
-.wl-bottom {
-  max-width: 460px;
 }
 
 /* Name leads on its own row with the submit button; the email row folds in
@@ -2187,6 +2147,23 @@ feedback-widget.feedback-fab {
   color: #ff6b60;
 }
 
+/* Quiet enough to never compete with the join form -- a footnote, not a
+   second call to action. */
+.wl-sky-link {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 12px;
+  color: rgba(242, 239, 233, 0.45);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(242, 239, 233, 0.25);
+}
+
+.wl-sky-link:hover,
+.wl-sky-link:focus-visible {
+  color: rgba(242, 239, 233, 0.7);
+}
+
 /* Success state */
 .wl-check {
   display: inline-flex;
@@ -2218,87 +2195,17 @@ feedback-widget.feedback-fab {
   margin: 0;
 }
 
-/* ---- phone / drift: headline up top, capture at the bottom ---- */
-.waitlist[data-mode="phone"] .wl-content {
-  justify-content: space-between;
-}
-
-.waitlist[data-mode="phone"] .wl-headline {
-  max-width: 12ch;
-  font-size: clamp(38px, 11vw, 58px);
-  font-weight: 700;
-  letter-spacing: -0.045em;
-  line-height: 0.94;
-}
-
-/* ---- desktop / constellation: copy centered in the viewport ---- */
-.waitlist[data-mode="desktop"] .wl-content {
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-  padding: 0 32px;
-}
-
-.waitlist[data-mode="desktop"] .wl-eyebrow {
-  display: none;
-}
-
-.waitlist[data-mode="desktop"] .wl-top {
-  margin-bottom: 18px;
-}
-
-.waitlist[data-mode="desktop"] .wl-headline {
-  max-width: 16ch;
-  font-size: clamp(34px, 5vw, 50px);
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.08;
-}
-
-/* Rhythm funnels toward the CTA: sub gets air above the form, caption hugs it. */
-.waitlist[data-mode="desktop"] .wl-sub {
-  margin: 0 auto 26px;
-  max-width: 44ch;
-}
-
-.waitlist[data-mode="desktop"] .wl-bottom {
-  max-width: 460px;
-  margin: 22px auto 0;
-}
-
-.waitlist[data-mode="desktop"] .wl-form {
-  max-width: 440px;
-  margin: 0 auto;
-}
-
-.waitlist[data-mode="desktop"] .wl-fine,
-.waitlist[data-mode="desktop"] .wl-error {
-  margin-top: 13px;
-  text-align: center;
-}
-
 /* On a real phone the inline field + button can get tight; stack under ~380px. */
 @media (max-width: 380px) {
-  .waitlist[data-mode="phone"] .wl-email-row {
+  .wl-email-row {
     flex-direction: column;
   }
-  .waitlist[data-mode="phone"] .wl-go {
+  .wl-go {
     width: 100%;
   }
 }
 
-/* Entrances: the room settles in on load; the confirmation rises on submit. */
-@keyframes wl-enter-up {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
+/* The confirmation rises on submit. */
 @keyframes wl-rise-in {
   from {
     opacity: 0;
@@ -2310,21 +2217,11 @@ feedback-widget.feedback-fab {
   }
 }
 
-.wl-top {
-  animation: wl-enter-up 640ms var(--ease-out) both;
-}
-
-.wl-bottom {
-  animation: wl-enter-up 640ms var(--ease-out) 130ms both;
-}
-
 .wl-joined {
   animation: wl-rise-in 500ms var(--ease-out) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .wl-top,
-  .wl-bottom,
   .wl-joined,
   .wl-check {
     animation: none;
@@ -2557,7 +2454,11 @@ a.card-handle:focus-visible {
    the person-name rule up top. */
 .card-quiet-title,
 .legal-back,
-.legal-title {
+.legal-title,
+.sky-title,
+.landing-brand,
+.landing-card-title,
+.ios-title {
   font-family: var(--font-serif);
 }
 
@@ -2638,4 +2539,352 @@ a.card-handle:focus-visible {
   border-top: 1px solid rgba(242, 239, 233, 0.12);
   font-size: 14px;
   color: rgba(242, 239, 233, 0.5);
+}
+
+/* Your Sky download page (inhavens.com/#/sky) --------------------------
+
+   Shares the legal page's column measure -- this is reading, not a hero form
+   -- but keeps its own hero block at the top for the download CTA, and its
+   own step/privacy sections below.
+   ------------------------------------------------------------------------ */
+.sky-page {
+  position: relative;
+  z-index: 1;
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 40px 24px 96px;
+  text-align: left;
+  color: rgba(242, 239, 233, 0.78);
+}
+
+.sky-hero {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sky-eyebrow {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+.sky-title {
+  font-size: 34px;
+  font-weight: 500;
+  line-height: 1.18;
+  margin: 4px 0 2px;
+  color: var(--text);
+}
+
+.sky-tagline {
+  margin: 0 0 6px;
+  font-size: 17px;
+  line-height: 1.55;
+  color: rgba(242, 239, 233, 0.85);
+}
+
+.sky-download {
+  align-self: flex-start;
+  margin-top: 8px;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 26px;
+  border-radius: 999px;
+  background: var(--accent-fill);
+  color: var(--accent-fill-text);
+  font-size: 16px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: transform var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+.sky-download:hover,
+.sky-download:focus-visible {
+  background: color-mix(in srgb, var(--accent-fill) 90%, #000);
+}
+
+.sky-download-repeat {
+  margin-top: 40px;
+}
+
+.sky-install-note {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(242, 239, 233, 0.55);
+  max-width: 30rem;
+}
+
+.sky-steps,
+.sky-privacy {
+  margin-top: 48px;
+}
+
+.sky-steps h2,
+.sky-privacy h2 {
+  font-size: 15px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(242, 239, 233, 0.55);
+  margin: 0 0 18px;
+}
+
+.sky-step-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sky-step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.sky-step-index {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(242, 239, 233, 0.09);
+  border: 1px solid rgba(242, 239, 233, 0.14);
+  font-size: 13px;
+  color: var(--accent-text);
+}
+
+.sky-step-title {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sky-step-body {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: rgba(242, 239, 233, 0.72);
+}
+
+.sky-privacy ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.sky-privacy li {
+  margin-bottom: 10px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: rgba(242, 239, 233, 0.78);
+}
+
+/* ---------------------------------------------------------------------------
+   Haven landing (inhavens.com/, signed out)
+
+   The family's front door: what Haven is in a sentence, then the two
+   products, each its own card. Shares the card-page/card-sky backdrop with
+   the other public pages, but its own column runs wider than the reading
+   pages -- two cards side by side above ~560px, not prose.
+   ------------------------------------------------------------------------ */
+.landing-page {
+  position: relative;
+  z-index: 1;
+  max-width: 50rem;
+  margin: 0 auto;
+  padding: 40px 24px 96px;
+  text-align: left;
+}
+
+.landing-hero {
+  max-width: 40ch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.landing-brand {
+  display: block;
+  font-size: 26px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* An h1 (the page's one heading -- see LandingPage.tsx), but visually it is
+   the same quiet weight as the sub-copy on the sibling product pages, not a
+   shouted headline. */
+.landing-tagline {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: rgba(242, 239, 233, 0.85);
+}
+
+/* The iPhone card is first in the markup (see LandingPage.tsx) so it is the
+   one still visible if a narrow screen cannot fit both without a scroll --
+   people holding a link to the root expecting the waitlist land on it in one
+   click, not two. */
+.landing-products {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.landing-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 20px;
+  border-radius: var(--radius-lg);
+  background: rgba(242, 239, 233, 0.05);
+  border: 1px solid rgba(242, 239, 233, 0.12);
+}
+
+.landing-card-kicker {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+.landing-card-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--text);
+}
+
+.landing-card-body {
+  margin: 0;
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(242, 239, 233, 0.72);
+}
+
+.landing-card-cta {
+  margin-top: 6px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 20px;
+  border-radius: 999px;
+  background: rgba(242, 239, 233, 0.1);
+  border: 1px solid rgba(242, 239, 233, 0.18);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 15px;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.landing-card-cta:hover,
+.landing-card-cta:focus-visible {
+  background: rgba(242, 239, 233, 0.16);
+}
+
+/* ---------------------------------------------------------------------------
+   Haven for iPhone (inhavens.com/#/ios)
+
+   The iOS product landing: introduces the phone app and carries the waitlist
+   signup (see WaitlistForm.tsx). Shares the sky page's column and hero shape
+   -- the two are sibling product pages -- but its call to action is a form,
+   not a download link.
+   ------------------------------------------------------------------------ */
+.ios-page {
+  position: relative;
+  z-index: 1;
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 40px 24px 96px;
+  text-align: left;
+  color: rgba(242, 239, 233, 0.78);
+}
+
+.ios-hero {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ios-eyebrow {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+.ios-title {
+  font-size: 34px;
+  font-weight: 500;
+  line-height: 1.18;
+  margin: 4px 0 2px;
+  color: var(--text);
+}
+
+.ios-tagline {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.55;
+  color: rgba(242, 239, 233, 0.85);
+}
+
+.ios-status {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(242, 239, 233, 0.55);
+}
+
+.ios-join {
+  margin-top: 28px;
+  max-width: 26rem;
+}
+
+.ios-about {
+  margin-top: 48px;
+}
+
+.ios-about h2 {
+  font-size: 15px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(242, 239, 233, 0.55);
+  margin: 0 0 18px;
+}
+
+.ios-about ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.ios-about li {
+  margin-bottom: 10px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: rgba(242, 239, 233, 0.78);
+}
+
+.ios-about strong {
+  color: rgba(242, 239, 233, 0.92);
+  font-weight: 600;
 }

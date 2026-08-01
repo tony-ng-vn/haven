@@ -14,7 +14,9 @@ import {
   isAdminEmail,
   isAuthPath,
   isClerkFlowHash,
+  isIosHash,
   isJoinHash,
+  isSkyHash,
   isValidEmail,
   legalDocFromPath,
   sitePageFromPath,
@@ -44,11 +46,10 @@ describe("resolveView", () => {
     ).toBe("home");
   });
 
-  test("the signed-out default landing is the waitlist", () => {
-    expect(resolveView(base)).toBe("waitlist");
-    // A first-time visitor paints the waitlist immediately, before Clerk loads.
-    expect(resolveView({ ...base, isLoading: true })).toBe("waitlist");
-    expect(resolveView({ ...base, hash: "#/join" })).toBe("waitlist");
+  test("the signed-out default is the Haven landing page", () => {
+    expect(resolveView(base)).toBe("landing");
+    // A first-time visitor paints the landing immediately, before Clerk loads.
+    expect(resolveView({ ...base, isLoading: true })).toBe("landing");
   });
 
   test("Clerk callbacks and the explicit sign-in route mount sign-in", () => {
@@ -69,13 +70,36 @@ describe("resolveView", () => {
     expect(
       resolveView({ ...base, isLoading: true, hasSessionHint: true }),
     ).toBe("splash");
-    // Once resolved signed-out, they fall through to the waitlist.
-    expect(resolveView({ ...base, hasSessionHint: true })).toBe("waitlist");
+    // Once resolved signed-out, they fall through to the landing.
+    expect(resolveView({ ...base, hasSessionHint: true })).toBe("landing");
   });
 
-  test("the waitlist route is never treated as a Clerk flow", () => {
-    // #/join matches the generic Clerk-flow shape but must stay public.
-    expect(resolveView({ ...base, hash: "#/join" })).toBe("waitlist");
+  test("the '#/join' route is never treated as a Clerk flow, and stays a way to join", () => {
+    // #/join matches the generic Clerk-flow shape but must stay public; it is
+    // an alias into the iOS waitlist page now that the signup lives there.
+    expect(resolveView({ ...base, hash: "#/join" })).toBe("ios");
+  });
+
+  test("the sky download route is public, with or without a trailing slash", () => {
+    expect(resolveView({ ...base, hash: "#/sky" })).toBe("sky");
+    expect(resolveView({ ...base, hash: "#/sky/" })).toBe("sky");
+  });
+
+  test("a signed-in visitor on the sky route still gets home", () => {
+    expect(
+      resolveView({ ...base, isAuthenticated: true, hash: "#/sky" }),
+    ).toBe("home");
+  });
+
+  test("the iOS waitlist route is public, with or without a trailing slash", () => {
+    expect(resolveView({ ...base, hash: "#/ios" })).toBe("ios");
+    expect(resolveView({ ...base, hash: "#/ios/" })).toBe("ios");
+  });
+
+  test("a signed-in visitor on the ios route still gets home", () => {
+    expect(
+      resolveView({ ...base, isAuthenticated: true, hash: "#/ios" }),
+    ).toBe("home");
   });
 });
 
@@ -159,6 +183,34 @@ describe("isJoinHash", () => {
     expect(isJoinHash("#/")).toBe(false);
     expect(isJoinHash("#/sso-callback")).toBe(false);
     expect(isJoinHash("#/joinery")).toBe(false);
+  });
+});
+
+describe("isSkyHash", () => {
+  test("matches the download route with or without a trailing slash", () => {
+    expect(isSkyHash("#/sky")).toBe(true);
+    expect(isSkyHash("#/sky/")).toBe(true);
+  });
+
+  test("does not match the app or Clerk flow hashes", () => {
+    expect(isSkyHash("")).toBe(false);
+    expect(isSkyHash("#/")).toBe(false);
+    expect(isSkyHash("#/sso-callback")).toBe(false);
+    expect(isSkyHash("#/skyward")).toBe(false);
+  });
+});
+
+describe("isIosHash", () => {
+  test("matches the iOS waitlist route with or without a trailing slash", () => {
+    expect(isIosHash("#/ios")).toBe(true);
+    expect(isIosHash("#/ios/")).toBe(true);
+  });
+
+  test("does not match the app or Clerk flow hashes", () => {
+    expect(isIosHash("")).toBe(false);
+    expect(isIosHash("#/")).toBe(false);
+    expect(isIosHash("#/sso-callback")).toBe(false);
+    expect(isIosHash("#/iostream")).toBe(false);
   });
 });
 
@@ -776,7 +828,7 @@ describe("resolveView with a card path", () => {
   });
 
   test("every other path routes exactly as it did before", () => {
-    expect(resolveView({ ...base, pathname: "/" })).toBe("waitlist");
+    expect(resolveView({ ...base, pathname: "/" })).toBe("landing");
     // Hyphenated, so it is not a claimable handle and not a card. It used to
     // fall through to the waitlist, which is the bug reported from production:
     // somebody typing the most obvious url was told Haven has no sign-in.
