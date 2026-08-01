@@ -170,13 +170,18 @@ final class PersonFilterTests: XCTestCase {
         XCTAssertTrue(result.kept.contains { $0.id == personA.id })
     }
 
-    func testNeverRepliedNotSparedByTwoMemberStyle43ChatWithCardMatchedPerson() {
+    // Renamed and rewritten: this used to prove the override does NOT apply to a 2-member
+    // style-43 roster, back when such a roster was (wrongly) reclassified as one-to-one.
+    // chat_handle_join never lists the user, so 2 raw handles here are 2 DIFFERENT real
+    // people (personA, personB) -- a real group -- and the override must now correctly apply,
+    // the same as the 3-member case above.
+    func testNeverRepliedSparedByTwoHandleStyle43ChatCorrectlyClassifiedAsGroupWithCardMatchedPerson() {
         let personA = person(id: "+14155550004", identifiers: ["+14155550004"], handleRowIDs: [30])
         let personB = person(id: "+14155550005", identifiers: ["+14155550005"], handleRowIDs: [31], hasContactCard: true)
 
         let oneToOne = chat(rowID: 400, style: 45, members: [30])
-        // Exactly 2 members: reclassified as one-to-one, does NOT count as a group for the override.
-        let twoMemberGroupStyle = chat(rowID: 401, style: 43, members: [30, 31])
+        // 2 raw handles resolving to 2 different kept people: a real group, not "user plus one".
+        let twoPersonGroupStyle = chat(rowID: 401, style: 43, members: [30, 31])
 
         let messages = [
             message(rowID: 1, chatRowID: 400, handleRowID: 30, isFromMe: false, date: utcDate(2024, 1, 1)),
@@ -184,12 +189,63 @@ final class PersonFilterTests: XCTestCase {
         ]
 
         let result = PersonFilter.apply(
-            extract: extract(chats: [oneToOne, twoMemberGroupStyle], messages: messages),
+            extract: extract(chats: [oneToOne, twoPersonGroupStyle], messages: messages),
             people: [personA, personB],
             calendar: utc
         )
 
-        XCTAssertEqual(result.removed.first { $0.person.id == personA.id }?.reason, .neverReplied)
+        // personB's own fate is not the point of this test (personB has zero activity of its
+        // own and would independently trip rule 4); only personA's outcome -- spared from
+        // never-replied by sharing a real group with a carded person -- matters here.
+        XCTAssertFalse(
+            result.removed.contains { $0.person.id == personA.id },
+            "a 2-handle roster of 2 different people is a real group and must spare never-replied like any other group"
+        )
+        XCTAssertTrue(result.kept.contains { $0.id == personA.id })
+    }
+
+    // MARK: - Requirement: PersonFilter and GraphBuilder must agree on classification
+
+    // Chains the two exactly as production code does (resolveExtractAndFilter ->
+    // GraphBuilder.build(keptPeople: filterResult.kept)). This fails if EITHER call site
+    // still uses the old raw roster-count rule: if only PersonFilter is fixed, personA
+    // survives here, but GraphBuilder -- fed only keptPeople, not the full people list --
+    // would still need its own fix to see personA's chat as a group rather than losing
+    // personA's handle from the roster entirely; if only GraphBuilder is fixed, PersonFilter's
+    // still-buggy classification wrongly removes personA before GraphBuilder ever sees them,
+    // and no group node exists either. Either half-fix breaks this test.
+    func testPersonFilterAndGraphBuilderAgreeOnTwoHandleTwoPersonGroupClassification() {
+        let personA = person(id: "+14155550700", identifiers: ["+14155550700"], handleRowIDs: [700])
+        let personB = person(id: "+14155550701", identifiers: ["+14155550701"], handleRowIDs: [701], hasContactCard: true)
+
+        // personA has an unreplied one-to-one thread (at risk of neverReplied) and shares a
+        // 2-handle style-43 roster with personB. The ONLY thing that can spare personA is the
+        // shared-group-with-a-carded-person override, which only fires if this roster is
+        // correctly recognized as a real group.
+        let oneToOne = chat(rowID: 700, style: 45, members: [700])
+        let group = chat(rowID: 701, style: 43, members: [700, 701])
+        let messages = [
+            message(rowID: 1, chatRowID: 700, handleRowID: 700, isFromMe: false, date: utcDate(2024, 1, 1)),
+            message(rowID: 2, chatRowID: 700, handleRowID: 700, isFromMe: false, date: utcDate(2024, 1, 5)),
+            // The group chat itself also needs 2 distinct live days, or personB (whose only
+            // chat this is) independently trips rule 4 regardless of classification.
+            message(rowID: 3, chatRowID: 701, handleRowID: 700, isFromMe: false, date: utcDate(2024, 1, 1)),
+            message(rowID: 4, chatRowID: 701, handleRowID: 701, isFromMe: false, date: utcDate(2024, 1, 2)),
+        ]
+
+        let extractValue = extract(chats: [oneToOne, group], messages: messages)
+        let filterResult = PersonFilter.apply(extract: extractValue, people: [personA, personB], calendar: utc)
+
+        // Precondition: if this ever fails, the rest of the test proves nothing.
+        XCTAssertTrue(filterResult.removed.isEmpty, "both people must survive filtering for this test to mean anything")
+
+        let graph = GraphBuilder.build(extract: extractValue, keptPeople: filterResult.kept, calendar: utc)
+
+        let groupNode = graph.nodes.first { $0.id == "chat:chat-701" }
+        XCTAssertEqual(groupNode?.kind, .group, "GraphBuilder must agree with PersonFilter that this 2-handle, 2-person roster is a group")
+
+        let membershipEdges = graph.edges.filter { $0.reason == .groupMembership }
+        XCTAssertEqual(membershipEdges.count, 2, "both personA and personB get a groupMembership edge, not a oneToOneThread edge")
     }
 
     // MARK: - Rule 4: liveness

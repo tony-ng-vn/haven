@@ -31,4 +31,12 @@ public enum EdgeRenderList {
             }
             .sorted { $0.id < $1.id }
     }
+
+    /// Rest-state edge opacity from strength: a diminishing-returns curve so a strength-0 edge
+    /// (a lurker's zero-message membership) is still faintly visible, and gains from strength
+    /// taper off rather than blowing straight past full opacity. Shared by GraphView (the live
+    /// screen) and GraphImageRenderer (the exported bitmap) so the two can never drift apart.
+    public static func opacity(forStrength strength: Double) -> Double {
+        min(1.0, 0.08 + 0.12 * (strength + 1).squareRoot())
+    }
 }

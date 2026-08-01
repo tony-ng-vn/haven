@@ -10,7 +10,8 @@ public enum RemovalReason: Sendable, Equatable, CaseIterable {
 }
 
 /// Per-person facts a human reviewing the kill list needs, scoped to the person's combined
-/// one-to-one threads (style 45, plus two-member style 43 reclassified as one-to-one).
+/// one-to-one threads (style 45, plus any style-43 chat whose roster resolves to just this
+/// one person).
 public struct PersonActivityFacts: Sendable, Equatable {
     public let oneToOneMessageCount: Int
     public let fromMeCount: Int
@@ -47,44 +48,27 @@ public struct FilterResult: Sendable, Equatable {
     }
 }
 
-/// Chat style constants from the real chat.db schema (mirrors ExtractStats' private copy;
-/// each file's constant is small and file-local, not worth sharing across a module boundary).
-private enum ChatStyle {
-    static let oneToOne = 45
-    static let group = 43
-}
-
-/// How a chat is classified for filtering purposes. A two-member style-43 chat is treated
-/// as one-to-one (PLAN.md: roster of exactly the user plus one other renders as a
-/// one-to-one edge); anything with 0 or 1 roster members is a degenerate chat this filter
-/// has no use for and is ignored.
-private enum ChatKind {
-    case oneToOne
-    case group
-}
-
 public enum PersonFilter {
     public static func apply(
         extract: ChatExtract,
         people: [Person],
         calendar: Calendar = .current
     ) -> FilterResult {
-        let chatKindByRowID = classifyChats(extract.chats)
         let handleToPersonID = Dictionary(
             uniqueKeysWithValues: people.flatMap { person in person.handleRowIDs.map { ($0, person.id) } }
         )
+        let chatKindByRowID = ChatClassification.classify(chats: extract.chats, handleToPersonID: handleToPersonID)
         let personByID = Dictionary(uniqueKeysWithValues: people.map { ($0.id, $0) })
 
         // Per person, the chat rowIDs (of each kind) whose roster intersects their handles.
         // Attribution is by intersection, not full roster equality: a merged, multi-service
         // person can own several one-to-one chats, each with a different single-handle
-        // roster, and a two-member style-43 "user plus one other" roster only ever overlaps
-        // one side's handle set anyway.
+        // roster -- one style 45, another a style-43 roster that resolves to just them.
         var oneToOneChatRowIDsByPersonID: [String: Set<Int64>] = [:]
         var groupChatRowIDsByPersonID: [String: Set<Int64>] = [:]
         for chat in extract.chats {
             guard let kind = chatKindByRowID[chat.rowID] else { continue }
-            let memberPersonIDs = Set(chat.memberHandleRowIDs.compactMap { handleToPersonID[$0] })
+            let memberPersonIDs = ChatRoster.resolvedPersonIDs(chat, handleToPersonID: handleToPersonID)
             for personID in memberPersonIDs {
                 switch kind {
                 case .oneToOne:
@@ -105,9 +89,7 @@ public enum PersonFilter {
             let groupChatRowIDs = groupChatRowIDsByPersonID[person.id] ?? []
             let oneToOneMessages = extract.messages.filter { oneToOneChatRowIDs.contains($0.chatRowID) }
             let fromMeCount = oneToOneMessages.filter(\.isFromMe).count
-            let distinctActiveDays = Set(
-                oneToOneMessages.map { calendar.startOfDay(for: $0.date) }
-            ).count
+            let distinctActiveDays = ActivityDays.distinctDays(oneToOneMessages, calendar: calendar)
 
             let facts = PersonActivityFacts(
                 oneToOneMessageCount: oneToOneMessages.count,
@@ -157,34 +139,18 @@ public enum PersonFilter {
         return FilterResult(kept: kept, removed: removed)
     }
 
-    private static func classifyChats(_ chats: [RawChat]) -> [Int64: ChatKind] {
-        var kinds: [Int64: ChatKind] = [:]
-        for chat in chats {
-            switch chat.style {
-            case ChatStyle.oneToOne:
-                kinds[chat.rowID] = .oneToOne
-            case ChatStyle.group:
-                if chat.memberHandleRowIDs.count == 2 {
-                    kinds[chat.rowID] = .oneToOne
-                } else if chat.memberHandleRowIDs.count >= 3 {
-                    kinds[chat.rowID] = .group
-                }
-                // 0 or 1 members: a degenerate roster, not usable as either kind.
-            default:
-                break
-            }
-        }
-        return kinds
-    }
-
     /// A thread or group is live when its messages span two or more distinct calendar days,
     /// computed in the given calendar (the caller's current calendar/timezone by default).
     private static func liveChats(messages: [RawMessage], calendar: Calendar) -> Set<Int64> {
-        var daysByChat: [Int64: Set<Date>] = [:]
+        var messagesByChat: [Int64: [RawMessage]] = [:]
         for message in messages {
-            daysByChat[message.chatRowID, default: []].insert(calendar.startOfDay(for: message.date))
+            messagesByChat[message.chatRowID, default: []].append(message)
         }
-        return Set(daysByChat.filter { $0.value.count >= 2 }.keys)
+        return Set(
+            messagesByChat
+                .filter { ActivityDays.distinctDays($0.value, calendar: calendar) >= 2 }
+                .keys
+        )
     }
 
     /// Every one of the person's identifiers is .other and is 4-6 ASCII digits.
@@ -209,8 +175,9 @@ public enum PersonFilter {
         return person.identifiers.contains { identifier in identifier.contains { $0.isLetter } }
     }
 
-    /// True groups only (3+ members, style 43): a shared two-member style-43 chat does not
-    /// count here, per the plan's reclassification as a one-to-one edge.
+    /// True groups only (2+ distinct resolved people, style 43, per ChatClassification): a
+    /// style-43 roster that resolves to just one person does not count here, since it was
+    /// classified one-to-one, not a group, in the first place.
     private static func sharesGroupWithContactCardPerson(
         person: Person,
         groupChatRowIDs: Set<Int64>,

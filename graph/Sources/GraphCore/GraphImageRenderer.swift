@@ -82,10 +82,11 @@ public enum GraphImageRenderer {
         CGColor(colorSpace: colorSpace, components: [color.red, color.green, color.blue, color.alpha]) ?? CGColor(red: color.red, green: color.green, blue: color.blue, alpha: color.alpha)
     }
 
-    /// Exactly the screen's rest-state edge selection and opacity formula (GraphView.drawEdges):
-    /// EdgeRenderList already excludes involvesUser edges and edges to an unpositioned (dead,
-    /// unincluded) node; Graph.excludingNodes(hiddenNodeIDs), applied by the caller before this
-    /// is reached, is what makes a hidden node's edges vanish too, for free.
+    /// The screen's rest-state edge selection and opacity formula (GraphView.drawEdges), both
+    /// actually shared via EdgeRenderList (not just matched by hand): edge selection already
+    /// excludes involvesUser edges and edges to an unpositioned (dead, unincluded) node;
+    /// Graph.excludingNodes(hiddenNodeIDs), applied by the caller before this is reached, is
+    /// what makes a hidden node's edges vanish too, for free.
     private static func drawEdges(
         into context: CGContext,
         visibleGraph: Graph,
@@ -95,7 +96,7 @@ public enum GraphImageRenderer {
     ) {
         let edgeColor = NodePalette.edge
         for edge in EdgeRenderList.visibleEdges(graph: visibleGraph, positions: positions) {
-            let opacity = min(1.0, 0.08 + 0.12 * (edge.strength + 1).squareRoot())
+            let opacity = EdgeRenderList.opacity(forStrength: edge.strength)
             context.setStrokeColor(cgColor(RGBAColor(red: edgeColor.red, green: edgeColor.green, blue: edgeColor.blue, alpha: opacity), in: colorSpace))
             context.setLineWidth(0.75)
             context.beginPath()

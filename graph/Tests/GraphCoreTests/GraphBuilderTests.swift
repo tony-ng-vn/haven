@@ -81,11 +81,18 @@ final class GraphBuilderTests: XCTestCase {
         XCTAssertEqual(edge?.source, .imessage)
     }
 
-    // MARK: - Test 2: two-member style-43 is a one-to-one edge, not a group node
+    // MARK: - Test 2: a roster of 2 raw handles where only ONE resolves to a kept person
+    // stays one-to-one (the other handle belongs to nobody kept, so exactly 1 distinct
+    // person is actually in the roster). This test used to be named and commented as if ANY
+    // 2-raw-handle style-43 roster meant "the user plus one other" -- that assumption was
+    // wrong: chat_handle_join never lists the user (see ChatClassification.swift). The
+    // assertions below still hold, but for the corrected reason: distinct RESOLVED people,
+    // not raw handle count.
 
-    func testTwoMemberStyle43ChatProducesOneToOneEdgeNotGroupNode() {
+    func testTwoRawHandleRosterWithOnlyOneResolvedPersonStaysOneToOne() {
         let p = person(id: "+14155550010", handleRowIDs: [10])
-        // Handle 11 has no corresponding kept Person (the other roster slot).
+        // Handle 11 resolves to no kept Person at all (removed, or never a real contact) --
+        // exactly one distinct person is actually in this roster, not two.
         let c = chat(rowID: 2, guid: "c2", style: 43, members: [10, 11])
         let messages = [
             message(rowID: 1, chatRowID: 2, handleRowID: 10, isFromMe: false, date: utcDate(2024, 1, 1)),
@@ -343,5 +350,189 @@ final class GraphBuilderTests: XCTestCase {
         XCTAssertEqual(degrees[groupNodeID("g11")], 3)
         // user's edges: oneToOneThread(solo), oneToOneThread(both), userGroupMembership(g11).
         XCTAssertEqual(degrees["user"], 3)
+    }
+
+    // MARK: - Roster reclassification: chat_handle_join lists only OTHER participants, never
+    // the user, so a style-43 roster is classified by distinct RESOLVED PEOPLE, not raw
+    // handle-row count (see ChatClassification.swift).
+
+    // The headline regression: 2 raw handles belonging to 2 DIFFERENT kept people is a real
+    // group, and its display name must survive onto the group node, not be silently dropped
+    // because the roster was mistaken for "you plus one other."
+    func testTwoHandleRosterOfTwoDifferentPeopleBecomesGroupNodeWithNamePreserved() {
+        let a = person(id: "+14155550600", handleRowIDs: [600])
+        let b = person(id: "+14155550601", handleRowIDs: [601])
+        let c = chat(rowID: 60, guid: "g60", style: 43, members: [600, 601], displayName: "Ski cabin")
+        let messages = [
+            message(rowID: 1, chatRowID: 60, handleRowID: 600, isFromMe: false, date: utcDate(2024, 1, 1)),
+            message(rowID: 2, chatRowID: 60, handleRowID: 601, isFromMe: false, date: utcDate(2024, 1, 2)),
+        ]
+        let graph = GraphBuilder.build(extract: extract(chats: [c], messages: messages), keptPeople: [a, b], calendar: utc)
+
+        let groupNode = graph.nodes.first { $0.id == groupNodeID("g60") }
+        XCTAssertEqual(groupNode?.kind, .group, "2 different resolved people is a real group, not one-to-one")
+        XCTAssertEqual(groupNode?.name, "Ski cabin", "the real display name must survive onto the group node")
+
+        let membershipEdges = graph.edges.filter { $0.reason == .groupMembership }
+        XCTAssertEqual(membershipEdges.count, 2, "both a and b get a groupMembership edge")
+        XCTAssertTrue(graph.edges.allSatisfy { $0.reason != .oneToOneThread }, "no bogus one-to-one edge to the user for either member")
+    }
+
+    // The contrasting case: 2 raw handles that resolve to the SAME merged person (their
+    // phone and their email, say) is still exactly one distinct person -- one-to-one, no
+    // group node at all.
+    func testTwoHandleRosterResolvingToSamePersonProducesNoGroupNode() {
+        let merged = person(id: "+14155550610", handleRowIDs: [610, 611]) // one person, two services
+        let c = chat(rowID: 61, guid: "g61", style: 43, members: [610, 611], displayName: "Should never render as a group")
+        let messages = [
+            message(rowID: 1, chatRowID: 61, handleRowID: 610, isFromMe: false, date: utcDate(2024, 1, 1)),
+            message(rowID: 2, chatRowID: 61, handleRowID: 611, isFromMe: false, date: utcDate(2024, 1, 2)),
+        ]
+        let graph = GraphBuilder.build(extract: extract(chats: [c], messages: messages), keptPeople: [merged], calendar: utc)
+
+        XCTAssertFalse(graph.nodes.contains { $0.kind == .group }, "one merged person in the roster is one-to-one, not a group")
+
+        let edge = graph.edges.first { $0.reason == .oneToOneThread }
+        XCTAssertNotNil(edge)
+        XCTAssertEqual(edge?.strength, 2.0)
+    }
+
+    // MARK: - Roster-based group deduplication: Apple gives one human group a separate chat
+    // row per service (iMessage vs SMS/RCS). These merge chats whose RESOLVED rosters match.
+
+    func testSameRosterSameNameChatsMergeIntoOneNode() {
+        let a = person(id: "+14155550700", handleRowIDs: [700])
+        let b = person(id: "+14155550701", handleRowIDs: [701])
+        let imessageChat = chat(rowID: 70, guid: "z-imessage", style: 43, members: [700, 701], displayName: "Book club")
+        let smsChat = chat(rowID: 71, guid: "a-sms", style: 43, members: [700, 701], displayName: "Book club")
+        let messages = [
+            message(rowID: 1, chatRowID: 70, handleRowID: 700, isFromMe: false, date: utcDate(2024, 1, 1)),
+            message(rowID: 2, chatRowID: 71, handleRowID: 701, isFromMe: false, date: utcDate(2024, 1, 2)),
+        ]
+        let graph = GraphBuilder.build(extract: extract(chats: [imessageChat, smsChat], messages: messages), keptPeople: [a, b], calendar: utc)
+
+        let groupNodes = graph.nodes.filter { $0.kind == .group }
+        XCTAssertEqual(groupNodes.count, 1, "same roster + same name must merge into one node")
+        // min-by-guid, not min-by-rowID: "a-sms" < "z-imessage" lexicographically even though
+        // the imessage chat has the smaller rowID.
+        XCTAssertEqual(groupNodes.first?.id, groupNodeID("a-sms"))
+        XCTAssertEqual(groupNodes.first?.name, "Book club")
+    }
+
+    func testSameRosterTwoDifferentNamesStaySeparateNodes() {
+        let a = person(id: "+14155550710", handleRowIDs: [710])
+        let b = person(id: "+14155550711", handleRowIDs: [711])
+        let chatOne = chat(rowID: 72, guid: "g72", style: 43, members: [710, 711], displayName: "Book club")
+        let chatTwo = chat(rowID: 73, guid: "g73", style: 43, members: [710, 711], displayName: "Trivia night")
+        let messages = [
+            message(rowID: 1, chatRowID: 72, handleRowID: 710, isFromMe: false, date: utcDate(2024, 1, 1)),
+            message(rowID: 2, chatRowID: 73, handleRowID: 711, isFromMe: false, date: utcDate(2024, 1, 2)),
+        ]
+        let graph = GraphBuilder.build(extract: extract(chats: [chatOne, chatTwo], messages: messages), keptPeople: [a, b], calendar: utc)
+
+        let groupNodes = graph.nodes.filter { $0.kind == .group }
+        XCTAssertEqual(groupNodes.count, 2, "two distinct real names on the same roster stay two nodes")
+        XCTAssertEqual(Set(groupNodes.map(\.name)), Set(["Book club", "Trivia night"]))
+    }
+
+    // The mixed case: same roster, THREE competing names' worth of chats -- two chats sharing
+    // "X" (which merge together), one chat named "Y" (its own node), and one unnamed chat
+    // (stands alone, attributed to neither name). Also pins full-build determinism for this
+    // shape, since it is the only one that partitions a roster bucket via dictionary/Set
+    // iteration before the final sort washes the order out.
+    func testSameRosterTwoNamesPlusUnnamedChatProducesThreeSeparateNodes() {
+        let a = person(id: "+14155550715", handleRowIDs: [715])
+        let b = person(id: "+14155550716", handleRowIDs: [716])
+        let chatX1 = chat(rowID: 80, guid: "g80-x1", style: 43, members: [715, 716], displayName: "X")
+        let chatX2 = chat(rowID: 81, guid: "g81-x2", style: 43, members: [715, 716], displayName: "X")
+        let chatY = chat(rowID: 82, guid: "g82-y", style: 43, members: [715, 716], displayName: "Y")
+        let chatUnnamed = chat(rowID: 83, guid: "g83-unnamed", style: 43, members: [715, 716], displayName: nil)
+        let messages = [
+            message(rowID: 1, chatRowID: 80, handleRowID: 715, isFromMe: false, date: utcDate(2024, 1, 1)),
+            message(rowID: 2, chatRowID: 81, handleRowID: 716, isFromMe: false, date: utcDate(2024, 1, 2)),
+            message(rowID: 3, chatRowID: 82, handleRowID: 715, isFromMe: false, date: utcDate(2024, 1, 3)),
+            message(rowID: 4, chatRowID: 83, handleRowID: 716, isFromMe: false, date: utcDate(2024, 1, 4)),
+        ]
+        let ext = extract(chats: [chatX1, chatX2, chatY, chatUnnamed], messages: messages)
+
+        let first = GraphBuilder.build(extract: ext, keptPeople: [a, b], calendar: utc)
+        let second = GraphBuilder.build(extract: ext, keptPeople: [a, b], calendar: utc)
+        XCTAssertEqual(first, second, "build must be deterministic even when a roster bucket is partitioned by name")
+
+        let groupNodes = first.nodes.filter { $0.kind == .group }
+        XCTAssertEqual(groupNodes.count, 3, "the two X chats merge; Y and the unnamed chat each stand alone")
+
+        // min-by-guid within the X pair: "g80-x1" < "g81-x2".
+        XCTAssertEqual(
+            Set(groupNodes.map(\.id)),
+            Set([groupNodeID("g80-x1"), groupNodeID("g82-y"), groupNodeID("g83-unnamed")])
+        )
+        let byID = Dictionary(uniqueKeysWithValues: groupNodes.map { ($0.id, $0) })
+        XCTAssertEqual(byID[groupNodeID("g80-x1")]?.name, "X")
+        XCTAssertEqual(byID[groupNodeID("g82-y")]?.name, "Y")
+        XCTAssertNil(byID[groupNodeID("g83-unnamed")]?.name, "the unnamed chat cannot be attributed to X or Y")
+    }
+
+    func testSameRosterOneNamedOneUnnamedMergeCarryingTheName() {
+        let a = person(id: "+14155550720", handleRowIDs: [720])
+        let b = person(id: "+14155550721", handleRowIDs: [721])
+        let namedChat = chat(rowID: 74, guid: "g74", style: 43, members: [720, 721], displayName: "Book club")
+        let unnamedChat = chat(rowID: 75, guid: "g75", style: 43, members: [720, 721], displayName: nil)
+        let messages = [
+            message(rowID: 1, chatRowID: 74, handleRowID: 720, isFromMe: false, date: utcDate(2024, 1, 1)),
+            message(rowID: 2, chatRowID: 75, handleRowID: 721, isFromMe: false, date: utcDate(2024, 1, 2)),
+        ]
+        let graph = GraphBuilder.build(extract: extract(chats: [namedChat, unnamedChat], messages: messages), keptPeople: [a, b], calendar: utc)
+
+        let groupNodes = graph.nodes.filter { $0.kind == .group }
+        XCTAssertEqual(groupNodes.count, 1, "named and unnamed chats on the same roster merge into one node")
+        XCTAssertEqual(groupNodes.first?.name, "Book club")
+    }
+
+    func testDifferentRostersStaySeparateNodes() {
+        let a = person(id: "+14155550730", handleRowIDs: [730])
+        let b = person(id: "+14155550731", handleRowIDs: [731])
+        let c = person(id: "+14155550732", handleRowIDs: [732])
+        let chatAB = chat(rowID: 76, guid: "g76", style: 43, members: [730, 731], displayName: "Book club")
+        let chatAC = chat(rowID: 77, guid: "g77", style: 43, members: [730, 732], displayName: "Book club")
+        let messages = [
+            message(rowID: 1, chatRowID: 76, handleRowID: 730, isFromMe: false, date: utcDate(2024, 1, 1)),
+            message(rowID: 2, chatRowID: 77, handleRowID: 732, isFromMe: false, date: utcDate(2024, 1, 2)),
+        ]
+        let graph = GraphBuilder.build(extract: extract(chats: [chatAB, chatAC], messages: messages), keptPeople: [a, b, c], calendar: utc)
+
+        let groupNodes = graph.nodes.filter { $0.kind == .group }
+        XCTAssertEqual(groupNodes.count, 2, "different rosters never merge, name notwithstanding")
+    }
+
+    // The union test: each chat alone is dead (1 distinct day), but the merged node must be
+    // live because the SAME human conversation spans both service-split chats.
+    func testMergedGroupUnionsMessagesAcrossServiceSplitChatsForLivenessAndStrength() {
+        let a = person(id: "+14155550740", handleRowIDs: [740])
+        let b = person(id: "+14155550741", handleRowIDs: [741])
+        let imessageChat = chat(rowID: 78, guid: "z-imessage2", style: 43, members: [740, 741], displayName: "Book club")
+        let smsChat = chat(rowID: 79, guid: "a-sms2", style: 43, members: [740, 741], displayName: "Book club")
+        let messages = [
+            // imessage chat: only day 1, from a and from the user.
+            message(rowID: 1, chatRowID: 78, handleRowID: 740, isFromMe: false, date: utcDate(2024, 1, 1)),
+            message(rowID: 2, chatRowID: 78, handleRowID: nil, isFromMe: true, date: utcDate(2024, 1, 1)),
+            // sms chat: only day 2, from b and from the user.
+            message(rowID: 3, chatRowID: 79, handleRowID: 741, isFromMe: false, date: utcDate(2024, 1, 2)),
+            message(rowID: 4, chatRowID: 79, handleRowID: nil, isFromMe: true, date: utcDate(2024, 1, 2)),
+        ]
+        let graph = GraphBuilder.build(extract: extract(chats: [imessageChat, smsChat], messages: messages), keptPeople: [a, b], calendar: utc)
+
+        let groupNodes = graph.nodes.filter { $0.kind == .group }
+        XCTAssertEqual(groupNodes.count, 1)
+        XCTAssertEqual(groupNodes.first?.isLive, true, "each chat alone is a single day, but their union is 2 distinct days")
+
+        let mergedID = groupNodeID("a-sms2")
+        let aEdge = graph.edges.first { $0.reason == .groupMembership && ($0.nodeIDA == a.id || $0.nodeIDB == a.id) }
+        let bEdge = graph.edges.first { $0.reason == .groupMembership && ($0.nodeIDA == b.id || $0.nodeIDB == b.id) }
+        XCTAssertEqual(aEdge?.strength, 1.0, "a only posted on day 1 across the union")
+        XCTAssertEqual(bEdge?.strength, 1.0, "b only posted on day 2 across the union")
+
+        let userEdge = graph.edges.first { $0.reason == .userGroupMembership && ($0.nodeIDA == mergedID || $0.nodeIDB == mergedID) }
+        XCTAssertEqual(userEdge?.strength, 2.0, "the user's own from-me messages span both days across the union")
     }
 }

@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<!--
+  Connection graph viewer - Observatory.
+
+  This is a TEMPLATE and contains no data. viewer/build.py replaces the
+  __GRAPH_JSON__ placeholder below with the output of `graph-cli json` and
+  writes the result to graph/exports/, which is gitignored because the
+  rendered file contains real names (GOAL.md constraint 3).
+
+  The design here mirrors the HTML design prototype and is the reference for
+  the eventual SwiftUI port: 3D shell layout, orbit camera, depth haze.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Connection Graph</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0c11; }
+  body { font-family: Georgia, "Times New Roman", serif; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+  canvas.dragging { cursor: grabbing; }
+
+  .panel {
+    position: fixed; bottom: 22px; right: 22px; z-index: 9999;
+    background: rgba(20,19,17,0.94); border: 1px solid rgba(255,255,255,0.13);
+    border-radius: 12px; padding: 10px 12px 11px; color: #fff;
+    box-shadow: 0 12px 38px rgba(0,0,0,0.55); user-select: none;
+    backdrop-filter: blur(14px); width: 292px;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .grip { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+          color: rgba(255,255,255,0.34); cursor: grab; margin-bottom: 9px; }
+  .grip:active { cursor: grabbing; }
+  .states { display: flex; gap: 6px; margin-bottom: 4px; }
+  .states button, .btn {
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+    color: #fff; border-radius: 7px; padding: 5px 6px; font-size: 11px; cursor: pointer;
+    font-family: inherit;
+  }
+  .states button { flex: 1; }
+  .states button:hover, .btn:hover { background: rgba(255,255,255,0.2); }
+  .states button.active { background: #fff; color: #111; border-color: #fff; font-weight: 600; }
+  .opt { display: flex; align-items: center; justify-content: space-between; margin: 7px 0 0; font-size: 12px; }
+  .opt label { color: rgba(255,255,255,0.78); }
+  .sw { width: 38px; height: 21px; border-radius: 999px; background: rgba(255,255,255,0.16);
+        position: relative; cursor: pointer; transition: background .15s; flex: none; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 17px; height: 17px;
+               border-radius: 50%; background: #fff; transition: transform .15s; }
+  .sw.on { background: #d6a45e; }
+  .sw.on::after { transform: translateX(17px); }
+  input[type=range] { width: 108px; accent-color: #d6a45e; }
+  .btn { width: 100%; margin-top: 10px; padding: 6px; font-size: 11.5px; }
+  .search { width: 100%; margin-top: 10px; padding: 6px 8px; font-size: 12px; border-radius: 7px;
+            background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+            color: #fff; font-family: inherit; }
+  .search::placeholder { color: rgba(255,255,255,0.35); }
+  .hits { max-height: 132px; overflow-y: auto; margin-top: 6px; }
+  .hit { font-size: 11.5px; padding: 4px 7px; border-radius: 6px; cursor: pointer;
+         color: rgba(255,255,255,0.82); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hit:hover { background: rgba(255,255,255,0.14); }
+  .hit span { color: rgba(255,255,255,0.4); }
+  .hint { font-size: 10.5px; line-height: 1.55; color: rgba(255,255,255,0.44);
+          margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,0.1); }
+  .hint b { color: rgba(255,255,255,0.72); font-weight: 600; }
+
+  /* ---------- edit layer ---------- */
+  .sel { margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,0.1); }
+  .sel .who { font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 2px;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sel .facts { font-size: 10.5px; color: rgba(255,255,255,0.42); margin-bottom: 8px;
+                white-space: pre-line; word-break: break-all; }
+  .sel .acts { display: flex; flex-wrap: wrap; gap: 5px; }
+  .sel .acts button { flex: 1 1 46%; font-size: 11px; padding: 5px 4px;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+    color: #fff; border-radius: 7px; cursor: pointer; font-family: inherit; }
+  .sel .acts button:hover { background: rgba(255,255,255,0.2); }
+  .sel .acts button.armed { background: #d6a45e; border-color: #d6a45e; color: #1a1206; font-weight: 600; }
+  .sel .acts button.on { background: #fff; color: #111; border-color: #fff; font-weight: 600; }
+  .edits { margin-top: 9px; font-size: 10.5px; color: rgba(255,255,255,0.4);
+           display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .edits button { font-size: 10.5px; padding: 3px 8px; background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 6px;
+    cursor: pointer; font-family: inherit; }
+  .edits button:hover { background: rgba(255,255,255,0.2); }
+  .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 34px; z-index: 10000;
+    background: rgba(20,19,17,0.95); border: 1px solid rgba(214,164,94,0.5); color: #f0e6d2;
+    padding: 9px 16px; border-radius: 9px; font-size: 12px; font-family: -apple-system, sans-serif;
+    pointer-events: none; opacity: 0; transition: opacity .18s; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div class="panel" id="panel">
+  <div class="grip" id="grip">drag me</div>
+  <div class="states">
+    <button data-vs="rest" class="active">Everyone</button>
+    <button data-vs="you">You</button>
+    <button data-vs="person">One person</button>
+  </div>
+  <input class="search" id="search" type="text" placeholder="find someone by name..." autocomplete="off">
+  <div class="hits" id="hits"></div>
+  <div class="opt"><label>Depth haze</label><div class="sw on" id="sw-fog"></div></div>
+  <div class="opt"><label>Slow drift</label><div class="sw on" id="sw-spin"></div></div>
+  <div class="opt"><label>Group chats</label><div class="sw on" id="sw-groups"></div></div>
+  <div class="opt"><label>Dead groups</label><div class="sw" id="sw-dead"></div></div>
+  <div class="opt"><label>Unnamed numbers</label><div class="sw on" id="sw-unnamed"></div></div>
+  <div class="opt"><label>Who knows who (guess)</label><div class="sw on" id="sw-inferred"></div></div>
+  <div class="opt"><label>Guess confidence</label><input type="range" id="sl-conf" min="2" max="100" value="18"></div>
+  <div class="opt"><label>Names shown</label><input type="range" id="sl-labels" min="10" max="120" value="46"></div>
+  <button class="btn" id="reset">Reset camera</button>
+
+  <div class="sel" id="sel" style="display:none">
+    <div class="who" id="sel-who"></div>
+    <div class="facts" id="sel-facts"></div>
+    <div class="acts">
+      <button id="act-rename">Rename</button>
+      <button id="act-pin">Pin</button>
+      <button id="act-hide">Hide</button>
+      <button id="act-merge">Merge...</button>
+    </div>
+  </div>
+
+  <div class="edits">
+    <span id="edit-count">no edits yet</span>
+    <span>
+      <button id="act-undo">Undo</button>
+      <button id="act-export">Export</button>
+    </span>
+  </div>
+
+  <div class="hint">
+    <b>Drag</b> orbit - <b>scroll</b> zoom - <b>shift-drag</b> pan<br>
+    <b>Click a dot</b> to select - <b>r</b> rename - <b>p</b> pin - <b>h</b> hide - <b>m</b> merge<br>
+    <b>Click a blue line</b> to cut a wrong guess - <b>u</b> undo - <b>esc</b> clears
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   REAL data, exported from your own chat.db and Contacts by
+   `graph-cli json` and injected here by viewer/build.py.
+   This file therefore contains real names: it lives in
+   graph/exports/, which is gitignored, and must never be
+   uploaded anywhere.
+   ============================================================ */
+const RAW = __GRAPH_JSON__;
+
+/* ------------------------------------------------------------
+   Adapt the pipeline's schema to what the renderer wants.
+   The Swift side deliberately exports the graph as it is, so
+   every derived quantity (closeness rank, group size, whether a
+   node has a real name) is computed here rather than baked in.
+   ------------------------------------------------------------ */
+function adapt(raw) {
+  const byId = {};
+  for (const n of raw.nodes) byId[n.id] = n;
+
+  const adj = {};
+  for (const n of raw.nodes) adj[n.id] = [];
+  const edges = [];
+  for (const e of raw.edges) {
+    if (!byId[e.a] || !byId[e.b]) continue;   // defensive: never trust a dangling edge
+    const edge = { a: e.a, b: e.b, type: e.reason, strength: e.strength };
+    edges.push(edge);
+    adj[e.a].push(edge); adj[e.b].push(edge);
+  }
+
+  // Closeness = distinct calendar days you exchanged messages one-to-one. That is
+  // exactly what GraphBuilder stores as oneToOneThread strength, and it beats raw
+  // message count: 500 texts in one night is not a close friend, 200 over 3 years is.
+  const people = [], groups = [];
+  for (const n of raw.nodes) {
+    if (n.kind === "person") {
+      let days = 0;
+      for (const e of adj[n.id]) {
+        if (e.type === "oneToOneThread") days = Math.max(days, e.strength);
+      }
+      const p = {
+        id: n.id, kind: "person", name: n.name || n.id, days,
+        hasName: !!n.name, degree: n.degree,
+        labelKind: n.name ? "name" : "phone", groups: []
+      };
+      people.push(p); byId[n.id] = p;
+    } else if (n.kind === "group") {
+      const g = {
+        id: n.id, kind: "group", name: n.name || "", isLive: n.isLive,
+        degree: n.degree, size: 0, members: [],
+        labelKind: n.name ? "name" : "unnamed"
+      };
+      groups.push(g); byId[n.id] = g;
+    } else {
+      byId[n.id] = { id: n.id, kind: "user", name: "You", labelKind: "name", groups: [] };
+    }
+  }
+
+  for (const e of edges) {
+    if (e.type !== "groupMembership") continue;
+    const g = byId[e.a].kind === "group" ? byId[e.a] : byId[e.b];
+    const p = byId[e.a].kind === "group" ? byId[e.b] : byId[e.a];
+    if (!g || !p || g.kind !== "group" || p.kind !== "person") continue;
+    g.members.push(p.id); g.size++; p.groups.push(g.id);
+  }
+  // A group with no display name still deserves a readable label.
+  for (const g of groups) if (!g.name) g.name = g.size + " people";
+
+  people.sort((a, b) => b.days - a.days || b.degree - a.degree);
+  people.forEach((p, i) => { p.rank = i; });
+
+  // Inferred person-to-person links from shared group chats.
+  //
+  // These are GUESSES, not observed facts. The pipeline never sees two people message
+  // each other directly (it only ever sees your own threads), so the only evidence for
+  // "these two know each other" is having been in the same room.
+  //
+  // Confidence scales as 1/(size-1) per shared group: in a 3-person chat the other two
+  // almost certainly know each other, in a 30-person chat they very likely do not, and
+  // that ratio is exactly the odds a random other member is a real acquaintance. Sharing
+  // several groups compounds, which is why the weights sum rather than max.
+  const linkMap = new Map();
+  for (const g of groups) {
+    if (g.size < 2 || g.size > 40) continue;   // 1 member has no pair; 40+ is a mailing list
+    const w = 1 / (g.size - 1);
+    const mem = g.members.slice().sort();
+    for (let i = 0; i < mem.length; i++) {
+      for (let j = i + 1; j < mem.length; j++) {
+        const key = mem[i] + "|" + mem[j];
+        const prev = linkMap.get(key);
+        if (prev) { prev.weight += w; prev.groups.push(g.id); }
+        else linkMap.set(key, { key, a: mem[i], b: mem[j], weight: w, groups: [g.id] });
+      }
+    }
+  }
+  const inferred = [...linkMap.values()].sort((x, y) => y.weight - x.weight);
+
+  const user = byId["user"];
+  const nodes = [user, ...groups, ...people].filter(Boolean);
+  const threadTotal = edges.filter(e => e.type === "oneToOneThread").length;
+
+  // Adjacency for the inferred layer is kept separate from `adj`: focus, the You view and
+  // every count elsewhere must keep meaning "what actually happened", never a guess.
+  const inferredAdj = {};
+  for (const n of nodes) inferredAdj[n.id] = [];
+  for (const l of inferred) {
+    if (inferredAdj[l.a]) inferredAdj[l.a].push(l);
+    if (inferredAdj[l.b]) inferredAdj[l.b].push(l);
+  }
+  return { nodes, edges, people, groups, user, byId, adj, threadTotal, inferred, inferredAdj };
+}
+const D = adapt(RAW);
+
+/* ============================================================
+   Edit layer.
+
+   Two separate things are kept, on purpose:
+
+   - `OV` is the CURRENT TRUTH: what each node is called now, what is
+     merged into what, what is hidden, what is pinned. The renderer
+     reads only this.
+   - `LOG` is the APPEND-ONLY HISTORY of how it got that way. Every
+     entry records the before, the after, and the evidence that was on
+     screen when the call was made (days spoken, shared groups, whether
+     the old label was a real name or a raw phone number).
+
+   The log exists because a correction is a labeled example: the
+   evidence is the input, your decision is the label. A list of final
+   names could never be used that way -- only the paired before/after
+   plus context can. Undo pops the log and replays it, so the two can
+   never disagree.
+
+   Everything here stays in the browser (localStorage) until you press
+   Export, which writes a file next to this one.
+   ============================================================ */
+const OV_KEY = "connection-graph-overrides-v1";
+const OV = { names: {}, hidden: {}, pinned: {}, mergeInto: {}, cutLinks: {} };
+let LOG = [];
+
+function ovLoad() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(OV_KEY) || "null");
+    if (!saved) return;
+    Object.assign(OV.names, saved.overrides?.names || {});
+    Object.assign(OV.hidden, saved.overrides?.hidden || {});
+    Object.assign(OV.pinned, saved.overrides?.pinned || {});
+    Object.assign(OV.mergeInto, saved.overrides?.mergeInto || {});
+    Object.assign(OV.cutLinks, saved.overrides?.cutLinks || {});
+    LOG = Array.isArray(saved.log) ? saved.log : [];
+  } catch (e) { /* a corrupt entry must never block the graph from rendering */ }
+}
+function ovSave() {
+  try {
+    localStorage.setItem(OV_KEY, JSON.stringify({ version: 1, overrides: OV, log: LOG }));
+  } catch (e) { toast("could not save (storage full?)"); }
+}
+
+/// Follows a merge chain to the surviving node. Merging B into A and later A into C
+/// must leave B pointing at C, or the graph would render a node that no longer exists.
+function resolveID(id) {
+  let cur = id, hops = 0;
+  while (OV.mergeInto[cur] && hops++ < 32) cur = OV.mergeInto[cur];
+  return cur;
+}
+function isAbsorbed(id) { return !!OV.mergeInto[id]; }
+function labelOf(n) {
+  if (!n) return "";
+  if (OV.names[n.id]) return OV.names[n.id];
+  return n.name;
+}
+/// True when the label came from Contacts or from a group's own title, rather than
+/// being a raw identifier this viewer had to fall back to. The training log records
+/// this because "named an unnamed number" and "renamed a real name" are different acts.
+function labelSourceOf(n) {
+  if (OV.names[n.id]) return "user";
+  if (n.kind === "group") return n.labelKind === "name" ? "chatDisplayName" : "derived";
+  return n.labelKind === "name" ? "contactCard" : "identifier";
+}
+
+/// The evidence that was visible when a call was made. This is the input half of
+/// each training example, so it is captured at decision time, not recomputed later
+/// (by then the graph may have been edited further).
+function evidenceFor(n) {
+  const ev = { kind: n.kind, labelSource: labelSourceOf(n) };
+  if (n.kind === "person") {
+    ev.daysSpoken = n.days;
+    ev.closenessRank = n.rank;
+    ev.groupCount = n.groups.length;
+    ev.sharedGroups = n.groups.map(g => labelOf(D.byId[g])).filter(Boolean).slice(0, 8);
+    ev.hasContactCard = n.labelKind === "name";
+  } else if (n.kind === "group") {
+    ev.memberCount = n.size;
+    ev.isLive = n.isLive;
+    ev.members = n.members.map(m => labelOf(D.byId[m])).filter(Boolean).slice(0, 12);
+  }
+  return ev;
+}
+/// `evidence` MUST be captured by the caller BEFORE it mutates OV. Recomputing it here
+/// would describe the world after the edit -- a rename would report labelSource "user",
+/// which is the answer, not the input. A training example whose features are polluted by
+/// its own label is worse than no example at all.
+function logEdit(action, node, before, after, evidence, extra) {
+  LOG.push(Object.assign({
+    at: new Date().toISOString(),
+    action,
+    targetID: node.id,
+    before,
+    after,
+    evidence
+  }, extra || {}));
+  ovSave();
+  refreshEditUI();
+}
+
+function actRename(n) {
+  const current = labelOf(n);
+  const next = window.prompt("What should this be called?", current);
+  if (next === null) return;
+  const trimmed = next.trim();
+  if (!trimmed || trimmed === current) return;
+  const evidence = evidenceFor(n);         // before the mutation, on purpose
+  OV.names[n.id] = trimmed;
+  logEdit("rename", n, current, trimmed, evidence);
+  toast('renamed to "' + trimmed + '"');
+}
+function actPin(n) {
+  const evidence = evidenceFor(n);
+  const on = !OV.pinned[n.id];
+  if (on) OV.pinned[n.id] = true; else delete OV.pinned[n.id];
+  logEdit(on ? "pin" : "unpin", n, !on, on, evidence);
+  toast(on ? "pinned - always drawn large and labeled" : "unpinned");
+}
+function actHide(n) {
+  const evidence = evidenceFor(n);
+  OV.hidden[n.id] = true;
+  logEdit("hide", n, false, true, evidence);
+  if (focusID === n.id) setViewState("rest");
+  selectedID = null;
+  toast('hid "' + labelOf(n) + '" - undo to bring it back');
+}
+function actMerge(primary, secondary) {
+  if (!primary || !secondary || primary.id === secondary.id) return;
+  if (resolveID(secondary.id) === resolveID(primary.id)) { toast("already merged"); return; }
+  const evidence = evidenceFor(secondary), intoEvidence = evidenceFor(primary);
+  const beforeLabel = labelOf(secondary), intoLabel = labelOf(primary);
+  OV.mergeInto[secondary.id] = primary.id;
+  logEdit("merge", secondary, beforeLabel, intoLabel, evidence, {
+    mergedIntoID: primary.id,
+    mergedIntoEvidence: intoEvidence
+  });
+  toast('merged into "' + intoLabel + '"');
+}
+
+/// Cutting an inferred link is the most valuable correction of all: it is a human saying
+/// "these two share a group chat but do NOT actually know each other", which is exactly
+/// the judgement the co-membership heuristic cannot make on its own.
+function actCutInferred(link) {
+  const a = D.byId[link.a], b = D.byId[link.b];
+  if (!a || !b) return;
+  OV.cutLinks[link.key] = true;
+  LOG.push({
+    at: new Date().toISOString(),
+    action: "cutInferredLink",
+    targetID: link.key,
+    before: true,
+    after: false,
+    evidence: {
+      kind: "inferredLink",
+      endpoints: [labelOf(a), labelOf(b)],
+      sharedGroups: link.groups.map(g => labelOf(D.byId[g])).filter(Boolean),
+      sharedGroupSizes: link.groups.map(g => (D.byId[g] || {}).size).filter(Boolean),
+      confidence: Number(link.weight.toFixed(4))
+    }
+  });
+  ovSave();
+  refreshEditUI();
+  toast("cut: " + labelOf(a) + " and " + labelOf(b) + " do not know each other");
+}
+function actUndo() {
+  const last = LOG.pop();
+  if (!last) { toast("nothing to undo"); return; }
+  const id = last.targetID;
+  if (last.action === "rename") {
+    // Restore whatever the name was before, which may itself be an earlier user rename.
+    const prior = [...LOG].reverse().find(e => e.action === "rename" && e.targetID === id);
+    if (prior) OV.names[id] = prior.after; else delete OV.names[id];
+  } else if (last.action === "pin") delete OV.pinned[id];
+  else if (last.action === "unpin") OV.pinned[id] = true;
+  else if (last.action === "hide") delete OV.hidden[id];
+  else if (last.action === "merge") delete OV.mergeInto[id];
+  else if (last.action === "cutInferredLink") delete OV.cutLinks[id];
+  ovSave();
+  refreshEditUI();
+  toast("undid: " + last.action);
+}
+
+function actExport() {
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    // Counts only, never the graph itself: this file is about your corrections.
+    graph: { people: D.people.length, groups: D.groups.length, edges: D.edges.length },
+    overrides: OV,
+    log: LOG
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "graph-edits.json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast(LOG.length + " edits exported to graph-edits.json");
+}
+
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+/* Home shell radius by closeness: your inner circle rings you, acquaintances sit
+   far out. Springs organize the angles, the shells own the distance -- without
+   this the whole graph collapses into one unreadable ball. */
+const R0 = 250, RMAX = 700;
+const HOME = { user: 0 };
+for (const p of D.people) {
+  HOME[p.id] = D.people.length < 2 ? R0
+    : R0 + (RMAX - R0) * Math.pow(p.rank / (D.people.length - 1), 0.62);
+}
+for (const g of D.groups) {
+  const rs = g.members.map(id => HOME[id]).filter(v => v !== undefined);
+  HOME[g.id] = rs.length ? rs.reduce((a, b) => a + b, 0) / rs.length : 560;
+}
+
+/* ---------- colour ---------- */
+const NIGHT = [10, 12, 17];
+const HUES = [16, 30, 44, 60, 95, 150, 175, 205, 232, 268, 310, 344];
+function hsl2rgb(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+}
+const PALETTE = HUES.map(h => ({ hue: h, dot: hsl2rgb(h, 38, 62) }));
+function bucketOf(n) {
+  let x = 0;
+  for (let i = 0; i < n.name.length; i++) x = (x * 31 + n.name.charCodeAt(i)) % 997;
+  return x % PALETTE.length;
+}
+function mixTo(c, bg, t) {
+  t = Math.max(0, Math.min(1, t));
+  return "rgb(" + Math.round(c[0] + (bg[0] - c[0]) * t) + "," +
+                  Math.round(c[1] + (bg[1] - c[1]) * t) + "," +
+                  Math.round(c[2] + (bg[2] - c[2]) * t) + ")";
+}
+
+/* ---------- 3D layout ---------- */
+let _s = 20260731;
+function rnd() { _s = (_s * 1664525 + 1013904223) % 4294967296; return _s / 4294967296; }
+let POS = null, iter = 0;
+const ITERS = 300;
+function layout3D() {
+  if (POS) return POS;
+  const pos = {}, N = D.nodes.length;
+  D.nodes.forEach((n, k) => {
+    const t = (k + 0.5) / N, phi = Math.acos(1 - 2 * t), th = 2.399963 * k;
+    const r = Math.max(30, (HOME[n.id] || 500) * (0.9 + 0.2 * rnd()));
+    pos[n.id] = { x: Math.cos(th) * Math.sin(phi) * r, y: Math.sin(th) * Math.sin(phi) * r,
+                  z: Math.cos(phi) * r * 0.5, vx: 0, vy: 0, vz: 0 };
+  });
+  return (POS = pos);
+}
+const SAMPLE = 74, REP = 40, SPRING = 0.004, REST = 130, KRADIAL = 0.06, ZSQUASH = 0.0045;
+function msOf(n) {
+  // Label-aware personal space: a node that will carry a name needs room for it.
+  if (n.kind === "user") return 46;
+  if (n.kind === "group") return 15;
+  if (n.labelKind === "name" && n.rank < 120) return 16 + 18 * (1 - n.rank / 120);
+  return 11;
+}
+function settle(steps) {
+  const pos = layout3D(), N = D.nodes.length;
+  for (let s0 = 0; s0 < steps && iter < ITERS; s0++, iter++) {
+    const alpha = Math.max(0.02, 1 - iter / ITERS);
+    for (const n of D.nodes) {
+      if (n.id === "user") continue;
+      const A = pos[n.id], msA = msOf(n);
+      for (let s = 0; s < SAMPLE; s++) {
+        const m = D.nodes[Math.floor(rnd() * N)];
+        if (m.id === n.id) continue;
+        const B = pos[m.id];
+        let dx = A.x - B.x, dy = A.y - B.y, dz = A.z - B.z;
+        let d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < 1) { dx = rnd() - 0.5; dy = rnd() - 0.5; dz = rnd() - 0.5; d2 = 1; }
+        const d = Math.sqrt(d2);
+        let f = (REP * (N / SAMPLE)) / d2;
+        const sep = msA + msOf(m);
+        if (d < sep) f += (sep - d) * 0.9;
+        A.vx += dx / d * f; A.vy += dy / d * f; A.vz += dz / d * f;
+      }
+    }
+    for (const e of D.edges) {
+      if (e.a === "user" || e.b === "user") continue;   // your own edges carry no angular info
+      const A = pos[e.a], B = pos[e.b];
+      if (!A || !B) continue;
+      let dx = B.x - A.x, dy = B.y - A.y, dz = B.z - A.z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.01;
+      const f = SPRING * Math.log(1 + e.strength) * (d - REST);
+      A.vx += dx / d * f; A.vy += dy / d * f; A.vz += dz / d * f;
+      B.vx -= dx / d * f; B.vy -= dy / d * f; B.vz -= dz / d * f;
+    }
+    for (const n of D.nodes) {
+      const p = pos[n.id];
+      if (n.id === "user") { p.x = p.y = p.z = p.vx = p.vy = p.vz = 0; continue; }
+      const r = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z) || 0.01;
+      const fr = ((HOME[n.id] || 500) - r) * KRADIAL;
+      p.vx += (p.x / r) * fr; p.vy += (p.y / r) * fr; p.vz += (p.z / r) * fr;
+      p.vz -= p.z * ZSQUASH;
+      p.vx *= 0.74; p.vy *= 0.74; p.vz *= 0.74;
+      p.x += p.vx * alpha; p.y += p.vy * alpha; p.z += p.vz * alpha;
+    }
+  }
+}
+
+/* ---------- camera ---------- */
+const cam = { yaw: 0.6, pitch: -0.32, dist: 1500, tx: 0, ty: 0, tz: 0, panX: 0, panY: 0,
+              aspectX: 1, aspectY: 1 };
+const FOCAL = 1100;
+function project(p) {
+  let x = p.x - cam.tx, y = p.y - cam.ty, z = (p.z - cam.tz) * 1.1;
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const x1 = x * cy - z * sy, z1 = x * sy + z * cy;
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const y1 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
+  const depth = z2 + cam.dist;
+  if (depth < 130) return null;
+  const k = FOCAL / depth;
+  // aspectX/Y stretch each screen axis independently so the cloud fills the window
+  // it is actually drawn into: one focal length scales both axes together and cannot
+  // fix a disc that is taller than wide inside a landscape window.
+  return { sx: W / 2 + x1 * k * cam.aspectX + cam.panX,
+           sy: H / 2 + y1 * k * cam.aspectY + cam.panY,
+           k, ks: Math.min(k, 2.4), depth };
+}
+function measureAspectTarget(fill) {
+  const REF = 6000, pos = layout3D();
+  let minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  for (const n of D.nodes) {
+    const p = pos[n.id]; if (!p) continue;
+    const x1 = p.x * cy - p.z * 1.1 * sy, z1 = p.x * sy + p.z * 1.1 * cy;
+    const y1 = p.y * cp - z1 * sp, z2 = p.y * sp + z1 * cp;
+    const k = FOCAL / (z2 + REF);
+    const sx = x1 * k, scy = y1 * k;
+    if (sx < minx) minx = sx; if (sx > maxx) maxx = sx;
+    if (scy < miny) miny = scy; if (scy > maxy) maxy = scy;
+  }
+  return { x: (fill * W) / Math.max(1, maxx - minx), y: (fill * H) / Math.max(1, maxy - miny) };
+}
+function updateAspectFit() {
+  const t = measureAspectTarget(0.86);
+  cam.aspectX += (t.x - cam.aspectX) * 0.05;
+  cam.aspectY += (t.y - cam.aspectY) * 0.05;
+}
+
+/* ---------- focus ---------- */
+const SELF_TOP = 32;
+function computeFocus(id) {
+  if (id === "user") {
+    // Lighting all ~300 of your threads says nothing. Your strongest ties do.
+    const threads = D.adj["user"].filter(e => e.type === "oneToOneThread")
+      .sort((a, b) => b.strength - a.strength);
+    const top = threads.slice(0, SELF_TOP);
+    const near = new Set(["user"]), eset = new Set(top);
+    for (const e of top) { near.add(e.a); near.add(e.b); }
+    return { near, eset, isSelf: true, shown: top.length, total: threads.length };
+  }
+  const near = new Set([id]), eset = new Set();
+  for (const e of D.adj[id] || []) { near.add(e.a); near.add(e.b); eset.add(e); }
+  return { near, eset, isSelf: false };
+}
+
+/* ---------- sprites ---------- */
+const SPRITES = {};
+function glowSprite(bucket) {
+  const key = "glow" + bucket;
+  if (SPRITES[key]) return SPRITES[key];
+  const h = bucket === "gold" ? 44 : PALETTE[bucket].hue;
+  const c = document.createElement("canvas");
+  c.width = c.height = 96;
+  const g = c.getContext("2d");
+  const gr = g.createRadialGradient(48, 48, 0, 48, 48, 46);
+  gr.addColorStop(0, "hsla(" + h + ",85%,82%,0.9)");
+  gr.addColorStop(0.35, "hsla(" + h + ",75%,62%,0.35)");
+  gr.addColorStop(1, "hsla(" + h + ",75%,55%,0)");
+  g.fillStyle = gr; g.beginPath(); g.arc(48, 48, 46, 0, 7); g.fill();
+  return (SPRITES[key] = c);
+}
+
+/* ---------- render ---------- */
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+let W = 0, H = 0;
+const DPR = Math.min(2, window.devicePixelRatio || 1);
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener("resize", resize);
+
+const OPT = { fog: true, spin: true, groups: true, dead: false, unnamed: true,
+              inferred: true, minConfidence: 0.18, labelCap: 46 };
+const DRIFT_SPEED = 0.0005;
+let focusID = null, hoverID = null, lastPersonID = D.people.length ? D.people[0].id : null;
+let visibleLinks = [], hoverLinkKey = null;
+let projected = {};
+
+function visible(n) {
+  if (OV.hidden[n.id] || isAbsorbed(n.id)) return false;   // your edits win over every toggle
+  if (OV.pinned[n.id]) return true;                        // a pinned node is never filtered away
+  if (n.kind === "group") {
+    if (!OPT.groups) return false;
+    if (!OPT.dead && !n.isLive) return false;
+    return true;
+  }
+  if (n.kind === "person" && !OPT.unnamed && n.labelKind === "phone") return false;
+  return true;
+}
+function baseRadius(n) {
+  if (n.kind === "user") return 9;
+  if (OV.pinned[n.id]) return 7;
+  if (n.kind === "group") return 3 + Math.min(3.6, Math.sqrt(n.size) * 0.8);
+  // A user-given name means this is someone you care about, so it stops being gravel
+  // even if the message volume is low.
+  if (n.labelKind === "phone" && !OV.names[n.id]) return 1.7;
+  return 2.0 + 5.0 * Math.pow(1 - n.rank / Math.max(1, D.people.length), 3);
+}
+
+function frameLoop() {
+  if (iter < ITERS) settle(5);
+  if (OPT.spin && !dragging) cam.yaw += DRIFT_SPEED;
+  updateAspectFit();
+  draw();
+  requestAnimationFrame(frameLoop);
+}
+
+function draw() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#11141b"); g.addColorStop(1, "#07090d");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  const pos = layout3D();
+  projected = {};
+  let dmin = 1e9, dmax = -1e9;
+  for (const n of D.nodes) {
+    if (!visible(n)) continue;
+    const q = project(pos[n.id]); if (!q) continue;
+    projected[n.id] = q;
+    if (q.depth < dmin) dmin = q.depth;
+    if (q.depth > dmax) dmax = q.depth;
+  }
+  const span = Math.max(1, dmax - dmin);
+  const hazeOf = q => OPT.fog ? Math.min(0.88, Math.pow((q.depth - dmin) / span, 0.85) * 0.94) : 0;
+  const F = focusID ? computeFocus(focusID) : null;
+
+  drawInferred(F, hazeOf);
+  drawEdges(F, hazeOf);
+
+  const order = Object.keys(projected).sort((a, b) => projected[b].depth - projected[a].depth);
+  for (const id of order) {
+    const n = D.byId[id], q = projected[id];
+    nodeGlow(n, q, hazeOf(q), F && !F.near.has(id));
+    if (id === focusID || (id === hoverID && id !== focusID)) {
+      const r = Math.max(2, baseRadius(n) * q.ks * 1.1);
+      ctx.strokeStyle = id === focusID ? "rgba(242,203,132,0.95)" : "rgba(230,225,210,0.4)";
+      ctx.lineWidth = id === focusID ? 1.5 : 1;
+      ctx.beginPath(); ctx.arc(q.sx, q.sy, r + 5, 0, 7); ctx.stroke();
+    }
+  }
+  if (projected["user"]) nodeGlow(D.byId["user"], projected["user"], hazeOf(projected["user"]), false);
+  labelPass(F, hazeOf);
+  chrome(F);
+}
+
+/// Inferred links are drawn cool blue and thin, beneath everything else, so a guess can
+/// never be mistaken for the warm gold of an observed conversation. Anything cut, hidden
+/// or merged away is skipped. Returns the on-screen segments so a click can hit-test them.
+function drawInferred(F, hazeOf) {
+  visibleLinks = [];
+  if (!OPT.inferred) return;
+  for (const l of D.inferred) {
+    // D.inferred is sorted by descending weight, so the first one below the threshold
+    // means every remaining one is too: stop rather than scanning the whole tail every
+    // frame (there are thousands of weak candidates and only a few hundred ever drawn).
+    if (l.weight < OPT.minConfidence) break;
+    if (OV.cutLinks[l.key]) continue;
+    const la = resolveID(l.a), lb = resolveID(l.b);
+    if (la === lb) continue;
+    if (F && !(F.near.has(la) && F.near.has(lb))) continue;
+    const A = projected[la], B = projected[lb];
+    if (!A || !B) continue;
+    const t = (hazeOf(A) + hazeOf(B)) / 2;
+    const conf = Math.min(1, l.weight);
+    const alpha = (F ? 0.5 : 0.28) * conf * (1 - t * 0.75);
+    if (alpha < 0.012) continue;
+    ctx.strokeStyle = (l.key === hoverLinkKey)
+      ? "rgba(150,220,255,0.95)"
+      : "rgba(120,170,235," + alpha.toFixed(3) + ")";
+    ctx.lineWidth = l.key === hoverLinkKey ? 2 : 0.4 + 0.9 * conf;
+    ctx.beginPath(); ctx.moveTo(A.sx, A.sy); ctx.lineTo(B.sx, B.sy); ctx.stroke();
+    visibleLinks.push({ link: l, ax: A.sx, ay: A.sy, bx: B.sx, by: B.sy });
+  }
+}
+
+function drawEdges(F, hazeOf) {
+  if (!F) {
+    for (const e of D.edges) {
+      if (e.type !== "groupMembership") continue;
+      // Merged nodes reroute their edges to the surviving node; an edge that collapses
+      // onto itself is dropped rather than drawn as a dot.
+      const ea = resolveID(e.a), eb = resolveID(e.b);
+      if (ea === eb) continue;
+      const A = projected[ea], B = projected[eb];
+      if (!A || !B) continue;
+      const t = (hazeOf(A) + hazeOf(B)) / 2;
+      ctx.strokeStyle = "rgba(235,205,150," + (0.17 * (1 - t)).toFixed(3) + ")";
+      ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.moveTo(A.sx, A.sy); ctx.lineTo(B.sx, B.sy); ctx.stroke();
+    }
+    return;
+  }
+  let maxS = 0.001;
+  F.eset.forEach(e => { if (e.strength > maxS) maxS = e.strength; });
+  for (const e of F.eset) {
+    const ea = resolveID(e.a), eb = resolveID(e.b);
+    if (ea === eb) continue;
+    const A = projected[ea], B = projected[eb];
+    if (!A || !B) continue;
+    const t = (hazeOf(A) + hazeOf(B)) / 2;
+    // Thickness carries strength: your closest line should not weigh the same
+    // as someone you spoke to on two days.
+    ctx.lineWidth = 0.8 + 2.0 * (e.strength / maxS);
+    ctx.strokeStyle = "rgba(242,203,132," + (0.7 * (1 - t * 0.6)).toFixed(3) + ")";
+    ctx.beginPath(); ctx.moveTo(A.sx, A.sy); ctx.lineTo(B.sx, B.sy); ctx.stroke();
+  }
+}
+
+function nodeGlow(n, q, hazeT, ghost) {
+  const a = (1 - hazeT * 0.8) * (ghost ? 0.06 : 1);
+  if (a < 0.015) return;
+  const r = Math.max(0.7, baseRadius(n) * q.ks * 1.05);
+  if (n.kind === "user") {
+    const s = 88 * Math.max(0.6, q.ks);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = Math.min(1, a * 1.2);
+    ctx.drawImage(glowSprite("gold"), q.sx - s / 2, q.sy - s / 2, s, s);
+    ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+    ctx.fillStyle = "rgba(255,232,180," + a.toFixed(3) + ")";
+    ctx.beginPath(); ctx.arc(q.sx, q.sy, 5, 0, 7); ctx.fill();
+    return;
+  }
+  if (n.kind === "group") {
+    ctx.globalAlpha = a * (n.isLive ? 0.8 : 0.4);
+    ctx.strokeStyle = n.isLive ? "rgba(235,190,130,0.8)" : "rgba(150,150,160,0.6)";
+    ctx.lineWidth = 0.9;
+    const s2 = Math.max(2.5, r);
+    ctx.strokeRect(q.sx - s2, q.sy - s2, s2 * 2, s2 * 2);
+    ctx.globalAlpha = 1;
+    return;
+  }
+  if (n.labelKind === "phone") {
+    // An unnamed number is real but not something you can act on: it stays quiet.
+    ctx.fillStyle = "rgba(160,165,180," + (a * 0.3).toFixed(3) + ")";
+    ctx.beginPath(); ctx.arc(q.sx, q.sy, 1.3, 0, 7); ctx.fill();
+    return;
+  }
+  const s = (16 + 40 * Math.pow(1 - n.rank / Math.max(1, D.people.length), 2.6)) * q.ks;
+  if (s > 8 && !ghost) {
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = a * 0.9;
+    ctx.drawImage(glowSprite(bucketOf(n)), q.sx - s / 2, q.sy - s / 2, s, s);
+    ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+  }
+  ctx.fillStyle = "rgba(240,238,230," + (a * 0.9).toFixed(3) + ")";
+  ctx.beginPath(); ctx.arc(q.sx, q.sy, Math.max(1, Math.min(r * 0.6, 2.6)), 0, 7); ctx.fill();
+}
+
+function labelPass(F, hazeOf) {
+  if (iter < ITERS * 0.5) return;
+  const font = "italic 12px Georgia, serif";
+  ctx.font = font;
+  const cands = [];
+  for (const id in projected) {
+    const n = D.byId[id], q = projected[id];
+    if (n.kind === "user") continue;
+    const pinned = !!OV.pinned[n.id], renamed = !!OV.names[n.id];
+    // A number never earns a label -- unless you gave it one, or pinned it.
+    if (n.kind === "person" && n.labelKind === "phone" && !renamed && !pinned) continue;
+    if (F && !F.near.has(id)) continue;
+    const t = hazeOf(q);
+    if (!F && t > 0.55 && !pinned) continue;
+    // Pinned nodes outrank the label budget entirely: that is what pinning is for.
+    const score = pinned ? 1e6
+      : (F ? 1000 + (n.kind === "person" ? -n.rank : n.size) : baseRadius(n) * q.k * (1 - t));
+    cands.push({ n, q, t, score });
+  }
+  cands.sort((a, b) => b.score - a.score);
+  const cap = F ? 48 : OPT.labelCap;
+  const boxes = [];
+  let placed = 0;
+  for (const c of cands) {
+    if (placed >= cap) break;
+    const off = Math.max(3, baseRadius(c.n) * c.q.ks * 1.1) + 4;
+    const text = c.n.kind === "group" ? labelOf(c.n).toUpperCase() : labelOf(c.n);
+    ctx.font = c.n.kind === "group" ? "600 9.5px Georgia, serif" : font;
+    const w = ctx.measureText(text).width;
+    // Four anchors, not one: focused sets cluster tightly and a right-side-only
+    // label loses half of what it could have placed.
+    const spots = [
+      [c.q.sx + off, c.q.sy + 4], [c.q.sx - off - w, c.q.sy + 4],
+      [c.q.sx - w / 2, c.q.sy - off - 6], [c.q.sx - w / 2, c.q.sy + off + 13]
+    ];
+    let box = null, x = 0, y = 0;
+    for (const [px, py] of spots) {
+      const b = { x: px - 3, y: py - 11, w: w + 7, h: 17 };
+      let hit = false;
+      for (const o of boxes) {
+        if (b.x < o.x + o.w && b.x + b.w > o.x && b.y < o.y + o.h && b.y + b.h > o.y) { hit = true; break; }
+      }
+      if (!hit) { box = b; x = px; y = py; break; }
+    }
+    if (!box) continue;
+    boxes.push(box); placed++;
+    ctx.fillStyle = "rgba(5,6,10," + (0.55 * (1 - c.t)).toFixed(3) + ")";
+    ctx.fillText(text, x + 1, y + 1);
+    const base = c.n.kind === "group" ? [235, 195, 135] : [238, 235, 226];
+    ctx.fillStyle = mixTo(base, NIGHT, c.t * 0.8);
+    ctx.fillText(text, x, y);
+  }
+}
+
+function chrome(F) {
+  ctx.strokeStyle = "rgba(235,220,190,0.22)"; ctx.lineWidth = 1;
+  ctx.strokeRect(26.5, 26.5, W - 53, H - 53);
+  let l1, l2;
+  if (iter < ITERS) {
+    l1 = "FINDING ITS SHAPE"; l2 = Math.round(iter / ITERS * 100) + "%";
+  } else if (F && F.isSelf) {
+    l1 = "YOUR INNER CIRCLE";
+    l2 = "your " + F.shown + " closest of " + F.total + " conversations, by days spoken";
+  } else if (F) {
+    const n = D.byId[focusID];
+    l1 = "ORBITING " + String(labelOf(n)).toUpperCase();
+    l2 = n.kind === "person"
+      ? (n.days + " days spoken - in " + n.groups.length + " of your group chats")
+      : (n.size + " people" + (n.isLive ? "" : " - quiet"));
+  } else {
+    l1 = "EVERYONE";
+    const named = D.people.filter(p => p.labelKind === "name").length;
+    l2 = D.people.length + " people (" + named + " with a saved name) - "
+       + D.threadTotal + " conversations - " + D.groups.filter(g => g.isLive).length + " live group chats";
+  }
+  ctx.font = "600 11px Georgia, serif"; ctx.fillStyle = "rgba(238,230,214,0.75)";
+  ctx.fillText(l1, 46, H - 60);
+  ctx.font = "italic 11px Georgia, serif"; ctx.fillStyle = "rgba(238,230,214,0.42)";
+  ctx.fillText(l2, 46, H - 43);
+}
+
+/* ---------- input ---------- */
+let dragging = false, panning = false, lx = 0, ly = 0, moved = 0;
+cv.addEventListener("mousedown", e => {
+  dragging = true; panning = e.shiftKey; lx = e.clientX; ly = e.clientY; moved = 0;
+  cv.classList.add("dragging");
+});
+window.addEventListener("mousemove", e => {
+  const dx = e.clientX - lx, dy = e.clientY - ly;
+  if (!dragging) {
+    hoverID = pick(e.clientX, e.clientY);
+    hoverLinkKey = hoverID ? null : (pickLink(e.clientX, e.clientY) || {}).key || null;
+    cv.style.cursor = hoverLinkKey ? "crosshair" : "grab";
+    return;
+  }
+  moved += Math.abs(dx) + Math.abs(dy);
+  if (panning) { cam.panX += dx; cam.panY += dy; }
+  else {
+    cam.yaw += dx * 0.006;
+    cam.pitch = Math.max(-1.45, Math.min(1.45, cam.pitch + dy * 0.006));
+  }
+  lx = e.clientX; ly = e.clientY;
+});
+window.addEventListener("mouseup", e => {
+  if (dragging && moved < 5) clickAt(e.clientX, e.clientY);
+  dragging = false; cv.classList.remove("dragging");
+});
+cv.addEventListener("wheel", e => {
+  e.preventDefault();
+  cam.dist = Math.max(180, Math.min(6000, cam.dist * (1 + e.deltaY * 0.0016)));
+}, { passive: false });
+
+function pickLink(x, y) {
+  let best = null, bd = 7;
+  for (const s of visibleLinks) {
+    const dx = s.bx - s.ax, dy = s.by - s.ay;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1) continue;
+    // Clamped projection of the cursor onto the segment, then distance to that point.
+    let t = ((x - s.ax) * dx + (y - s.ay) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const px = s.ax + t * dx, py = s.ay + t * dy;
+    const d = Math.hypot(px - x, py - y);
+    if (d < bd) { bd = d; best = s.link; }
+  }
+  return best;
+}
+
+function pick(x, y) {
+  let best = null, bd = 24 * 24;
+  for (const id in projected) {
+    const q = projected[id];
+    const d = (q.sx - x) ** 2 + (q.sy - y) ** 2;
+    if (d < bd) { bd = d; best = id; }
+  }
+  return best;
+}
+function clickAt(x, y) {
+  const id = pick(x, y);
+  if (!id) {
+    if (mergeArmed) { mergeArmed = false; toast("merge cancelled"); refreshEditUI(); return; }
+    const link = pickLink(x, y);
+    if (link) { actCutInferred(link); hoverLinkKey = null; return; }
+    selectedID = null; setViewState("rest"); refreshEditUI(); return;
+  }
+  // A click while merge is armed picks the node to merge INTO, rather than moving the camera.
+  if (mergeArmed && selectedID && id !== selectedID) {
+    actMerge(D.byId[id], D.byId[selectedID]);
+    mergeArmed = false; selectedID = id; refreshEditUI();
+    return;
+  }
+  selectedID = id;
+  if (id === "user") { setViewState("you"); refreshEditUI(); return; }
+  lastPersonID = id; setViewState("person"); refreshEditUI();
+}
+
+/* ---------- edit UI ---------- */
+let selectedID = null, mergeArmed = false;
+
+function refreshEditUI() {
+  const sel = document.getElementById("sel");
+  const n = selectedID ? D.byId[selectedID] : null;
+  const count = LOG.length;
+  document.getElementById("edit-count").textContent =
+    count === 0 ? "no edits yet" : count + (count === 1 ? " edit" : " edits") + " saved";
+  if (!n || n.kind === "user") { sel.style.display = "none"; return; }
+  sel.style.display = "block";
+  document.getElementById("sel-who").textContent = labelOf(n);
+  const src = labelSourceOf(n);
+  let facts;
+  if (n.kind === "person") {
+    facts = n.days + " days spoken - " + n.groups.length + " groups";
+    const links = (D.inferredAdj[n.id] || []).filter(
+      l => l.weight >= OPT.minConfidence && !OV.cutLinks[l.key]).length;
+    if (links) facts += " - " + links + " likely know";
+    facts += "\n" + n.id;
+  } else {
+    facts = n.size + " people - " + (n.isLive ? "active" : "quiet");
+  }
+  const srcLabel = { user: "your name", contactCard: "from Contacts",
+                     chatDisplayName: "group's own title", identifier: "no saved name",
+                     derived: "unnamed" }[src] || src;
+  document.getElementById("sel-facts").textContent = facts + " - " + srcLabel;
+  document.getElementById("act-pin").classList.toggle("on", !!OV.pinned[n.id]);
+  document.getElementById("act-merge").classList.toggle("armed", mergeArmed);
+  document.getElementById("act-merge").textContent = mergeArmed ? "click target" : "Merge...";
+}
+
+function withSelected(fn) {
+  const n = selectedID ? D.byId[selectedID] : null;
+  if (!n || n.kind === "user") { toast("select a person or group first"); return; }
+  fn(n);
+  refreshEditUI();
+}
+document.getElementById("act-rename").onclick = () => withSelected(actRename);
+document.getElementById("act-pin").onclick = () => withSelected(actPin);
+document.getElementById("act-hide").onclick = () => withSelected(actHide);
+document.getElementById("act-merge").onclick = () => withSelected(() => {
+  mergeArmed = !mergeArmed;
+  toast(mergeArmed ? "now click the node to merge this INTO" : "merge cancelled");
+});
+document.getElementById("act-undo").onclick = () => { actUndo(); };
+document.getElementById("act-export").onclick = () => { actExport(); };
+function setViewState(s) {
+  const pos = layout3D();
+  if (s === "rest") {
+    focusID = null; cam.tx = cam.ty = cam.tz = 0; cam.panX = cam.panY = 0;
+  } else if (s === "you") {
+    focusID = "user"; cam.tx = cam.ty = cam.tz = 0; cam.panX = cam.panY = 0;
+    cam.dist = Math.min(cam.dist, 1600);
+  } else if (lastPersonID && pos[lastPersonID]) {
+    focusID = lastPersonID;
+    const p = pos[lastPersonID];
+    cam.tx = p.x; cam.ty = p.y; cam.tz = p.z; cam.panX = cam.panY = 0;
+    cam.dist = Math.min(cam.dist, 820);
+  }
+  document.querySelectorAll(".states button").forEach(b => b.classList.toggle("active", b.dataset.vs === s));
+}
+window.addEventListener("keydown", e => {
+  // Never steal a keystroke that belongs to the search box or a rename prompt.
+  if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+  if (e.key === "Escape") {
+    mergeArmed = false; selectedID = null;
+    setViewState("rest"); document.getElementById("search").blur(); refreshEditUI(); return;
+  }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === "r") withSelected(actRename);
+  else if (k === "p") withSelected(actPin);
+  else if (k === "h") withSelected(actHide);
+  else if (k === "m") withSelected(() => {
+    mergeArmed = !mergeArmed;
+    toast(mergeArmed ? "now click the node to merge this INTO" : "merge cancelled");
+  });
+  else if (k === "u") actUndo();
+});
+
+/* ---------- search: the point of real data is finding a real person ---------- */
+const searchEl = document.getElementById("search"), hitsEl = document.getElementById("hits");
+searchEl.addEventListener("input", () => {
+  const q = searchEl.value.trim().toLowerCase();
+  hitsEl.innerHTML = "";
+  if (q.length < 2) return;
+  const hits = D.nodes
+    .filter(n => n.kind !== "user" && !OV.hidden[n.id] && !isAbsorbed(n.id)
+                 && String(labelOf(n)).toLowerCase().includes(q))
+    .sort((a, b) => (a.rank === undefined ? 1e9 : a.rank) - (b.rank === undefined ? 1e9 : b.rank))
+    .slice(0, 12);
+  for (const n of hits) {
+    const d = document.createElement("div");
+    d.className = "hit";
+    d.innerHTML = labelOf(n) + (n.kind === "person"
+      ? ' <span>' + n.days + ' days</span>'
+      : ' <span>group of ' + n.size + '</span>');
+    d.onclick = () => { lastPersonID = n.id; selectedID = n.id; setViewState("person"); refreshEditUI(); };
+    hitsEl.appendChild(d);
+  }
+});
+
+function sw(id, key) {
+  const el = document.getElementById(id);
+  el.onclick = () => { OPT[key] = !OPT[key]; el.classList.toggle("on", OPT[key]); };
+}
+sw("sw-fog", "fog"); sw("sw-spin", "spin"); sw("sw-groups", "groups");
+sw("sw-dead", "dead"); sw("sw-unnamed", "unnamed"); sw("sw-inferred", "inferred");
+document.getElementById("sl-conf").oninput = e => { OPT.minConfidence = +e.target.value / 100; };
+document.getElementById("sl-labels").oninput = e => { OPT.labelCap = +e.target.value; };
+document.querySelectorAll(".states button").forEach(b => b.onclick = () => setViewState(b.dataset.vs));
+document.getElementById("reset").onclick = () => {
+  setViewState("rest"); cam.yaw = 0.6; cam.pitch = -0.32; cam.dist = 1500;
+};
+
+(function () {
+  const p = document.getElementById("panel"), g = document.getElementById("grip");
+  let dx = 0, dy = 0, on = false;
+  g.addEventListener("mousedown", e => { on = true; const r = p.getBoundingClientRect();
+    dx = e.clientX - r.left; dy = e.clientY - r.top; p.style.right = "auto"; p.style.bottom = "auto";
+    e.stopPropagation(); e.preventDefault(); });
+  window.addEventListener("mousemove", e => { if (on) { p.style.left = (e.clientX - dx) + "px"; p.style.top = (e.clientY - dy) + "px"; } });
+  window.addEventListener("mouseup", () => on = false);
+})();
+
+ovLoad();
+refreshEditUI();
+resize();
+frameLoop();
+</script>
+</body>
+</html>

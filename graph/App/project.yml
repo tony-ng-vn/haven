@@ -28,14 +28,37 @@ targets:
     platform: macOS
     sources:
       - path: Sources
+      # The sky viewer template lives in graph/viewer/, not under App/, because it is
+      # shared with viewer/build.py's own standalone (non-app) export path -- copying it
+      # here instead of moving it would make the two drift. `buildPhase: resources`
+      # (rather than relying on extension inference) is what actually gets it into Copy
+      # Bundle Resources; a bare path here would otherwise be treated as a source file.
+      - path: ../viewer/template-v3.html
+        buildPhase: resources
     dependencies:
       - package: GraphCore
         product: GraphCore
     settings:
       base:
-        PRODUCT_NAME: ConnectionGraph
+        # PRODUCT_NAME drives CFBundleName, and CFBundleName -- not
+        # CFBundleDisplayName -- is what System Settings' Privacy & Security
+        # lists (Full Disk Access, Contacts, ...) show. Xcode's auto-generated
+        # Info.plist (GENERATE_INFOPLIST_FILE=YES) hardcodes CFBundleName to
+        # PRODUCT_NAME regardless of any INFOPLIST_KEY_CFBundleName override --
+        # confirmed by -showBuildSettings resolving the override correctly while
+        # the built Info.plist still showed the old name -- so renaming here is
+        # the only way to make the name the app asks for match the name shown
+        # on the authorize screen it sends the user to.
+        PRODUCT_NAME: "Your Sky"
         PRODUCT_BUNDLE_IDENTIFIER: dev.local.ConnectionGraph
         # No CODE_SIGN_ENTITLEMENTS and no App Sandbox capability: chat.db and the
         # AddressBook databases live under Full Disk Access, which a sandboxed app
         # cannot be granted access to. There is deliberately no entitlements file here.
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        # Bundle id stays dev.local.ConnectionGraph on purpose: Full Disk Access
+        # on a signed app is granted per bundle identifier, and changing it would
+        # strand a grant. (This build is unsigned, so TCC likely keys off the
+        # binary path/hash here anyway and a re-grant is needed after any rebuild
+        # regardless of this setting -- worth re-verifying once real code signing
+        # is in place.)
+        INFOPLIST_KEY_CFBundleDisplayName: "Your Sky"

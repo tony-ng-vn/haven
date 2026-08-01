@@ -43,6 +43,22 @@ struct GraphToolbar: View {
         }
     }
 
+    /// Same "quiet unless there's something to say" posture as guessingStatusText, but this
+    /// one also shows on success (`.done`): a resync-and-push has no visible on-screen effect
+    /// otherwise, so the one-shot confirmation is the only signal the sync actually happened.
+    private var syncStatusText: String? {
+        switch model.syncState {
+        case .idle:
+            return nil
+        case .syncing:
+            return "Syncing people..."
+        case .done(let message):
+            return "Synced: \(message)"
+        case .failed(let message):
+            return "Sync failed: \(message)"
+        }
+    }
+
     var body: some View {
         HStack(spacing: 16) {
             dateControls
@@ -68,11 +84,28 @@ struct GraphToolbar: View {
                 Divider().frame(height: 20)
                 Text(guessingStatusText).foregroundStyle(.secondary)
             }
+            if let syncStatusText {
+                Divider().frame(height: 20)
+                Text(syncStatusText).foregroundStyle(.secondary)
+            }
             Spacer(minLength: 0)
             Button("Export...") {
                 presentExportPanel()
             }
             .disabled(!model.isReady)
+            // Hidden entirely, not just disabled, when polygres is not installed at its known
+            // path: a button that can only ever fail on this machine is worse than no button.
+            if model.isPolygresAvailable {
+                Divider().frame(height: 20)
+                Button("Sync people") {
+                    model.syncPeople()
+                }
+                .disabled(model.syncState == .syncing)
+            }
+            Divider().frame(height: 20)
+            Button(model.showNativeGraphView ? "Show sky view" : "Show native view") {
+                model.toggleGraphViewMode()
+            }
             Divider().frame(height: 20)
             Button("Resync") {
                 model.resync()

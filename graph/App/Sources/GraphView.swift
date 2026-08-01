@@ -201,7 +201,7 @@ struct GraphView: View {
         // hidden/dead-and-unincluded nodes) stays excluded here too.
         for edge in EdgeRenderList.visibleEdges(graph: visibleGraph, positions: positions) {
             let isHighlighted = focus?.highlightedEdgeIDs.contains(edge.id) ?? true
-            let baseOpacity = min(1.0, 0.08 + 0.12 * (edge.strength + 1).squareRoot())
+            let baseOpacity = EdgeRenderList.opacity(forStrength: edge.strength)
             let opacity = focus == nil ? baseOpacity : (isHighlighted ? baseOpacity : 0.03)
             var path = Path()
             path.move(to: edge.from)
