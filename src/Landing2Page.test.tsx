@@ -237,6 +237,20 @@ describe("Landing2Page", () => {
     const clipPaths = new Set(Array.from(shards, (s) => s.style.clipPath));
     expect(clipPaths.size).toBe(22);
   });
+
+  // Frost moved from a gradient layer inside shardFillCss (see that
+  // function's own doc comment for why -- it rode the shard's opacity
+  // multiplier upward on reveal, which was the reported "milky glare" bug)
+  // to a separate child element with its own class-toggled opacity. This is
+  // the DOM-level half of that contract: frostyShardIndices itself is unit
+  // tested in landing2Geometry.test.ts for the count (exactly 6 of 22), but
+  // nothing there proves the page actually renders one frost layer per
+  // selected index -- this does.
+  test("exactly 6 shards render a frost child element", () => {
+    stubMedia({ fine: true });
+    const { container } = render(<Landing2Page />);
+    expect(container.querySelectorAll(".landing2-shard-frost")).toHaveLength(6);
+  });
 });
 
 // shardFillCss builds the per-shard gradient string directly (see its own
@@ -244,7 +258,7 @@ describe("Landing2Page", () => {
 // render-and-read-the-DOM one).
 describe("shardFillCss", () => {
   test("bakes the given restAlpha into both stops of the base gradient", () => {
-    const css = shardFillCss({ angleDeg: 90, lightnessT: 0.5, restAlpha: 0.47 }, false);
+    const css = shardFillCss({ angleDeg: 90, lightnessT: 0.5, restAlpha: 0.47 });
     // The base gradient is the last layer in the string (after the fixed
     // 0.1-alpha highlight, which must not be confused for restAlpha here).
     const base = css.split(", linear-gradient(")[1];
@@ -254,14 +268,16 @@ describe("shardFillCss", () => {
     alphas.forEach((a) => expect(a).toBeCloseTo(0.47, 5));
   });
 
-  test("frosty shards carry an extra white-tint layer; others do not", () => {
+  // Frost is no longer part of this function's own output at all -- see the
+  // page-level "exactly 6 shards render a frost child element" test above
+  // for where that contract is checked now.
+  test("never carries the frost tint -- that is a separate child element now", () => {
     const material = { angleDeg: 0, lightnessT: 0.5, restAlpha: 0.5 };
-    expect(shardFillCss(material, true)).toContain("255,255,255,0.16");
-    expect(shardFillCss(material, false)).not.toContain("255,255,255,0.16");
+    expect(shardFillCss(material)).not.toContain("255,255,255,0.16");
   });
 
   test("the gradient axis reflects the given angle", () => {
-    expect(shardFillCss({ angleDeg: 47.3, lightnessT: 0.2, restAlpha: 0.4 }, false)).toContain(
+    expect(shardFillCss({ angleDeg: 47.3, lightnessT: 0.2, restAlpha: 0.4 })).toContain(
       "linear-gradient(47.3deg",
     );
   });

@@ -172,7 +172,14 @@ function mixRgb(t: number): [number, number, number] {
 // real browsers render layered rgba() gradients correctly -- so the fix is
 // testing this function's return value directly rather than reading it back
 // through a DOM style object.
-export function shardFillCss(material: ShardMaterial, frosty: boolean): string {
+// No frost parameter: frost used to be an extra gradient layer baked into
+// this same string, which meant it rode the shard's own opacity multiplier
+// upward on reveal along with everything else -- exactly the reported bug
+// (frosty shards reading as a brighter milky glare once revealed, when every
+// other shard was darkening toward glossy). Frost is now a separate child
+// element (.landing2-shard-frost) with its own opacity that scales DOWN on
+// reveal, independent of this gradient's own opacity multiplier.
+export function shardFillCss(material: ShardMaterial): string {
   const t0 = Math.max(0, material.lightnessT - SHARD_LIGHTNESS_SPREAD / 2);
   const t1 = Math.min(1, material.lightnessT + SHARD_LIGHTNESS_SPREAD / 2);
   const [r0, g0, b0] = mixRgb(t0);
@@ -180,10 +187,7 @@ export function shardFillCss(material: ShardMaterial, frosty: boolean): string {
   const a = material.restAlpha.toFixed(2);
   const base = `linear-gradient(${round(material.angleDeg)}deg, rgba(${r0},${g0},${b0},${a}) 0%, rgba(${r1},${g1},${b1},${a}) 100%)`;
   const highlight = "radial-gradient(circle at 18% 14%, rgba(255,255,255,0.1), transparent 42%)";
-  const frost = frosty
-    ? "radial-gradient(circle at 30% 22%, rgba(255,255,255,0.16), transparent 55%), "
-    : "";
-  return `${frost}${highlight}, ${base}`;
+  return `${highlight}, ${base}`;
 }
 
 // The alpha-multiplier trick: restAlpha is already baked into the gradient
@@ -283,14 +287,54 @@ export function Landing2Page() {
           aria-hidden="true"
         >
           <defs>
+            {/* Peak alphas well under the seams' revealed range (edgeOpacity
+                doubled, capped at 0.85) -- the water reads as scenery behind
+                the glass, never brighter than the glass itself. A soft ramp
+                (not a hard 0% stop) is what "softens the top edge against
+                the mountain base": the band eases in rather than snapping to
+                full strength exactly at the ridge line. */}
             <linearGradient id="landing2-water" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#232a4d" stopOpacity="0.55" />
-              <stop offset="100%" stopColor="#232a4d" stopOpacity="0" />
+              <stop offset="0%" stopColor="var(--dusk)" stopOpacity="0.06" />
+              <stop offset="22%" stopColor="var(--dusk)" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="var(--dusk)" stopOpacity="0" />
             </linearGradient>
             <linearGradient id="landing2-water-shimmer" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#f2efe9" stopOpacity="0.35" />
+              <stop offset="0%" stopColor="#f2efe9" stopOpacity="0.04" />
+              <stop offset="22%" stopColor="#f2efe9" stopOpacity="0.16" />
               <stop offset="100%" stopColor="#f2efe9" stopOpacity="0" />
             </linearGradient>
+            {/* A small, tight specular highlight aligned under the moon
+                (cx 62) rather than a second uniform band -- a moonlit water
+                reflection is a glint, not an even wash. */}
+            <radialGradient id="landing2-water-specular" cx="0.5" cy="0.35" r="0.6">
+              <stop offset="0%" stopColor="#f2efe9" stopOpacity="0.38" />
+              <stop offset="100%" stopColor="#f2efe9" stopOpacity="0" />
+            </radialGradient>
+            {/* The mask below reads LUMINANCE, not alpha -- these stops must
+                stay white (full luminance at stop-opacity 1, computed as
+                black i.e. masked-out at stop-opacity 0). Swapping the stop
+                color would silently change the mask's own strength. */}
+            <linearGradient id="landing2-water-fade-x" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#fff" stopOpacity="0" />
+              <stop offset="16%" stopColor="#fff" stopOpacity="1" />
+              <stop offset="84%" stopColor="#fff" stopOpacity="1" />
+              <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+            </linearGradient>
+            {/* Mask content matches the masked group's own bounds exactly, so
+                the mask element's default -10%/+10% region (relative to that
+                same bounding box) comfortably contains it -- same margin-past-
+                bounds reasoning as the seam blur filter's explicit region,
+                just satisfied here by construction instead of by an override.
+                "The masked group's bounds" is the union of every child inside
+                the <g mask=...> below (both water rects AND the specular
+                ellipse), which today all fall within x 35-75 / y 30-40 -- if
+                a future edit ever widens or moves the specular ellipse past
+                that box, this rect needs to grow with it, or the newly
+                exposed area renders as masked-out (black = hidden) rather
+                than passed through. */}
+            <mask id="landing2-water-mask" maskContentUnits="userSpaceOnUse">
+              <rect x="35" y="30" width="40" height="10" fill="url(#landing2-water-fade-x)" />
+            </mask>
             <radialGradient id="landing2-window">
               <stop offset="0%" stopColor="#ffd9a0" stopOpacity="0.95" />
               <stop offset="100%" stopColor="#ffd9a0" stopOpacity="0" />
@@ -308,26 +352,40 @@ export function Landing2Page() {
             <circle cx="63.3" cy="11.2" r="3.2" fill="var(--night)" />
           </g>
 
-          {/* two mountain ridges, 35-75% x at 15-30% y, near-black indigo, a
-              moonlit rim along the top ridge and a shimmer on the water
-              band, both invisible until revealed */}
+          {/* Two mountain ridges, 35-75% x at 15-30% y, lightened indigo
+              stepped by ridge (front lighter/closer, back darker/further) so
+              they register instead of reading as near-black on near-black.
+              A moonlit rim on the top ridge only, and the water band --
+              masked to fade its left/right ends and contained to exactly the
+              ridges' own 35-75% width, so it reads as reflection under the
+              scenery rather than a floating rectangle. */}
           <g className="landing2-scene-el">
-            <polygon points="35,29 44,18 54,25 65,16 75,28 75,32 35,32" fill="#141936" />
-            <polygon points="35,31 47,23 60,28 75,30 75,32 35,32" fill="#0c0e20" opacity="0.92" />
+            <polygon points="35,29 44,18 54,25 65,16 75,28 75,32 35,32" fill="var(--dusk)" />
+            <polygon points="35,31 47,23 60,28 75,30 75,32 35,32" fill="#171c3a" opacity="0.95" />
             <polyline
               className="landing2-mountain-rim"
               points="35,29 44,18 54,25 65,16 75,28"
               fill="none"
             />
-            <rect x="35" y="32" width="40" height="7" fill="url(#landing2-water)" />
-            <rect
-              className="landing2-water-shimmer"
-              x="35"
-              y="32"
-              width="40"
-              height="7"
-              fill="url(#landing2-water-shimmer)"
-            />
+            <g mask="url(#landing2-water-mask)">
+              <rect x="35" y="30" width="40" height="10" fill="url(#landing2-water)" />
+              <rect
+                className="landing2-water-shimmer"
+                x="35"
+                y="30"
+                width="40"
+                height="10"
+                fill="url(#landing2-water-shimmer)"
+              />
+              <ellipse
+                className="landing2-water-shimmer"
+                cx="62"
+                cy="34"
+                rx="9"
+                ry="3.5"
+                fill="url(#landing2-water-specular)"
+              />
+            </g>
           </g>
 
           {/* tree silhouette cluster, lower-center-left, one glowing window
@@ -340,14 +398,19 @@ export function Landing2Page() {
             <circle cx="45.6" cy="75" r="0.9" fill="url(#landing2-window)" />
           </g>
 
-          {/* a hint of foliage and warm light near the left edge, so the
-              reveal is not center-only (matches the left-edge foliage in the
-              reference the owner compared this against) */}
+          {/* Left-edge foliage, tall enough to actually enter the frame (the
+              previous pass's cluster topped out around y 62-64 and did not
+              register in a capture) -- five varying-height silhouettes from
+              y 30 to y 85, within the leftmost 12% of the viewport, sitting
+              behind the copy's shards like the rest of the beneath layer. */}
           <g className="landing2-scene-el">
-            <polygon points="3,79 5.2,64 7.4,79" fill="#0b0d1e" />
-            <polygon points="6.4,80 8.8,62.5 11.2,80" fill="#0b0d1e" />
-            <circle className="landing2-window-bloom" cx="7" cy="71" r="1.8" fill="url(#landing2-window-bloom)" />
-            <circle cx="7" cy="71" r="0.6" fill="url(#landing2-window)" />
+            <polygon points="0.8,85 2,58 3.2,85" fill="#0b0d1e" />
+            <polygon points="2.6,85 4.4,42 6.2,85" fill="#0b0d1e" />
+            <polygon points="5,85 7,30 9,85" fill="#0b0d1e" />
+            <polygon points="7.6,85 9.2,50 10.8,85" fill="#0b0d1e" />
+            <polygon points="9.4,85 10.8,65 12,85" fill="#0b0d1e" />
+            <circle className="landing2-window-bloom" cx="6.5" cy="68" r="1.8" fill="url(#landing2-window-bloom)" />
+            <circle cx="6.5" cy="68" r="0.6" fill="url(#landing2-window)" />
           </g>
         </svg>
 
@@ -443,7 +506,7 @@ export function Landing2Page() {
           const frosty = frostySet.has(cell.seedIndex);
           const style: CSSProperties = {
             clipPath: clipPathFor(polygon),
-            background: shardFillCss(material, frosty),
+            background: shardFillCss(material),
             // Opacity is set here, in both branches below, not just the
             // transform one: reduced motion keeps every brightness/opacity
             // half of the reveal, only the movement drops out.
@@ -462,7 +525,16 @@ export function Landing2Page() {
             // stops never change; only the opacity multiplier above does).
             style.transition = SHARD_TRANSITION;
           }
-          return <div key={cell.seedIndex} className="landing2-shard" style={style} />;
+          return (
+            <div key={cell.seedIndex} className="landing2-shard" style={style}>
+              {/* Inherits the parent's clip-path (clip-path clips the whole
+                  rendered subtree, not just the element it's set on), so this
+                  needs no clip-path of its own. Its own opacity -- a plain
+                  CSS class toggle, not inline -- scales the frost tint DOWN
+                  on reveal, independent of the shard's own opacity above. */}
+              {frosty && <div className="landing2-shard-frost" />}
+            </div>
+          );
         })}
 
         <svg

@@ -3153,18 +3153,32 @@ a.card-handle:focus-visible {
 
 /* Handwritten memory fragments -- a cursive stack distinct from the site's
    reserved --font-serif (see designTokens.test.ts's serif-count guard, which
-   this page must not touch), warm gold, low opacity, no motion of its own:
-   the veil is what hides and reveals it. */
+   this page must not touch). They are the reveal's emotional centerpiece, so
+   they run brighter than the rest of the scenery: rest stays a faint grey-
+   gold (invisible anyway under .landing2-scene-el's 0.06 wrapper opacity),
+   but revealed pushes to the accent gold at 0.9 with a two-layer warm glow
+   (tight core + wide bloom) -- through-glass dimming (the shard opacity and
+   veil above it) still tempers the final read, so this errs bright at the
+   source rather than landing faint. Font size raised ~15% (20px -> 23px)
+   for the same reason. */
 .landing2-memory {
   position: absolute;
   font-family: "Snell Roundhand", "Apple Chancery", cursive;
   font-style: italic;
-  font-size: 20px;
+  font-size: 23px;
   line-height: 1.35;
   color: rgba(255, 217, 160, 0.42);
   text-align: center;
   white-space: nowrap;
   pointer-events: none;
+  transition: color 700ms var(--ease-out), text-shadow 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-memory {
+  color: rgba(255, 217, 160, 0.9);
+  text-shadow:
+    0 0 4px rgba(255, 217, 160, 0.55),
+    0 0 16px rgba(255, 217, 160, 0.35);
 }
 
 .landing2-polaroid {
@@ -3210,21 +3224,27 @@ a.card-handle:focus-visible {
   fill: #ffd9a0;
 }
 
-/* A moonlit rim along the ridge line, invisible at rest, and a shimmer
+/* A moonlit rim along the top ridge only, invisible at rest, and a shimmer
    overlay on the water band underneath it -- both fade in only on reveal
    (their own opacity: 0, nested inside .landing2-scene-el's 0.06 -> 1 fade,
-   so the combined rest opacity is exactly 0 rather than a faint 0.06). */
+   so the combined rest opacity is exactly 0 rather than a faint 0.06).
+   Widened and brightened from the previous pass, alongside the mountain
+   fills themselves, so the ridge actually registers instead of reading as
+   near-invisible near-black on near-black. */
 .landing2-mountain-rim {
-  stroke: rgba(223, 232, 247, 0.55);
-  stroke-width: 0.15;
+  stroke: rgba(223, 232, 247, 0.65);
+  stroke-width: 0.2;
   opacity: 0;
   transition: opacity 700ms var(--ease-out);
 }
 
 .landing2-revealed .landing2-mountain-rim {
-  opacity: 0.6;
+  opacity: 0.75;
 }
 
+/* Shared by the shimmer rect and the specular highlight ellipse -- both are
+   "extra brightness on the water band that only appears revealed", so one
+   rule covers both rather than a near-duplicate second class. */
 .landing2-water-shimmer {
   opacity: 0;
   transition: opacity 700ms var(--ease-out);
@@ -3285,6 +3305,28 @@ a.card-handle:focus-visible {
   position: absolute;
   inset: 0;
   will-change: transform, opacity;
+}
+
+/* The frost tint for the 6 hash-selected frosty shards: its own child
+   element (not a gradient layer inside .landing2-shard's own background) so
+   its opacity can scale independently of the shard's own opacity multiplier.
+   Baked-in gradient alpha would ride that multiplier UP on reveal along with
+   everything else, which was the reported bug -- a milky glare brighter than
+   the revealed world, exactly backwards from every other shard darkening
+   toward glossy. This is a plain (non-inline) class-toggled opacity, unlike
+   the shard's own, because the 1 -> ~0.33 ratio is the same fixed multiplier
+   for every frosty shard, not a per-shard value -- nothing here needs to be
+   inline, and it inherits the parent's clip-path automatically. */
+.landing2-shard-frost {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.16), transparent 55%);
+  opacity: 1;
+  transition: opacity 900ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.landing2-revealed .landing2-shard-frost {
+  opacity: 0.33;
 }
 
 /* The inner bevel rim: an inset duplicate of each shard's own boundary
@@ -3376,9 +3418,21 @@ a.card-handle:focus-visible {
   pointer-events: auto;
 }
 
+/* max-width narrowed from the shared 34vw: at left 6%, 34vw can reach 40% of
+   the viewport (6 + 34) on any viewport at or below the ~1118px width where
+   the shared class's 380px cap has not yet taken over -- overlapping the
+   water band's own 35-75% span, which now (see .landing2-water-mask above)
+   carries real, visible content instead of sitting at a flat low opacity.
+   26vw caps the right edge at 32%, a 3-point margin below 35% at every
+   viewport width, not just the crossover point (vw is a fixed percentage of
+   viewport width by definition, so this holds for the whole regime, not one
+   sampled size). Scoped to .landing2-copy-sky only: .landing2-copy-iphone
+   sits at top: 66%, far below the water band's y 30-40% range, so it has no
+   corresponding overlap risk and stays at the shared 34vw. */
 .landing2-copy-sky {
   left: 6%;
   top: 26%;
+  max-width: min(380px, 26vw);
 }
 
 .landing2-copy-iphone {
