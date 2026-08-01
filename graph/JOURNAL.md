@@ -8,7 +8,7 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: #190 (the acquaintance pivot) against graph-main, CI pending at entry time
+- Open PRs: none; #190 (the acquaintance pivot) merged to graph-main 2026-07-31 with CI green, after checkpoint #189 earlier the same day
 - Build position: all nine build-order steps merged, and the acquaintance layer now sits on top of them (derivation, marker override, JSON export, viewer v4, app bundling). 227 Swift tests plus 31 viewer node tests green. The native Canvas render still presents the bipartite model; its migration is the next build item.
 - Goal-criteria status: (1) build order complete: YES. (2) suite green with every charter fixture shape: YES, audited (shortcode, never-replied, two-member style-43, multi-service duplicate, large group, empty chat row - each covered at one or more pipeline layers). (3) real-data pipeline run with journaled counts and a names-attached kill-list review: YES (iterations 3 and 4). (4) fixture e2e resync survival: YES (EndToEndResyncSurvivalTests). (5) export writes a high-resolution image: YES, headlessly proven. (6) app builds and launches with a plain permission explanation: implemented and launch-verified programmatically; ON-SCREEN confirmation is the one remaining gap, blocked on the locked session.
 - Waiting on user: unlock the session (visual pass runs immediately), install Ollama + a model for live guesses, grant the app FDA for the first real in-app import
@@ -16,7 +16,7 @@ Real measurements belong here. Real names and message content do not.
 - Integration branch: `graph-main`, created 2026-07-31 per owner directive; the loop merges its own PRs there after green CI and self-review, main stays untouched, user merges graph-main to main
 - Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; the loop mirrors them into the graph-main worktree and commits there, always editing the main-checkout copy first
 - Blocked on user: Ollama, the plan's default local provider, not yet installed (needed only at P2 step 7)
-- Next intent: merge #190 on green, then migrate the native render to the acquaintance presentation and start P3 tuning of the tier thresholds
+- Next intent: migrate the native render to the acquaintance presentation, then P3 tuning of the tier thresholds against the measured 100-strong/959-likely split
 
 ## Entries
 
