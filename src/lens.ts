@@ -43,6 +43,22 @@ export function isTouchPointer(pointerType: string): boolean {
   return pointerType === "touch" || pointerType === "";
 }
 
+// Whether DriftSky should attach the interactive pointer/touch listeners --
+// including the non-passive touchmove that blocks page scroll under a drag.
+// Split from "does the figure draw and wander at all" (lensOn) deliberately:
+// the old full-page waitlist could afford that listener on every device
+// because it was a fixed overlay with nothing to scroll. A page that scrolls
+// normally cannot, so a coarse-pointer visitor gets the figure and its wander
+// (see wanderPoint) but never the gesture that would fight their scroll --
+// see LandingPage.tsx, which passes lens unconditionally and interactive only
+// for a fine pointer.
+export function gestureEnabled(input: {
+  lensOn: boolean;
+  interactive: boolean;
+}): boolean {
+  return input.lensOn && input.interactive;
+}
+
 export type Point = { x: number; y: number };
 
 // Two slow sines per axis at incommensurate rates, so the path never visibly

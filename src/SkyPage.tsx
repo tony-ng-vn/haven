@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { DriftSky } from "./DriftSky";
 import { TopNav } from "./TopNav";
+import { Footer } from "./Footer";
 
 // inhavens.com/#/sky.
 //
@@ -107,6 +108,7 @@ export function SkyPage() {
           Download for Mac
         </a>
       </main>
+      <Footer />
     </div>
   );
 }

@@ -3,15 +3,18 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 
 // This page's own job is the hero composition and the lens/fine-pointer
-// wiring; the nav and the demo embed each have their own dedicated tests
-// (TopNav.test.tsx, SkyDemoEmbed.test.tsx), so both are stood in for here the
-// way CardPage.test.tsx stands in for PersonSky.
-const driftSkyProps = vi.hoisted(() => ({
-  current: null as Record<string, unknown> | null,
+// wiring; the nav, the demo embed, and the footer each have their own
+// dedicated tests (TopNav.test.tsx, SkyDemoEmbed.test.tsx, Footer.test.tsx),
+// so all three are stood in for here the way CardPage.test.tsx stands in for
+// PersonSky.
+const driftSky = vi.hoisted(() => ({
+  props: null as Record<string, unknown> | null,
+  mounts: 0,
 }));
 vi.mock("./DriftSky", () => ({
   DriftSky: (props: Record<string, unknown>) => {
-    driftSkyProps.current = props;
+    driftSky.props = props;
+    driftSky.mounts += 1;
     return null;
   },
 }));
@@ -20,6 +23,9 @@ vi.mock("./TopNav", () => ({
 }));
 vi.mock("./SkyDemoEmbed", () => ({
   SkyDemoEmbed: () => <div data-testid="demo-embed-stub" />,
+}));
+vi.mock("./Footer", () => ({
+  Footer: () => <div data-testid="footer-stub" />,
 }));
 
 const { LandingPage } = await import("./LandingPage");
@@ -38,7 +44,8 @@ function stubPointer(fine: boolean) {
 afterEach(() => {
   cleanup();
   window.matchMedia = originalMatchMedia;
-  driftSkyProps.current = null;
+  driftSky.props = null;
+  driftSky.mounts = 0;
 });
 
 // Public and unauthenticated, like the card and legal pages: this renders
@@ -74,22 +81,12 @@ describe("the Haven landing page", () => {
     expect(ios?.getAttribute("href")).toBe("#/ios");
   });
 
-  test("hosts the nav and the demo embed rather than duplicating their logic", () => {
+  test("hosts the nav, the demo embed, and the footer rather than duplicating their logic", () => {
     stubPointer(false);
     render(<LandingPage />);
     expect(screen.getByTestId("top-nav-stub")).toBeTruthy();
     expect(screen.getByTestId("demo-embed-stub")).toBeTruthy();
-  });
-
-  test("the footer links to the legal and support pages", () => {
-    stubPointer(false);
-    render(<LandingPage />);
-    const hrefs = Array.from(document.querySelectorAll("a")).map((a) =>
-      a.getAttribute("href"),
-    );
-    expect(hrefs).toContain("/privacy");
-    expect(hrefs).toContain("/terms");
-    expect(hrefs).toContain("/support");
+    expect(screen.getByTestId("footer-stub")).toBeTruthy();
   });
 
   test("names both products by name", () => {
@@ -101,21 +98,34 @@ describe("the Haven landing page", () => {
     expect(body).toMatch(/waitlist/i);
   });
 
-  // The placement decision this page owns: the drag-to-reveal constellation
-  // figure is wired only for a fine pointer (mouse or trackpad). DriftSky's
-  // own reduced-motion check still applies underneath this -- untouched here,
-  // and not re-tested, since DriftSky.tsx itself did not change.
-  test("passes the constellation lens into DriftSky on a fine pointer", () => {
+  // The figure and its own wander are on for every device -- matching the
+  // old full-page waitlist, which had them on every device too (see
+  // waitlist-design.md). Only the interactive drag gesture is limited to a
+  // fine pointer; DriftSky.tsx's gestureEnabled split (see lens.test.ts) is
+  // what turns this prop into "no pointer/touch listeners attach", including
+  // the one that would otherwise block scroll on a touch drag.
+  test("the sky wanders on every device; the drag gesture is fine-pointer only", () => {
     stubPointer(true);
     render(<LandingPage />);
-    expect(driftSkyProps.current?.lens).toBe(true);
+    expect(driftSky.props?.lens).toBe(true);
+    expect(driftSky.props?.interactive).toBe(true);
   });
 
-  // A touch device falls back to the plain drift DriftSky already does
-  // without the lens -- the gesture is not wired at all, not merely hidden.
-  test("does not pass the lens on a coarse pointer", () => {
+  test("a coarse pointer still gets the wandering figure, never the drag gesture", () => {
     stubPointer(false);
     render(<LandingPage />);
-    expect(driftSkyProps.current?.lens).toBe(false);
+    expect(driftSky.props?.lens).toBe(true);
+    expect(driftSky.props?.interactive).toBe(false);
+  });
+
+  // The sky is a page-wide fixed background now (see .landing-sky in
+  // index.css), not a canvas scoped to the hero -- className is the seam
+  // between this component and the CSS that makes it full-page and full
+  // presence; driftSkyCanvasSizing.test.ts pins the CSS side.
+  test("mounts DriftSky once, full-page, not once per section", () => {
+    stubPointer(false);
+    render(<LandingPage />);
+    expect(driftSky.mounts).toBe(1);
+    expect(driftSky.props?.className).toBe("landing-sky");
   });
 });

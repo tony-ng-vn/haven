@@ -73,4 +73,14 @@ describe("the sky download page", () => {
     );
     expect(hrefs).toContain("/");
   });
+
+  // The compliance footer's own contents are pinned in Footer.test.tsx; this
+  // just confirms the page actually hosts it rather than duplicating it.
+  test("carries the shared compliance footer", () => {
+    render(<SkyPage />);
+    const hrefs = Array.from(document.querySelectorAll("a")).map((a) =>
+      a.getAttribute("href"),
+    );
+    expect(hrefs).toContain("/privacy");
+  });
 });

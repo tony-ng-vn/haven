@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { DriftSky } from "./DriftSky";
 import { TopNav } from "./TopNav";
+import { Footer } from "./Footer";
 import { WaitlistForm } from "./WaitlistForm";
 import { WAITLIST_COPY } from "./waitlistCopy";
 
@@ -66,6 +67,7 @@ export function IosPage() {
           </ul>
         </section>
       </main>
+      <Footer />
     </div>
   );
 }

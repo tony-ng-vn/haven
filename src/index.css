@@ -2253,6 +2253,13 @@ feedback-widget.feedback-fab {
 .card-sky {
   position: absolute;
   inset: 0;
+  /* <canvas> is a replaced element: inset: 0 alone does not stretch it to
+     fill the containing block the way it would a <div> -- width/height stay
+     at the canvas's intrinsic 300x150 CSS px without these two lines. Same
+     fix as .wl-sky below; see .landing-sky for the bug this caused when it
+     was missing. */
+  width: 100%;
+  height: 100%;
   z-index: 0;
   /* The sky is the backdrop, not the subject: held under the text so a dense
      patch never competes with the name it belongs to. */
@@ -2702,20 +2709,46 @@ a.card-handle:focus-visible {
    the one fixed-height box (one viewport tall, position: relative), and the
    rest of the page scrolls past it.
    ------------------------------------------------------------------------ */
-.landing-hero {
-  position: relative;
-  min-height: 100vh;
-  min-height: 100dvh;
-  overflow: hidden;
-  background: var(--night);
+/* A fixed, page-wide background layer, not scoped to the hero: the sky
+   continues behind every section as the page scrolls, the way the old
+   full-bleed waitlist page did for its one screen. One canvas for the whole
+   page (see LandingPage.tsx), not one per section -- a second canvas would
+   double the animation cost for no visible gain when the first already
+   covers the viewport. z-index: -1 rather than a stacking context on .landing
+   keeps this simple: it paints behind ordinary in-flow content by the normal
+   stacking rules, with nothing else needing a z-index to sit above it.
+
+   Full presence, not the .card-sky 0.55 dim -- the sky is the subject here,
+   not a backdrop behind reading copy.
+
+   width/height: 100% is load-bearing, not decoration -- see .card-sky's
+   comment. Without it this is the bug that shipped: a canvas stuck at its
+   intrinsic 300x150 CSS px, pinned to the top-left, wander and the lens both
+   compressed into that same tiny box. */
+.landing-sky {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
 }
 
-/* Full presence, not the .card-sky 0.55 dim -- the sky is the hero's subject
-   here, not a backdrop behind reading copy. */
-.landing-hero-sky {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
+/* z-index: 1 on every section below is not decoration -- it is what keeps
+   the page's readable content above the fixed z-index: 0 canvas, the exact
+   same explicit background/foreground pairing .card-sky uses with
+   .card-content, .legal-page, .sky-page and .ios-page. A negative z-index on
+   the canvas instead (paints behind ordinary static content without any
+   z-index needed on the foreground) was considered and deliberately not
+   used: it depends on no ancestor between the canvas and its siblings ever
+   acquiring its own stacking context (a transform, an opacity, a filter),
+   which is a fact about the whole page that is easy to invalidate by
+   accident later. Explicit z-index on both sides has no such hidden
+   dependency. */
+.landing-hero {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .landing-hero-content {
@@ -2833,9 +2866,55 @@ a.card-handle:focus-visible {
   color: #fff;
 }
 
-/* Below the fold: generous full-width sections, not cards. */
+/* The compliance footer (Footer.tsx), shared by the landing page, Your Sky,
+   and the iOS page: links to the existing privacy/terms/support documents
+   plus a copyright line. Quiet and small on purpose -- it is reference
+   chrome, not something anyone reads unless they came looking for it. */
+.site-footer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 24px 64px;
+  text-align: center;
+}
+
+.site-footer-links {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.site-footer-links a {
+  padding: 4px 6px;
+  color: rgba(242, 239, 233, 0.6);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(242, 239, 233, 0.3);
+}
+
+.site-footer-links a:hover,
+.site-footer-links a:focus-visible {
+  color: var(--text);
+}
+
+.site-footer-copyright {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(242, 239, 233, 0.4);
+}
+
+/* Below the fold: generous full-width sections, not cards. No background of
+   their own, deliberately -- .landing-sky is fixed behind the whole page (see
+   above), so leaving these transparent is what keeps the sky continuous as
+   the page scrolls instead of hitting flat dark past the hero. The text
+   shadow is the same legibility insurance the hero titles carry, now that
+   body copy sits directly over the same full-presence field. */
 .landing-section {
   position: relative;
+  z-index: 1;
   max-width: 40rem;
   margin: 0 auto;
   padding: 88px 24px;
@@ -2849,6 +2928,7 @@ a.card-handle:focus-visible {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--accent-text);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.45);
 }
 
 .landing-section-body {
@@ -2857,23 +2937,7 @@ a.card-handle:focus-visible {
   font-size: 18px;
   line-height: 1.6;
   color: rgba(242, 239, 233, 0.85);
-}
-
-.landing-footer {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-  padding: 32px 24px 64px;
-  font-size: 13px;
-  color: rgba(242, 239, 233, 0.5);
-}
-
-.landing-footer a {
-  padding: 4px 6px;
-  color: inherit;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-decoration-color: rgba(242, 239, 233, 0.3);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.45);
 }
 
 .landing-footer a:hover,

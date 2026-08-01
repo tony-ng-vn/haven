@@ -2,20 +2,30 @@ import { useEffect, useState } from "react";
 import { DriftSky } from "./DriftSky";
 import { TopNav } from "./TopNav";
 import { SkyDemoEmbed } from "./SkyDemoEmbed";
+import { Footer } from "./Footer";
 
 // inhavens.com/, signed out.
 //
-// The Haven landing: a full-viewport hero that puts the product's own world
-// on screen -- the drifting, constellation-lit sky at full presence, not the
-// dimmed 0.55 the other public pages use -- then two full-width sections
-// introducing each product and a quiet footer. Replaces the old two-card
-// landing the owner rejected on preview: a small corner of text over a sea of
-// empty dark that nobody clicked into.
+// The Haven landing: the drifting, constellation-lit sky fills the entire
+// page as a fixed background layer -- not just the hero -- so scrolling past
+// the fold never hits flat dark, the same full-bleed feel the old waitlist
+// page had for its one screen, now carried the whole page's length. On top
+// of it: a full-viewport hero (headline, subline, the two product CTAs),
+// then full-width sections introducing each product, then the compliance
+// footer. Replaces the old two-card landing the owner rejected on preview: a
+// small corner of text over a sea of empty dark that nobody clicked into --
+// and before that, a hero whose sky was pinned to a tiny top-left square (see
+// .landing-sky in index.css for the canvas-sizing bug that caused it).
 //
-// The hero owns the constellation lens (see prefersFinePointer below): the
-// drag-to-reveal figure is the page's thesis made into a gesture, restored
-// here from src/lens.ts and DriftSky's lens path, which had gone unused once
-// the old full-page waitlist that was its only caller was removed.
+// The hero owns the constellation lens: the figure and its own wander are on
+// unconditionally, on every device, matching the old full-page waitlist
+// (waitlist-design.md: "a phone is always wandering until a finger presses
+// the page"). Only the drag-to-reveal GESTURE -- pointer tracking, and
+// specifically the non-passive touchmove that would otherwise fight this
+// page's own scroll -- is limited to a fine pointer; see prefersFinePointer
+// below and gestureEnabled in lens.ts. Restored here from src/lens.ts and
+// DriftSky's lens path, which had gone unused once the old full-page waitlist
+// that was their only caller was removed.
 function prefersFinePointer(): boolean {
   return (
     typeof window !== "undefined" &&
@@ -24,15 +34,16 @@ function prefersFinePointer(): boolean {
 }
 
 export function LandingPage() {
-  // Read once, like WaitlistForm's own initialMode(): this decides whether
-  // the drag gesture is worth wiring up at all, not something that needs to
-  // track a live device change mid-session. A touch device falls back to the
-  // plain drift DriftSky already does without the lens -- the same split the
-  // old full-page waitlist had between desktop and phone, now gating the
-  // gesture itself rather than a layout. DriftSky's own reduced-motion check
-  // still applies underneath this: a fine-pointer visitor who prefers reduced
-  // motion gets neither the wander nor the drag figure.
-  const [lens] = useState(prefersFinePointer);
+  // Read once, like WaitlistForm's own initialMode(): a device's pointer
+  // type does not change mid-session, so this decides whether the drag
+  // gesture is worth wiring up at all -- not a layout choice, whether the
+  // gesture itself attaches. A coarse pointer still gets the figure
+  // appearing and drifting on its own (see DriftSky's lens path); it just
+  // never gets the listener that would block scroll under a touch drag.
+  // DriftSky's own reduced-motion check still applies underneath all of
+  // this: a visitor who prefers reduced motion gets neither the wander nor
+  // the drag figure, fine pointer or not.
+  const [interactive] = useState(prefersFinePointer);
 
   useEffect(() => {
     document.title = "Haven - A memory layer for the people you meet";
@@ -40,8 +51,12 @@ export function LandingPage() {
 
   return (
     <div className="landing">
+      {/* One canvas for the whole page, not one per section -- a second
+          instance would double the animation cost for no visible gain once
+          this one already covers the viewport as a fixed layer. */}
+      <DriftSky className="landing-sky" lens interactive={interactive} />
+
       <section className="landing-hero">
-        <DriftSky className="landing-hero-sky" lens={lens} />
         <TopNav />
         <div className="landing-hero-content">
           <h1 className="landing-hero-title">Your people are a constellation.</h1>
@@ -85,11 +100,7 @@ export function LandingPage() {
         </a>
       </section>
 
-      <footer className="landing-footer">
-        <a href="/privacy">Privacy</a>
-        <a href="/terms">Terms</a>
-        <a href="/support">Support</a>
-      </footer>
+      <Footer />
     </div>
   );
 }
