@@ -8,7 +8,7 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: none; #190 (the acquaintance pivot) merged to graph-main 2026-07-31 with CI green, after checkpoint #189 earlier the same day
+- Open PRs: #192 (two-plane sky restoration) against graph-main, CI pending at entry time; #189 and #190 merged earlier today
 - Build position: all nine build-order steps merged, and the acquaintance layer now sits on top of them (derivation, marker override, JSON export, viewer v4, app bundling). 227 Swift tests plus 31 viewer node tests green. The native Canvas render still presents the bipartite model; its migration is the next build item.
 - Goal-criteria status: (1) build order complete: YES. (2) suite green with every charter fixture shape: YES, audited (shortcode, never-replied, two-member style-43, multi-service duplicate, large group, empty chat row - each covered at one or more pipeline layers). (3) real-data pipeline run with journaled counts and a names-attached kill-list review: YES (iterations 3 and 4). (4) fixture e2e resync survival: YES (EndToEndResyncSurvivalTests). (5) export writes a high-resolution image: YES, headlessly proven. (6) app builds and launches with a plain permission explanation: implemented and launch-verified programmatically; ON-SCREEN confirmation is the one remaining gap, blocked on the locked session.
 - Waiting on user: unlock the session (visual pass runs immediately), install Ollama + a model for live guesses, grant the app FDA for the first real in-app import
@@ -19,6 +19,32 @@ Real measurements belong here. Real names and message content do not.
 - Next intent: migrate the native render to the acquaintance presentation, then P3 tuning of the tier thresholds against the measured 100-strong/959-likely split
 
 ## Entries
+
+### 2026-07-31 evening: owner decision, the two-plane sky returns (PR #192)
+
+The owner compared the acquaintance-map demo against the original design artifact (the two-plane sky: group chats floating above as a labeled constellation plane, people ranked by closeness in rings below, evidence lines cascading between) and decided that design is the product's SKY presentation, in the app and in marketing embeds.
+The acquaintance layer stays the shared model; the people-only map remains the analysis view via the exports workflow.
+PLAN.md's Visual section now records this as two presentations over one model, restoring rings for the Sky view specifically.
+
+DONE
+
+- template-sky.html restored verbatim from the checkpoint commit (2,756 lines; deleted earlier today, recovered from git history exactly as the owner approved it).
+- build.py: the viewer-core placeholder is conditional (absent skips inlining, present inlines exactly once, duplicates fail loudly); the JSON placeholder stays required exactly once. The skip was proven real, not vacuous: byte accounting matched the JSON payload exactly, zero core function names in the sky output, and a map build after the change diffed byte-identical to before.
+- App bundles template-sky.html alone (map template and core file out of the bundle); SkyExportBuilder's viewer-core source is optional under the same conditional contract, red-first tested in both directions; AppModel and SkyView updated. The onboarding sky renders the two-plane design again.
+- The landing's sample sky was rebuilt from template-sky.html with the synthetic fixture, so the marketing demo matches what the app shows.
+
+VERIFIED BY THE LEAD
+
+- swift test 228/0, swift build -c release clean, xcodebuild BUILD SUCCEEDED with template-sky.html present in the bundle and the map resources absent, node tests.mjs 31/31.
+
+KNOWN CAVEAT
+
+- The restored template ships unaudited, as approved: it carries the previously flagged potential bug where its time-travel init loop may overwrite adapter null fields with random values. Revisit if the sky misbehaves on real data.
+
+NEXT
+
+- Refresh the downloadable YourSky.zip from this build after merge.
+- The native Canvas render migration and the P3 threshold tuning stand as queued.
 
 ### 2026-07-31: the acquaintance pivot (PR #190, after checkpoint PR #189)
 
