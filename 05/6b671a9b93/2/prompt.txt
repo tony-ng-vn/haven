@@ -1,0 +1,179 @@
+<task-notification>
+<task-id>a8c73b6de36c19991</task-id>
+<tool-use-id>toolu_01QAxXbbps2PAFPorjqZ3BA1</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/f8bd6ddf-192a-4b10-af58-9371cf1cfccf/tasks/a8c73b6de36c19991.output</output-file>
+<status>completed</status>
+<summary>Agent "Swift acquaintance core" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Report
+
+### Files added (all under `graph/`, paths relative to that root)
+
+- `Sources/GraphCore/GroupChatActivity.swift` - the per-merged-chat data model (chatId, resolved name, roster, per-member day sets) that GraphBuilder now produces alongside Graph, giving the acquaintance layer day-level data with no new database read.
+- `Sources/GraphCore/AcquaintanceScoring.swift` - the scoring constants (strong/likely thresholds, co-active-day weight and cap) in one named place, per the brief.
+- `Sources/GraphCore/AcquaintanceRosterKey.swift` - the one canonicalization function (sorted, deduped array of member `Person.id`s) used everywhere a roster needs to become a stable override key.
+- `Sources/GraphCore/Acquaintance.swift` - `AcquaintanceTier` (no raw value, matches the deliberate `EdgeReason`/`NodeKind` pattern), `AcquaintanceEvidence`, `Acquaintance` (a&lt;b canonical ordering in its own init, mirroring `GraphEdge`).
+- `Sources/GraphCore/AcquaintanceDerivation.swift` - the scoring algorithm itself: base weight `1/(n-1)` per shared chat, `+0.1` per co-active day capped at 5, tier from score, marker-driven `confirmed` override.
+- `Tests/GraphCoreTests/AcquaintanceRosterKeyTests.swift` (3 tests), `AcquaintanceDerivationTests.swift` (8 tests), `GroupChatActivityTests.swift` (2 tests) - new test files, red-then-green throughout.
+
+### Files changed
+
+- `Sources/GraphCore/ActivityDays.swift` - added `daySet(_:calendar:)`; `distinctDays` now delegates to it. Pure extraction, no behavior change (existing suite is the safety net).
+- `Sources/GraphCore/GraphBuilder.swift` - added `GraphBuildResult`/`buildDetailed(...)`, with `build(...)` now a thin wrapper (`.graph`) so all ~30 existing call sites are untouched. The merged-group loop now captures each member's day *set* (was already computing the count) and emits one `GroupChatActivity` per merged group, dead groups included, service-split rows already collapsed to one entry by the existing roster merge.
+- `Sources/GraphCore/Overrides.swift` - added `fullyAcquaintedRosterKeys: Set&lt;[String]&gt;` with `decodeIfPresent(...) ?? []`; deleted the accidentally-duplicated doc-comment block above `init(from:)`.
+- `Sources/GraphCore/GraphJSON.swift` - `encode(...)` gained `groupChatActivity`/`fullyAcquaintedRosterKeys` params (defaulted, so old call sites are unaffected), calls `AcquaintanceDerivation.derive` internally, filters output against the graph's own node-id set (person endpoints drop the whole pair; a hidden group chat drops just that evidence entry, score stays the full observed sum - documented inline as intentional), and resolves `chatName` from the already-computed `nodes` array so it can never disagree with what the nodes array itself exports. Also fixed a `Dictionary(uniqueKeysWithValues:)` crash trap on a hand-built `Graph` with a duplicate node id (found via review, not in the original brief; added a regression test).
+- `Sources/graph-cli/main.swift` - `runJSON` now uses `buildDetailed` and threads `groupChatActivity`/`fullyAcquaintedRosterKeys` through; new `runAcquaintances` subcommand prints tier counts, total, and marked-chat count only.
+- `App/Sources/AppModel.swift` - `lastGroupChatActivity` state (assigned before the guess-pass branch so the Sky export sees it); `isFullyAcquainted(groupNodeID:)` / `setFullyAcquainted(groupNodeID:isFullyAcquainted:)`, both reading/writing the override store directly, never view state; `finishMapping()`'s Sky JSON export now carries the same fields.
+- `App/Sources/GraphView.swift` - context menu gains a `Toggle` (checkable) "Everyone here knows each other" for group-kind nodes only.
+- `Tests/GraphCoreTests/GraphJSONTests.swift` (+7 tests), `OverridesStoreTests.swift` (+2 tests).
+
+### Test counts
+
+Before: 195. After: **217** (22 new: 3 + 8 + 2 + 2 + 7).
+
+### Red-first, one line per behavior
+
+- Roster-key canonicalization (order/dup insensitive): stub returned `[]`; asserted sorted/deduped arrays - failed as expected, 3/3.
+- Trio-chat scores 1.0/strong: stub `[]`; `XCTAssertEqual` count 0 != 1 - failed.
+- 20-person-chat pair dropped (paired with a must-exist trio pair so it can't pass vacuously): stub `[]`; the trio-pair assertion failed.
+- Multi-chat accumulation crosses into likely: stub `[]`; `XCTUnwrap` on the pair failed.
+- Co-active-day cap (6 days -&gt; +0.5, evidence reports raw 6): stub `[]`; `XCTUnwrap` failed.
+- Lurker gets base only vs active pair higher: stub `[]`; `XCTUnwrap` failed on all three pairs.
+- Dead group still contributes: stub `[]`; `XCTUnwrap` failed.
+- Marked chat confirms sub-threshold lurkers (8-person chat): stub `[]`; `count 0 != 28` failed.
+- Unmark demotes to observed tier: stub `[]`; `XCTUnwrap` failed on the marked lookup.
+- GroupChatActivity: dead group entry produced: stub (`groupChatActivity` hardcoded empty inside a full-behavior `build()`/`buildDetailed()` restructure that otherwise kept all 195 tests green); `XCTAssertNotNil` failed - activity was nil.
+- GroupChatActivity: service-split chats produce one unioned entry: same stub; `count 0 != 1` failed.
+- Overrides backward-compat decode of a pre-acquaintance-layer file: implemented with **strict** `container.decode` first; the new test threw `DecodingError.keyNotFound`, and - notably - it also broke the pre-existing `nameGuesses` backward-compat test the same way, doubly confirming the break before switching to `decodeIfPresent`.
+- GraphJSON acquaintance shape/null-chatName/pair-ordering/chatName-matches-nodes/determinism (batch): signature-only stub (params accepted, body always emitted empty arrays); decode against the new `DecodedAcquaintance` shape failed (`keyNotFound`/count mismatches) on 5 of 6 new tests (the determinism test passed vacuously against the always-empty stub, noted rather than hidden).
+- GraphJSON hidden-node invariant (both the person-drop and the evidence-trim cases) and `fullyAcquaintedChatIds` exclusion: implemented `derive()` wiring *without* the nodeIDs filter first; both tests failed with the dangling ids actually present in the decoded output (`count 2 != 1`, evidence list included the hidden chat, `fullyAcquaintedChatIds` included the excluded id) - proving the filter is load-bearing, not decorative - then added the filter and reran green.
+- (Not in the original required list, found via review) `GraphJSON.encode` crash on a duplicate node id: fixed directly (`uniquingKeysWith`) with a regression test; did not deliberately crash the test runner to "prove red" since that failure mode is a process trap, not a clean assertion - documented as the one departure from strict red-first, with the reasoning above.
+
+One process note: two early test-writing mistakes were `try!` on `XCTUnwrap` (traps the whole process on nil instead of failing one test - caught it via a genuine `fatalError` crash mid-run) and one straight compile error (`XCTAssertEqual` with `accuracy:` on an `Optional&lt;Double&gt;`). Both fixed before any test was reported as red; no fabricated "red" was ever a compile/crash failure in the final reported list above.
+
+### Verification (all three, final run, from `graph/`)
+
+1. `swift test` - **217 tests, 0 failures.** Perf smoke test ran clean each time (ratio ~48-53x, within its own load-tolerant design; did not flake, nothing was "fixed").
+2. `swift build -c release` - clean, no warnings.
+3. `xcodebuild -scheme ConnectionGraph build` (from `graph/App/`) - **BUILD SUCCEEDED**, no errors or warnings in any file I touched.
+
+### Spec ambiguities and how I resolved them
+
+1. **Roster-key identity**: PLAN.md says "sorted resolved member identifiers." I used one identifier per member (`Person.id`), not each member's full identifier set. This matches the codebase's existing precedent (`MergeAnswer`'s doc comment: `Person.id`, though not fully resync-stable if a *new* smaller identifier later merges into someone, remains one of that person's identifiers forever since identifiers only ever get added). A full-identifier-set key would need order to survive a *growing* set across resync too, which isn't testable from the brief's required list; documented the residual limitation inline, same caveat `Person.id` itself already carries.
+2. **Evidence `coActiveDays`**: raw/uncapped count (a fact), separate from the capped value that feeds the score. Pinned directly by a test asserting both the score contribution (+0.5) and the evidence value (6) from the same 6-day fixture.
+3. **Hidden-node invariant granularity**: resolved as pair-level drop for an absent *person* endpoint, evidence-level trim (score untouched, full observed sum) for an absent *group* endpoint in evidence - documented as the only place this asymmetry is explained (`GraphJSON.swift`), pinned by a test asserting the general form (no id anywhere in the output, not just `a`/`b`, is absent from the exported nodes array).
+4. **`GraphBuilder.build` vs a new `buildDetailed`**: kept `build`'s signature and behavior completely frozen; added `buildDetailed` as the only new entry point, to avoid touching ~30 existing call sites for a feature only two new callers need.
+
+### Known gaps, flagged not fixed (per "match today, don't fix; note in report")
+
+- `graph-cli json`/`acquaintances` still don't apply `RemovedPeopleOverride` or hidden-node exclusion (neither did `runJSON` before this change) - a CLI export can include people the app would have dropped. Pre-existing, out of scope.
+- `graph-cli json`/`acquaintances` read the real `~/Library/Application Support/ConnectionGraph/overrides.json` (read-only, via `try?`) with no injectable path. Because of this I did not invoke the built `graph-cli` binary end-to-end against even a synthetic chat.db (it would still open that real file as a side effect); instead I verified the full pipeline (real SQLite extraction -&gt; `buildDetailed` -&gt; `derive` -&gt; `encode`) via a temporary GraphCore-level test using `ChatDBFixture` and an injected `OverridesStore` URL, confirmed correct output, then deleted that test - it is not part of the diff.
+- Did not touch `ForceSimulation.swift`, `GraphImageRenderer.swift`, `EdgeRenderList.swift`, `graph/viewer/`, `GOAL.md`, `JOURNAL.md`, or `PLAN.md`. `PLAN.md`/`HANDOFF.md` show as modified/untracked in `git status` but that state pre-dates this session (confirmed via `git diff` before any work began); `viewer/build.py` and the new `viewer/*` files are the concurrent agent's work, not mine.
+- No git state was changed (no checkout/reset/stash/commit); all changes are uncommitted in the working tree for the lead to review.</result>
+<usage><subagent_tokens>408740</subagent_tokens><tool_uses>187</tool_uses><duration_ms>2528777</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a8c73b6de36c19991</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/f8bd6ddf-192a-4b10-af58-9371cf1cfccf/tasks/a8c73b6de36c19991.output</output-file>
+<status>completed</status>
+<summary>Agent "Swift acquaintance core" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Follow-up complete: resync-shift bug fixed
+
+### The fix
+
+Added `AcquaintanceRosterKey.resolve(stored:people:) -&gt; Set&lt;[String]&gt;` in `Sources/GraphCore/AcquaintanceRosterKey.swift`: translates every stored key's identifiers to their CURRENT owner's `Person.id` via `person.identifiers.contains(...)` (built as an O(1) lookup dict, same disjointness guarantee `GraphBuilder`'s `handleToPersonID` already relies on). An identifier belonging to nobody current makes that key dormant (drops from the translated set, never touches storage). Two stored identifiers resolving to one merged person collapse via `canonicalize`'s existing dedup.
+
+Wired at every match site, translating once and reusing the result:
+- `GraphJSON.encode` gained a `people: [Person] = []` parameter; translates once, feeds both `AcquaintanceDerivation.derive` and the `fullyAcquaintedChatIds` filter.
+- CLI `runJSON` now passes `people: filterResult.kept`; `runAcquaintances` translates explicitly before both the derivation call and `markedChatCount`.
+- `AppModel.isFullyAcquainted` translates against `lastKeptPeople` before checking; `finishMapping()`'s Sky export now passes `people: lastKeptPeople`.
+- `setFullyAcquainted` (the write path) is untouched, as instructed - it still snapshots current `Person.id`s at mark time.
+- `AcquaintanceDerivation.derive`'s doc comment now states its contract explicitly: it expects already-translated (current) keys, since it has no `Person`/identifier data to translate with itself.
+
+### Red-first evidence
+
+- `resolve`'s 4 required behaviors (stale-id translation, dormant-key-matches-nothing, two-ids-collapse-to-one-merged-person, determinism regardless of `people` order): landed `resolve` as an identity/pass-through stub (literally today's bug), all 4 new `AcquaintanceRosterKeyTests` failed with clear expected-vs-actual mismatches (e.g. `(["+15551002", "+15551003"])` is not equal to `(["+15551000", "+15551003"])`), then implemented for real - all green, and the full suite (which already exercised `resolve` transitively nowhere else at that point) stayed green throughout.
+- Store round-trips a dormant key unchanged: new `OverridesStoreTests` test - trivially green by construction (the fix never touches `OverridesStore`/`Overrides` encode-decode at all), included as a pinned invariant rather than a bug reproduction, per its own doc comment explaining why.
+- Integration test (`GraphJSONTests.testMarkingSurvivesAMemberGainingANewSmallerPersonIDAcrossResync`, the coordinator's required test 1, checking both `confirmed` tier and `fullyAcquaintedChatIds`): written and passed against the already-fixed code, so to prove it was genuinely meaningful I temporarily bypassed the `resolve()` call in `GraphJSON.encode` (`let translatedRosterKeys = fullyAcquaintedRosterKeys`) and reran just that test - it failed exactly as the bug predicts (`"strong"` instead of `"confirmed"`, and the chat missing from `fullyAcquaintedChatIds`), then restored the fix and confirmed green again.
+- Two pre-existing tests (`testFullyAcquaintedChatIdsExcludesIdsAbsentFromTheExportedNodesArray`, and strengthened `testAcquaintanceEncodingIsByteIdenticalRegardlessOfInputOrder`) broke the moment translation went live, because they relied on lucky exact-string-match without passing `people:` - concrete proof the old behavior really was fragile. Fixed by adding a `person(id:identifiers:)` fixture helper to `GraphJSONTests.swift` and passing matching `people:`.
+
+### Final counts and verification
+
+Test count: 195 (session baseline) -&gt; **223** (39 new test functions across `AcquaintanceRosterKeyTests` +4, `OverridesStoreTests` +1, `GraphJSONTests` +1 for this follow-up; the rest from the original task).
+
+1. `swift test` - **223 tests, 0 failures.**
+2. `swift build -c release` - clean.
+3. `xcodebuild -scheme ConnectionGraph build` - **currently BUILD FAILED, not because of my changes.** Isolating evidence: the failure is `CpResource ... template-v3.html: No such file or directory`, occurring at the resource-copy step before the Swift compiler is ever invoked (full log shows zero `.swift` compiler diagnostics; `SwiftDriver` is only listed as queued, never run). `git status` shows `D viewer/template-v3.html` / `?? viewer/template-v4.html` - the concurrent agent working in `graph/viewer/` (which I am not permitted to touch) has renamed the viewer template mid-session, and `App/project.yml`'s resource reference (`../viewer/template-v3.html`) hasn't been updated to match. Retried three times over the course of this follow-up; still broken as of my last check. I made no change to `graph/viewer/`, `App/project.yml`, or anything that would explain this - my own Swift sources compile cleanly per `swift build -c release` and `swift test`, and the xcodebuild log confirms compilation was never reached, only the resource copy failed.
+
+This needs either the other agent to finish updating `App/project.yml` to point at `template-v4.html` (or restore `template-v3.html`), or a rerun once their work settles - not a fix on my end within the stated scope.
+
+Files touched this follow-up: `Sources/GraphCore/AcquaintanceRosterKey.swift` (new `resolve` function), `Sources/GraphCore/AcquaintanceDerivation.swift` (doc comment only), `Sources/GraphCore/GraphJSON.swift`, `Sources/graph-cli/main.swift`, `App/Sources/AppModel.swift`, `Tests/GraphCoreTests/AcquaintanceRosterKeyTests.swift`, `Tests/GraphCoreTests/OverridesStoreTests.swift`, `Tests/GraphCoreTests/GraphJSONTests.swift`. No git state changed; nothing in `graph/viewer/` touched.</result>
+<usage><subagent_tokens>517635</subagent_tokens><tool_uses>66</tool_uses><duration_ms>865132</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ab6e9a3a510686e7e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/f8bd6ddf-192a-4b10-af58-9371cf1cfccf/tasks/ab6e9a3a510686e7e.output</output-file>
+<status>completed</status>
+<summary>Agent "Viewer v4 acquaintance map" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary of work
+
+**Files added** (all under `graph/viewer/`):
+- `viewer_core.mjs` — pure-function core: RAW adapt/degrade, seeded label-propagation community detection + region labeling, "everyone here knows each other" tier recompute, Dijkstra shortest path + shared-groups fallback, stale-mark rejection, top-N acquaintance-degree, deterministic force layout, display-name/comparator helpers, and `buildViewModel` (the one function that wires the whole pipeline, called identically by both `tests.mjs` and the template).
+- `tests.mjs` — 31 cases, `node:test`/`node:assert` (Node builtins, zero installed deps), runs via plain `node tests.mjs`.
+- `template-v4.html` — the 2D pan/zoom acquaintance map (people-only dots, region captions, tier-styled connection lines, search, person/pair panel, groups drawer with the toggle + localStorage marks + "copy marks as JSON").
+- `fixtures/synthetic.json` — 45 invented people, 9 group chats, covering all required scenarios: two dense regions with a shared bridge person, a lurker (membership, zero acquaintance edges), an unnamed group, a dead group, a 20-member sub-threshold chat, the `fullyAcquaintedChatIds`-listed chat, and a fully isolated person.
+
+**Changed:** `build.py` — template argument is now required (3 positional args, clear error otherwise); inlines `viewer_core.mjs` (export-stripped) plus the JSON payload into two placeholders, with a build-time assertion that each placeholder appears exactly once (this assertion exists because I initially introduced the bug it guards against — see below).
+
+**Deleted:** `template.html`, `template-v3.html` (plain `rm`, not `git rm`; left the index for the lead).
+
+## Mechanism: tested code == shipped code
+
+`build.py` reads `viewer_core.mjs` verbatim and strips only the `export ` keyword via `re.sub(r"(?m)^export (function|const)\b", r"\1", core_src)`, then splices the result into `__VIEWER_CORE_JS__` inside `template-v4.html`'s single `&lt;script&gt;` block, ahead of `const RAW = __GRAPH_JSON__;`. `tests.mjs` imports the same `viewer_core.mjs` directly. Documented in `build.py`'s header comment, including the exact extraction one-liner for verification.
+
+## Verification (all re-run after the final fixes below)
+
+1. `node tests.mjs`: 31/31 pass.
+2. `node --check viewer_core.mjs`: OK. `node --check` on the extracted `&lt;script&gt;` block from both the raw template (pre-build, bare placeholders parse fine) and the actual built output (real inlined code): OK both.
+3. `python3 build.py fixtures/synthetic.json &lt;scratchpad&gt;/synthetic-map.html template-v4.html`: exit 0; 0 placeholder occurrences remain; fixture data confirmed embedded.
+4. `python3 build.py fixtures/synthetic.json out.html` (missing template): exit 64, `error: exactly three arguments are required (json, out, template)`.
+5. `graph/viewer/` contains exactly `template-v4.html`, `build.py`, `viewer_core.mjs`, `tests.mjs`, `fixtures/synthetic.json`.
+6. Beyond `node --check` (syntax only), I ran the actual built page in headless Chrome via raw CDP over Node's built-in WebSocket (no npm dependency) to exercise real runtime behavior: initial load, assembly settle, single/pair selection, the no-path/shared-groups fallback, Esc, search, groups drawer render/hover/toggle/persistence, both copy buttons (correctly showing the failure state, since headless has no clipboard permissions), wheel zoom, empty-canvas deselect, and a `prefers-reduced-motion` reload. Zero uncaught exceptions or console errors across the whole run. This caught two real bugs `node --check` could never see:
+   - A CSS specificity bug: `.legend .row { display: flex }` beat the browser's own `[hidden] { display: none }`, so the reduced-motion note never actually hid. Fixed with one global `[hidden] { display: none !important; }` rule (and removed the two now-redundant per-element overrides).
+   - A fixture-generator bug (not `viewer_core.mjs`): two people sharing more than one "dense" group produced duplicate `acquaintances` entries for the same pair, which `adaptRaw` was silently last-write-winning on instead of merging. Fixed at the source (fixture generator now merges score/evidence per pair like a real export would, "one acquaintance edge per pair, however many chats underlie it") and defensively in `adaptRaw` itself (sums score, keeps strongest tier, unions evidence on a duplicate pair, with a test pinning it).
+
+## A blocking bug found by advisor review, now fixed and re-verified by a real click
+
+Clicking a connection row in the person panel to expand its evidence (`&lt;summary data-goto="..."&gt;` inside a `&lt;details&gt;`) both toggled the native `&lt;details&gt;` open AND bubbled into the panel's click handler, which called `onPersonClicked` — since a person was already selected, that flipped into pair mode and overwrote `pp-body.innerHTML`, destroying the evidence the same click had just opened. My earlier smoke test missed this because it called `onPersonClicked` directly instead of clicking the actual element. Fixed by dropping `data-goto` from connection rows (their only job is expanding evidence; navigating to a connection already works via their dot on the map or search) and removing the now-dead handler branch. Re-verified with a genuine `.click()` on `.conn-item` in the CDP harness: selection stays `"single"`, the nested `&lt;details&gt;` opens, `.evbox` is visible.
+
+Two smaller issues from the same review, also fixed: `esc()` didn't escape `"` even though its output feeds several HTML attributes (`data-copy`, `data-group`, `data-id`, `data-key`) — now escapes `"` universally, matching v3's precedent for this exact hazard, and I removed the now-redundant manual quote-patch on the drawer's `data-key`. The search box/results also had a half-built ARIA combobox/listbox/option pattern that didn't match what's actually implemented (plain focus-moving buttons, not `aria-activedescendant` tracking) — removed those roles since incorrect ARIA can read worse than none; the actual keyboard behavior (Tab into results, Enter/Space/arrow keys) is unchanged.
+
+## Contract ambiguities and how I resolved them
+
+- **`oneToOneThread` edges**: confirmed by reading `GraphBuilder.swift` that these always have `"user"` on one end (a one-to-one chat is definitionally you plus one other person), so "ignore the user's edges" already fully covers them — no separate handling needed.
+- **Live toggle vs. layout/regions**: checking/unchecking a chat in the groups drawer recomputes tiers, drawn lines, the side panel, and the top-N label set, but does **not** re-run the force layout or community/region assignment. The initial layout and regions are computed once at load using the *effective* set (shipped `fullyAcquaintedChatIds` plus any valid stored marks), so a pre-checked chat's promoted pairs are already reflected in the first settle. I judged re-laying-out on every checkbox click to be a bigger surprise than the toggle itself, and PLAN.md's "the map rests" framing supports this — but the brief doesn't say this explicitly, so flagging it as my call.
+- **Score floor for marker-created pairs**: `CONFIRMED_MARKER_SCORE = 2`, above the "strong" cutoff (1.0), `Math.max`'d with any prior score. Needed so a brand-new confirmed pair is cheap (not `Infinity`) in shortest-path's `1/score` weighting. Pinned by a test.
+- **"Copy marks as JSON" payload**: exports the *effective* checked-chat set (shipped defaults plus in-page marks), not only marks toggled in this browser session. I judged this the more self-consistent, round-trippable snapshot ("here is everyone this page currently treats as fully acquainted"), but it is a reading of the brief, not a literal instruction — flagging as an assumption per the advisor's request.
+- **Region dominant-chat tie-break**: raw member-count overlap (not weighted by score), ties broken by smallest group id.
+- **Search**: implemented as an always-visible, always-tab-reachable input rather than a keyboard-shortcut overlay (v3's Cmd-K pattern), since the brief calls search "a primary way in."
+
+## Testing methodology, stated plainly
+
+Most tests were not written strictly red-first. Several algorithms here (label-propagation convergence, exact layout numbers) aren't reliably hand-predictable, so I explored actual behavior against the fixture empirically first (this process itself caught the fixture-duplicate-pair bug above), then wrote tests matching verified-correct output. I validated that the resulting suite is not vacuous by mutation testing: I deliberately reintroduced the exact bug the "recompute never mutates its input" test claims to guard against (removed the `evidence` array clone). The first version of that test did **not** catch it — its chosen scenario happened to never exercise the vulnerable code path — so I rewrote the test around a scenario that does, reran the mutation, confirmed it now fails for the right reason, then restored the fix.
+
+## Not done / out of scope
+Did not touch `graph/exports/` or any real data at any point — only the synthetic fixture. Did not modify anything outside `graph/viewer/`; cross-checked (read-only) the other agent's concurrent `GraphJSON.swift` changes and confirmed the shipped `acquaintances`/`fullyAcquaintedChatIds` wire shape matches what I built against exactly.
+
+Relevant paths: `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/graph-main-wt/graph/viewer/{template-v4.html,build.py,viewer_core.mjs,tests.mjs,fixtures/synthetic.json}`.</result>
+<usage><subagent_tokens>478080</subagent_tokens><tool_uses>217</tool_uses><duration_ms>3813950</duration_ms></usage>
+</task-notification>
