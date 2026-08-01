@@ -28,12 +28,16 @@ targets:
     platform: macOS
     sources:
       - path: Sources
-      # The sky viewer template lives in graph/viewer/, not under App/, because it is
-      # shared with viewer/build.py's own standalone (non-app) export path -- copying it
-      # here instead of moving it would make the two drift. `buildPhase: resources`
-      # (rather than relying on extension inference) is what actually gets it into Copy
-      # Bundle Resources; a bare path here would otherwise be treated as a source file.
-      - path: ../viewer/template-v3.html
+      # The sky viewer template and its core logic live in graph/viewer/, not under App/,
+      # because they are shared with viewer/build.py's own standalone (non-app) export path --
+      # copying them here instead of moving them would make the two drift. `buildPhase:
+      # resources` (rather than relying on extension inference) is what actually gets each
+      # into Copy Bundle Resources; a bare path here would otherwise be treated as a source
+      # file. Both are needed: template-v4.html has TWO placeholders now
+      # (__VIEWER_CORE_JS__ and __GRAPH_JSON__), and viewer_core.mjs is what fills the first.
+      - path: ../viewer/template-v4.html
+        buildPhase: resources
+      - path: ../viewer/viewer_core.mjs
         buildPhase: resources
     dependencies:
       - package: GraphCore

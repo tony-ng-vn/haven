@@ -8,17 +8,52 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: none; #188 (density instrument) merged to graph-main 2026-07-31 with CI green (CodeRabbit, a non-required advisory bot, was stuck at Review queued for 30+ minutes and was not waited on)
-- Build position: ALL NINE build-order steps implemented and merged to graph-main. 141 tests green. The build phase of the standing goal is complete.
+- Open PRs: #190 (the acquaintance pivot) against graph-main, CI pending at entry time
+- Build position: all nine build-order steps merged, and the acquaintance layer now sits on top of them (derivation, marker override, JSON export, viewer v4, app bundling). 227 Swift tests plus 31 viewer node tests green. The native Canvas render still presents the bipartite model; its migration is the next build item.
 - Goal-criteria status: (1) build order complete: YES. (2) suite green with every charter fixture shape: YES, audited (shortcode, never-replied, two-member style-43, multi-service duplicate, large group, empty chat row - each covered at one or more pipeline layers). (3) real-data pipeline run with journaled counts and a names-attached kill-list review: YES (iterations 3 and 4). (4) fixture e2e resync survival: YES (EndToEndResyncSurvivalTests). (5) export writes a high-resolution image: YES, headlessly proven. (6) app builds and launches with a plain permission explanation: implemented and launch-verified programmatically; ON-SCREEN confirmation is the one remaining gap, blocked on the locked session.
 - Waiting on user: unlock the session (visual pass runs immediately), install Ollama + a model for live guesses, grant the app FDA for the first real in-app import
 - Pending visual check: the machine's session was locked during iteration 5, so the on-screen look of the permission screen and the real-data render are unverified; first task once the session is unlocked
 - Integration branch: `graph-main`, created 2026-07-31 per owner directive; the loop merges its own PRs there after green CI and self-review, main stays untouched, user merges graph-main to main
 - Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; the loop mirrors them into the graph-main worktree and commits there, always editing the main-checkout copy first
 - Blocked on user: Ollama, the plan's default local provider, not yet installed (needed only at P2 step 7)
-- Next intent: merge #179 when CI is green, then start P2 step 2
+- Next intent: merge #190 on green, then migrate the native render to the acquaintance presentation and start P3 tuning of the tier thresholds
 
 ## Entries
+
+### 2026-07-31: the acquaintance pivot (PR #190, after checkpoint PR #189)
+
+The owner redirected the product abstraction in a design session: this is a personal acquaintance graph.
+People are nodes, connections between people are the visible structure, group chats are hidden evidence explaining those connections, and the user is implicit -- no center node, no rings, no closeness tiers.
+PLAN.md was amended accordingly ("What this is", a new "The acquaintance layer" section, a rewritten Visual contract, Interaction), canonical copy and worktree mirror kept identical.
+
+DONE
+
+- Checkpoint first (PR #189, merged): two prior sessions had left roster-keyed group dedup, the corrected roster classification, the onboarding flow, the viewer, and the Polygres sync script uncommitted in the worktree. Verified before landing (swift test exit 0 on that tree; the modified perf smoke inspected against the handoff's tamper warning and found to be the legitimate calibration rework; templates confirmed placeholder-only; sync script credential-free), then committed as one baseline.
+- Acquaintance derivation in GraphCore: per shared chat, base weight 1/(n-1) with n the resolved members excluding the user, plus 0.1 per co-active day of the pair in that chat capped at 5; dead groups count in full; tiers strong >= 1.0 and likely >= 0.2, nothing recorded below; constants in AcquaintanceScoring for P3 tuning. GraphBuilder now emits GroupChatActivity (per-merged-chat member day sets) through a new buildDetailed, with build() unchanged for all existing call sites; service-split chats contribute once, unioned.
+- The marker: "everyone here knows each other" stored as fullyAcquaintedRosterKeys (sorted member identifiers), translated at match time by identifier containment (AcquaintanceRosterKey.resolve) so a member's Person.id shifting across a resync cannot silently detach a marking -- the same philosophy HiddenNodeOverride already uses for people. Dormant keys match nothing and are never rewritten. Surfaced as a checkable group context-menu item in the app, persisted through the overrides store.
+- Export and CLI: GraphJSON gains acquaintances (pair, tier, score, per-chat evidence with chatName echoing the nodes array) and fullyAcquaintedChatIds, deterministic, with tests pinning that no exported id dangles outside the nodes array. New counts-only acquaintances subcommand.
+- Viewer v4 replaces the rings: people-only 2D pan/zoom map, seeded deterministic layout (groups as invisible anchors plus acquaintance springs), seeded label-propagation regions captioned by their dominant named chat, semantic zoom (rest shows dots, region labels, top names, strong-and-confirmed lines only; selection reveals a person's connections with evidence; pair selection shows the shortest observed path with per-hop evidence or a no-observed-path answer with shared-chat fallback), groups drawer with the marker toggle (localStorage marks keyed by chat plus roster, stale marks ignored, copy-marks-as-JSON), search, assembly animation honoring prefers-reduced-motion. viewer_core.mjs is the single tested-and-shipped source, inlined by build.py, which now requires its template argument and asserts each placeholder exactly once. Old templates deleted.
+- App integration: project.yml bundles template-v4.html and viewer_core.mjs; SkyExportBuilder fills both placeholders in-process, mirroring build.py's strip (cross-referenced comments so they cannot drift silently), asserting exactly-once; the onboarding sky WKWebView now renders the acquaintance map.
+- Real-data measurement (full history): 1,059 acquaintance pairs = 100 strong + 959 likely, 0 confirmed (no marks yet). The rest-state map draws only the 100 strong lines. P3 watch: whether the 0.2 likely floor under-includes regulars of the 18-to-20-member chats.
+
+VERIFIED BY THE LEAD (not just agent reports)
+
+- swift test 227 tests 0 failures; swift build -c release clean; xcodebuild BUILD SUCCEEDED with both viewer resources confirmed inside the built bundle; node tests.mjs 31/31; build.py against the synthetic fixture leaves no placeholder. Templates and fixtures hold no real data.
+
+PROCESS
+
+- Three delegated work packages (core derivation, viewer, app integration) plus two corrective re-briefs (resync-safe marker matching; the v3-to-v4 bundling seam). The lead made zero code edits; lead-authored changes were PLAN.md and this journal.
+- The viewer suite is partially not red-first: layout and community expectations were derived empirically against the fixture, then locked in and mutation-tested; one vacuous test was caught by deliberate mutation and rewritten around a scenario that actually exercises the guarded path.
+- One cross-agent seam bit mid-session: renaming the viewer template broke the app's bundled-resource build while both agents were in flight. Isolated cleanly by the core agent's report; fixed as its own integration pass.
+
+BLOCKED / NEXT
+
+- Native Canvas render and image export still present the bipartite model; migrating them to the acquaintance contract is the next build item.
+- No import path yet from the viewer's copy-marks-as-JSON into the app's override store.
+- Pre-existing CLI gaps, noted and unchanged: json/acquaintances apply neither removed/hidden overrides nor an injectable overrides path.
+- prune() remains uncalled by AppModel; the minStrength question is still P3 measurement.
+- The session handoff file (HANDOFF.md) is deleted; every open item it carried is either done in #189/#190 or recorded here.
+- Owner-directed web landing work (Haven landing, Sky download page, iOS waitlist page) proceeds in the Haven repo outside this charter's scope; the downloadable YourSky.zip is being rebuilt from this PR's code so the shipped app carries the new map.
 
 ### 2026-07-31: roster-based group dedup, three cleanups, one-click copy
 

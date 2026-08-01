@@ -1,11 +1,37 @@
 import Foundation
 
+/// buildDetailed's return: the Graph plus the per-(chat, person) day activity the acquaintance
+/// layer needs (PLAN.md, "The acquaintance layer"). A separate type from Graph itself: nodes
+/// and edges are the stable public contract every existing caller relies on, and activity data
+/// is an addition only the acquaintance derivation and its callers need to see.
+public struct GraphBuildResult: Sendable, Equatable {
+    public let graph: Graph
+    public let groupChatActivity: [GroupChatActivity]
+
+    public init(graph: Graph, groupChatActivity: [GroupChatActivity]) {
+        self.graph = graph
+        self.groupChatActivity = groupChatActivity
+    }
+}
+
 public enum GraphBuilder {
     public static func build(
         extract: ChatExtract,
         keptPeople: [Person],
         calendar: Calendar = .current
     ) -> Graph {
+        buildDetailed(extract: extract, keptPeople: keptPeople, calendar: calendar).graph
+    }
+
+    /// Same derivation as `build`, plus GroupChatActivity. A separate entry point rather than
+    /// changing `build`'s own return type: `build` has ~30 existing call sites across the app,
+    /// CLI, and test target that only ever wanted a Graph, and none of them should have to
+    /// change just because one new caller (the acquaintance layer) also wants activity data.
+    public static func buildDetailed(
+        extract: ChatExtract,
+        keptPeople: [Person],
+        calendar: Calendar = .current
+    ) -> GraphBuildResult {
         // Only kept people resolve to a node/edge: a removed person's handle appearing in a
         // roster simply fails this lookup and produces nothing for them.
         let handleToPersonID = Dictionary(
@@ -66,6 +92,7 @@ public enum GraphBuilder {
         // fix landed, alongside 33 real groups (previously miscounted as one-to-one, 3 of
         // them losing a real user-set name in the process) that started rendering correctly.
         var groupNodes: [GraphNode] = []
+        var groupChatActivity: [GroupChatActivity] = []
         let groupChats = extract.chats.filter { chatKindByRowID[$0.rowID] == .group }
 
         for merged in mergedGroupChats(groupChats, handleToPersonID: handleToPersonID) {
@@ -90,24 +117,33 @@ public enum GraphBuilder {
 
             // groupMembership: every kept member, even a lurker with zero messages of their
             // own (roster is historical truth from chat_handle_join, not message activity).
+            // activeDaysByPersonID is collected in the same pass: the acquaintance layer
+            // (AcquaintanceDerivation) needs each member's day SET, not just its count, and
+            // this is the one place that per-member message activity is already being walked.
+            var activeDaysByPersonID: [String: Set<Date>] = [:]
             for personID in merged.roster.sorted() {
                 guard let person = personByID[personID] else { continue }
                 let ownMessages = combinedMessages.filter {
                     guard let handleRowID = $0.handleRowID else { return false }
                     return person.handleRowIDs.contains(handleRowID)
                 }
+                let daySet = ActivityDays.daySet(ownMessages, calendar: calendar)
+                activeDaysByPersonID[personID] = daySet
                 let edge = GraphEdge(
                     nodeIDA: personID,
                     nodeIDB: groupID,
                     source: .imessage,
                     reason: .groupMembership,
-                    strength: Double(distinctDays(ownMessages, calendar: calendar)),
+                    strength: Double(daySet.count),
                     involvesUser: false
                 )
                 if edgesByID[edge.id] == nil {
                     edgesByID[edge.id] = edge
                 }
             }
+            groupChatActivity.append(
+                GroupChatActivity(chatId: groupID, name: merged.name, roster: merged.roster, activeDaysByPersonID: activeDaysByPersonID)
+            )
 
             // userGroupMembership: one per group node, always, strength from the user's own
             // is_from_me activity across the union of merged chats.
@@ -143,7 +179,13 @@ public enum GraphBuilder {
         }
         nodes.append(contentsOf: groupNodes)
 
-        return finalized(nodes: nodes, edges: Array(edgesByID.values))
+        return GraphBuildResult(
+            graph: finalized(nodes: nodes, edges: Array(edgesByID.values)),
+            // Already sorted: mergedGroupChats itself returns sorted by id, and this loop
+            // appends in that same order -- sorted again here so that contract is never
+            // something a future edit to mergedGroupChats could silently break.
+            groupChatActivity: groupChatActivity.sorted { $0.chatId < $1.chatId }
+        )
     }
 
     /// `prune` removes edges below `minStrength`, except:

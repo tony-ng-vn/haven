@@ -131,6 +131,19 @@ struct GraphView: View {
                     model.removePerson(hitID)
                 }
             }
+            // Only a group can be marked -- the acquaintance layer's marker promotes every
+            // pair among a GROUP's resolved members (PLAN.md), which is meaningless for a
+            // person or the user node. A Toggle (not a Button) so macOS draws the checkmark
+            // that shows whether this group is currently marked.
+            if nodesByID[hitID]?.kind == .group {
+                Toggle(
+                    "Everyone here knows each other",
+                    isOn: Binding(
+                        get: { model.isFullyAcquainted(groupNodeID: hitID) },
+                        set: { model.setFullyAcquainted(groupNodeID: hitID, isFullyAcquainted: $0) }
+                    )
+                )
+            }
         } else {
             Button("Hide") {}
                 .disabled(true)

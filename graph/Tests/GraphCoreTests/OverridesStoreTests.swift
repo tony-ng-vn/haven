@@ -84,4 +84,58 @@ final class OverridesStoreTests: XCTestCase {
         XCTAssertEqual(loaded.hiddenPersonIdentifiers, ["+14155550009"])
         XCTAssertEqual(loaded.nameGuesses, [:], "a missing nameGuesses key must decode as empty, not throw")
     }
+
+    // MARK: - fullyAcquaintedRosterKeys (the acquaintance layer's "everyone here knows each
+    // other" marker): same backward-compat contract as every other field above, pinned on its
+    // own since it was added after all the others.
+
+    func testDecodingAFileWrittenBeforeFullyAcquaintedRosterKeysExistedStillLoads() throws {
+        // A file from before this field existed: none of the other fields are new to it, only
+        // this one is missing entirely.
+        let json = """
+        {
+            "hiddenPersonIdentifiers": [],
+            "hiddenGroupGUIDs": [],
+            "removedPersonIdentifiers": [],
+            "mergeAnswers": [],
+            "nameGuesses": {}
+        }
+        """
+        let fileURL = tempDirectory.appendingPathComponent("pre-acquaintance-layer.json")
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        try Data(json.utf8).write(to: fileURL)
+        let store = OverridesStore(fileURL: fileURL)
+
+        let loaded = try store.load()
+
+        XCTAssertEqual(loaded.fullyAcquaintedRosterKeys, [], "a missing fullyAcquaintedRosterKeys key must decode as empty, not throw")
+    }
+
+    func testFullyAcquaintedRosterKeysRoundTripsThroughDiskUnchanged() throws {
+        let fileURL = tempDirectory.appendingPathComponent("acquaintance-roundtrip.json")
+        let store = OverridesStore(fileURL: fileURL)
+        let overrides = Overrides(fullyAcquaintedRosterKeys: [["+14155550001", "+14155550002"], ["+14155550003", "+14155550004"]])
+
+        try store.save(overrides)
+        let loaded = try store.load()
+
+        XCTAssertEqual(loaded.fullyAcquaintedRosterKeys, overrides.fullyAcquaintedRosterKeys)
+    }
+
+    /// AcquaintanceRosterKey.resolve translates stored keys against CURRENT people only at
+    /// match time (GraphJSON, the CLI, AppModel) -- it never runs anywhere near save()/load(),
+    /// so a key that would resolve to nothing right now (nobody currently owns its
+    /// identifiers) must still round-trip through disk byte-for-byte, exactly as marked. User
+    /// data is never silently mutated or cleaned up just because it is temporarily dormant.
+    func testADormantRosterKeyRoundTripsThroughDiskUnchanged() throws {
+        let fileURL = tempDirectory.appendingPathComponent("dormant-key-roundtrip.json")
+        let store = OverridesStore(fileURL: fileURL)
+        let dormantKey = ["+14155559999"] // belongs to nobody in any current people list
+        let overrides = Overrides(fullyAcquaintedRosterKeys: [dormantKey])
+
+        try store.save(overrides)
+        let loaded = try store.load()
+
+        XCTAssertEqual(loaded.fullyAcquaintedRosterKeys, [dormantKey], "a dormant key is stored curation, not cleaned up or rewritten by anything in the load/save path")
+    }
 }

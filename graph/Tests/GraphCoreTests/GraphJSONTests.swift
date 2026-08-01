@@ -20,9 +20,26 @@ private struct DecodedEdge: Decodable {
     let strength: Double
 }
 
+private struct DecodedAcquaintanceEvidence: Decodable {
+    let chatId: String
+    let chatName: String?
+    let memberCount: Int
+    let coActiveDays: Int
+}
+
+private struct DecodedAcquaintance: Decodable {
+    let a: String
+    let b: String
+    let tier: String
+    let score: Double
+    let evidence: [DecodedAcquaintanceEvidence]
+}
+
 private struct DecodedGraph: Decodable {
     let nodes: [DecodedNode]
     let edges: [DecodedEdge]
+    let acquaintances: [DecodedAcquaintance]
+    let fullyAcquaintedChatIds: [String]
 }
 
 final class GraphJSONTests: XCTestCase {
@@ -57,6 +74,21 @@ final class GraphJSONTests: XCTestCase {
         involvesUser: Bool = false
     ) -> GraphEdge {
         GraphEdge(nodeIDA: nodeIDA, nodeIDB: nodeIDB, source: .imessage, reason: reason, strength: strength, involvesUser: involvesUser)
+    }
+
+    /// A Person whose id and identifiers are the same single value unless overridden --
+    /// enough for encode's fullyAcquaintedRosterKeys/AcquaintanceRosterKey.resolve translation
+    /// step; GraphJSON never reads handleRowIDs/contactCardIDs at all.
+    private func person(id: String, identifiers: Set<String>? = nil) -> Person {
+        Person(
+            id: id,
+            identifiers: identifiers ?? [id],
+            handleRowIDs: [],
+            name: nil,
+            thumbnailImageData: nil,
+            contactCardIDs: [],
+            hasContactCard: false
+        )
     }
 
     private func decode(_ data: Data) throws -> DecodedGraph {
@@ -238,5 +270,266 @@ final class GraphJSONTests: XCTestCase {
         let decoded = try decode(data)
 
         XCTAssertEqual(decoded.nodes.first?.name, "Real Name")
+    }
+
+    // MARK: - Acquaintance layer helpers
+
+    private func decodeWithAcquaintances(_ data: Data) throws -> DecodedGraph {
+        try JSONDecoder().decode(DecodedGraph.self, from: data)
+    }
+
+    // MARK: - Test 7b: encode must not crash on a hand-built Graph with a duplicate node id.
+    // GraphBuilder's own output never repeats an id, but encode is a public entry point taking
+    // an arbitrary Graph -- a caller's malformed input must degrade the export, never trap.
+
+    func testEncodeDoesNotCrashOnAGraphWithADuplicateNodeId() throws {
+        let firstCopy = node(id: "dup", kind: .person, name: "First")
+        let secondCopy = node(id: "dup", kind: .person, name: "Second")
+        let graph = Graph(nodes: [firstCopy, secondCopy], edges: [])
+
+        let data = try GraphJSON.encode(graph: graph)
+        let decoded = try decode(data)
+
+        XCTAssertEqual(decoded.nodes.count, 2, "encode still emits both node entries, it just cannot resolve a unique name lookup for the shared id")
+    }
+
+    // MARK: - Test 8: full acquaintance shape, including an unnamed chat's null chatName
+
+    func testAcquaintancesEncodeFullShapeIncludingNullChatNameForAnUnnamedChat() throws {
+        let user = node(id: "user", kind: .user)
+        let a = node(id: "+15550101", kind: .person, name: "A")
+        let b = node(id: "+15550102", kind: .person, name: "B")
+        let unnamedGroup = node(id: "chat:unnamed", kind: .group) // name: nil
+        let graph = Graph(nodes: [user, a, b, unnamedGroup], edges: [])
+        let activity = [
+            GroupChatActivity(chatId: "chat:unnamed", name: nil, roster: ["+15550101", "+15550102"], activeDaysByPersonID: [:])
+        ]
+
+        let data = try GraphJSON.encode(graph: graph, groupChatActivity: activity, fullyAcquaintedRosterKeys: [])
+        let decoded = try decodeWithAcquaintances(data)
+
+        XCTAssertEqual(decoded.acquaintances.count, 1)
+        let pair = try XCTUnwrap(decoded.acquaintances.first)
+        XCTAssertEqual(pair.a, "+15550101")
+        XCTAssertEqual(pair.b, "+15550102")
+        XCTAssertEqual(pair.tier, "strong")
+        XCTAssertEqual(pair.score, 1.0, accuracy: 1e-9)
+        XCTAssertEqual(pair.evidence.count, 1)
+        XCTAssertEqual(pair.evidence[0].chatId, "chat:unnamed")
+        XCTAssertNil(pair.evidence[0].chatName)
+        XCTAssertEqual(pair.evidence[0].memberCount, 2)
+        XCTAssertEqual(pair.evidence[0].coActiveDays, 0)
+
+        // Pins true JSON null the same way testFixtureGraphRoundTripsEveryField does for a
+        // node's name: rules out both an omitted key and the literal string "nil".
+        let raw = try jsonString(data)
+        XCTAssertTrue(raw.contains("\"chatName\":null"))
+    }
+
+    // MARK: - Test 9: evidence.chatName is the SAME resolved name the nodes array exports for
+    // that chat (guess and tilde-prefix included), not GroupChatActivity's own raw name.
+
+    func testEvidenceChatNameMatchesTheGuessedNameTheNodesArrayExportsNotTheRawName() throws {
+        let user = node(id: "user", kind: .user)
+        let a = node(id: "+15550201", kind: .person, name: "A")
+        let b = node(id: "+15550202", kind: .person, name: "B")
+        let guessedGroup = node(id: "chat:guessed", kind: .group) // raw name: nil
+        let graph = Graph(nodes: [user, a, b, guessedGroup], edges: [])
+        let activity = [
+            // GroupChatActivity's own name is nil, matching the node -- the guess is layered
+            // on top by GraphJSON's existing NodeLabel.resolve step, same as any other node.
+            GroupChatActivity(chatId: "chat:guessed", name: nil, roster: ["+15550201", "+15550202"], activeDaysByPersonID: [:])
+        ]
+        let guesses: [String: NameGuess] = ["group:guessed": NameGuess(name: "Study group")]
+
+        let data = try GraphJSON.encode(graph: graph, groupChatActivity: activity, fullyAcquaintedRosterKeys: [], guesses: guesses)
+        let decoded = try decodeWithAcquaintances(data)
+
+        let decodedGroupNode = try XCTUnwrap(decoded.nodes.first { $0.id == "chat:guessed" })
+        XCTAssertEqual(decodedGroupNode.name, "~Study group")
+
+        let pair = try XCTUnwrap(decoded.acquaintances.first)
+        XCTAssertEqual(pair.evidence.first?.chatName, "~Study group", "evidence must echo the exact name the nodes array already resolved")
+    }
+
+    // MARK: - Test 10: a < b within every pair, and the acquaintances array itself is sorted
+    // by (a, b), regardless of the roster's own insertion/iteration order.
+
+    func testAcquaintancesArrayIsSortedByPairRegardlessOfRosterInputOrder() throws {
+        let user = node(id: "user", kind: .user)
+        let p1 = node(id: "+15550301", kind: .person, name: "One")
+        let p2 = node(id: "+15550302", kind: .person, name: "Two")
+        let p3 = node(id: "+15550303", kind: .person, name: "Three")
+        let group = node(id: "chat:trio-of-three", kind: .group, name: "Trio")
+        let graph = Graph(nodes: [user, p1, p2, p3, group], edges: [])
+        let activity = [
+            // Roster built in a deliberately non-sorted order.
+            GroupChatActivity(
+                chatId: "chat:trio-of-three",
+                name: "Trio",
+                roster: ["+15550303", "+15550301", "+15550302"],
+                activeDaysByPersonID: [:]
+            )
+        ]
+
+        let data = try GraphJSON.encode(graph: graph, groupChatActivity: activity, fullyAcquaintedRosterKeys: [])
+        let decoded = try decodeWithAcquaintances(data)
+
+        XCTAssertEqual(decoded.acquaintances.count, 3, "C(3,2) = 3 pairs")
+        for pair in decoded.acquaintances {
+            XCTAssertLessThan(pair.a, pair.b, "a < b within every pair")
+        }
+        XCTAssertEqual(
+            decoded.acquaintances.map { [$0.a, $0.b] },
+            [["+15550301", "+15550302"], ["+15550301", "+15550303"], ["+15550302", "+15550303"]],
+            "the array itself must be sorted by (a, b)"
+        )
+    }
+
+    // MARK: - Test 11: determinism, now including acquaintances/fullyAcquaintedChatIds AND the
+    // roster-key translation step (people passed in two different array orders).
+
+    func testAcquaintanceEncodingIsByteIdenticalRegardlessOfInputOrder() throws {
+        let user = node(id: "user", kind: .user)
+        let a = node(id: "+15550401", kind: .person, name: "A")
+        let b = node(id: "+15550402", kind: .person, name: "B")
+        let groupOne = node(id: "chat:det-one", kind: .group, name: "One")
+        let groupTwo = node(id: "chat:det-two", kind: .group, name: "Two")
+        let markedRoster: Set<String> = ["+15550401", "+15550402"]
+        let key = AcquaintanceRosterKey.canonicalize(markedRoster)
+        let peopleForward = [person(id: "+15550401"), person(id: "+15550402")]
+        let peopleShuffled = [person(id: "+15550402"), person(id: "+15550401")]
+
+        let activityForward = [
+            GroupChatActivity(chatId: "chat:det-one", name: "One", roster: markedRoster, activeDaysByPersonID: [:]),
+            GroupChatActivity(chatId: "chat:det-two", name: "Two", roster: markedRoster, activeDaysByPersonID: [:]),
+        ]
+        let activityShuffled = [activityForward[1], activityForward[0]]
+
+        let forward = Graph(nodes: [user, a, b, groupOne, groupTwo], edges: [])
+        let shuffled = Graph(nodes: [groupTwo, groupOne, b, a, user], edges: [])
+
+        let dataForward = try GraphJSON.encode(
+            graph: forward, groupChatActivity: activityForward, fullyAcquaintedRosterKeys: [key], people: peopleForward
+        )
+        let dataShuffled = try GraphJSON.encode(
+            graph: shuffled, groupChatActivity: activityShuffled, fullyAcquaintedRosterKeys: [key], people: peopleShuffled
+        )
+
+        XCTAssertEqual(dataForward, dataShuffled)
+        XCTAssertTrue(try jsonString(dataForward).contains("\"tier\":\"confirmed\""), "sanity: the marking actually resolved and took effect")
+    }
+
+    // MARK: - Test 12: acquaintances/evidence never reference a node id absent from the
+    // exported nodes array (hidden or removed people) -- checked in the general form: every id
+    // referenced anywhere in the acquaintances output (a, b, and every evidence chatId) must be
+    // one of the ids actually present in the exported nodes array.
+
+    func testAcquaintancesNeverReferenceANodeIdAbsentFromTheExportedNodesArray() throws {
+        // personC and one of the two chats are deliberately left OUT of `nodes`, simulating a
+        // caller that already excluded them (e.g. Graph.excludingNodes) before calling encode.
+        let user = node(id: "user", kind: .user)
+        let a = node(id: "+15550501", kind: .person, name: "A")
+        let b = node(id: "+15550502", kind: .person, name: "B")
+        let visibleGroup = node(id: "chat:visible", kind: .group, name: "Visible Group")
+        let graph = Graph(nodes: [user, a, b, visibleGroup], edges: [])
+
+        let activity = [
+            GroupChatActivity(chatId: "chat:visible", name: "Visible Group", roster: ["+15550501", "+15550502"], activeDaysByPersonID: [:]),
+            // Same pair, a SECOND chat that never made it into `nodes` -- its evidence must be
+            // dropped, but the pair (A, B) must survive since both people are still exported.
+            GroupChatActivity(chatId: "chat:hidden-evidence", name: "Hidden Group", roster: ["+15550501", "+15550502"], activeDaysByPersonID: [:]),
+            // A pair involving personC, who never made it into `nodes` at all -- the WHOLE
+            // pair must be dropped, not merely trimmed.
+            GroupChatActivity(chatId: "chat:with-c", name: "With C", roster: ["+15550501", "+15550503"], activeDaysByPersonID: [:]),
+        ]
+
+        let data = try GraphJSON.encode(graph: graph, groupChatActivity: activity, fullyAcquaintedRosterKeys: [])
+        let decoded = try decodeWithAcquaintances(data)
+
+        XCTAssertEqual(decoded.acquaintances.count, 1, "the C pair must be dropped entirely, not partially")
+        let pair = try XCTUnwrap(decoded.acquaintances.first)
+        XCTAssertEqual(pair.a, "+15550501")
+        XCTAssertEqual(pair.b, "+15550502")
+        XCTAssertEqual(pair.score, 2.0, accuracy: 1e-9, "score stays the full observed sum across BOTH chats, even the hidden one")
+        XCTAssertEqual(pair.evidence.map(\.chatId), ["chat:visible"], "evidence lists only chats present in this export")
+
+        // The general form of the invariant: no id anywhere in the acquaintances output -- a,
+        // b, or any evidence chatId -- may be missing from the exported nodes array.
+        let exportedNodeIDs = Set(decoded.nodes.map(\.id))
+        for acquaintance in decoded.acquaintances {
+            XCTAssertTrue(exportedNodeIDs.contains(acquaintance.a))
+            XCTAssertTrue(exportedNodeIDs.contains(acquaintance.b))
+            for evidence in acquaintance.evidence {
+                XCTAssertTrue(exportedNodeIDs.contains(evidence.chatId))
+            }
+        }
+    }
+
+    // MARK: - Test 13: fullyAcquaintedChatIds excludes a chat id absent from the exported
+    // nodes array, same invariant as acquaintances/evidence, applied to the echo list itself.
+
+    func testFullyAcquaintedChatIdsExcludesIdsAbsentFromTheExportedNodesArray() throws {
+        let user = node(id: "user", kind: .user)
+        let a = node(id: "+15550601", kind: .person, name: "A")
+        let b = node(id: "+15550602", kind: .person, name: "B")
+        let visibleGroup = node(id: "chat:visible-marked", kind: .group, name: "Visible Marked")
+        // chat:hidden-marked has no corresponding node in `graph.nodes` at all.
+        let graph = Graph(nodes: [user, a, b, visibleGroup], edges: [])
+        let roster: Set<String> = ["+15550601", "+15550602"]
+        let key = AcquaintanceRosterKey.canonicalize(roster)
+        let people = [person(id: "+15550601"), person(id: "+15550602")]
+
+        let activity = [
+            GroupChatActivity(chatId: "chat:visible-marked", name: "Visible Marked", roster: roster, activeDaysByPersonID: [:]),
+            GroupChatActivity(chatId: "chat:hidden-marked", name: "Hidden Marked", roster: roster, activeDaysByPersonID: [:]),
+        ]
+
+        let data = try GraphJSON.encode(graph: graph, groupChatActivity: activity, fullyAcquaintedRosterKeys: [key], people: people)
+        let decoded = try decodeWithAcquaintances(data)
+
+        XCTAssertEqual(decoded.fullyAcquaintedChatIds, ["chat:visible-marked"], "the excluded chat id must not appear even though its roster is marked")
+    }
+
+    // MARK: - Test 14: a marking survives a resync that hands a member a new, smaller
+    // Person.id -- the stored key still names the CURRENT person via AcquaintanceRosterKey.
+    // resolve, not the stale one exact set-equality would have required.
+
+    func testMarkingSurvivesAMemberGainingANewSmallerPersonIDAcrossResync() throws {
+        // Marked when the chat's FULL roster was {A, B} and A's id was "+15551002" -- a stored
+        // key is always a whole chat's roster (PLAN.md: marking a chat, not an arbitrary
+        // sub-pair), so the stale key must match the roster's SIZE, not just contain A and B.
+        let staleKey = AcquaintanceRosterKey.canonicalize(["+15551002", "+15551003"])
+
+        // Simulated resync: A merged with a new handle and now has a smaller id, but
+        // "+15551002" is still in A's identifier set (identifiers only ever get added).
+        let aAfter = person(id: "+15551000", identifiers: ["+15551000", "+15551002"])
+        let bAfter = person(id: "+15551003", identifiers: ["+15551003"])
+
+        let user = node(id: "user", kind: .user)
+        let nodeA = node(id: "+15551000", kind: .person, name: "A")
+        let nodeB = node(id: "+15551003", kind: .person, name: "B")
+        let group = node(id: "chat:resynced", kind: .group, name: "Old Friends")
+        let graph = Graph(nodes: [user, nodeA, nodeB, group], edges: [])
+
+        // Same 2-person roster after the resync, just under A's new id -- score alone (n=2,
+        // base 1.0) would already read "strong" even if translation silently failed, which is
+        // exactly what makes "confirmed" (not "strong") a meaningful, discriminating assertion.
+        let currentRoster: Set<String> = ["+15551000", "+15551003"]
+        let activity = [
+            GroupChatActivity(chatId: "chat:resynced", name: "Old Friends", roster: currentRoster, activeDaysByPersonID: [:])
+        ]
+
+        let data = try GraphJSON.encode(
+            graph: graph,
+            groupChatActivity: activity,
+            fullyAcquaintedRosterKeys: [staleKey],
+            people: [aAfter, bAfter]
+        )
+        let decoded = try decodeWithAcquaintances(data)
+
+        let pair = try XCTUnwrap(decoded.acquaintances.first { $0.a == "+15551000" && $0.b == "+15551003" })
+        XCTAssertEqual(pair.tier, "confirmed", "the stale-keyed mark must still confirm this pair after A's Person.id shifted")
+        XCTAssertTrue(decoded.fullyAcquaintedChatIds.contains("chat:resynced"), "the echo list must include the chat even though the stored key predates A's current id")
     }
 }
