@@ -1,0 +1,125 @@
+for the ui i think we can make that whenever hover over someone, only thigns connect to that highlight and seen and everything else just dissapear until u back to the normal mode or stop hovering it
+
+---
+
+<task-notification>
+<task-id>acffd8b555c8e3e76</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/cf5098b2-be9e-4302-b790-9a836ac8ef69/tasks/acffd8b555c8e3e76.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Polygres sync replace path" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All work complete. Summary:
+
+**Script changes** (`/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/graph-main-wt/graph/scripts/sync_polygres.py`):
+
+1. Replaced the hard-stop mutation path with truncate-then-append: writes a single `truncate table public.im_nodes, public.im_edges;` to a temp file, applies it via `polygres migrations apply --file ... --name im_sync_truncate_&lt;n&gt;` (counter persisted in new `exports/.sync-state.json`, burned on any outcome so a failed/collided name is never reused), then does full `append_existing` imports of every current node/edge row (nodes before edges, FK order).
+2. Fixed a bug caught by the advisor before the real run: `run_truncate_migration` originally checked `migration.status == "applied"`, which is the stored record's status and stays `"applied"` even when the backend no-ops a repeated migration name. Now checks `operation.applied is True` from the CLI's JSON response, which is the only field that reflects whether *this* invocation actually ran the truncate.
+3. Fixed a second bug caught by the advisor: with no snapshot file, the old diff logic treated everything as "new" and would have taken the append path onto tables already holding stale PK-colliding rows. Added `snapshot_missing = not SNAPSHOT_PATH.exists()`, routed through the same code as "true" case c: unknown DB state is always safe to truncate-then-append.
+4. Disabled all three `rebuild_viewer()` call sites (skip/append/truncate-then-append paths) with an explanatory comment, per the brief, since `viewer/template-v3.html` was actively being edited by another agent (confirmed via mtime). Left `rebuild_viewer()` and its constants defined but unused, per advisor guidance, so re-enabling later is a one-line change.
+
+**Fixture test** (synthetic `p1/p2/p3` ids, run in `/tmp`, cleaned up after): monkeypatched `run_truncate_migration`/`run_polygres_import` and the module-level path constants. All 4 assertions passed: missing-snapshot routes to truncate-then-append with nodes-before-edges ordering; unchanged graph on the second run prints skip with zero polygres calls; a single new node triggers append_existing on im_nodes only; a mutated field re-triggers truncate-then-append with the counter advanced. This is what caught bug #2 before it hit the real DB (test 1 failed prior to the fix, exactly as expected).
+
+**Real run 1**: `truncate-then-append`, `truncateMigration im_sync_truncate_1`, nodes 684, edges 1014, exit 0. Verified independently: `polygres migrations list` shows `im_sync_truncate_1` status `applied`; `.sync-state.json` next=2; `.last-synced.json` node/edge counts match.
+
+**Real run 2**: `skip`, nodes 684, edges 1014, exit 0, confirmed zero polygres calls fired.
+
+**Graph build/status**: `polygres graph build` started (`build_status: building`), first poll of `polygres graph status` returned `ready`, `needs_rebuild: False`, `invalid_reason: None`.
+
+**Deviations from the brief**:
+- During CLI exploration (before touching the script) I ran one manual probe migration, `probe_test_json_shape_1` (body `select 1;`), against the real project to learn the JSON response shape for `migrations apply`. This was not run through the script and touched no data/schema, but it is a migration record outside the `im_sync_truncate_*` naming the brief reserved for this script's sole use of the migrations surface. Flagging it since the brief said migrations are for the truncate statement "and nothing else, ever" -- worth knowing it's sitting in the project's migration history if anyone audits it later.
+- Left `rebuild_viewer()`/`VIEWER_*` defined but uncalled (dead-ish code) rather than deleting, so the viewer-rebuild step is a one-line restore once the other agent's template edits land -- flagged per instruction "comment it out is fine with a note."
+
+No commits made, no files touched outside `$W` besides the polygres CLI calls, no row contents printed anywhere in this session.</result>
+<usage><subagent_tokens>67101</subagent_tokens><tool_uses>40</tool_uses><duration_ms>333481</duration_ms></usage>
+</task-notification>
+
+---
+
+and why i click into a connection node i don't want it to zoom in too close, i want it to zoom to a postiion that i can see the closer look of that node with all the connected node despite zooming in more
+
+---
+
+so can u do it now for the ui or wwe waiting?
+
+---
+
+<task-notification>
+<task-id>a22ec4b5965408e19</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/cf5098b2-be9e-4302-b790-9a836ac8ef69/tasks/a22ec4b5965408e19.output</output-file>
+<status>completed</status>
+<summary>Agent "Port next design into viewer" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Report
+
+Both follow-ups landed in `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/graph-main-wt/graph/viewer/template-v3.html` (only file touched, no commits made).
+
+### 1. Hover isolation
+
+**Hooked into:** the file already had a "constellation hover" affordance (`reachOf`/`hoverReach`/`drawReachEdges`, driven by `RS` in `draw()`) that *dimmed* non-neighbors rather than hiding them, and was two-hop (a hovered person pulled in their groups' *other members* too). Per your instruction this replaces it outright rather than living alongside it.
+
+**What changed:**
+- `isoNeighborsOf(id)` (was `reachOf`): now strictly one-hop, built straight from `D.adj[id]` (the adjacency map `adaptReal` already builds once from the real edge list) — a hovered person's neighbors are their thread-tie to the user (if any) and the groups they belong to; a hovered group's neighbors are its members plus the user. Memoized per hovered id, same as before, so no per-frame graph walk.
+- `easeIsolation()`, called once per frame in `frameLoop` (alongside `easeExistence()`): sets `ISO_ACTIVE`/`ISO_RS` for the current frame, then eases every node's new `n.isoV` field toward 1 (in neighborhood, or isolation off) or 0 (outside it) at `*0.14` per frame — in the same range as the file's other ease constants (`0.06`-`0.15`), so it settles in a handful of frames with no popping in either direction.
+- `n.isoV` multiplies into the actual alpha everywhere a node or edge can be drawn: `nodeGlow`'s alpha (via `VISMUL = tierV * n.isoV`), the "always redraw yourself on top" user draw (previously used a stale leftover `VISMUL` from the last loop iteration — fixed as part of this, was a latent bug), the batched background edge filaments (both dark and light passes, via `Math.min(isoV_a, isoV_b)`), and `labelPass`'s visibility gate. Below the effective thresholds nodes/edges/labels stop rendering, i.e. actually disappear rather than dim.
+- `drawIsoEdges` (was `drawReachEdges`) is unchanged in behavior — it already drew exactly the hovered node's own one-hop edges, so it needed only a rename.
+
+**Interaction with focus/ring filter:**
+- `ISO_ACTIVE = !focusID &amp;&amp; hoverID &amp;&amp; !dragging` — isolation is fully inert whenever a node is focused (dossier open), so it can't fight focus's own `computeFocus`/ghosting presentation. Because the dossier's hoverable rows only exist while the dossier is open (`focusID` set), hovering them can never trigger isolation as a natural consequence of this same gate — no extra guard needed. Ring-bar chips and search never set `hoverID` at all, so they're unaffected too.
+- Inside an active isolation, a node's tier/ring-filter fade (`n.visE`) is bypassed for anything in the current neighborhood (`inReach` check) — the whole point of hovering is "these are connected, show them regardless of tier."
+
+### 2. Focus framing fits the neighborhood
+
+**What changed:** `frameSet` (already the shared centroid+distance fit used by both the "you" and "person/group" focus states) now:
+- Reuses `isoNeighborsOf(id)` — the exact same one-hop adjacency hover isolation uses — to build the set to fit, instead of the old hand-special-cased `[n.id, "user"]` (person) / `[n.id].concat(n.members)` (group) / top-32-strongest-threads (user).
+- Trims to `FRAME_CAP = 90` nodes when the neighborhood is larger: sorts the non-anchor nodes by "group before person" then by distance-from-anchor, and keeps the closest, so exclusion (when it happens) always drops the farthest neighbors and drops groups before it ever drops a person.
+- Dropped the old hard `Math.min(5200, ...)` distance ceiling — the floor (`1400`) still stops a lone dot from filling the screen, but a wide neighborhood is now allowed to pull the camera back as far as the fit math computes, per your "that is correct behavior, do not cap it" instruction.
+- The `W-620` free-strip padding budget (`rPx`) and the aspect-fit (`measureAspectTarget`) are untouched — same math, just now applied to a bigger point set.
+
+**Verified against the real export:**
+- Clicking **the user node**: neighborhood is 415 nodes (310 people + 105 groups) — over the 90 cap, so it trims to the anchor + the 89 *closest* people and excludes all groups (people-over-groups rule; there are more than 89 people alone). Camera frames the dense people layer, not the whole universe.
+- Clicking **the largest group** (32 members): neighborhood is 33 nodes (32 members + the user, via `userGroupMembership`) — under the cap, so nothing is trimmed; the whole group fits.
+
+**Zoom-after-focus:** untouched — `camT.dist` is only ever the *arrival* target; the existing item-7 behavior (zooming in/out post-focus never exits focus, `userZoomed`/`camT.active` disengage independently of `frameSet`) wasn't touched.
+
+**Considered/flagged decision:** for a person with no direct thread edge to the user (only connected via shared groups), the frame no longer force-includes "user" the way the old code did — it's now strictly the same adjacency as isolation. This is a deliberate reading of "same adjacency as hover isolation," not an oversight; flagging it since it's a visible behavior change for that specific case.
+
+### Verification (both features together)
+
+- `python3 viewer/build.py exports/graph.json /tmp/your-sky-hover-test.html viewer/template-v3.html` → exit 0, `105 group, 578 person, 1 user, 1014 edges`.
+- Extracted `&lt;script&gt;`: exactly one block, `node --check` → **JS SYNTAX OK**.
+- Built output: `__GRAPH_JSON__` placeholder count 0 (correctly replaced); source `template-v3.html`: placeholder present exactly once (`const RAW = __GRAPH_JSON__;`).
+- No leftover references to the old `reachOf`/`hoverReach`/`drawReachEdges` names anywhere in the file.
+- Non-ASCII scan of the template shows only the pre-existing design-source characters (`·`, curly apostrophe, em dash) already present before my edits — nothing new introduced.
+- Temp files cleaned up (`/tmp/your-sky-*.html`, `/tmp/extracted*.js`).</result>
+<usage><subagent_tokens>175695</subagent_tokens><tool_uses>94</tool_uses><duration_ms>521966</duration_ms></usage>
+</task-notification>
+
+---
+
+/fusion create the onboarding flow from start to end for user now that they can download the app from the landing page you will create -> authorize access -> once done click 'map relationship' -> get their sky view for me
+
+---
+
+open it again for me, both the landing page and the onboarding and the main page
+
+---
+
+<task-notification>
+<task-id>b7450pqov</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/cf5098b2-be9e-4302-b790-9a836ac8ef69/tasks/b7450pqov.output</output-file>
+<status>completed</status>
+<summary>Background command "Regenerate project with renamed PRODUCT_NAME and rebuild" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b6p2ekp8g</task-id>
+<tool-use-id>toolu_01YR4dNckTAFqYDkhKoYFQEc</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/cf5098b2-be9e-4302-b790-9a836ac8ef69/tasks/b6p2ekp8g.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the renamed-product rebuild to finish" completed (exit code 0)</summary>
+</task-notification>

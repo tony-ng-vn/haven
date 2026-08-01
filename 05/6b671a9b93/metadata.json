@@ -3,11 +3,13 @@
   "checkpoint_id": "056b671a9b93",
   "strategy": "manual-commit",
   "branch": "web/landing-pages",
-  "checkpoints_count": 4,
+  "checkpoints_count": 20,
   "files_touched": [
     "CHANGELOG.md",
     "package.json",
+    "public/downloads/YourSky.zip",
     "src/App.tsx",
+    "src/SkyPage.tsx",
     "src/Waitlist.tsx",
     "src/index.css",
     "src/lib.test.ts",
@@ -20,13 +22,20 @@
       "compact_transcript": "/05/6b671a9b93/0/transcript.jsonl",
       "content_hash": "/05/6b671a9b93/0/content_hash.txt",
       "prompt": "/05/6b671a9b93/0/prompt.txt"
+    },
+    {
+      "metadata": "/05/6b671a9b93/1/metadata.json",
+      "transcript": "/05/6b671a9b93/1/full.jsonl",
+      "compact_transcript": "/05/6b671a9b93/1/transcript.jsonl",
+      "content_hash": "/05/6b671a9b93/1/content_hash.txt",
+      "prompt": "/05/6b671a9b93/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 12,
-    "cache_creation_tokens": 130924,
-    "cache_read_tokens": 230533,
-    "output_tokens": 15843,
-    "api_call_count": 5
+    "input_tokens": 861,
+    "cache_creation_tokens": 1000476,
+    "cache_read_tokens": 26412050,
+    "output_tokens": 132782,
+    "api_call_count": 170
   }
 }
