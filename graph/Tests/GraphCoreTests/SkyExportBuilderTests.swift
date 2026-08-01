@@ -51,12 +51,27 @@ final class SkyExportBuilderTests: XCTestCase {
         XCTAssertTrue(html.contains(#"<\/script><script>alert"#))
     }
 
-    func testThrowsWhenCorePlaceholderIsMissing() {
+    // Template-sky.html's own shape: no __VIEWER_CORE_JS__ at all, its viewer logic already
+    // inline -- core inlining must be skipped entirely, and passing no source is not an error.
+    func testBuildsSuccessfullyWithNilCoreSourceWhenTemplateHasNoCorePlaceholder() throws {
         let template = "<html><script>\nconst RAW = __GRAPH_JSON__;</script></html>"
         let json = Data(#"{"nodes":[],"edges":[]}"#.utf8)
 
-        XCTAssertThrowsError(try SkyExportBuilder.build(template: template, viewerCoreSource: syntheticCoreSource, graphJSON: json)) { error in
-            XCTAssertEqual(error as? SkyExportBuilder.BuildError, .placeholderMissing("__VIEWER_CORE_JS__"))
+        let html = try SkyExportBuilder.build(template: template, viewerCoreSource: nil, graphJSON: json)
+
+        XCTAssertFalse(html.contains("__GRAPH_JSON__"))
+        XCTAssertFalse(html.contains("__VIEWER_CORE_JS__"), "was never there to begin with")
+        XCTAssertTrue(html.contains(#"const RAW = {"nodes":[],"edges":[]};"#))
+    }
+
+    // The other half of the same conditional: a template that DOES declare the core
+    // placeholder still needs an actual source to splice in -- nil there is a real error, not
+    // silently accepted the way it is for a template with no placeholder at all.
+    func testThrowsWhenCorePlaceholderPresentButSourceIsNil() {
+        let json = Data(#"{"nodes":[],"edges":[]}"#.utf8)
+
+        XCTAssertThrowsError(try SkyExportBuilder.build(template: syntheticTemplate, viewerCoreSource: nil, graphJSON: json)) { error in
+            XCTAssertEqual(error as? SkyExportBuilder.BuildError, .viewerCoreSourceRequired)
         }
     }
 

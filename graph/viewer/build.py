@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
 """Build a connection-graph viewer HTML file from a `graph-cli json` export.
 
+Two templates live in this directory; this script builds either one:
+
+    template-sky.html    the two-plane closeness sky. Declares only the
+                          __GRAPH_JSON__ placeholder -- its viewer logic is
+                          already inline, so nothing gets injected but data.
+    template-v4.html     the acquaintance map. Declares both __GRAPH_JSON__
+                          and __VIEWER_CORE_JS__, so it gets data plus the
+                          shared core.
+
 TESTED CODE == SHIPPED CODE, mechanically, not by convention:
 viewer_core.mjs is the single source of truth for the viewer's pure logic (adapt/degrade, community + region detection, the "everyone here knows each other" tier recompute, shortest path, stale-mark rejection, the deterministic layout).
 tests.mjs imports it directly and runs under plain `node`.
-This script inlines that EXACT file into template-v4.html's single script block by stripping the `export ` keyword from its `export function` / `export const` declarations -- nothing else about the file's text changes -- and splicing the result in at the __VIEWER_CORE_JS__ placeholder.
-The regex is literally:
+For a template that declares the __VIEWER_CORE_JS__ placeholder, this script inlines that EXACT file into the template's single script block by stripping the `export ` keyword from its `export function` / `export const` declarations -- nothing else about the file's text changes -- and splicing the result in at the placeholder.
+Core inlining applies only to templates that declare __VIEWER_CORE_JS__: a template that omits it (template-sky.html today) is built with no core substitution at all -- viewer_core.mjs is not even read for that build.
+The regex used for stripping exports is literally:
 
     re.sub(r"(?m)^export (function|const)\\b", r"\\1", core_src)
 
-The RAW graph export is injected the same way it always has been, at the __GRAPH_JSON__ placeholder.
+The RAW graph export is injected the same way it always has been, at the __GRAPH_JSON__ placeholder -- every template must declare that one, exactly once, regardless of whether it also uses the core placeholder.
 
 To verify the shipped script is what it claims to be, extract the built output's single script block and run node's own syntax check on it:
 
@@ -17,10 +27,11 @@ To verify the shipped script is what it claims to be, extract the built output's
       open(sys.argv[1]).read(), re.S).group(1))" out.html > /tmp/extracted.js
     node --check /tmp/extracted.js
 
-That one-liner also works pointed at template-v4.html itself (pre-build): both placeholders are bare identifiers, which are syntactically valid JavaScript on their own, so the un-built template already passes node --check even though neither placeholder is bound to anything at runtime yet.
+That one-liner also works pointed at either template itself (pre-build): __GRAPH_JSON__ and __VIEWER_CORE_JS__ are bare identifiers, which are syntactically valid JavaScript on their own, so an un-built template already passes node --check even though the placeholders it declares are not bound to anything at runtime yet.
 
 usage:
     graph-cli json --chat-db ... --contacts-db ... > exports/graph.json
+    python3 build.py exports/graph.json exports/my-graph.html template-sky.html
     python3 build.py exports/graph.json exports/my-graph.html template-v4.html
 
 All three arguments are required.
@@ -54,11 +65,6 @@ def main(argv):
         print(f"error: template not found: {template_path}", file=sys.stderr)
         return 1
 
-    core_path = Path(__file__).parent / CORE_FILENAME
-    if not core_path.exists():
-        print(f"error: {CORE_FILENAME} not found next to build.py: {core_path}", file=sys.stderr)
-        return 1
-
     raw = json_path.read_text(encoding="utf-8")
     # Parse before injecting: a truncated or error-laden export should fail here
     # with a clear message rather than producing an HTML file that silently
@@ -70,20 +76,35 @@ def main(argv):
         return 1
 
     template = template_path.read_text(encoding="utf-8")
-    # Exactly one, not just "at least one": str.replace() below replaces every
-    # occurrence, so a stray second mention (e.g. the placeholder name written out
-    # in a doc comment) would silently get the payload spliced into the comment
-    # too. Fail loudly instead of shipping a corrupted file.
-    for placeholder in (CORE_PLACEHOLDER, JSON_PLACEHOLDER):
-        count = template.count(placeholder)
-        if count == 0:
-            print(f"error: {placeholder} not found in template", file=sys.stderr)
-            return 1
-        if count > 1:
-            print(f"error: {placeholder} appears {count} times in template, expected exactly 1", file=sys.stderr)
-            return 1
+    # __GRAPH_JSON__ is required in every template, exactly once: str.replace()
+    # below replaces every occurrence, so a stray second mention (e.g. the
+    # placeholder name written out in a doc comment) would silently get the
+    # payload spliced into the comment too. Fail loudly instead of shipping a
+    # corrupted file.
+    json_count = template.count(JSON_PLACEHOLDER)
+    if json_count == 0:
+        print(f"error: {JSON_PLACEHOLDER} not found in template", file=sys.stderr)
+        return 1
+    if json_count > 1:
+        print(f"error: {JSON_PLACEHOLDER} appears {json_count} times in template, expected exactly 1", file=sys.stderr)
+        return 1
 
-    core_js = strip_exports(core_path.read_text(encoding="utf-8"))
+    # __VIEWER_CORE_JS__ is optional: template-sky.html inlines its own logic
+    # and never mentions it, so zero occurrences means "skip core inlining
+    # entirely" -- viewer_core.mjs is not even read for that build. More than
+    # one occurrence is the same corruption risk as __GRAPH_JSON__ above.
+    core_count = template.count(CORE_PLACEHOLDER)
+    if core_count > 1:
+        print(f"error: {CORE_PLACEHOLDER} appears {core_count} times in template, expected 0 or 1", file=sys.stderr)
+        return 1
+
+    if core_count == 1:
+        core_path = Path(__file__).parent / CORE_FILENAME
+        if not core_path.exists():
+            print(f"error: {CORE_FILENAME} not found next to build.py: {core_path}", file=sys.stderr)
+            return 1
+        core_js = strip_exports(core_path.read_text(encoding="utf-8"))
+        template = template.replace(CORE_PLACEHOLDER, core_js)
 
     # Re-serialize rather than splicing the source text: ensure_ascii escapes every
     # non-ASCII name (there are real ones like "Chi Bong"), and escaping "</" keeps a
@@ -91,7 +112,7 @@ def main(argv):
     payload = json.dumps(data, ensure_ascii=True, separators=(",", ":"))
     payload = payload.replace("</", "<\\/")
 
-    output = template.replace(CORE_PLACEHOLDER, core_js).replace(JSON_PLACEHOLDER, payload)
+    output = template.replace(JSON_PLACEHOLDER, payload)
     if CORE_PLACEHOLDER in output or JSON_PLACEHOLDER in output:
         print("error: a placeholder survived substitution -- refusing to write a broken output", file=sys.stderr)
         return 1
