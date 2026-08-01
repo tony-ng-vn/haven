@@ -66,7 +66,7 @@ export function LandingPage() {
           </p>
           <div className="landing-hero-ctas">
             <a className="sky-download" href="#/sky">
-              Try Your Sky for Mac
+              Sky app, coming soon
             </a>
             <a className="landing-cta-secondary" href="#/ios">
               Join the iPhone waitlist

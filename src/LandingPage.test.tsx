@@ -69,12 +69,12 @@ describe("the Haven landing page", () => {
 
   // The core routing promise this page exists to keep: each product has its
   // own path onward, reachable straight from the hero, not below a scroll.
-  // Sky is primary (the gold treatment its own download button uses) --
-  // available today outranks a waitlist signup as the hero's main ask.
+  // Sky keeps the gold treatment as the hero's main visual ask even though
+  // its own label is honest that the app isn't production-ready yet.
   test("the hero carries both CTAs: Sky primary, iOS secondary", () => {
     stubPointer(false);
     render(<LandingPage />);
-    const sky = screen.getByText("Try Your Sky for Mac").closest("a");
+    const sky = screen.getByText("Sky app, coming soon").closest("a");
     const ios = screen.getByText("Join the iPhone waitlist").closest("a");
     expect(sky?.getAttribute("href")).toBe("#/sky");
     expect(sky?.className).toContain("sky-download");
