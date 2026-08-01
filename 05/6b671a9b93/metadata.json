@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "056b671a9b93",
+  "strategy": "manual-commit",
+  "branch": "web/landing-pages",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "CHANGELOG.md",
+    "package.json",
+    "src/App.tsx",
+    "src/Waitlist.tsx",
+    "src/index.css",
+    "src/lib.test.ts",
+    "src/lib.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/05/6b671a9b93/0/metadata.json",
+      "transcript": "/05/6b671a9b93/0/full.jsonl",
+      "compact_transcript": "/05/6b671a9b93/0/transcript.jsonl",
+      "content_hash": "/05/6b671a9b93/0/content_hash.txt",
+      "prompt": "/05/6b671a9b93/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 130924,
+    "cache_read_tokens": 230533,
+    "output_tokens": 15843,
+    "api_call_count": 5
+  }
+}

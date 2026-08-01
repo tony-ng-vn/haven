@@ -1,0 +1,15 @@
+look into if its possible to make a qr code that able to detects who connect to your linkedln through that qr code. so if someone connect with me and found my linkedln through that qr code their linkedln will be in the haven db u get what i mean?
+
+---
+
+u sure qr code cannot work? like im trying to think of a way to get info into haven as simplest as possible
+
+---
+
+can u explain it for me again
+
+---
+
+1. if i have to scan their, it will be so much friction especially when im doing demo and many people will come to me and trying to connect with me
+2. the thing with scan through haven is it will be in their database but they actually connect on linkedln, x, instagram right? and the friction of opening haven to scan it from haven is there, maybe we can try to make the lock widget that user can add to click it and open haven scan right away, but still the other 2 poits of not actually connect and have to scan everyone instead of open the qr one and everyone can scan it anytime. the share is one way and we just adding more. share won't work well in big event where people wants to connect with you because you have to do so much work and u cannot do that for everyone
+3. hmm it might work if u the one who send out the invite but what if people send the invite to you?? i think of qr code but there might be another way?

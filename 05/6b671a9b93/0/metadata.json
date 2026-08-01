@@ -1,0 +1,149 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "056b671a9b93",
+  "session_id": "3139b5d5-83a4-483f-8bd2-e15d9e3f484f",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-01T02:27:03.409265Z",
+  "branch": "web/landing-pages",
+  "checkpoints_count": 4,
+  "save_step_count": 4,
+  "files_touched": [
+    "CHANGELOG.md",
+    "package.json",
+    "src/App.tsx",
+    "src/Waitlist.tsx",
+    "src/index.css",
+    "src/lib.test.ts",
+    "src/lib.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "ac17db9e056d",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 130924,
+    "cache_read_tokens": 230533,
+    "output_tokens": 15843,
+    "api_call_count": 5
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-01T02:27:03.397205Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 445,
+    "human_modified": 355,
+    "human_removed": 0,
+    "total_committed": 445,
+    "total_lines_changed": 808,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 4750,
+      "user_lines_removed": 3,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 10,
+        ".claude/skills/polygres-cli/SKILL.md": 118,
+        ".claude/skills/polygres-cli/agents/openai.yaml": 4,
+        ".claude/skills/polygres-cli/references/authentication-and-projects.md": 55,
+        ".claude/skills/polygres-cli/references/automation-and-errors.md": 61,
+        ".claude/skills/polygres-cli/references/data-imports.md": 156,
+        ".claude/skills/polygres-cli/references/database-and-keys.md": 53,
+        ".claude/skills/polygres-cli/references/migrations.md": 32,
+        ".claude/skills/polygres-cli/references/retrieval.md": 69,
+        ".claude/skills/polygres-cli/scripts/prepare_import.py": 685,
+        ".claude/skills/polygres-retrieval-design/SKILL.md": 65,
+        ".claude/skills/polygres-retrieval-design/agents/openai.yaml": 4,
+        ".claude/skills/polygres-retrieval-design/references/graph-modeling.md": 29,
+        ".claude/skills/polygres-retrieval-design/references/hybrid-and-rag-plan.md": 31,
+        ".claude/skills/polygres-retrieval-design/references/plan-template.md": 53,
+        ".claude/skills/polygres-retrieval-design/references/strategy-selection.md": 30,
+        ".claude/skills/polygres-retrieval-design/references/vector-and-text-design.md": 25,
+        ".claude/skills/polygres-sdk/SKILL.md": 66,
+        ".claude/skills/polygres-sdk/agents/openai.yaml": 4,
+        ".claude/skills/polygres-sdk/references/client-setup.md": 86,
+        ".claude/skills/polygres-sdk/references/errors-pagination-testing.md": 90,
+        ".claude/skills/polygres-sdk/references/graph-retrieval.md": 89,
+        ".claude/skills/polygres-sdk/references/hybrid-and-rag.md": 83,
+        ".claude/skills/polygres-sdk/references/vector-and-text.md": 72,
+        ".claude/skills/polygres-troubleshooting/SKILL.md": 65,
+        ".claude/skills/polygres-troubleshooting/agents/openai.yaml": 4,
+        ".claude/skills/polygres-troubleshooting/references/context-and-connectivity.md": 23,
+        ".claude/skills/polygres-troubleshooting/references/errors-and-escalation.md": 24,
+        ".claude/skills/polygres-troubleshooting/references/jobs-and-migrations.md": 23,
+        ".claude/skills/polygres-troubleshooting/references/projects-and-database.md": 25,
+        ".claude/skills/polygres-troubleshooting/references/retrieval.md": 27,
+        ".cursor/hooks.json": 40,
+        ".env.local.example": 20,
+        "CHANGELOG.md": 10,
+        "docs/2026-07-30-imessage-connection-graph-research.md": 726,
+        "docs/2026-07-31-polygres-network-design.md": 214,
+        "docs/loop/GOAL.md": 130,
+        "docs/loop/JOURNAL.md": 20,
+        "graph/GOAL.md": 121,
+        "graph/JOURNAL.md": 355,
+        "graph/PLAN-REVIEW.md": 154,
+        "graph/PLAN.md": 368,
+        "package.json": 1,
+        "skills-lock.json": 24,
+        "src/App.tsx": 2,
+        "src/SkyPage.test.tsx": 76,
+        "src/SkyPage.tsx": 114,
+        "src/Waitlist.tsx": 6,
+        "src/index.css": 169,
+        "src/lib.test.ts": 26,
+        "src/lib.ts": 13
+      },
+      "user_removed_per_file": {
+        "package.json": 1,
+        "src/index.css": 1,
+        "src/lib.ts": 1
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 50,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4700,
+      "agent_lines_removed": 3,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 10,
+        ".cursor/hooks.json": 40
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 50,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4700,
+      "agent_lines_removed": 3,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 10,
+        ".cursor/hooks.json": 40
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 88,
+      "user_lines_removed": 3,
+      "agent_lines_added": 4700,
+      "agent_lines_removed": 3,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 10,
+        ".cursor/hooks.json": 40,
+        "graph/JOURNAL.md": 38
+      },
+      "user_removed_per_file": {
+        "graph/JOURNAL.md": 3
+      }
+    }
+  ]
+}
