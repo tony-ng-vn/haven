@@ -299,15 +299,19 @@ export function Landing2Page() {
               <stop offset="100%" stopColor="var(--dusk)" stopOpacity="0" />
             </linearGradient>
             <linearGradient id="landing2-water-shimmer" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#f2efe9" stopOpacity="0.04" />
-              <stop offset="22%" stopColor="#f2efe9" stopOpacity="0.16" />
+              <stop offset="0%" stopColor="#f2efe9" stopOpacity="0.02" />
+              <stop offset="22%" stopColor="#f2efe9" stopOpacity="0.08" />
               <stop offset="100%" stopColor="#f2efe9" stopOpacity="0" />
             </linearGradient>
             {/* A small, tight specular highlight aligned under the moon
                 (cx 62) rather than a second uniform band -- a moonlit water
-                reflection is a glint, not an even wash. */}
+                reflection is a glint, not an even wash. Peak opacity halved
+                and radii narrowed by about a third from the previous pass:
+                combined with the shimmer rect above, the two together were
+                reading as a wide bright haze drifting across shard faces
+                rather than light sitting on water down in the valley. */}
             <radialGradient id="landing2-water-specular" cx="0.5" cy="0.35" r="0.6">
-              <stop offset="0%" stopColor="#f2efe9" stopOpacity="0.38" />
+              <stop offset="0%" stopColor="#f2efe9" stopOpacity="0.19" />
               <stop offset="100%" stopColor="#f2efe9" stopOpacity="0" />
             </radialGradient>
             {/* The mask below reads LUMINANCE, not alpha -- these stops must
@@ -327,13 +331,15 @@ export function Landing2Page() {
                 just satisfied here by construction instead of by an override.
                 "The masked group's bounds" is the union of every child inside
                 the <g mask=...> below (both water rects AND the specular
-                ellipse), which today all fall within x 35-75 / y 30-40 -- if
+                ellipse), which today all fall within x 35-75 / y 32-42 -- if
                 a future edit ever widens or moves the specular ellipse past
                 that box, this rect needs to grow with it, or the newly
                 exposed area renders as masked-out (black = hidden) rather
-                than passed through. */}
+                than passed through. (Shifted down from y 30-40 along with the
+                water group itself below, so it still tracks that group's own
+                bounds exactly.) */}
             <mask id="landing2-water-mask" maskContentUnits="userSpaceOnUse">
-              <rect x="35" y="30" width="40" height="10" fill="url(#landing2-water-fade-x)" />
+              <rect x="35" y="32" width="40" height="10" fill="url(#landing2-water-fade-x)" />
             </mask>
             <radialGradient id="landing2-window">
               <stop offset="0%" stopColor="#ffd9a0" stopOpacity="0.95" />
@@ -356,9 +362,13 @@ export function Landing2Page() {
               stepped by ridge (front lighter/closer, back darker/further) so
               they register instead of reading as near-black on near-black.
               A moonlit rim on the top ridge only, and the water band --
-              masked to fade its left/right ends and contained to exactly the
-              ridges' own 35-75% width, so it reads as reflection under the
-              scenery rather than a floating rectangle. */}
+              masked to fade its left/right ends, contained to exactly the
+              ridges' own 35-75% width, and pulled down to y 32 (the ridges'
+              own base, where both polygons' bottom edges sit) rather than
+              y 30 -- the earlier position started slightly above the base,
+              inside the ridge silhouette itself, which read as haze drifting
+              over the shards instead of light sitting on water below the
+              mountains. */}
           <g className="landing2-scene-el">
             <polygon points="35,29 44,18 54,25 65,16 75,28 75,32 35,32" fill="var(--dusk)" />
             <polygon points="35,31 47,23 60,28 75,30 75,32 35,32" fill="#171c3a" opacity="0.95" />
@@ -368,11 +378,11 @@ export function Landing2Page() {
               fill="none"
             />
             <g mask="url(#landing2-water-mask)">
-              <rect x="35" y="30" width="40" height="10" fill="url(#landing2-water)" />
+              <rect x="35" y="32" width="40" height="10" fill="url(#landing2-water)" />
               <rect
                 className="landing2-water-shimmer"
                 x="35"
-                y="30"
+                y="32"
                 width="40"
                 height="10"
                 fill="url(#landing2-water-shimmer)"
@@ -380,9 +390,9 @@ export function Landing2Page() {
               <ellipse
                 className="landing2-water-shimmer"
                 cx="62"
-                cy="34"
-                rx="9"
-                ry="3.5"
+                cy="36"
+                rx="6"
+                ry="2.3"
                 fill="url(#landing2-water-specular)"
               />
             </g>
