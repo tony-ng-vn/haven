@@ -1,0 +1,70 @@
+read this and tell me what u think: 
+## Goal
+
+Build a 60-90 second, 16:9 investor demo video for Haven, to be posted on the Founder Inc portal for investors.
+
+I am on camera for the whole script.
+Animation layers appear on top of my footage at specific beats, and one section takes over the frame entirely.
+
+## Repo context
+
+Everything lives in `~/haven` (or wherever this repo is checked out locally).
+
+Source material for the product and brand:
+
+- `PRODUCT.md` -- positioning, voice, anti-references. The brand personality section is binding: calm, quiet, content-first, never performative.
+- `mvp-design.md` -- what the MVP actually is. The core loop described here is what act 3 must show.
+- `haven/design/*.html` -- existing visual prototypes. Reuse this look, do not invent a new one.
+- `haven/brand/nori.png` -- brand mark.
+- `haven/ios/Haven/*.swift` -- the real SwiftUI app. Read it for accurate screen structure.
+
+Ignore `haven/finc-demo` entirely.
+It is an untouched Remotion starter from an abandoned approach.
+
+## Structure
+
+Four acts, one continuous recording of me talking, one break to full screen.
+
+| Act | Content | Budget | Frame treatment |
+|---|---|---|---|
+| 1 | Me + my background | ~15s | On camera. Lower-third with name and credential. |
+| 2 | What I am building | ~15s | On camera. Kinetic phrase overlays on key lines. |
+| 3 | How Haven works | ~40s | Full-screen product film. My footage video is suppressed, my audio keeps running underneath. |
+| 4 | The vision | ~15s | Back on camera. Closing statement overlay. |
+
+Act 3 is the bulk of the work and the part investors care about.
+It shows exactly four UI beats: the sky, search, a person card, and the reveal.
+Four beats landing cleanly beats six beats blurring past.
+
+The UI does not exist as shippable software yet, so build it as fake HTML screens that match `mvp-design.md` and the real SwiftUI structure.
+It must look like the product will actually look, because it is a promise I intend to keep.
+
+## Hard pipeline order
+
+```
+write script -> record on camera -> transcribe for word timings -> build act 3 -> build overlays -> composite -> render MP4
+```
+
+The transcript is the master clock.
+Every overlay hangs off word-level timings from my actual recorded take.
+
+Do not animate anything before a recorded take exists.
+If you find yourself building motion with no transcript in hand, stop and ask me for the recording.
+
+## Technical decisions already made
+
+- **HyperFrames**, not Remotion. Not Claude Design (it is a static design-system surface and cannot animate).
+- Compositing happens inside HyperFrames. My footage goes into the composition; overlays and act 3 render on top. One MP4 out, no external editor.
+- 16:9, 60-90 seconds total.
+- Start from the `/hyperframes` entry-point skill and let it route. `talking-head-recut` is the likely owning workflow. Load `motion-doctrine` before authoring any motion.
+
+## How we work together
+
+Read the source docs above before proposing anything.
+Do not invent Haven's positioning or voice; it is already written down.
+
+I judge every render myself by watching it.
+Frame snapshots are useful to you for checking composition, but pacing, VO sync, and whether it actually feels right are my calls, and I will tell you.
+
+Ask me for the script draft before building.
+Act 1 and act 4 are my background and my conviction, so I write those; you can sharpen them, not author them.
