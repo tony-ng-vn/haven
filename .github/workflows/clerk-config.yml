@@ -38,7 +38,10 @@ jobs:
       - name: Check the production Clerk instance agrees with the app
         run: |
           node <<'NODE'
-          const { readFileSync } = require("node:fs");
+          // Must be `import`, not `require`: this script reaches node on stdin
+          // and uses top-level await, so a require() here leaves the module
+          // format ambiguous and node refuses to run the script at all.
+          import { readFileSync } from "node:fs";
 
           // The instance to check is whichever one the shipped app signs in
           // against, read from the key rather than hardcoded here -- a Clerk
