@@ -1,0 +1,73 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "b0b3403cd224",
+  "session_id": "06c63929-6c75-436b-bb95-29e57516d2dc",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-03T03:17:01.528452Z",
+  "branch": "graph/sky-real-dates",
+  "checkpoints_count": 6,
+  "save_step_count": 1,
+  "files_touched": [
+    "graph/scripts/anonymize_graph.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "ac0546a9feef",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 224,
+    "cache_creation_tokens": 746128,
+    "cache_read_tokens": 15379391,
+    "output_tokens": 64560,
+    "api_call_count": 117
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01NEHVfmZj7tTN5D4Y9JW6QP",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "run"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ac0546a9feef",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 300,
+        "end": 301,
+        "entry_ids": [
+          "3055bb13-197b-4182-a07b-9ea603715821"
+        ],
+        "tool_use_id": "toolu_01NEHVfmZj7tTN5D4Y9JW6QP"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01NEHVfmZj7tTN5D4Y9JW6QP"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: run",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-03T03:17:00.171373Z",
+    "agent_lines": 251,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 251,
+    "total_lines_changed": 251,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

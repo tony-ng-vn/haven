@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "b0b3403cd224",
+  "strategy": "manual-commit",
+  "branch": "graph/sky-real-dates",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "graph/scripts/anonymize_graph.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b0/b3403cd224/0/metadata.json",
+      "transcript": "/b0/b3403cd224/0/full.jsonl",
+      "compact_transcript": "/b0/b3403cd224/0/transcript.jsonl",
+      "content_hash": "/b0/b3403cd224/0/content_hash.txt",
+      "prompt": "/b0/b3403cd224/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 224,
+    "cache_creation_tokens": 746128,
+    "cache_read_tokens": 15379391,
+    "output_tokens": 64560,
+    "api_call_count": 117
+  }
+}
