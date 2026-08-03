@@ -825,7 +825,10 @@ function recomputeDerivedAggregates() {
     // correctness tidy-up, not a fix for a crash).
     const before = LENS.length;
     LENS = LENS.filter(l => D.byId[l.neighborId]);
-    if (LENS.length !== before) LENS_BY_ID = new Map(LENS.map(l => [l.neighborId, l]));
+    if (LENS.length !== before) {
+      LENS_BY_ID = new Map(LENS.map(l => [l.neighborId, l]));
+      LENS_MESH = computeLensMesh(new Set(LENS_BY_ID.keys()), RAW.acquaintances);
+    }
   }
   if (hoverID && !D.byId[hoverID]) hoverID = null;
   renderRoster();
@@ -1326,6 +1329,20 @@ function drawLensEdges(dark) {
     ctx.strokeStyle = "rgba(" + LENS_INK.join(",") + "," + alpha.toFixed(3) + ")";
     ctx.beginPath(); ctx.moveTo(A.sx, A.sy); ctx.lineTo(B.sx, B.sy); ctx.stroke();
   }
+  // The mesh: whether two of the lensed person's OWN neighbors also know each other --
+  // "does C know A" when lensing B revealed both. Deliberately dimmer than the primary
+  // lensed-person edges above (same LENS_INK, roughly half the alpha, thinner): these
+  // answer a secondary question and must read as secondary, never compete with B's own
+  // connections for attention.
+  for (const pair of LENS_MESH) {
+    const PA = projected[pair.a], PB = projected[pair.b];
+    if (!PA || !PB) continue;
+    const solid = pair.tier !== "likely";
+    const alpha = solid ? (dark ? 0.28 : 0.24) : (dark ? 0.12 : 0.10);
+    ctx.lineWidth = solid ? 0.9 : 0.6;
+    ctx.strokeStyle = "rgba(" + LENS_INK.join(",") + "," + alpha.toFixed(3) + ")";
+    ctx.beginPath(); ctx.moveTo(PA.sx, PA.sy); ctx.lineTo(PB.sx, PB.sy); ctx.stroke();
+  }
 }
 
 /* Message comets: tiny lights travel the threads -- the graph is not a chart
@@ -1449,14 +1466,19 @@ let projected = {};
 let LENS_ID = null;            // the currently lensed person's id, or null
 let LENS = [];                 // [{neighborId, tier, directToYou}], from computeLens
 let LENS_BY_ID = new Map();    // neighborId -> {tier, directToYou}, for O(1) draw-loop lookups
+// Acquaintance pairs AMONG the lens's own neighbors -- answers "does C know A" when
+// lensing B reveals both. Same acquaintances array computeLens already read; this is
+// not a new signal, just a second read of it. See computeLensMesh's own doc comment.
+let LENS_MESH = [];
 const ALL_NODE_IDS = new Set(RAW.nodes.map(n => n.id));
 function setLens(id) {
   LENS_ID = id;
   LENS = computeLens(id, RAW.acquaintances, RAW.edges, EDITS.deleted, ALL_NODE_IDS);
   LENS_BY_ID = new Map(LENS.map(l => [l.neighborId, l]));
+  LENS_MESH = computeLensMesh(new Set(LENS_BY_ID.keys()), RAW.acquaintances);
 }
 function clearLens() {
-  LENS_ID = null; LENS = []; LENS_BY_ID = new Map();
+  LENS_ID = null; LENS = []; LENS_BY_ID = new Map(); LENS_MESH = [];
 }
 /// The dblclick handler's own entry point: people only (the user is never lensable,
 /// and a group has no acquaintance pairs of its own to reveal) -- double-clicking
