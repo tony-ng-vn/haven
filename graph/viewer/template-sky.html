@@ -12,8 +12,10 @@
   not read or write any real data -- open it anywhere, it is just HTML+JS+Canvas.
 
   Interaction: drag to orbit, scroll to zoom, shift-drag to pan, click a dot to
-  orbit that person, click yourself for your inner circle, arrow keys switch
-  the 5 node-rendering skins, 1/2/3 switch view states, Esc clears focus.
+  orbit that person, click yourself for your inner circle, double-click a person
+  for the connection lens (who THEY know, marked by whether each neighbor also
+  reaches you directly), arrow keys switch the 5 node-rendering skins, 1/2/3
+  switch view states, Esc clears focus.
 -->
 <html lang="en">
 <head>
@@ -450,6 +452,7 @@
   <div class="hint">
     <b>Drag</b> orbit - <b>scroll</b> dive toward your cursor - <b>shift-drag</b> pan - <b>&#8984;K</b> find anyone<br>
     <b>Click a dot</b> to open their card - <b>click a square</b> for a group chat - <b>click yourself</b> for your inner circle<br>
+    <b>Double-click a person</b> to see who they know - a ring on a dot marks whether that person also reaches you directly<br>
     <b>Hover</b> lights a whole constellation - <b>&#9654;</b> plays your history - <b>esc</b> clears
   </div>
 </div>
@@ -477,6 +480,12 @@
    message dates, and the UI renders a dash rather than a guess.
    ============================================================ */
 const RAW = __GRAPH_JSON__;
+
+/* sky_lens.mjs: the connection lens's pure neighbor-selection logic (see that file's
+   own header comment), tested standalone with plain node and inlined here by build.py /
+   SkyExportBuilder through the shared viewer-core placeholder seam. Declares
+   computeLens(...), used below wherever the lens toggles or draws. */
+__VIEWER_CORE_JS__
 
 // Layout jitter (star field, dust, group placement, physics nudges) still needs a
 // seeded RNG even though the graph itself is real now -- deterministic across reloads.
@@ -808,6 +817,16 @@ function recomputeDerivedAggregates() {
   if (TIME < 1) applyTime();   // aliveP/aliveG only track deletions once applyTime re-derives them
   isoSetID = null; isoSet = null;   // the memoized hover-neighbor cache may hold a now-deleted id
   if (focusID && !D.byId[focusID]) setViewState("rest");   // the focused node itself was just deleted
+  else if (LENS_ID && LENS.length) {
+    // The lensed person themselves survived (handled above), but a NEIGHBOR the
+    // lens was showing may not have -- drop anything the delete just removed
+    // rather than leave drawLensEdges/the ring loop referencing a gone id (both
+    // already guard against this with a plain undefined check, so this is a
+    // correctness tidy-up, not a fix for a crash).
+    const before = LENS.length;
+    LENS = LENS.filter(l => D.byId[l.neighborId]);
+    if (LENS.length !== before) LENS_BY_ID = new Map(LENS.map(l => [l.neighborId, l]));
+  }
   if (hoverID && !D.byId[hoverID]) hoverID = null;
   renderRoster();
   renderEditsBadge();
@@ -1014,6 +1033,10 @@ function stepMeteor() {
 const PAPER = [247, 244, 238], INK = [22, 21, 15], NIGHT = [10, 12, 17];
 const EMBER = [126, 54, 28];       // focused-edge ink, a warm oxblood
 const BROWNRGB = [122, 74, 30];
+// The connection lens's own ink: a cool slate, deliberately NOT the warm ember/gold
+// already spoken for by "this connects to you" (the focus edge, the direct-to-you
+// ring). Cool means "known through the lens", warm keeps meaning "reaches you directly".
+const LENS_INK = [70, 110, 145];
 const HUES = [16, 30, 44, 60, 95, 150, 175, 205, 232, 268, 310, 344];
 
 function hsl2rgb(h, s, l) {
@@ -1284,6 +1307,27 @@ function drawIsoEdges() {
   }
 }
 
+/// The lens's own connections: every acquaintance edge from the lensed person to a
+/// neighbor present in the sky, drawn in the lens's cool ink (never the warm ember/gold
+/// "connects to you" language, which the focus edges and the direct-to-you ring already
+/// own). Line style carries confidence, same rule PLAN.md's Visual section states for
+/// the acquaintance layer generally: confirmed and strong read solid, likely reads soft.
+/// No fade-in of its own -- the lens simply appears/disappears with LENS_BY_ID, which
+/// trivially satisfies prefers-reduced-motion in both motion-preference states.
+function drawLensEdges(dark) {
+  const A = projected[LENS_ID];
+  if (!A) return;
+  for (const [neighborId, entry] of LENS_BY_ID) {
+    const B = projected[neighborId];
+    if (!B) continue;
+    const solid = entry.tier !== "likely";
+    const alpha = solid ? (dark ? 0.55 : 0.5) : (dark ? 0.24 : 0.22);
+    ctx.lineWidth = solid ? 1.3 : 0.8;
+    ctx.strokeStyle = "rgba(" + LENS_INK.join(",") + "," + alpha.toFixed(3) + ")";
+    ctx.beginPath(); ctx.moveTo(A.sx, A.sy); ctx.lineTo(B.sx, B.sy); ctx.stroke();
+  }
+}
+
 /* Message comets: tiny lights travel the threads -- the graph is not a chart
    of the past, it is conversation happening. Focus biases them to the lit set. */
 const COMETS = [];
@@ -1396,6 +1440,34 @@ const PULSE = { id: null, t: 0 };
 let lastPersonID = D.people[3].id;
 let projected = {};
 
+/* ============================================================
+   The connection lens: double-click a person to see who THEY know, each neighbor
+   marked by whether that neighbor also connects straight to you. Active only while
+   LENS_ID still matches the current focus -- see setLens/clearLens and every branch
+   of setViewState below, which is the single place focus actually changes.
+   ============================================================ */
+let LENS_ID = null;            // the currently lensed person's id, or null
+let LENS = [];                 // [{neighborId, tier, directToYou}], from computeLens
+let LENS_BY_ID = new Map();    // neighborId -> {tier, directToYou}, for O(1) draw-loop lookups
+const ALL_NODE_IDS = new Set(RAW.nodes.map(n => n.id));
+function setLens(id) {
+  LENS_ID = id;
+  LENS = computeLens(id, RAW.acquaintances, RAW.edges, EDITS.deleted, ALL_NODE_IDS);
+  LENS_BY_ID = new Map(LENS.map(l => [l.neighborId, l]));
+}
+function clearLens() {
+  LENS_ID = null; LENS = []; LENS_BY_ID = new Map();
+}
+/// The dblclick handler's own entry point: people only (the user is never lensable,
+/// and a group has no acquaintance pairs of its own to reveal) -- double-clicking
+/// anything else is a harmless no-op, same as it always was before the lens existed.
+function toggleLens(id) {
+  const n = D.byId[id];
+  if (!n || n.kind !== "person") return;
+  if (LENS_ID === id) { clearLens(); return; }
+  setLens(id);
+}
+
 const rT = n => (n.rankT == null ? n.rank : n.rankT);
 function baseRadius(n) {
   if (n.kind === "user") return 9;
@@ -1499,12 +1571,22 @@ function draw() {
   const hazeOf = q => OPT.fog ? Math.min(0.88, Math.pow((q.depth - dmin) / span, 0.85) * 0.94) : 0;
 
   const F = focusID ? computeFocus(focusID) : null;
+  // The lens is active only while its own target still matches the current focus
+  // (see setViewState). Folding its neighbors into F.near reuses every downstream
+  // consumer of "who counts as lit" for free -- ghosting, the tier fade, and
+  // drawNameNodes/labelPass all already key off F.near, so a lensed person's
+  // acquaintances light up exactly the way a direct focus neighbor already does.
+  // F.eset (the primary you-to-them edge set) is deliberately left untouched:
+  // the lens draws its own, differently-inked edges in drawLensEdges below.
+  const lensActive = F && LENS_BY_ID.size > 0 && LENS_ID === focusID;
+  if (lensActive) for (const neighborId of LENS_BY_ID.keys()) F.near.add(neighborId);
   // Isolation state was already eased this frame in easeIsolation(); ISO_RS is
   // its unmemoized neighbor set (recomputed only when the hovered id changes).
   const RS = ISO_ACTIVE ? ISO_RS : null;
 
   drawEdges(F, hazeOf, dark);
   if (RS) drawIsoEdges();
+  if (lensActive) drawLensEdges(dark);
 
   const order = Object.keys(projected).sort((a, b) => projected[b].depth - projected[a].depth);
   for (const id of order) {
@@ -1527,6 +1609,19 @@ function draw() {
         : (dark ? "rgba(230,225,210,0.4)" : "rgba(22,21,15,0.4)");
       ctx.lineWidth = id === focusID ? 2 : 1;
       ctx.beginPath(); ctx.arc(q.sx, q.sy, r + (id === focusID ? 8 : 5), 0, 7); ctx.stroke();
+    }
+    // The lens's own mark: whether this neighbor ALSO reaches you directly, or
+    // only through shared groups -- a skin-agnostic ring, same approach as the
+    // focus/hover ring just above, so it works identically across all 5 skins
+    // without any per-skin painter needing to know the lens exists at all.
+    if (lensActive && LENS_BY_ID.has(id)) {
+      const directToYou = LENS_BY_ID.get(id).directToYou;
+      const lr = Math.max(2, baseRadius(n) * q.ks * 1.05) + (skin.key === "faces" ? 3 : 2);
+      ctx.strokeStyle = directToYou
+        ? (dark ? "rgba(242,203,132,0.9)" : "rgba(126,54,28,0.85)")
+        : (dark ? "rgba(" + LENS_INK.join(",") + ",0.6)" : "rgba(" + LENS_INK.join(",") + ",0.55)");
+      ctx.lineWidth = directToYou ? 1.8 : 1;
+      ctx.beginPath(); ctx.arc(q.sx, q.sy, lr, 0, 7); ctx.stroke();
     }
   }
 
@@ -2170,7 +2265,15 @@ cv.addEventListener("wheel", e => {
   cam.dist = nd;
 }, { passive: false });
 cv.addEventListener("dblclick", e => {
-  if (pick(e.clientX, e.clientY)) return;   // node double-clicks belong to focus
+  // Prefer the id the two constituent single clicks already settled on (see
+  // lastClickID's own comment) over a fresh pick, which can miss once the camera
+  // has started gliding toward the focus those same clicks just landed. 800ms is
+  // generous slack above any real double-click interval -- the two are otherwise
+  // causally back-to-back -- while still not reusing a click from an unrelated,
+  // much earlier gesture.
+  const fresh = lastClickID && (performance.now() - lastClickAt) < 800;
+  const hit = fresh ? lastClickID : pick(e.clientX, e.clientY);
+  if (hit) { toggleLens(hit); return; }   // node double-clicks belong to the lens
   const k = FOCAL / cam.dist;
   const X1 = (e.clientX - W / 2 - cam.panX - cam.shiftX) / (k * cam.fit) + cam.cX;
   const Y1 = (e.clientY - H / 2 - cam.panY) / (k * cam.fit) + cam.cY;
@@ -2369,9 +2472,18 @@ function pick(x, y) {
   }
   return best;
 }
+// The dblclick handler's own record of "what did the click just before this one
+// actually hit" -- a native dblclick fires immediately after this same mouseup's
+// clickAt already ran (mousedown, mouseup, click, mousedown, mouseup, click,
+// dblclick, all synchronous), but by the time it fires the camera may already be
+// gliding toward a fresh focus target, and re-picking at the dblclick's own
+// coordinates can land on empty space or a different, since-moved node. Trusting
+// the id this run of clickAt just decided sidesteps that race entirely.
+let lastClickID = null, lastClickAt = 0;
 function clickAt(x, y) {
   const id = pick(x, y);
-  if (!id) { setViewState("rest"); return; }
+  if (!id) { setViewState("rest"); lastClickID = null; return; }
+  lastClickID = id; lastClickAt = performance.now();
   focusNode(id);
 }
 // Frame a set of nodes: centroid + the distance that fits them all on screen.
@@ -2418,11 +2530,13 @@ function setViewState(s) {
   cam.panX = cam.panY = 0;
   if (s === "rest") {
     focusID = null;
+    clearLens();   // Esc / empty space drops back to plain rest -- no lens without a focus
     TRAIL = [];
     camT.tx = SCENE_C.x; camT.ty = SCENE_C.y; camT.tz = SCENE_C.z;
     camT.dist = iter >= ITERS && !userZoomed ? sceneDist() : null;
   } else if (s === "you") {
     focusID = "user";
+    if (LENS_ID !== null) clearLens();   // the user node is never lensable
     PULSE.id = "user"; PULSE.t = performance.now();
     // Framing uses the full one-hop neighborhood (same adjacency hover isolation
     // walks), not just the top-32 strongest ties the dossier highlights -- the
@@ -2431,6 +2545,12 @@ function setViewState(s) {
     camT.tx = f.cx; camT.ty = f.cy; camT.tz = f.cz; camT.dist = f.dist;
   } else {
     focusID = lastPersonID;
+    // Focus landing on the SAME id the lens already tracks (the two constituent
+    // single clicks of a double-click on the already-lensed person, or a plain
+    // re-click) leaves the lens exactly as it was -- only a genuine move to a
+    // DIFFERENT node clears it, so a stale lens never survives to describe
+    // someone who is no longer focused.
+    if (LENS_ID !== null && LENS_ID !== focusID) clearLens();
     PULSE.id = focusID; PULSE.t = performance.now();
     const n = D.byId[lastPersonID];
     // Frame the node plus everything one hop from it: for a person that's their
