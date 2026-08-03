@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-import { computeLens, computeLensMesh, formatPersonLabel } from "./sky_lens.mjs";
+import { computeLens, computeLensMesh, formatPersonLabel, resolvePersonLabel, normalizeEditsPayload } from "./sky_lens.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -199,6 +199,89 @@ test("formatPersonLabel never returns the literal string \"undefined\" for any m
 test("formatPersonLabel passes the name through unchanged, including a nullish name", () => {
   assert.equal(formatPersonLabel("Ana Vray", "...1234").name, "Ana Vray");
   assert.equal(formatPersonLabel(null, "...1234").name, null);
+});
+
+/* ============================================================
+   resolvePersonLabel: the sky's one label-resolution rule now that a person can carry a
+   custom (user-typed) name on top of a real contact name or a model guess. Priority is
+   custom > real > guess > raw id fallback. Pure -- no DOM, no EDITS, no localStorage; the
+   caller looks up whatever customName string (or none) applies and passes it in.
+   ============================================================ */
+
+test("resolvePersonLabel: a custom name wins over a real (contact-card) name", () => {
+  const result = resolvePersonLabel("Real Name", "Custom Name", "+15550001111");
+  assert.deepEqual(result, { name: "Custom Name", labelKind: "custom" });
+});
+
+test("resolvePersonLabel: a custom name wins over a guess-derived tilde name", () => {
+  const result = resolvePersonLabel("~Guessed Name", "Custom Name", "+15550001111");
+  assert.deepEqual(result, { name: "Custom Name", labelKind: "custom" });
+});
+
+test("resolvePersonLabel: no custom name falls back to today's rule -- real name wins over a guess", () => {
+  assert.deepEqual(resolvePersonLabel("Real Name", null, "+15550001111"), { name: "Real Name", labelKind: "name" });
+  assert.deepEqual(resolvePersonLabel("Real Name", undefined, "+15550001111"), { name: "Real Name", labelKind: "name" });
+});
+
+test("resolvePersonLabel: no custom name and no real name falls back to the guess, tilde stripped", () => {
+  assert.deepEqual(resolvePersonLabel("~Guessed Name", "", "+15550001111"), { name: "Guessed Name", labelKind: "guess" });
+});
+
+test("resolvePersonLabel: no custom name, no real name, no guess falls back to the raw id", () => {
+  assert.deepEqual(resolvePersonLabel(null, null, "+15550001111"), { name: "+15550001111", labelKind: "phone" });
+});
+
+test("resolvePersonLabel: a whitespace-only custom name is treated as no custom name (clears, does not save blank)", () => {
+  assert.deepEqual(resolvePersonLabel("Real Name", "   ", "+15550001111"), { name: "Real Name", labelKind: "name" });
+});
+
+test("resolvePersonLabel: a custom name is trimmed", () => {
+  assert.deepEqual(resolvePersonLabel("Real Name", "  Custom Name  ", "+15550001111"), { name: "Custom Name", labelKind: "custom" });
+});
+
+test("resolvePersonLabel: a custom name that collides with another displayed name still renders its disambiguator -- formatPersonLabel does not care where the name came from", () => {
+  const resolved = resolvePersonLabel("Real Name", "Custom Name", "+15550001111");
+  const labeled = formatPersonLabel(resolved.name, "...1111");
+  assert.deepEqual(labeled, { name: "Custom Name", suffix: "...1111" });
+});
+
+/* ============================================================
+   normalizeEditsPayload: the pure heart of loadEdits -- given whatever JSON.parse
+   handed back (or null, for "nothing stored"), returns a safe { v, moves, deleted, names }
+   shape. localStorage/JSON.parse/try-catch stay in template-sky.html; this function is
+   what "unknown shape -> start clean" and the v1-plus-names back-compat migration mean.
+   ============================================================ */
+
+test("normalizeEditsPayload: nothing stored (null) returns a clean empty shape", () => {
+  assert.deepEqual(normalizeEditsPayload(null), { v: 1, moves: {}, deleted: [], names: {} });
+});
+
+test("normalizeEditsPayload: an unknown shape (wrong version) starts clean rather than misreading it", () => {
+  assert.deepEqual(normalizeEditsPayload({ v: 2, moves: { x: 1 }, deleted: ["x"], names: { x: "X" } }),
+    { v: 1, moves: {}, deleted: [], names: {} });
+  assert.deepEqual(normalizeEditsPayload({ notEvenTheRightShape: true }), { v: 1, moves: {}, deleted: [], names: {} });
+});
+
+test("normalizeEditsPayload: a v1 payload from before renaming existed (no `names` key) loads fine and keeps moves/deleted", () => {
+  const oldPayload = { v: 1, moves: { "+15550001111": 2 }, deleted: ["+15559998888"] };
+  assert.deepEqual(normalizeEditsPayload(oldPayload), {
+    v: 1,
+    moves: { "+15550001111": 2 },
+    deleted: ["+15559998888"],
+    names: {}
+  });
+});
+
+test("normalizeEditsPayload: a full v1 payload with names round-trips unchanged", () => {
+  const payload = { v: 1, moves: { a: 1 }, deleted: ["b"], names: { c: "Custom Name" } };
+  assert.deepEqual(normalizeEditsPayload(payload), payload);
+});
+
+test("normalizeEditsPayload: malformed moves/deleted/names fields fall back to empty individually", () => {
+  assert.deepEqual(
+    normalizeEditsPayload({ v: 1, moves: "not an object", deleted: "not an array", names: 42 }),
+    { v: 1, moves: {}, deleted: [], names: {} }
+  );
 });
 
 /* ============================================================
