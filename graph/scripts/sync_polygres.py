@@ -85,7 +85,11 @@ def strip_guess_marker(name):
 
 def load_graph_json(path):
     if not path.exists():
-        raise SyncError(f"graph export not found: {path}")
+        # No bare absolute path here: this message reaches the app's toolbar chip as a
+        # user-facing string (AppModel.summarize takes the first line of this script's
+        # stdout verbatim, exactly what surfaced a full filesystem path to the owner) --
+        # an actionable next step is more useful there than a path anyway.
+        raise SyncError("graph export not found: run 'graph-cli json ... > exports/graph.json' first")
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
