@@ -6,6 +6,17 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.43.1
+
+2026-08-03
+
+**CI**
+
+- The daily check on Haven's live sign-in settings now actually runs. It had failed within seconds of starting every morning since the day it was written, so it had never once looked at anything -- a check that has never passed and a check that broke overnight are indistinguishable in a list of red marks, which is how it went unnoticed for six days. It found two real things on its first honest run, both since fixed: Clerk, the service behind signing in, was still calling the app "Euno" on its own screens and in every sign-in email, and it was still sending people to its own hosted sign-in pages rather than Haven's. The second one is the failure that broke sign-in in production once before -- Haven's own code has been overriding it since, so nobody was stuck, but the setting behind it had never been corrected. Both halves of that guard are now in place, and the check passes for the first time.
+- The bot that opened an automatic pull request every morning with one suggested improvement has been removed. It had been failing daily rather than proposing anything.
+
+---
+
 ## v0.43.0
 
 2026-07-29
