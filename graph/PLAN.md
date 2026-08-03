@@ -259,6 +259,16 @@ The JSON export gains an `acquaintances` array (pair, tier, score, evidence) and
 
 ## The model pass
 
+**Message text lives in `attributedBody`, not `text` (measured 2026-08-03).**
+Of 111,243 real messages, only 1,963 (1.8 percent) carry plain `text`; 108,617 hold it solely inside an archived `attributedBody` blob.
+The snippet reader decodes those transiently, same discipline as always: read to build one prompt, never persisted.
+Anything reasoning over message content that was measured before this decoding existed was measured over 1.8 percent of the corpus and must be re-measured, including the deferred mention-derived edges below.
+
+**A guess must be earned, never invented (owner directive 2026-08-03).**
+The model may decline, and declining is a first-class answer rather than an error; a candidate with no snippets is never prompted at all.
+A returned name is accepted only when every significant token of it literally appears in the snippets shown to the model, and two distinct handles may never carry the same name -- distinct identifiers are distinct people, so a duplicate is a misattribution of at least one of them.
+An unnamed handle labeled by its number is strictly better than a confidently wrong identity attached to a real person; the correct outcome of these rules is fewer names, not more.
+
 Task: given a set of message snippets from an unnamed handle or an unnamed group, return a likely name and a short description of who they are to the user.
 
 It runs after first render, asynchronously.
@@ -343,12 +353,16 @@ In scope, because this is a tool used over time rather than a one-shot artifact.
 - The connection lens, the Sky's second-degree view (owner directive 2026-08-02).
   Click yourself: your inner circle, the first degree (shipped).
   Click a person: focus and their card (shipped).
-  Double-click a person: the lens.
+  Cmd+click a person: the lens (owner changed this from double-click on 2026-08-03; a permanent gesture legend lives in the side rail).
   The you-to-them focus treatment stays, and that person's own connections light up: every acquaintance edge from them to other people in the sky, drawn by tier (confirmed and strong solid, likely soft).
   Each revealed neighbor is visually marked by whether they also connect to you directly (a one-to-one thread with you) or are known to you only through shared groups.
   Esc or clicking empty space drops back to the plain focus; clicking another person moves the focus as it does today.
   An export without acquaintance data renders the sky with the lens inert, no errors.
 - Search by name, since most dots are unlabeled at rest.
+- Rename anyone in place, and revert to their derived name (owner directive 2026-08-03).
+  A user-typed name outranks a card name and a model guess everywhere a name is drawn, and is stored with the viewer's other edits.
+  This is the reliable answer to a wrong or missing name: the owner knows who these people are, and typing it is both faster and more accurate than any inference.
+- The time scrubber lives in a vertical rail on the right edge, not across the bottom (owner directive 2026-08-03), so it stops competing with the sky for horizontal space.
 - Mark a group chat "everyone here knows each other", or unmark it.
 - Filter by time, so the graph can show a chosen period rather than all history.
 - Toggle dead groups on and off (native app; the viewer shows groups only as evidence).
@@ -378,6 +392,7 @@ Get there fast, then iterate.
 
 - Stranger nodes: people mentioned but never contacted.
 - Mention-derived edges: Sarah naming Mike creates a Sarah-to-Mike edge. Deferred because density already sits at 1.19 edges per node against the 1.04 reference before any mention lands, and because resolving a first name in text to one node among 615 people is guesswork. Would ride the existing edge source field when revisited.
+  Re-measurement note (2026-08-03): a probe that put the yield at 7 novel pairs is VOID -- it scanned only the 1.8 percent of messages carrying plain `text`, before `attributedBody` decoding existed. The deferral still stands on the density and first-name-ambiguity arguments, but the yield number must be re-measured before anyone cites it.
 - Call history as a second source. The edge source field keeps this cheap.
 - Displaying reason and strength on the bipartite edges in the native render; the viewer's evidence panel already does this for acquaintance edges.
 - Per-edge manual confirmation or denial of a single acquaintance, beyond the per-chat marker.

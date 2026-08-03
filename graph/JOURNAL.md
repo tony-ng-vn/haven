@@ -8,21 +8,56 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: none; #193-#197 and #199-#202 merged to graph-main, #198 merged graph-main into main (owner-directed) -- all 2026-08-02/03
-- Build position: the two-plane sky (template-sky.html plus sky_lens.mjs through the conditional core-placeholder seam) is the product's ONLY presentation, per owner directive 2026-08-02.
-  The native Canvas render and the v4 map viewer are deleted; recover via git history at #190/#192 if ever needed.
-  The acquaintance layer now has two evidence types: co-membership scoring and direct interactions (tapbacks/replies, 3+ promotes to strong); the lens shows second-degree links, the mesh among revealed neighbors, and disambiguators for colliding names.
-  Pipeline runs ~0.7-0.9s end to end on the real database (was ~5.9s); graph-cli json has a --timings flag.
-  Suite: 234 Swift tests plus 28 viewer node tests (node graph/viewer/sky_lens.tests.mjs), all green on graph-main.
-- Goal-criteria status: unchanged from 2026-07-31 EXCEPT criterion (5): the bipartite image export was deliberately deleted with the native render, owner-approved; the exported sky HTML is the shareable artifact now.
-- Ollama: live (llama3.2), guess cache populated for every pending handle as of 2026-08-03.
-- App install: /Applications/Your Sky.app is the canonical copy; ad-hoc signing means every update needs a fresh FDA grant (the authorize screen now explains this and offers Relaunch).
-- Open follow-ups: sky-side creation UI for hide/remove/fully-acquainted marks (confirmed tier has zero UI feeders); guess quality (19 collision groups of repeated generic guesses); dead-groups toggle inert; real per-month history for strengthAt; stable signing identity (needs owner); P3 tuning of tier and interaction thresholds.
-- Integration branch: `graph-main`; PRs merge there after green CI and lead review; main is owner-merged (first merge happened as #198 on owner direction).
-- Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; mirror into the graph-main worktree, always editing the main-checkout copy first
-- Next intent: sky-side affordance for creating marks; then guess-quality tuning; then P3 thresholds
+- Open PRs: #203-#208 all merged to graph-main 2026-08-03; guess-attribution and contact-only-people in flight
+- Build position: template-sky.html is the ONLY presentation. Acquaintance evidence is co-membership scoring PLUS direct interactions (tapback/reply, 3+ promotes to strong). The lens is cmd+click (not double-click), the time scrubber is a right-edge vertical rail, and people can be renamed in place.
+  Message text: attributedBody is decoded, so the model pass sees ~all 111k messages instead of the 1.8 percent carrying plain `text`.
+  Name guessing: the model may abstain, no-evidence candidates are never prompted, and a name is accepted only if its tokens literally appear in the snippets shown.
+  Suite: 277 Swift tests plus 41 viewer node tests, green on graph-main.
+- Goal-criteria status: unchanged except criterion (5); the bipartite image export was deleted with the native render, owner-approved.
+- BLOCKED ON OWNER (blocks the signed build): the "Your Sky Local Signing" certificate exists in the login keychain but carries NO trust settings, so zero code-signing identities resolve. Set Trust -> Code Signing -> Always Trust in Keychain Access. Until then every rebuild costs a fresh Full Disk Access grant, so avoid gratuitous reinstalls.
+- App install: /Applications/Your Sky.app; graph/scripts/update_app.sh rebuilds, reinstalls, relaunches, refuses stale-branch installs, and warns when an install would cost the grant.
+- Open follow-ups: sky-side creation UI for hide/remove/fully-acquainted marks (confirmed tier has no feeder); the void mention-yield probe needs re-measuring post-decoder; dead-groups toggle inert; real per-month history for strengthAt; P3 tuning of tier and interaction thresholds.
+- Integration branch: `graph-main`; PRs merge there after green CI and lead review; main is owner-merged (first merge was #198).
+- Journal discipline: canonical charter and journal live in the main checkout at `graph/`; mirror into the graph-main worktree, editing the main-checkout copy first.
+- Next intent: land the two in-flight packages, then the marks-creation UI
 
 ## Entries
+
+### 2026-08-03: the name-quality cascade, signing, and the UX pass (PRs #203-#208)
+
+Owner-directed. Six asks: end the FDA regrant cycle, cmd+click instead of double-click, timeline to the side, editable info, the duplicate-name bug, and contacts never texted.
+The duplicate-name bug turned into a three-layer cascade where each fix exposed the next, which is the entry worth reading.
+
+DONE
+
+- PR #203 (merged): the toolbar covered the sky's own header. ContentView floated GraphToolbar over the step view in a ZStack -- correct when the native Canvas render had no header of its own, wrong once template-sky.html owned the top of its WKWebView. Now a VStack row, so neither side needs the other's height.
+- PR #204 (merged): stable signing. Signing.xcconfig defaults to ad-hoc so a machine with no identity still builds, with an optional gitignored Signing.local.xcconfig overriding it; scripts/update_app.sh rebuilds, reinstalls, relaunches, and reports whether the build was ad-hoc; SIGNING.md explains the TCC cdhash mechanism and the owner's own certificate steps. No network updater: GOAL.md forbids a server component, and update_app.sh IS the update button.
+- PR #205 (merged): AppModel.repoRoot came from #filePath, the COMPILE-TIME source path, so every installed copy pointed at the worktree that built it and broke once that worktree was deleted -- the owner saw a raw worktree path in a Sync failure. Sync is a dev utility, so it now hides entirely when its compiled-in path is gone, and the bare-path error string is replaced. update_app.sh also refuses to install a build behind origin/graph-main, and warns before an install that would cost an FDA grant.
+- PR #206 (merged): the model was inventing names. GuessPrompt literally forbade abstention ("still return your best guess rather than refusing") and the engine prompted candidates with ZERO snippets. Fix: abstention is a first-class answer, no-evidence candidates are never prompted, and a returned name is accepted only if every significant token of it literally appears in the snippets shown. Added guess --reguess to purge and re-run. Real cache 240 guesses / 96 distinct / 39-way collision -> 4 / 3 / 2.
+- PR #207 (merged): the reason the model had nothing to work with. Measured: of 111,243 messages only 1,963 (1.8 percent) carry plain `text`; 108,617 hold it solely in an archived attributedBody blob, which SnippetReader skipped. A defensive typedstream decoder now reads them, fail-safe (malformed/truncated/unknown -> no snippet, never garbage), fixtures synthetic-only since a real blob is message content. Accepted guesses 4 -> 48, distinct 3 -> 32.
+- PR #208 (merged): the UX pass. Cmd+click replaces double-click for the lens (the dblclick freshness workaround deleted with it) with a permanent gesture legend; the time scrubber moved to a vertical right-edge rail (slider-vertical verified by reading getComputedStyle in a real headless WKWebView, not assumed); people can be renamed in place, stored additively in the viewer's existing EDITS localStorage shape with back-compat proven by test. Agent self-review caught four real bugs pre-merge: the rename field leaked keystrokes into the global shortcut handler, an unescaped quote in a name broke the markup, the new rail covered the roster's move/delete buttons, and reverting a rename on a deleted person silently no-opped.
+
+THE CASCADE, RECORDED BECAUSE IT WILL RECUR
+
+Fabrication (prompt forbade "I don't know") -> once fixed, guesses collapsed to 4, revealing the model had almost no input -> measuring THAT exposed 97.6 percent of messages being unreadable -> decoding them raised guesses to 48 and immediately exposed misattribution: one name on 17 handles, then 25 as more text arrived.
+Grounding stops invention but NOT misattribution, because in a group chat every member's snippets contain the same conversation, so a name someone else said passes grounding for everyone in the room.
+Each layer was only visible once the one beneath it was correct. Measure after every fix; do not assume the first fix was the last.
+
+CORRECTION ISSUED
+
+The earlier mention-yield probe (7 novel pairs, used to justify keeping mentions deferred) is VOID: it scanned only the 1.8 percent plain-text slice. PLAN.md now carries that correction. The deferral still stands on its density and first-name-ambiguity arguments, but the yield number must be re-measured before anyone cites it.
+
+VERIFIED BY THE LEAD
+
+- Every PR diff-reviewed and merged only on a personally read green check.
+- The 1.8 percent figure measured independently against the real database, not taken from the agent's report.
+- Two agents stalled on background monitors and were landed or re-briefed by the lead; the re-brief added an explicit "run synchronously, no background monitors" process instruction.
+
+BLOCKED / NEXT
+
+- BLOCKED ON OWNER: the self-signed certificate exists in the login keychain but has NO trust settings, so `security find-identity -p codesigning` reports zero identities and the signed build cannot happen. Owner must set Trust -> Code Signing -> Always Trust in Keychain Access (needs their password; never scriptable from here). Until then every rebuild still costs an FDA regrant, which is why the lead stopped reinstalling.
+- IN FLIGHT: guess attribution (scoping a name to messages the candidate themselves sent, plus a uniqueness rule) and contact-only people (the owner's sixth ask).
+- The sky-side creation UI for hide/remove/fully-acquainted marks still has no feeder, so the confirmed tier stays empty.
 
 ### 2026-08-02/03 late session: main merge, mesh, interaction evidence, authorize fix, name disambiguation (PRs #198-#202)
 
