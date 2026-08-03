@@ -60,4 +60,16 @@ final class GuessPromptTests: XCTestCase {
         XCTAssertTrue(prompt.contains("\"name\""))
         XCTAssertFalse(prompt.isEmpty)
     }
+
+    // Abstention must be a first-class, explicitly-shaped answer -- these two assertions are
+    // the actual fix for the root cause (GuessPrompt used to forbid refusing outright).
+    func testPromptOffersAnExplicitAbstentionShapeRatherThanForbiddingIt() {
+        let prompt = GuessPrompt.build(
+            snippets: [Snippet(text: "ok see you then", isFromMe: false)],
+            context: .person(identifier: "+14155550004")
+        )
+
+        XCTAssertTrue(prompt.contains("{\"name\": \"\", \"description\": \"\"}"), "the prompt must give the model an explicit empty-name shape for 'I don't know'")
+        XCTAssertFalse(prompt.contains("still return your best guess rather than refusing"), "the old instruction that forbade abstention must be gone")
+    }
 }

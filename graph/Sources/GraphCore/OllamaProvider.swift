@@ -7,9 +7,12 @@ private struct OllamaGenerateResponse: Decodable {
 }
 
 /// The model's own JSON, embedded inside OllamaGenerateResponse.response as text, per the
-/// exact shape GuessPrompt asks for.
+/// exact shape GuessPrompt asks for. `name` is optional even though GuessPrompt asks for an
+/// empty string on abstention: a small local model does not always follow the requested shape
+/// exactly, and sometimes emits JSON null instead -- treating both as "no name" (see guess(_:))
+/// keeps that variance from being miscounted as a parse failure.
 private struct ModelGuessJSON: Decodable {
-    let name: String
+    let name: String?
     let description: String?
 }
 
@@ -58,11 +61,18 @@ public struct OllamaProvider: NameGuessProvider {
 
         guard let outer = try? JSONDecoder().decode(OllamaGenerateResponse.self, from: data),
               let innerData = outer.response.data(using: .utf8),
-              let inner = try? JSONDecoder().decode(ModelGuessJSON.self, from: innerData),
-              !inner.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+              let inner = try? JSONDecoder().decode(ModelGuessJSON.self, from: innerData) else {
             throw NameGuessError.badResponse
         }
 
-        return NameGuess(name: inner.name, detail: inner.description)
+        // An empty (or null) name is the abstention contract GuessPrompt asks for, not a
+        // malformed response: the model explicitly said it does not know, which is a correct
+        // answer, not a failure.
+        let trimmedName = (inner.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            throw NameGuessError.declined
+        }
+
+        return NameGuess(name: trimmedName, detail: inner.description)
     }
 }

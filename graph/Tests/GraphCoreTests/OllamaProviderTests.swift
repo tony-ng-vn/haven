@@ -80,7 +80,10 @@ final class OllamaProviderTests: XCTestCase {
         }
     }
 
-    func testEmptyNameInInnerJSONThrowsBadResponse() async {
+    // An empty name is the abstention contract (GuessPrompt asks for exactly this shape when the
+    // model has no evidence), not a malformed response -- so it must throw .declined, never
+    // .badResponse. Declining is the correct answer, not a failure.
+    func testEmptyNameInInnerJSONThrowsDeclined() async {
         StubURLProtocol.handler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             return (response, Self.ollamaResponse("{\"name\": \"\", \"description\": \"something\"}"))
@@ -89,9 +92,47 @@ final class OllamaProviderTests: XCTestCase {
 
         do {
             _ = try await provider.guess(prompt: "irrelevant")
-            XCTFail("expected badResponse to be thrown for an empty required name")
+            XCTFail("expected declined to be thrown for an empty name")
         } catch let error as NameGuessError {
-            XCTAssertEqual(error, .badResponse)
+            XCTAssertEqual(error, .declined)
+        } catch {
+            XCTFail("expected a NameGuessError")
+        }
+    }
+
+    // A whitespace-only name is functionally the same abstention, not a real guess.
+    func testWhitespaceOnlyNameThrowsDeclined() async {
+        StubURLProtocol.handler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, Self.ollamaResponse("{\"name\": \"   \", \"description\": \"something\"}"))
+        }
+        let provider = OllamaProvider(session: stubbedSession())
+
+        do {
+            _ = try await provider.guess(prompt: "irrelevant")
+            XCTFail("expected declined to be thrown for a whitespace-only name")
+        } catch let error as NameGuessError {
+            XCTAssertEqual(error, .declined)
+        } catch {
+            XCTFail("expected a NameGuessError")
+        }
+    }
+
+    // Some models express "I don't know" as a JSON null rather than an empty string even when
+    // asked for the latter -- treating a missing/null name the same as an empty one means that
+    // variance doesn't get miscounted as a parse failure.
+    func testNullNameInInnerJSONThrowsDeclined() async {
+        StubURLProtocol.handler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, Self.ollamaResponse("{\"name\": null, \"description\": \"something\"}"))
+        }
+        let provider = OllamaProvider(session: stubbedSession())
+
+        do {
+            _ = try await provider.guess(prompt: "irrelevant")
+            XCTFail("expected declined to be thrown for a null name")
+        } catch let error as NameGuessError {
+            XCTAssertEqual(error, .declined)
         } catch {
             XCTFail("expected a NameGuessError")
         }
