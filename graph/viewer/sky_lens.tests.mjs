@@ -1,4 +1,4 @@
-/* Tests for sky_lens.mjs -- plain `node sky_lens.test.mjs`, zero dependencies
+/* Tests for sky_lens.mjs -- plain `node sky_lens.tests.mjs`, zero dependencies
  * (node:test and node:assert are Node builtins). See build.py's header comment for why
  * this file's import is guaranteed to be the exact code template-sky.html ships.
  *
@@ -98,7 +98,7 @@ test("computeLens accepts a Set for deletedIds/nodeIds as well as an array", () 
    JSON placeholder exactly once, or build.py / SkyExportBuilder both fail loudly at
    build time -- see build.py's header comment for the shared contract. Asserted here,
    not just exercised by hand, so a stray second mention of either placeholder (e.g.
-   written out in a doc comment) is caught by `node sky_lens.test.mjs` too.
+   written out in a doc comment) is caught by `node sky_lens.tests.mjs` too.
    ============================================================ */
 test("template-sky.html declares the graph-json and viewer-core placeholders exactly once each", () => {
   const template = readFileSync(path.join(HERE, "template-sky.html"), "utf8");
