@@ -14,16 +14,23 @@ private struct ContentView: View {
     @State private var model = AppModel()
 
     var body: some View {
-        ZStack(alignment: .top) {
-            stepView
+        VStack(spacing: 0) {
             // Toolbar chrome, hoisted above whatever stepView is currently showing: a
             // rebuild's brief `.loading` flash must not make the toolbar (and the date
             // range it holds) flicker away and back. Only relevant once onboarding has
             // actually reached the sky -- during Welcome/Authorize/readyToMap/mapping
             // there is no graph yet for it to describe.
+            //
+            // A row in a VStack, not a ZStack overlay: template-sky.html owns the full
+            // top of its own WKWebView with its own header (title, tier tabs), so
+            // floating this ON TOP of the sky (the original layout) drew two headers
+            // into the same space. Stacking gives the toolbar its own space and pushes
+            // the sky down to start clear of it, with no coordination needed between
+            // Swift and the HTML about heights.
             if model.onboardingStep == .sky, model.messageDateBounds != nil {
                 GraphToolbar(model: model)
             }
+            stepView
         }
         // Fires once, on first appearance. Deliberately does NOT eagerly load on
         // Welcome/Authorize/readyToMap -- reading chat.db before the user has ever
