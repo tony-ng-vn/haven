@@ -289,11 +289,19 @@ final class AppModel {
         return url
     }
 
-    /// Whether the polygres CLI is present at all -- the toolbar hides "Sync people"
-    /// entirely rather than showing a button that can only ever fail on a machine that
-    /// never installed it (PLAN.md's own scripts/sync_polygres.py resolves the same path).
+    /// Whether "Sync people" should be offered at all: the polygres CLI must be installed,
+    /// AND scripts/sync_polygres.py must actually exist under repoRoot right now
+    /// (DevToolAvailability.syncScriptExists). The second check matters because repoRoot is
+    /// baked in at compile time from #filePath (see its own doc comment) -- a worktree that
+    /// compiled this binary can be deleted long after an installed copy keeps running, and
+    /// re-checking on every access (not just once at launch) means a worktree deleted WHILE
+    /// the app is open also hides the button, not just one deleted before launch. Sync
+    /// people is a development utility, not a shipped feature (GOAL.md forbids a production
+    /// surface): the correct behavior for a build whose source tree is gone is that the
+    /// button is simply absent, never present-and-broken.
     var isPolygresAvailable: Bool {
         FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.local/bin/polygres")
+            && DevToolAvailability.syncScriptExists(atRepoRoot: Self.repoRoot.path)
     }
 
     private var guessTask: Task<Void, Never>?
@@ -395,11 +403,13 @@ final class AppModel {
 
     // MARK: - Sync people (Polygres)
 
-    /// This source file's own location, at build time -- graph/App/Sources/AppModel.swift.
+    /// This source file's own location, AT BUILD TIME -- graph/App/Sources/AppModel.swift.
     /// Walking up two directories lands on the package root (graph/), where scripts/ lives.
-    /// This app is a personal, single-checkout dev tool (never distributed as a standalone
-    /// bundle elsewhere), so pinning the script path to "wherever this source file was built
-    /// from" is a safe assumption here, not something a shipped app could rely on.
+    /// This is baked into the binary by the compiler and never changes again for that
+    /// binary's lifetime: an installed copy keeps pointing at whatever checkout (worktree
+    /// or otherwise) happened to compile it, even after that checkout is deleted. That is
+    /// exactly why isPolygresAvailable re-checks this path against the filesystem on every
+    /// access rather than trusting it -- see that property's own doc comment.
     nonisolated private static let repoRoot: URL = {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // AppModel.swift -> Sources/
