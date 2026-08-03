@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "affbb5c550aa",
+  "strategy": "manual-commit",
+  "branch": "graph/sky-real-dates",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "graph/Sources/GraphCore/GraphBuilder.swift",
+    "graph/Sources/GraphCore/GraphFilter.swift",
+    "graph/Sources/GraphCore/GraphJSON.swift",
+    "graph/Sources/GraphCore/GraphModel.swift",
+    "graph/Tests/GraphCoreTests/GraphBuilderTests.swift",
+    "graph/Tests/GraphCoreTests/GraphJSONTests.swift",
+    "graph/viewer/template-sky.html"
+  ],
+  "sessions": [
+    {
+      "metadata": "/af/fbb5c550aa/0/metadata.json",
+      "transcript": "/af/fbb5c550aa/0/full.jsonl",
+      "compact_transcript": "/af/fbb5c550aa/0/transcript.jsonl",
+      "content_hash": "/af/fbb5c550aa/0/content_hash.txt",
+      "prompt": "/af/fbb5c550aa/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 224,
+    "cache_creation_tokens": 746128,
+    "cache_read_tokens": 15379391,
+    "output_tokens": 64560,
+    "api_call_count": 117
+  }
+}
