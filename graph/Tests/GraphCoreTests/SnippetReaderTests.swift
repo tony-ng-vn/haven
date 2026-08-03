@@ -38,8 +38,11 @@ final class SnippetReaderTests: XCTestCase {
         try fixture.insertChat(rowID: 1, guid: "g1", style: 45, chatIdentifier: "+14155550002")
         try fixture.insertChatHandleJoin(chatID: 1, handleID: 1)
 
-        // An attributedBody-only row: text is NULL. Decoding attributedBody is out of scope,
-        // so this message must simply be invisible to SnippetReader, not an error.
+        // An attributedBody-only row whose blob is not a typedstream at all (no "streamtyped"
+        // signature). attributedBody IS decoded now, but a blob AttributedBodyDecoder cannot
+        // read must still leave the message invisible to SnippetReader rather than becoming an
+        // error or garbage text -- the same intent this test always had, now covering the
+        // decoder's fail-closed path instead of an outright-skipped column.
         try fixture.insertMessage(
             rowID: 1, text: nil, attributedBody: Data("not decoded".utf8), handleID: 1,
             service: "iMessage", dateNanoseconds: 0, isFromMe: false
@@ -89,6 +92,80 @@ final class SnippetReaderTests: XCTestCase {
             "\(sentinelPrefix)-oldest",
         ])
         XCTAssertEqual(snippets.first?.isFromMe, true, "the newest message's isFromMe must round-trip too")
+    }
+
+    // MARK: - attributedBody fallback
+
+    /// The common shape on a real database: `text` is NULL and the words live only in the
+    /// archived attributed string. The blob is synthetic (TypedstreamFixture), never captured.
+    func testAttributedBodyOnlyRowIsDecodedIntoASnippet() throws {
+        let fixture = try ChatDBFixture()
+        defer { fixture.close() }
+        try fixture.insertHandle(rowID: 1, id: "+14155550005", service: "iMessage")
+        try fixture.insertChat(rowID: 1, guid: "g1", style: 45, chatIdentifier: "+14155550005")
+        try fixture.insertChatHandleJoin(chatID: 1, handleID: 1)
+
+        let expected = "\(sentinelPrefix)-from-attributed-body"
+        try fixture.insertMessage(
+            rowID: 1, text: nil, attributedBody: TypedstreamFixture.blob(text: expected),
+            handleID: 1, service: "iMessage", dateNanoseconds: 0, isFromMe: true
+        )
+        try fixture.insertChatMessageJoin(chatID: 1, messageID: 1)
+        fixture.close()
+
+        let snippets = try SnippetReader.read(dbPath: fixture.url.path, chatRowIDs: [1])
+
+        XCTAssertEqual(snippets.map(\.text), [expected])
+        XCTAssertEqual(snippets.first?.isFromMe, true, "isFromMe must still round-trip past the new blob column")
+    }
+
+    /// Plain text wins when both columns are populated: the decoder is a fallback, not a
+    /// replacement.
+    func testPlainTextIsPreferredOverTheBlobWhenBothArePresent() throws {
+        let fixture = try ChatDBFixture()
+        defer { fixture.close() }
+        try fixture.insertHandle(rowID: 1, id: "+14155550006", service: "iMessage")
+        try fixture.insertChat(rowID: 1, guid: "g1", style: 45, chatIdentifier: "+14155550006")
+        try fixture.insertChatHandleJoin(chatID: 1, handleID: 1)
+
+        try fixture.insertMessage(
+            rowID: 1, text: "\(sentinelPrefix)-plain",
+            attributedBody: TypedstreamFixture.blob(text: "\(sentinelPrefix)-blob"),
+            handleID: 1, service: "iMessage", dateNanoseconds: 0, isFromMe: false
+        )
+        try fixture.insertChatMessageJoin(chatID: 1, messageID: 1)
+        fixture.close()
+
+        let snippets = try SnippetReader.read(dbPath: fixture.url.path, chatRowIDs: [1])
+
+        XCTAssertEqual(snippets.map(\.text), ["\(sentinelPrefix)-plain"])
+    }
+
+    /// An empty (or whitespace-only) decode is not evidence. Dropping it here is what keeps
+    /// GuessEngine's "no evidence, no prompt" rule honest: an attachment-only message must not
+    /// make a candidate look like it has something to read.
+    func testAnAttributedBodyThatDecodesToBlankTextIsDropped() throws {
+        let fixture = try ChatDBFixture()
+        defer { fixture.close() }
+        try fixture.insertHandle(rowID: 1, id: "+14155550007", service: "iMessage")
+        try fixture.insertChat(rowID: 1, guid: "g1", style: 45, chatIdentifier: "+14155550007")
+        try fixture.insertChatHandleJoin(chatID: 1, handleID: 1)
+
+        try fixture.insertMessage(
+            rowID: 1, text: nil, attributedBody: TypedstreamFixture.blob(text: ""),
+            handleID: 1, service: "iMessage", dateNanoseconds: 0, isFromMe: false
+        )
+        try fixture.insertChatMessageJoin(chatID: 1, messageID: 1)
+        try fixture.insertMessage(
+            rowID: 2, text: nil, attributedBody: TypedstreamFixture.blob(text: "   \n  "),
+            handleID: 1, service: "iMessage", dateNanoseconds: 1_000_000_000, isFromMe: false
+        )
+        try fixture.insertChatMessageJoin(chatID: 1, messageID: 2)
+        fixture.close()
+
+        let snippets = try SnippetReader.read(dbPath: fixture.url.path, chatRowIDs: [1])
+
+        XCTAssertTrue(snippets.isEmpty, "an empty or whitespace-only decode is not a snippet")
     }
 
     // Test 8-style, part 1: extracting from a nonexistent path throws and never creates a file.
