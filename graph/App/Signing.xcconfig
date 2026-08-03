@@ -1,0 +1,31 @@
+// Default signing configuration: ad-hoc, no team. This is a safe default for any machine,
+// including one with zero signing identities in its keychain -- generating and building
+// against these defaults alone must always succeed (see SIGNING.md and update_app.sh, both
+// of which depend on that).
+//
+// Ad-hoc signing is also the ROOT CAUSE of the "re-grant Full Disk Access after every
+// rebuild" problem: TCC keys an ad-hoc binary by its cdhash, which changes on every build,
+// so macOS treats each rebuild as a different app. A stable signing identity makes TCC key
+// on the designated requirement (bundle id + certificate) instead, which survives rebuilds.
+//
+// To use a stable identity once one exists in Keychain Access (see SIGNING.md for how to
+// create one -- that step is the owner's own action, never scripted here), create
+// App/Signing.local.xcconfig next to this file. It is gitignored on purpose: a signing
+// identity name or team id is machine-specific, not something to commit. It is included
+// below, AFTER these defaults, so any key it sets overrides the corresponding default.
+//
+// Example App/Signing.local.xcconfig contents for a self-signed Certificate Assistant cert
+// named "Your Sky Local Signing" (CODE_SIGN_STYLE stays Manual, no team):
+//   CODE_SIGN_IDENTITY = Your Sky Local Signing
+//
+// Example for a free Apple ID identity added via Xcode Settings > Accounts (Automatic
+// signing, keyed by team):
+//   CODE_SIGN_STYLE = Automatic
+//   DEVELOPMENT_TEAM = ABCDE12345
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+CODE_SIGNING_REQUIRED = NO
+CODE_SIGNING_ALLOWED = YES
+
+#include? "Signing.local.xcconfig"

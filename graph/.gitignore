@@ -4,6 +4,9 @@ DerivedData/
 *.xcodeproj/
 *.xcworkspace/
 
+# Machine-specific signing identity/team, never a repo-wide default (see SIGNING.md).
+App/Signing.local.xcconfig
+
 # Real or extracted personal data must never be committed (GOAL.md constraint 3).
 # Synthetic test fixtures are created in temp dirs at runtime, never checked in.
 *.db
