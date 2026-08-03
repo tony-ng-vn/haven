@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import GraphCore
@@ -160,6 +161,28 @@ final class AppModel {
     func refreshAccessState() {
         messagesAccessGranted = MessagesAccessProbe.check(path: chatDBPath)
         contactsAccessState = ContactsAccessProbe.check(paths: contactsDBPaths)
+    }
+
+    /// Authorize's Relaunch button. Full Disk Access grants apply at process launch, so a
+    /// grant toggled in System Settings while this process is still running can never show
+    /// as granted no matter how many times Re-check is pressed -- this restarts the app the
+    /// same way quitting from Finder and reopening would, which is the only thing that
+    /// actually picks up a grant made just now. The argument-building itself is pure and
+    /// unit tested (GraphCore.Relaunch); this method is the thin, untestable-without-AppKit
+    /// wrapper around it: spawn the new instance, and only terminate this one once that
+    /// spawn is confirmed to have actually started, so a failed spawn leaves the user with
+    /// their still-running app rather than no app at all.
+    func relaunch() {
+        let command = Relaunch.command(forBundlePath: Bundle.main.bundlePath)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: command.executablePath)
+        process.arguments = command.arguments
+        do {
+            try process.run()
+        } catch {
+            return
+        }
+        NSApplication.shared.terminate(nil)
     }
 
     func continueFromWelcome() {
