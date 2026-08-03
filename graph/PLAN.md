@@ -309,12 +309,18 @@ The acquaintance derivation, tiers, and the fully-acquainted marker are the shar
 
 The native app's Canvas render still shows the earlier bipartite presentation (user node drawn, group nodes as objects, ego edges on focus); aligning it is follow-up work; the derivation and the override live in core either way.
 
+**Owner decision, 2026-08-02: one presentation. The Sky is the product's only graph UI.**
+The Map (`template-v4.html`, `viewer_core.mjs`) and the native Canvas render are deleted rather than maintained alongside; recover them from git history at PRs #190 and #192 if ever needed.
+The acquaintance derivation, tiers, and the fully-acquainted marker remain the model underneath the Sky.
+The people-only contract above (regions, semantic zoom, pair paths) stays in this file as design record; no shipped surface implements it today.
+The bipartite image export goes with the Canvas render; the exported sky HTML is the shareable artifact.
+
 ---
 
 ## Stack
 
-Swift and SwiftUI, native rendering, no web view.
-Rendering ~690 nodes with Canvas is comfortable, Contacts access is native, and the test expectations in `graph/GOAL.md` already assume a Swift test target.
+Swift and SwiftUI for the app, extraction, and model; the Sky presentation renders in a WKWebView from `template-sky.html` (owner decisions of 2026-07-31 and 2026-08-02 above supersede the original "no web view" line).
+Contacts access is native, and the test expectations in `graph/GOAL.md` already assume a Swift test target.
 
 ---
 
@@ -323,6 +329,14 @@ Rendering ~690 nodes with Canvas is comfortable, Contacts access is native, and 
 In scope, because this is a tool used over time rather than a one-shot artifact.
 
 - Select a person to see who they know; select two people to see how they connect. Both per the Visual contract above.
+- The connection lens, the Sky's second-degree view (owner directive 2026-08-02).
+  Click yourself: your inner circle, the first degree (shipped).
+  Click a person: focus and their card (shipped).
+  Double-click a person: the lens.
+  The you-to-them focus treatment stays, and that person's own connections light up: every acquaintance edge from them to other people in the sky, drawn by tier (confirmed and strong solid, likely soft).
+  Each revealed neighbor is visually marked by whether they also connect to you directly (a one-to-one thread with you) or are known to you only through shared groups.
+  Esc or clicking empty space drops back to the plain focus; clicking another person moves the focus as it does today.
+  An export without acquaintance data renders the sky with the lens inert, no errors.
 - Search by name, since most dots are unlabeled at rest.
 - Mark a group chat "everyone here knows each other", or unmark it.
 - Filter by time, so the graph can show a chosen period rather than all history.

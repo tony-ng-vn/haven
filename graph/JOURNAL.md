@@ -8,17 +8,70 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: none; #189, #190, and #192 all merged to graph-main 2026-07-31 with CI green
-- Build position: all nine build-order steps merged, and the acquaintance layer now sits on top of them (derivation, marker override, JSON export, viewer v4, app bundling). 227 Swift tests plus 31 viewer node tests green. The native Canvas render still presents the bipartite model; its migration is the next build item.
-- Goal-criteria status: (1) build order complete: YES. (2) suite green with every charter fixture shape: YES, audited (shortcode, never-replied, two-member style-43, multi-service duplicate, large group, empty chat row - each covered at one or more pipeline layers). (3) real-data pipeline run with journaled counts and a names-attached kill-list review: YES (iterations 3 and 4). (4) fixture e2e resync survival: YES (EndToEndResyncSurvivalTests). (5) export writes a high-resolution image: YES, headlessly proven. (6) app builds and launches with a plain permission explanation: implemented and launch-verified programmatically; ON-SCREEN confirmation is the one remaining gap, blocked on the locked session.
-- Waiting on user: unlock the session (visual pass runs immediately), install Ollama + a model for live guesses, grant the app FDA for the first real in-app import
-- Pending visual check: the machine's session was locked during iteration 5, so the on-screen look of the permission screen and the real-data render are unverified; first task once the session is unlocked
-- Integration branch: `graph-main`, created 2026-07-31 per owner directive; the loop merges its own PRs there after green CI and self-review, main stays untouched, user merges graph-main to main
-- Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; the loop mirrors them into the graph-main worktree and commits there, always editing the main-checkout copy first
+- Open PRs: none; #193 through #197 all merged to graph-main 2026-08-02 (real dates for the scrubber, sky-only UI, 5x pipeline perf, the connection lens, vitest-glob fix)
+- Build position: the two-plane sky (template-sky.html plus sky_lens.mjs through the conditional core-placeholder seam) is the product's ONLY presentation, per owner directive 2026-08-02.
+  The native Canvas render and the v4 map viewer are deleted; recover via git history at #190/#192 if ever needed.
+  Pipeline runs ~0.9s end to end on the real database (was ~5.9s); graph-cli json has a --timings flag.
+  Suite: 197 Swift tests plus 12 lens node tests (node graph/viewer/sky_lens.tests.mjs), all green on graph-main.
+- Goal-criteria status: unchanged from 2026-07-31 EXCEPT criterion (5): the bipartite image export was deliberately deleted with the native render, owner-approved; the exported sky HTML is the shareable artifact now.
+- Waiting on user: unlock-session visual pass (now includes the lens), install Ollama + a model for live guesses, grant the app FDA for the first real in-app import
+- Open follow-ups: no UI path remains to CREATE hide/remove/fully-acquainted marks (the native context menu was the only creator; the toolbar's clearing actions remain live) -- needs a sky-side affordance; the dead-groups toggle is inert; strengthAt still models growth between real arrival and now (real per-month counts are the honest upgrade); P3 tier tuning stands.
+- Integration branch: `graph-main`; PRs merge there after green CI and lead review, main stays untouched, user merges graph-main to main
+- Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; mirror into the graph-main worktree, always editing the main-checkout copy first
 - Blocked on user: Ollama, the plan's default local provider, not yet installed (needed only at P2 step 7)
-- Next intent: migrate the native render to the acquaintance presentation, then P3 tuning of the tier thresholds against the measured 100-strong/959-likely split
+- Next intent: rebuild the downloadable YourSky.zip from this graph-main; then a sky-side affordance for creating marks; then P3 tuning
 
 ## Entries
+
+### 2026-08-02: owner-directed session -- speed, one sky, the connection lens (PRs #193-#197)
+
+The owner set three goals for the sky app: fast extraction of all iMessage and Contacts data, a single graph UI (the newest one, the rest deleted), and a second-degree connection view.
+All three landed the same evening.
+
+DONE
+
+- PR #193 (merged): landed the complete-but-uncommitted date work a prior session left in the worktree.
+  Every node carries firstMessageDate/lastMessageDate (one-to-one plus group-roster evidence for people, merged chats for groups), exported as ISO strings with a hasHistory flag; template-sky derives its time-travel range from the real dates, so arrivals in the scrubber are true dates while growth stays the modelled curve.
+  scripts/anonymize_graph.py (identity-free demo exports, unknown-keys-raise) committed alongside; it already handled the new fields.
+- PR #194 (merged): the sky is the only presentation.
+  Deleted the native Canvas render (GraphView, NodeColor, and eight GraphCore types with their tests) and the v4 map viewer (template-v4.html, viewer_core.mjs, tests.mjs).
+  Swift suite 228 -> 191, all green; bundle ships template-sky.html only.
+  build.py's conditional core-placeholder seam and SkyExportBuilder's optional source were kept on purpose, and #196 used them.
+  Accepted regressions, flagged in the PR: the bipartite image export died with its only renderer, and there is no UI left that CREATES hide/remove/fully-acquainted marks (the native context menu was the only creator; clearing still works).
+- PR #195 (merged): pipeline 5.5x faster, then a second win.
+  Measurement first: extraction itself was ~0.1s of a ~5.9s run; the cost was two O(people x messages) rescans in PersonFilter and GraphBuilder, fixed by bucketing messages by chat and by handle once.
+  Real-db json run 5.88s -> 1.07s median; output byte-identical (483,121 bytes); counts 675 nodes / 957 edges / 1081 acquaintance pairs, identical pre/post.
+  The rebase over #193 exposed jsonEncode as a fresh ~9x hotspot (a new ISO8601DateFormatter per date, ~1,350 allocations); cached formatter took it 120ms -> 18ms and the total to ~0.9s.
+  Date.ISO8601FormatStyle was tried and REJECTED: on a real row it rounds a near-whole-second fraction down where ISO8601DateFormatter rounds up, one second of divergence the byte-compare caught and seven synthetic edge cases had missed.
+  New permanently: --timings on graph-cli json; PersonFilterPerfSmokeTests (red against the old code at 36.7x ratio, green at 1.25x).
+- PR #196 (merged): the connection lens, the owner's second-degree ask.
+  Double-click a person: their acquaintance edges draw to everyone they know in the sky, tier-coded (confirmed/strong solid, likely soft) in a cool slate ink; each revealed neighbor wears a ring, warm if they also reach the user directly through a real one-to-one thread, cool if the tie is group-only.
+  Pure selection logic in sky_lens.mjs, 12 node tests red-first, inlined through the preserved placeholder seam; AppModel now passes the bundled source instead of nil.
+  dblclick trusts the id the two constituent clicks settled on (800ms window) so the focus camera glide cannot dodge the second click.
+  Lens state clears from every branch of setViewState, so it survives its own double-click but drops the instant focus truly moves.
+- PR #197 (merged): fix for a #196 CI failure -- the node test file was named sky_lens.test.mjs and the repo-wide vitest run collected it by its default glob and errored (all 629 npm tests passed; the collection itself failed).
+  Renamed to sky_lens.tests.mjs, the same convention the old tests.mjs used; root vitest config untouched per the charter.
+- PLAN.md amended, canonical and mirror: owner decision 2026-08-02 (one presentation), the connection-lens contract in Interaction, the Stack section's "no web view" line corrected.
+
+VERIFIED BY THE LEAD (not just agent reports)
+
+- Reviewed every diff before merging; each PR merged only on green CI, with one exception noted under PROCESS.
+- Byte-identity of the perf work re-proven against the post-#193 base after rebase, not just the original base.
+- The built demo sky (synthetic fixture) boot-tested in a node VM with a DOM shim: the inline script initializes clean, computeLens/toggleLens/focusNode all exist post-inlining, a lensed fixture person yields 11 neighbors (9 strong / 2 likely), and a second double-click toggles off.
+- Final integration pass on merged graph-main: swift test, xcodegen + xcodebuild Release, bundle listing (result recorded in the next entry if it diverges; green at time of writing).
+
+PROCESS
+
+- Three delegated work packages plus two corrective re-briefs (the #195 rebase, the jsonEncode fix); the lead's own code edits were one file rename with two comment-line touch-ups (#197).
+- One process failure, recorded honestly: #196 was merged while its test check was red, because the lead chained "read watcher output" and "merge" into one shell command and the merge did not gate on the result.
+  The failure was the vitest glob collection, not a code defect, and #197 fixed it forward within minutes, but the rule stands: reading CI state and acting on it are two separate steps from now on.
+- The on-screen visual pass remains blocked on the locked session and now includes the lens; the node-VM boot test is the stand-in until then.
+
+BLOCKED / NEXT
+
+- Rebuild public/downloads/YourSky.zip from this graph-main so the downloadable app carries the sky-only build, the perf work, and the lens.
+- A sky-side affordance for creating hide/remove/fully-acquainted marks (the confirmed tier's only feeder) is the next build item.
+- P3 tier tuning and real per-month history for strengthAt stand as queued.
 
 ### 2026-07-31 evening: owner decision, the two-plane sky returns (PR #192)
 
