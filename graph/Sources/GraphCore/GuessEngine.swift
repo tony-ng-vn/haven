@@ -34,6 +34,13 @@ public enum GuessOutcome: Sendable, Equatable {
     /// The model returned a name, but it is not supported by the snippets it was shown; discarded
     /// as if the model had abstained.
     case rejectedUngrounded
+    /// Person candidates only: the guessed name IS grounded in the snippets shown, but only in a
+    /// message someone other than the candidate sent -- the user addressing or discussing them,
+    /// or (for the words to be there at all) a third party. That is not evidence the candidate
+    /// carries that name themselves. Kept distinct from `.rejectedUngrounded` because the words
+    /// really are present; only the speaker is wrong (see GuessAttribution's doc comment for the
+    /// measured mechanism this guards against).
+    case rejectedScoped
     /// Zero snippets were available for this candidate, so the model was never asked at all.
     case noEvidence
     /// badResponse or any other unparseable/unexpected provider failure for this one candidate.
@@ -99,13 +106,34 @@ public enum GuessEngine {
 
             do {
                 let guess = try await provider.guess(prompt: prompt)
+                // Scoping: for a PERSON candidate, only a message THEY sent is evidence they
+                // carry that name -- one the user sent could be addressing them, but could just
+                // as easily be discussing a third party, and either way it says nothing about
+                // who this candidate actually is. A group has no analogous "self" (its name is
+                // legitimately informed by whatever anyone in it, including the user, said), so
+                // group candidates are ungrounded against every snippet they were shown, as
+                // before. The prompt itself (built above) still shows the model the full
+                // exchange either way -- only what counts as PROOF is restricted here.
+                let evidenceSnippets: [Snippet]
+                if case .person = candidate.context {
+                    evidenceSnippets = snippets.filter { !$0.isFromMe }
+                } else {
+                    evidenceSnippets = snippets
+                }
+
                 // The grounding check, not the model's own confidence, decides acceptance:
                 // every significant token of the guessed name must actually appear in the
-                // snippets it was shown. A guess that fails this is discarded exactly as if
-                // the model had abstained -- this is the load-bearing fix for the
-                // hallucination bug, deliberately model-independent.
-                guard GuessGrounding.isGrounded(name: guess.name, snippets: snippets) else {
-                    onOutcome?(.rejectedUngrounded)
+                // evidence snippets. A guess that fails this is discarded exactly as if the
+                // model had abstained -- this is the load-bearing fix for the hallucination bug,
+                // deliberately model-independent. Unchanged, and not weakened: this is the same
+                // #206 check, only handed a narrower (for persons) input.
+                guard GuessGrounding.isGrounded(name: guess.name, snippets: evidenceSnippets) else {
+                    // Distinguishing an outright hallucination from a real-but-misattributed
+                    // mention costs one extra (cheap, in-memory, no network) grounding check,
+                    // only on this already-rejecting path -- never on the common accepted path.
+                    let wouldGroundOnFullSnippets = evidenceSnippets.count != snippets.count
+                        && GuessGrounding.isGrounded(name: guess.name, snippets: snippets)
+                    onOutcome?(wouldGroundOnFullSnippets ? .rejectedScoped : .rejectedUngrounded)
                     continue
                 }
                 onGuess(candidate.key, guess)

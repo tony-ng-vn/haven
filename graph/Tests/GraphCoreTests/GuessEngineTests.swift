@@ -325,6 +325,102 @@ final class GuessEngineTests: XCTestCase {
         XCTAssertEqual(collector.outcome, .completed, "an ungrounded guess is discarded, not treated as a pass-stopping error")
     }
 
+    // MARK: - Self-sent scoping (guess-attribution fix)
+    //
+    // Measured on the real database: a guessed name can be textually grounded (per #206) and
+    // still be wrong, because grounding only proves the words appear somewhere in the snippets,
+    // not that they are about THIS candidate rather than a third party mentioned in the
+    // conversation. A name a PERSON candidate never actually said about themselves -- only one
+    // the user said, addressing or discussing someone -- is not trustworthy evidence of their
+    // real name. Scoped to person candidates only: a group has no analogous "self" to restrict
+    // to (see the guess-attribution PR body for why groups are excluded).
+
+    func testPersonGuessGroundedOnlyInAMessageTheUserSentIsRejectedAsScoped() async {
+        let provider = ScriptedProvider(scriptedResults: [.success(NameGuess(name: "Ravi Solano"))])
+        let collector = ResultCollector()
+        // isFromMe: true -- the USER addressing/discussing "Ravi Solano", never the candidate's
+        // own words.
+        let snippet = Snippet(text: "hi its Ravi Solano checking in", isFromMe: true)
+
+        await GuessEngine.run(
+            candidates: [candidate("user-said-it-key")],
+            cache: [:],
+            snippetSource: { _ in [snippet] },
+            provider: provider,
+            onGuess: { key, guess in collector.recordGuess(key, guess) },
+            completion: { collector.recordOutcome($0) },
+            onOutcome: { collector.recordCandidateOutcome($0) }
+        )
+
+        XCTAssertTrue(collector.deliveredKeys.isEmpty, "a name only the user said must never be delivered as the candidate's own name")
+        XCTAssertEqual(collector.candidateOutcomes, [.rejectedScoped], "this must be distinguishable from an outright hallucination: the words really are there, just not said by the candidate")
+        XCTAssertEqual(collector.outcome, .completed)
+    }
+
+    func testPersonGuessGroundedInAMessageTheCandidateSentIsAccepted() async {
+        let provider = ScriptedProvider(scriptedResults: [.success(NameGuess(name: "Ravi Solano"))])
+        let collector = ResultCollector()
+
+        await GuessEngine.run(
+            candidates: [candidate("self-said-it-key")],
+            cache: [:],
+            snippetSource: { _ in [groundedSnippet(for: "Ravi Solano")] }, // isFromMe: false
+            provider: provider,
+            onGuess: { key, guess in collector.recordGuess(key, guess) },
+            completion: { collector.recordOutcome($0) },
+            onOutcome: { collector.recordCandidateOutcome($0) }
+        )
+
+        XCTAssertEqual(collector.deliveredKeys, ["self-said-it-key"])
+        XCTAssertEqual(collector.candidateOutcomes, [.accepted])
+    }
+
+    /// A name grounded in NEITHER direction is a plain hallucination, not a scoping rejection --
+    /// the two must stay distinguishable so a caller can tell "the model invented this from
+    /// nothing" apart from "the model saw this word, just not from the right speaker".
+    func testPersonGuessGroundedInNeitherDirectionIsPlainUngroundedNotScoped() async {
+        let provider = ScriptedProvider(scriptedResults: [.success(NameGuess(name: "Emily Wilson"))])
+        let collector = ResultCollector()
+
+        await GuessEngine.run(
+            candidates: [candidate("no-overlap-key")],
+            cache: [:],
+            snippetSource: { _ in [
+                Snippet(text: "ok see you then", isFromMe: false),
+                Snippet(text: "sounds good", isFromMe: true),
+            ] },
+            provider: provider,
+            onGuess: { key, guess in collector.recordGuess(key, guess) },
+            completion: { collector.recordOutcome($0) },
+            onOutcome: { collector.recordCandidateOutcome($0) }
+        )
+
+        XCTAssertTrue(collector.deliveredKeys.isEmpty)
+        XCTAssertEqual(collector.candidateOutcomes, [.rejectedUngrounded])
+    }
+
+    /// Groups have no "self" to scope to -- a group's own name is legitimately informed by
+    /// whatever anyone in it said, including the user, so a group candidate is unaffected by
+    /// this rule even though the exact same snippet shape would be rejected for a person.
+    func testGroupGuessIsNotScopedAndAcceptsEvidenceFromTheUser() async {
+        let provider = ScriptedProvider(scriptedResults: [.success(NameGuess(name: "Weekend Trip"))])
+        let collector = ResultCollector()
+        let groupCandidate = GuessCandidate(key: "group:chat-guid-1", context: .group(memberNames: []))
+
+        await GuessEngine.run(
+            candidates: [groupCandidate],
+            cache: [:],
+            snippetSource: { _ in [Snippet(text: "lets call this the Weekend Trip chat", isFromMe: true)] },
+            provider: provider,
+            onGuess: { key, guess in collector.recordGuess(key, guess) },
+            completion: { collector.recordOutcome($0) },
+            onOutcome: { collector.recordCandidateOutcome($0) }
+        )
+
+        XCTAssertEqual(collector.deliveredKeys, ["group:chat-guid-1"], "a group candidate must still accept evidence from a message the user sent")
+        XCTAssertEqual(collector.candidateOutcomes, [.accepted])
+    }
+
     // MARK: - Model decline (item 1 of the brief)
 
     func testDeclinedByModelIsNotDeliveredAndDoesNotStopThePass() async {
