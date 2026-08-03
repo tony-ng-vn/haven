@@ -556,6 +556,51 @@ for (const n of RAW.nodes) {
 // value ever claimed otherwise.
 const RAW_FILTERED = filterDeleted(RAW.nodes, RAW.edges, EDITS.deleted.filter(id => id !== "user"));
 
+/* ============================================================
+   Time-travel range. True once the export carries real per-node
+   message dates (RAW.hasHistory); false for an export that
+   predates the feature, or one where hasHistory is simply absent
+   (an older cached export) -- falls back to false either way so
+   the scrubber stays inert rather than animating against dates
+   that were never actually exported.
+
+   T0/T1 (the scrubber's ends) are derived from the real min/max
+   firstMessageDate/lastMessageDate across the export when history
+   is present, so the timeline spans the data that actually exists
+   rather than a guessed range. The hardcoded Jan 2019 - Jul 2026
+   window survives only as the fallback for a dateless export.
+   ============================================================ */
+const HAS_HISTORY = RAW.hasHistory === true;
+const FALLBACK_T0 = Date.UTC(2019, 0, 1), FALLBACK_T1 = Date.UTC(2026, 6, 31);
+function realDateRange(nodes) {
+  let min = null, max = null;
+  for (const n of nodes) {
+    if (n.firstMessageDate) {
+      const d = Date.parse(n.firstMessageDate);
+      if (!Number.isNaN(d) && (min === null || d < min)) min = d;
+    }
+    if (n.lastMessageDate) {
+      const d = Date.parse(n.lastMessageDate);
+      if (!Number.isNaN(d) && (max === null || d > max)) max = d;
+    }
+  }
+  return { min, max };
+}
+const REAL_RANGE = HAS_HISTORY ? realDateRange(RAW_FILTERED.nodes) : { min: null, max: null };
+const T0 = REAL_RANGE.min !== null ? REAL_RANGE.min : FALLBACK_T0;
+// Guards against a degenerate one-instant export (min === max) collapsing T1 to T0,
+// which would divide by zero everywhere fraction-of-range math happens below.
+const T1 = (REAL_RANGE.max !== null && REAL_RANGE.max > T0) ? REAL_RANGE.max : FALLBACK_T1;
+/// A node's real firstMessageDate normalized to the 0..1 fraction the rest of the
+/// file works in, or null when there is no history (feature off) or no date for
+/// this particular node (a roster-only lurker with no message evidence at all).
+function metFraction(dateStr) {
+  if (!HAS_HISTORY || !dateStr) return null;
+  const d = Date.parse(dateStr);
+  if (Number.isNaN(d)) return null;
+  return Math.max(0, Math.min(1, (d - T0) / (T1 - T0)));
+}
+
 /// Maps the pipeline's export into the shape the rest of this file expects.
 /// The design's own generator produced {people, groups, edges, byId, adj}; this
 /// produces exactly that, so nothing downstream needs to know the data got real.
@@ -587,15 +632,17 @@ function adaptReal(raw) {
       const p = {
         id: n.id, kind: "person", name, strength: days, days,
         labelKind, groups: [],
-        // Not yet computed from the message table -- null, never invented. See header.
-        met: null, streak: null, youFirst: null, lastMsg: null, arch: null, aP: 0
+        // met is real once the export has history (metFraction); the rest of these
+        // (streak/youFirst/lastMsg/arch) still aren't computed from the message table --
+        // null, never invented. See header.
+        met: metFraction(n.firstMessageDate), streak: null, youFirst: null, lastMsg: null, arch: null, aP: 0
       };
       people.push(p); byId[n.id] = p; nodes.push(p);
     } else if (n.kind === "group") {
       const { name, labelKind } = labelInfo(n.name, "");
       const g = {
         id: n.id, kind: "group", name, size: 0, members: [], groups: [],
-        isLive: n.isLive, labelKind, met: null
+        isLive: n.isLive, labelKind, met: metFraction(n.firstMessageDate)
       };
       groups.push(g); byId[n.id] = g; nodes.push(g);
     }
@@ -676,12 +723,13 @@ for (const g of D.groups) {
    when you met, and the shape of the tie since (grew, steady,
    faded, late burst). Scrubbing recomputes strength-at-date, the
    shells re-rank, and the sky breathes into its old shape.
+
+   HAS_HISTORY/T0/T1/metFraction are derived earlier, right after
+   RAW_FILTERED, so adaptReal() can already populate p.met/g.met
+   from them.
    ============================================================ */
-const T0 = Date.UTC(2019, 0, 1), T1 = Date.UTC(2026, 6, 31);
 const MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function fmtDate(f) { const d = new Date(T0 + f * (T1 - T0)); return MO[d.getMonth()] + " " + d.getFullYear(); }
-// Flipped on once the export carries real per-person message history.
-const HAS_HISTORY = false;
 let TIME = 1, TPLAY = false, aliveP = D.people.length, aliveG = D.groups.length;
 const HOME_T = Object.assign({}, HOME);
 for (const p of D.people) {
@@ -807,10 +855,19 @@ function resetAllEdits() {
   location.reload();
 }
 function strengthAt(p, T) {
-  // No real history in the export yet, so every date shows today's truth rather
-  // than a modelled past. Restore the archetype curve only when the exporter
-  // supplies real per-month counts.
+  // ARRIVALS ARE REAL, GROWTH IS MODELLED. `met` is the true date of the first message
+  // with this person, so they appear in the sky at the right moment. How brightly they
+  // burn between then and now is the archetype curve below, not measured history: the
+  // export carries one date per person, not a month-by-month count. Swapping the curve
+  // for real per-month activity is the honest upgrade, and only this function changes.
+  //
+  // An export made before dates existed has no `met` anywhere: show today's truth at
+  // every position rather than a fabricated past.
   if (!HAS_HISTORY) return p.strength;
+  // A person can have real history at the export level while still having no message
+  // evidence of their own (a roster-only lurker, metFraction's own null case) -- same
+  // fallback as no history at all, just decided per-node instead of for the whole export.
+  if (p.met == null) return p.strength;
   if (T >= 1) return p.strength;
   if (T <= p.met) return 0;
   const life = (T - p.met) / (1 - p.met);
@@ -833,7 +890,7 @@ function applyTime() {
   }
   aliveP = alive.length;
   aliveG = 0;
-  for (const g of D.groups) if (!HAS_HISTORY || TIME >= g.met) aliveG++;
+  for (const g of D.groups) if (!HAS_HISTORY || g.met == null || TIME >= g.met) aliveG++;
   if (focusID) renderInfoThrottled();
 }
 let lastInfoT = -1;
@@ -864,7 +921,7 @@ function easeExistence() {
     else tv = p.tier <= 1 ? 1 : Math.max(0.15, Math.min(1, 0.15 + (DETAIL * 4 - (p.tier - 1)) * 0.85));
     p.visE += (tv - p.visE) * 0.08;
   }
-  for (const g of D.groups) g.ex += (((!HAS_HISTORY || TIME >= g.met) ? 1 : 0) - g.ex) * 0.09;
+  for (const g of D.groups) g.ex += (((!HAS_HISTORY || g.met == null || TIME >= g.met) ? 1 : 0) - g.ex) * 0.09;
 }
 
 /* A far shell of seeded stars: they parallax with the camera, so the night
@@ -2540,7 +2597,7 @@ function renderInfo() {
     const peerList = Object.keys(peers).map(id => ({ p: D.byId[id], shared: peers[id] }))
       .sort((a, b) => b.shared - a.shared || b.p.strength - a.p.strength);
     const direct = D.adj[n.id].find(e => e.type === "thread");
-    const aliveCircles = (HAS_HISTORY && TIME < 1) ? groups.filter(g => TIME >= g.met).length : groups.length;
+    const aliveCircles = (HAS_HISTORY && TIME < 1) ? groups.filter(g => g.met == null || TIME >= g.met).length : groups.length;
     stats = statHTML("~" + Math.round(n.sT == null ? n.strength : n.sT), "messages") + statHTML("#" + (rT(n) + 1), "closeness") + statHTML(aliveCircles, "groups");
     // A dash means "not computed yet", never a guess: these describe a real
     // relationship, so an invented number here would be a lie about a real person.
@@ -2551,7 +2608,7 @@ function renderInfo() {
       fact(n.streak == null ? null : n.streak + " days", "longest streak") +
       fact(n.youFirst == null ? null : n.youFirst + "%", "you text first") +
       fact(n.lastMsg, "last message") + '</div>';
-    const notYet = TIME < 1 && n.sT <= 0
+    const notYet = TIME < 1 && n.sT <= 0 && n.met != null
       ? '<div class="more">You haven\u2019t met yet on this date \u2014 first message ' + fmtDate(n.met) + '.</div>' : "";
     body = notYet + '<div class="sec">Between you</div>' +
       itemHTML(D.byId["user"], direct ? "direct thread" : "via groups only") + facts +

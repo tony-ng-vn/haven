@@ -11,6 +11,8 @@ private struct DecodedNode: Decodable {
     let hasContactCard: Bool
     let isLive: Bool
     let degree: Int
+    let firstMessageDate: String?
+    let lastMessageDate: String?
 }
 
 private struct DecodedEdge: Decodable {
@@ -40,6 +42,7 @@ private struct DecodedGraph: Decodable {
     let edges: [DecodedEdge]
     let acquaintances: [DecodedAcquaintance]
     let fullyAcquaintedChatIds: [String]
+    let hasHistory: Bool
 }
 
 final class GraphJSONTests: XCTestCase {
@@ -53,7 +56,9 @@ final class GraphJSONTests: XCTestCase {
         thumbnailImageData: Data? = nil,
         hasContactCard: Bool = false,
         isLive: Bool = false,
-        degree: Int = 0
+        degree: Int = 0,
+        firstMessageDate: Date? = nil,
+        lastMessageDate: Date? = nil
     ) -> GraphNode {
         GraphNode(
             id: id,
@@ -62,7 +67,9 @@ final class GraphJSONTests: XCTestCase {
             thumbnailImageData: thumbnailImageData,
             hasContactCard: hasContactCard,
             isLive: isLive,
-            degree: degree
+            degree: degree,
+            firstMessageDate: firstMessageDate,
+            lastMessageDate: lastMessageDate
         )
     }
 
@@ -531,5 +538,46 @@ final class GraphJSONTests: XCTestCase {
         let pair = try XCTUnwrap(decoded.acquaintances.first { $0.a == "+15551000" && $0.b == "+15551003" })
         XCTAssertEqual(pair.tier, "confirmed", "the stale-keyed mark must still confirm this pair after A's Person.id shifted")
         XCTAssertTrue(decoded.fullyAcquaintedChatIds.contains("chat:resynced"), "the echo list must include the chat even though the stored key predates A's current id")
+    }
+
+    // MARK: - Test 15: firstMessageDate/lastMessageDate encode as ISO 8601 strings, and
+    // hasHistory flips true once at least one node carries a real date.
+
+    func testDatedNodeEncodesFirstAndLastMessageDateAsISO8601AndSetsHasHistoryTrue() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let first = calendar.date(from: DateComponents(year: 2024, month: 1, day: 1))!
+        let last = calendar.date(from: DateComponents(year: 2024, month: 6, day: 15))!
+        let dated = node(id: "+15550701", kind: .person, name: "Dated", firstMessageDate: first, lastMessageDate: last)
+        let graph = Graph(nodes: [dated], edges: [])
+
+        let data = try GraphJSON.encode(graph: graph)
+        let decoded = try decode(data)
+
+        let decodedNode = try XCTUnwrap(decoded.nodes.first)
+        let expectedFirst = ISO8601DateFormatter().string(from: first)
+        let expectedLast = ISO8601DateFormatter().string(from: last)
+        XCTAssertEqual(decodedNode.firstMessageDate, expectedFirst)
+        XCTAssertEqual(decodedNode.lastMessageDate, expectedLast)
+        XCTAssertTrue(decoded.hasHistory, "at least one node has a real firstMessageDate")
+    }
+
+    // MARK: - Test 16: a node with no dates encodes explicit JSON null (not an omitted key),
+    // same convention as name -- and hasHistory stays false when nothing in the graph is dated.
+
+    func testUndatedNodeEncodesExplicitNullForBothDateFieldsAndHasHistoryStaysFalse() throws {
+        let undated = node(id: "+15550702", kind: .person, name: "Undated")
+        let graph = Graph(nodes: [undated], edges: [])
+
+        let data = try GraphJSON.encode(graph: graph)
+        let decoded = try decode(data)
+        let raw = try jsonString(data)
+
+        let decodedNode = try XCTUnwrap(decoded.nodes.first)
+        XCTAssertNil(decodedNode.firstMessageDate)
+        XCTAssertNil(decodedNode.lastMessageDate)
+        XCTAssertTrue(raw.contains("\"firstMessageDate\":null"), "must encode explicit null, not omit the key")
+        XCTAssertTrue(raw.contains("\"lastMessageDate\":null"))
+        XCTAssertFalse(decoded.hasHistory, "no node in this graph carries a real date")
     }
 }

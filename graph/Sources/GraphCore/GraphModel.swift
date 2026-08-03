@@ -23,6 +23,14 @@ public struct GraphNode: Sendable, Equatable {
     public let isLive: Bool
     /// Incident edge count. The renderer sizes nodes by this, except the user's.
     public let degree: Int
+    /// Earliest message date across the chats this node's messages are drawn from (own
+    /// one-to-one + group threads for a person, merged chats for a group). Nil when there is
+    /// no message evidence at all -- a roster-only lurker, or the user node. Defaults to nil
+    /// so every existing call site (~30, per GraphBuildResult's own doc comment) keeps
+    /// compiling unchanged.
+    public let firstMessageDate: Date?
+    /// Latest message date, same scope as firstMessageDate.
+    public let lastMessageDate: Date?
 
     public init(
         id: String,
@@ -31,7 +39,9 @@ public struct GraphNode: Sendable, Equatable {
         thumbnailImageData: Data?,
         hasContactCard: Bool,
         isLive: Bool,
-        degree: Int
+        degree: Int,
+        firstMessageDate: Date? = nil,
+        lastMessageDate: Date? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -40,6 +50,8 @@ public struct GraphNode: Sendable, Equatable {
         self.hasContactCard = hasContactCard
         self.isLive = isLive
         self.degree = degree
+        self.firstMessageDate = firstMessageDate
+        self.lastMessageDate = lastMessageDate
     }
 }
 

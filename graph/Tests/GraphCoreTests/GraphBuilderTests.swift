@@ -535,4 +535,84 @@ final class GraphBuilderTests: XCTestCase {
         let userEdge = graph.edges.first { $0.reason == .userGroupMembership && ($0.nodeIDA == mergedID || $0.nodeIDB == mergedID) }
         XCTAssertEqual(userEdge?.strength, 2.0, "the user's own from-me messages span both days across the union")
     }
+
+    // MARK: - First/last contact dates
+
+    func testPersonWithMessagesInTwoServiceSplitOneToOneChatsGetsEarliestAndLatestAcrossTheUnion() {
+        let p = person(id: "+14155550801", handleRowIDs: [801])
+        // Same person, two separate one-to-one chats (e.g. iMessage vs SMS split).
+        let imessageChat = chat(rowID: 1, guid: "c-imessage", style: 45, members: [801])
+        let smsChat = chat(rowID: 2, guid: "c-sms", style: 45, members: [801])
+        let messages = [
+            message(rowID: 1, chatRowID: 1, handleRowID: 801, isFromMe: false, date: utcDate(2024, 3, 15)),
+            message(rowID: 2, chatRowID: 1, handleRowID: 801, isFromMe: false, date: utcDate(2024, 6, 1)),
+            // Earlier than the imessage chat's own earliest -- the person-level earliest must
+            // reach across both chats, not stop at whichever chat happens to be iterated first.
+            message(rowID: 3, chatRowID: 2, handleRowID: 801, isFromMe: false, date: utcDate(2024, 1, 1)),
+            message(rowID: 4, chatRowID: 2, handleRowID: 801, isFromMe: false, date: utcDate(2024, 9, 30)),
+        ]
+        let graph = GraphBuilder.build(
+            extract: extract(chats: [imessageChat, smsChat], messages: messages), keptPeople: [p], calendar: utc
+        )
+
+        let node = graph.nodes.first { $0.id == p.id }
+        XCTAssertEqual(node?.firstMessageDate, utcDate(2024, 1, 1), "earliest across the union of both service-split chats")
+        XCTAssertEqual(node?.lastMessageDate, utcDate(2024, 9, 30), "latest across the union of both service-split chats")
+    }
+
+    func testRosterOnlyLurkerWithNoMessagesGetsNilFirstAndLastContactDates() {
+        let lurker = person(id: "+14155550802", handleRowIDs: [802])
+        let active = person(id: "+14155550803", handleRowIDs: [803])
+        // A live group where the lurker is in the roster (chat_handle_join) but never sends.
+        let group = chat(rowID: 1, guid: "c-lurk", style: 43, members: [802, 803], displayName: "Trip")
+        let messages = [
+            message(rowID: 1, chatRowID: 1, handleRowID: 803, isFromMe: false, date: utcDate(2024, 1, 1)),
+            message(rowID: 2, chatRowID: 1, handleRowID: nil, isFromMe: true, date: utcDate(2024, 1, 2)),
+        ]
+        let graph = GraphBuilder.build(
+            extract: extract(chats: [group], messages: messages), keptPeople: [lurker, active], calendar: utc
+        )
+
+        // The lurker is present in the group roster, so their dates come from the group's own
+        // activity, not nil -- true "no messages at all" requires no chat of either kind.
+        let lurkerNode = graph.nodes.first { $0.id == lurker.id }
+        XCTAssertEqual(lurkerNode?.firstMessageDate, utcDate(2024, 1, 1))
+
+        // A person with no one-to-one thread and no group roster membership at all is the
+        // actual nil case: build a second graph where the lurker isn't even in the roster.
+        let soloGroup = chat(rowID: 2, guid: "c-solo", style: 43, members: [803, 804], displayName: "Solo trio")
+        let third = person(id: "+14155550804", handleRowIDs: [804])
+        let trulyAbsent = person(id: "+14155550805", handleRowIDs: [805])
+        let soloMessages = [
+            message(rowID: 3, chatRowID: 2, handleRowID: 803, isFromMe: false, date: utcDate(2024, 2, 1)),
+            message(rowID: 4, chatRowID: 2, handleRowID: 804, isFromMe: false, date: utcDate(2024, 2, 2)),
+        ]
+        let graph2 = GraphBuilder.build(
+            extract: extract(chats: [soloGroup], messages: soloMessages),
+            keptPeople: [active, third, trulyAbsent],
+            calendar: utc
+        )
+        let absentNode = graph2.nodes.first { $0.id == trulyAbsent.id }
+        XCTAssertNil(absentNode?.firstMessageDate, "a person with no one-to-one thread and no group roster membership has no message evidence at all")
+        XCTAssertNil(absentNode?.lastMessageDate)
+    }
+
+    func testGroupNodeGetsEarliestAndLatestAcrossItsMergedChats() {
+        let a = person(id: "+14155550810", handleRowIDs: [810])
+        let b = person(id: "+14155550811", handleRowIDs: [811])
+        let imessageChat = chat(rowID: 1, guid: "z-merge", style: 43, members: [810, 811], displayName: "Book club")
+        let smsChat = chat(rowID: 2, guid: "a-merge", style: 43, members: [810, 811], displayName: "Book club")
+        let messages = [
+            message(rowID: 1, chatRowID: 1, handleRowID: 810, isFromMe: false, date: utcDate(2024, 5, 1)),
+            // Earliest of all, but in the OTHER merged chat -- the group's date must reach
+            // across both chatRowIDs the same way combinedMessages already does for liveness.
+            message(rowID: 2, chatRowID: 2, handleRowID: 811, isFromMe: false, date: utcDate(2024, 1, 1)),
+            message(rowID: 3, chatRowID: 2, handleRowID: 811, isFromMe: false, date: utcDate(2024, 12, 31)),
+        ]
+        let graph = GraphBuilder.build(extract: extract(chats: [imessageChat, smsChat], messages: messages), keptPeople: [a, b], calendar: utc)
+
+        let groupNode = graph.nodes.first { $0.kind == .group }
+        XCTAssertEqual(groupNode?.firstMessageDate, utcDate(2024, 1, 1))
+        XCTAssertEqual(groupNode?.lastMessageDate, utcDate(2024, 12, 31))
+    }
 }

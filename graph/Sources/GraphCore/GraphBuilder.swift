@@ -56,6 +56,17 @@ public enum GraphBuilder {
             }
         }
 
+        // Person -> the group-classified chat rowIDs whose resolved roster includes them,
+        // gathered up front (before merged group ids exist) so a person's first/last contact
+        // date can include group activity even for chats that later merge into one node.
+        var groupChatRowIDsByPersonID: [String: Set<Int64>] = [:]
+        for chat in extract.chats {
+            guard chatKindByRowID[chat.rowID] == .group else { continue }
+            for personID in ChatRoster.resolvedPersonIDs(chat, handleToPersonID: handleToPersonID) {
+                groupChatRowIDsByPersonID[personID, default: []].insert(chat.rowID)
+            }
+        }
+
         var edgesByID: [String: GraphEdge] = [:]
 
         // oneToOneThread edges: one per kept person who has at least one such thread.
@@ -103,6 +114,8 @@ public enum GraphBuilder {
             let combinedMessages = merged.chatRowIDs.sorted().flatMap { messagesByChat[$0] ?? [] }
             let isLive = distinctDays(combinedMessages, calendar: calendar) >= 2
 
+            let (groupFirstDate, groupLastDate) = minMaxDate(combinedMessages)
+
             groupNodes.append(
                 GraphNode(
                     id: groupID,
@@ -111,7 +124,9 @@ public enum GraphBuilder {
                     thumbnailImageData: nil,
                     hasContactCard: false,
                     isLive: isLive,
-                    degree: 0 // filled in by finalize()
+                    degree: 0, // filled in by finalize()
+                    firstMessageDate: groupFirstDate,
+                    lastMessageDate: groupLastDate
                 )
             )
 
@@ -165,6 +180,15 @@ public enum GraphBuilder {
             GraphNode(id: "user", kind: .user, name: nil, thumbnailImageData: nil, hasContactCard: false, isLive: false, degree: 0)
         ]
         for person in keptPeople {
+            // Union of their own one-to-one chats AND every group chat whose resolved roster
+            // includes them -- a lurker with no messages of their own but present in a group
+            // roster still gets a date from the group's activity; a pure roster-only lurker
+            // with no chats of either kind at all (chatRowIDs empty) stays nil.
+            let personChatRowIDs = (oneToOneChatRowIDsByPersonID[person.id] ?? [])
+                .union(groupChatRowIDsByPersonID[person.id] ?? [])
+            let personMessages = personChatRowIDs.sorted().flatMap { messagesByChat[$0] ?? [] }
+            let (personFirstDate, personLastDate) = minMaxDate(personMessages)
+
             nodes.append(
                 GraphNode(
                     id: person.id,
@@ -173,7 +197,9 @@ public enum GraphBuilder {
                     thumbnailImageData: person.thumbnailImageData,
                     hasContactCard: person.hasContactCard,
                     isLive: false,
-                    degree: 0
+                    degree: 0,
+                    firstMessageDate: personFirstDate,
+                    lastMessageDate: personLastDate
                 )
             )
         }
@@ -227,7 +253,9 @@ public enum GraphBuilder {
                 thumbnailImageData: node.thumbnailImageData,
                 hasContactCard: node.hasContactCard,
                 isLive: node.isLive,
-                degree: degreeByNodeID[node.id] ?? 0
+                degree: degreeByNodeID[node.id] ?? 0,
+                firstMessageDate: node.firstMessageDate,
+                lastMessageDate: node.lastMessageDate
             )
         }
         return Graph(
@@ -247,6 +275,15 @@ public enum GraphBuilder {
 
     private static func distinctDays(_ messages: [RawMessage], calendar: Calendar) -> Int {
         ActivityDays.distinctDays(messages, calendar: calendar)
+    }
+
+    /// Earliest/latest message date in a set, or (nil, nil) for an empty set -- the shared
+    /// nil case for a roster-only lurker (person) or an empty merged chat set (group, in
+    /// practice never empty since a merged group always has at least one source chat).
+    private static func minMaxDate(_ messages: [RawMessage]) -> (Date?, Date?) {
+        guard !messages.isEmpty else { return (nil, nil) }
+        let dates = messages.map(\.date)
+        return (dates.min(), dates.max())
     }
 
     /// One group node's worth of merged chats: their union roster/name, and the chat rowIDs

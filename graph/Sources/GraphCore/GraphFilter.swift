@@ -25,7 +25,9 @@ extension Graph {
                 thumbnailImageData: node.thumbnailImageData,
                 hasContactCard: node.hasContactCard,
                 isLive: node.isLive,
-                degree: degreeByID[node.id] ?? 0
+                degree: degreeByID[node.id] ?? 0,
+                firstMessageDate: node.firstMessageDate,
+                lastMessageDate: node.lastMessageDate
             )
         }
 

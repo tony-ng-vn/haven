@@ -12,9 +12,11 @@ private struct JSONNode: Encodable {
     let hasContactCard: Bool
     let isLive: Bool
     let degree: Int
+    let firstMessageDate: String?
+    let lastMessageDate: String?
 
     private enum CodingKeys: String, CodingKey {
-        case id, kind, name, hasContactCard, isLive, degree
+        case id, kind, name, hasContactCard, isLive, degree, firstMessageDate, lastMessageDate
     }
 
     // Hand-written, not synthesized: the synthesized Encodable calls encodeIfPresent for an
@@ -28,6 +30,8 @@ private struct JSONNode: Encodable {
         try container.encode(hasContactCard, forKey: .hasContactCard)
         try container.encode(isLive, forKey: .isLive)
         try container.encode(degree, forKey: .degree)
+        try container.encode(firstMessageDate, forKey: .firstMessageDate)
+        try container.encode(lastMessageDate, forKey: .lastMessageDate)
     }
 }
 
@@ -73,6 +77,10 @@ private struct JSONGraph: Encodable {
     let edges: [JSONEdge]
     let acquaintances: [JSONAcquaintance]
     let fullyAcquaintedChatIds: [String]
+    /// True when at least one node carries a real firstMessageDate. Lets the viewer tell "this
+    /// export has dates" from "this export predates the date feature" without inferring it from
+    /// node contents (every node's dates being nil would otherwise be ambiguous either way).
+    let hasHistory: Bool
 }
 
 /// Prints a built Graph as JSON for an external HTML viewer (a separate effort in parallel,
@@ -115,7 +123,9 @@ public enum GraphJSON {
                     name: NodeLabel.resolve(node: $0, guesses: guesses),
                     hasContactCard: $0.hasContactCard,
                     isLive: $0.isLive,
-                    degree: $0.degree
+                    degree: $0.degree,
+                    firstMessageDate: isoString($0.firstMessageDate),
+                    lastMessageDate: isoString($0.lastMessageDate)
                 )
             }
         let edges = graph.edges
@@ -172,8 +182,21 @@ public enum GraphJSON {
         // Compact, not .prettyPrinted: this file is meant to be embedded in HTML.
         encoder.outputFormatting = [.sortedKeys]
         return try encoder.encode(
-            JSONGraph(nodes: nodes, edges: edges, acquaintances: acquaintances, fullyAcquaintedChatIds: fullyAcquaintedChatIds)
+            JSONGraph(
+                nodes: nodes,
+                edges: edges,
+                acquaintances: acquaintances,
+                fullyAcquaintedChatIds: fullyAcquaintedChatIds,
+                hasHistory: graph.nodes.contains { $0.firstMessageDate != nil }
+            )
         )
+    }
+
+    // A fresh formatter per call, not a shared static: ISO8601DateFormatter is not Sendable,
+    // and this file's public encode entry point has no actor isolation to lean on.
+    private static func isoString(_ date: Date?) -> String? {
+        guard let date else { return nil }
+        return ISO8601DateFormatter().string(from: date)
     }
 
     // kindLabel/reasonLabel below have no default case on purpose: a new NodeKind or
