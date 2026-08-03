@@ -3,10 +3,9 @@ import XCTest
 
 final class SkyExportBuilderTests: XCTestCase {
 
-    // A small synthetic core string, not the real bundled viewer_core.mjs (matching how the
-    // rest of this file already works with a synthetic template) -- but built from two REAL
-    // top-level declarations that actually exist in viewer/viewer_core.mjs, so "contains a
-    // known function name from viewer_core.mjs" is anchored to the real file, not made up.
+    // A small synthetic core string (matching how the rest of this file already works with a
+    // synthetic template), standing in for whatever real core JS source a future template's
+    // build would pass through `viewerCoreSource`.
     private let syntheticCoreSource = """
     export function adaptRaw(raw) {
         return raw;
@@ -23,7 +22,7 @@ final class SkyExportBuilderTests: XCTestCase {
 
         XCTAssertFalse(html.contains("__VIEWER_CORE_JS__"), "neither placeholder may survive")
         XCTAssertFalse(html.contains("__GRAPH_JSON__"), "neither placeholder may survive")
-        XCTAssertTrue(html.contains("adaptRaw"), "a known function name from viewer_core.mjs must appear in the built output")
+        XCTAssertTrue(html.contains("adaptRaw"), "the synthetic core source's function name must appear in the built output")
         XCTAssertTrue(html.contains(#"const RAW = {"nodes":[],"edges":[]};"#), "the injected JSON must appear in the built output")
     }
 

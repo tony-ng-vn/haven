@@ -1,10 +1,10 @@
 import Foundation
 
-/// The single rule for what text (if any) a node's label shows, shared by the screen
-/// (GraphView) and export (GraphImageRenderer) so the two can never disagree: a real name
-/// always wins; a cached model guess is shown tilde-prefixed, PLAN.md's "always visibly
-/// marked as a guess" signal; otherwise nil, and each caller decides its own fallback (the
-/// screen falls back to the raw identifier, export draws nothing at all -- see call sites).
+/// The single rule for what text (if any) a node's label shows, shared by every caller that
+/// turns a node into display text (GraphJSON's sky export, the CLI's `json`/`guess`
+/// subcommands) so none of them can disagree: a real name always wins; a cached model guess
+/// is shown tilde-prefixed, PLAN.md's "always visibly marked as a guess" signal; otherwise
+/// nil, and each caller decides its own fallback.
 public enum NodeLabel {
     public static func resolve(node: GraphNode, guesses: [String: NameGuess]) -> String? {
         if let name = node.name, !name.isEmpty {

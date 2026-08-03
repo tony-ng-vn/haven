@@ -1,17 +1,13 @@
 import SwiftUI
-import AppKit
-import UniformTypeIdentifiers
-import GraphCore
 
-/// Chrome hoisted above GraphView (see ContentView), not owned by it: a rebuild tears
-/// GraphView down and reconstructs it, and none of this state should go with it.
+/// Chrome hoisted above the current step view (see ContentView): a rebuild tears the ready
+/// view down and reconstructs it, and none of this state should go with it.
 struct GraphToolbar: View {
     let model: AppModel
 
     @State private var pendingFrom: Date
     @State private var pendingTo: Date
     @State private var showingMergeQueue = false
-    @State private var exportErrorMessage: String?
 
     init(model: AppModel) {
         self.model = model
@@ -21,12 +17,6 @@ struct GraphToolbar: View {
         let bounds = model.displayOptions.dateRange ?? model.messageDateBounds
         _pendingFrom = State(initialValue: bounds?.lowerBound ?? Date())
         _pendingTo = State(initialValue: bounds?.upperBound ?? Date())
-    }
-
-    private var focusedNodeName: String? {
-        guard let id = model.focusedNodeID else { return nil }
-        guard let node = model.lastReadyGraph?.nodes.first(where: { $0.id == id }) else { return id }
-        return NodeLabel.resolve(node: node, guesses: model.overrides.nameGuesses) ?? id
     }
 
     /// PLAN.md build order step 7: a quiet, easy-to-ignore status for the model pass. Nothing
@@ -76,10 +66,6 @@ struct GraphToolbar: View {
                 Divider().frame(height: 20)
                 mergeQueueButton
             }
-            if let focusedNodeName {
-                Divider().frame(height: 20)
-                focusChip(name: focusedNodeName)
-            }
             if let guessingStatusText {
                 Divider().frame(height: 20)
                 Text(guessingStatusText).foregroundStyle(.secondary)
@@ -89,24 +75,15 @@ struct GraphToolbar: View {
                 Text(syncStatusText).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            Button("Export...") {
-                presentExportPanel()
-            }
-            .disabled(!model.isReady)
             // Hidden entirely, not just disabled, when polygres is not installed at its known
             // path: a button that can only ever fail on this machine is worse than no button.
             if model.isPolygresAvailable {
-                Divider().frame(height: 20)
                 Button("Sync people") {
                     model.syncPeople()
                 }
                 .disabled(model.syncState == .syncing)
+                Divider().frame(height: 20)
             }
-            Divider().frame(height: 20)
-            Button(model.showNativeGraphView ? "Show sky view" : "Show native view") {
-                model.toggleGraphViewMode()
-            }
-            Divider().frame(height: 20)
             Button("Resync") {
                 model.resync()
             }
@@ -117,38 +94,6 @@ struct GraphToolbar: View {
         .padding(.vertical, 10)
         .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
         .padding(14)
-        .alert(
-            "Export failed",
-            isPresented: Binding(
-                get: { exportErrorMessage != nil },
-                set: { isPresented in if !isPresented { exportErrorMessage = nil } }
-            )
-        ) {
-            Button("OK") {}
-        } message: {
-            Text(exportErrorMessage ?? "")
-        }
-    }
-
-    /// A failed export lands in this alert, not AppModel's failed state: the app itself is
-    /// still perfectly fine (graph rendered, simulation running) even if, say, the chosen
-    /// folder turned out to be unwritable.
-    private func presentExportPanel() {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = "connection-graph.png"
-        if let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
-            panel.directoryURL = downloads
-        }
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        Task {
-            do {
-                try await model.exportImage(to: url)
-            } catch {
-                exportErrorMessage = "Could not save the image: \(error)"
-            }
-        }
     }
 
     @ViewBuilder
@@ -212,18 +157,6 @@ struct GraphToolbar: View {
         }
         .popover(isPresented: $showingMergeQueue) {
             MergeQueueView(model: model)
-        }
-    }
-
-    private func focusChip(name: String) -> some View {
-        HStack(spacing: 6) {
-            Text("Focus: \(name)")
-            Button {
-                model.clearFocus()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-            }
-            .buttonStyle(.plain)
         }
     }
 }
