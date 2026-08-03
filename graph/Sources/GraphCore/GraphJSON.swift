@@ -19,9 +19,14 @@ private struct JSONNode: Encodable {
     /// encoded by OMITTING the key entirely (encodeIfPresent, not encode), not JSON null, so a
     /// unique name's payload does not grow at all for the common case.
     let disambiguator: String?
+    /// PLAN.md 2026-08-03: a saved contact with zero message evidence. Always emitted (like
+    /// hasContactCard/isLive, never encodeIfPresent), so an older viewer -- which does not read
+    /// this key at all -- keeps parsing every export unchanged (additive schema).
+    let hasNoMessageEvidence: Bool
 
     private enum CodingKeys: String, CodingKey {
-        case id, kind, name, hasContactCard, isLive, degree, firstMessageDate, lastMessageDate, disambiguator
+        case id, kind, name, hasContactCard, isLive, degree, firstMessageDate, lastMessageDate
+        case disambiguator, hasNoMessageEvidence
     }
 
     // Hand-written, not synthesized: the synthesized Encodable calls encodeIfPresent for an
@@ -40,6 +45,7 @@ private struct JSONNode: Encodable {
         try container.encode(firstMessageDate, forKey: .firstMessageDate)
         try container.encode(lastMessageDate, forKey: .lastMessageDate)
         try container.encodeIfPresent(disambiguator, forKey: .disambiguator)
+        try container.encode(hasNoMessageEvidence, forKey: .hasNoMessageEvidence)
     }
 }
 
@@ -159,7 +165,8 @@ public enum GraphJSON {
                 degree: node.degree,
                 firstMessageDate: isoString(node.firstMessageDate),
                 lastMessageDate: isoString(node.lastMessageDate),
-                disambiguator: disambiguatorByID[node.id]
+                disambiguator: disambiguatorByID[node.id],
+                hasNoMessageEvidence: node.hasNoMessageEvidence
             )
         }
         let edges = graph.edges

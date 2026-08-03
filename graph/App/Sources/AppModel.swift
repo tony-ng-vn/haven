@@ -234,8 +234,29 @@ final class AppModel {
         }
 
         do {
+            // Contact-only nodes (PLAN.md 2026-08-03) are merged into the EXPORTED graph only,
+            // right here -- never into `state`/`lastReadyGraph`/`lastKeptPeople`, which stay
+            // exactly the message-based graph every other feature (hide, remove, the guess
+            // pass, acquaintance derivation) already relies on unchanged. `cachedExtract`, not
+            // a time-filtered one, is deliberate: see ContactOnlyPeople.derive's own doc
+            // comment on why "no message evidence" must never depend on the active time-range
+            // filter (a Sky export always covers a person's full history regardless of the
+            // native toolbar's own date pickers).
+            let contactOnlyNodes: [GraphNode]
+            if let cachedExtract {
+                let matchedIdentifiers = ContactOnlyPeople.messageHandleIdentifiers(cachedExtract)
+                let derivation = ContactOnlyPeople.derive(
+                    contacts: cachedContacts ?? [],
+                    matchedIdentifiers: matchedIdentifiers
+                )
+                contactOnlyNodes = ContactOnlyPeople.asGraphNodes(derivation.people)
+            } else {
+                contactOnlyNodes = []
+            }
+            let exportGraph = Graph(nodes: graph.nodes + contactOnlyNodes, edges: graph.edges)
+
             let json = try GraphJSON.encode(
-                graph: graph,
+                graph: exportGraph,
                 groupChatActivity: lastGroupChatActivity,
                 fullyAcquaintedRosterKeys: overrides.fullyAcquaintedRosterKeys,
                 people: lastKeptPeople,

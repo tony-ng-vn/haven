@@ -14,6 +14,7 @@ private struct DecodedNode: Decodable {
     let firstMessageDate: String?
     let lastMessageDate: String?
     let disambiguator: String?
+    let hasNoMessageEvidence: Bool
 }
 
 private struct DecodedEdge: Decodable {
@@ -61,7 +62,8 @@ final class GraphJSONTests: XCTestCase {
         isLive: Bool = false,
         degree: Int = 0,
         firstMessageDate: Date? = nil,
-        lastMessageDate: Date? = nil
+        lastMessageDate: Date? = nil,
+        hasNoMessageEvidence: Bool = false
     ) -> GraphNode {
         GraphNode(
             id: id,
@@ -72,7 +74,8 @@ final class GraphJSONTests: XCTestCase {
             isLive: isLive,
             degree: degree,
             firstMessageDate: firstMessageDate,
-            lastMessageDate: lastMessageDate
+            lastMessageDate: lastMessageDate,
+            hasNoMessageEvidence: hasNoMessageEvidence
         )
     }
 
@@ -735,5 +738,91 @@ final class GraphJSONTests: XCTestCase {
 
         XCTAssertEqual(dataForward, dataShuffled)
         XCTAssertTrue(try jsonString(dataForward).contains("\"disambiguator\""), "sanity: the collision actually produced a disambiguator")
+    }
+
+    // MARK: - Test 23: hasNoMessageEvidence (PLAN.md 2026-08-03) is always emitted, and
+    // defaults to false for every node the message-based pipeline itself still builds.
+
+    func testHasNoMessageEvidenceEncodesTrueAndDefaultsFalse() throws {
+        let user = node(id: "user", kind: .user)
+        let real = node(id: "+15550401", kind: .person, name: "Real Person")
+        let contactOnly = node(id: "+15550402", kind: .person, name: "Contact Only", hasNoMessageEvidence: true)
+        let graph = Graph(nodes: [user, real, contactOnly], edges: [])
+
+        let data = try GraphJSON.encode(graph: graph)
+        let decoded = try decode(data)
+
+        let decodedReal = try XCTUnwrap(decoded.nodes.first { $0.id == "+15550401" })
+        XCTAssertFalse(decodedReal.hasNoMessageEvidence)
+        let decodedContactOnly = try XCTUnwrap(decoded.nodes.first { $0.id == "+15550402" })
+        XCTAssertTrue(decodedContactOnly.hasNoMessageEvidence)
+
+        // Always emitted, like hasContactCard/isLive -- never encodeIfPresent -- so an older
+        // viewer reading this export sees a real value for every node, not an absent key it
+        // would have to special-case.
+        let raw = try jsonString(data)
+        XCTAssertTrue(raw.contains("\"hasNoMessageEvidence\":true"))
+        XCTAssertTrue(raw.contains("\"hasNoMessageEvidence\":false"))
+    }
+
+    // MARK: - Test 24: the no-inference-leak guarantee (PLAN.md 2026-08-03, requirement 2).
+    // Merging contact-only nodes into graph.nodes -- exactly how the last-mile injection at
+    // the CLI/App call sites works -- must never change acquaintances, edges, or
+    // fullyAcquaintedChatIds. A contact-only node here even shares an id-like shape with a
+    // real group member, which is the shape most likely to accidentally leak into the
+    // acquaintance derivation if a future edit wired it into keptPeople/groupChatActivity
+    // by mistake.
+
+    func testAddingContactOnlyNodesNeverChangesAcquaintancesEdgesOrFullyAcquaintedChatIds() throws {
+        let user = node(id: "user", kind: .user)
+        let a = node(id: "+15550501", kind: .person, name: "A")
+        let b = node(id: "+15550502", kind: .person, name: "B")
+        let group = node(id: "chat:trio", kind: .group, name: "Trio")
+        let baseGraph = Graph(
+            nodes: [user, a, b, group],
+            edges: [edge("user", "chat:trio", reason: .userGroupMembership, involvesUser: true)]
+        )
+        let activity = [
+            GroupChatActivity(chatId: "chat:trio", name: "Trio", roster: ["+15550501", "+15550502"], activeDaysByPersonID: [:])
+        ]
+        let fullyAcquaintedRosterKeys: Set<[String]> = [AcquaintanceRosterKey.canonicalize(["+15550501", "+15550502"])]
+        let people = [person(id: "+15550501"), person(id: "+15550502")]
+
+        let before = try GraphJSON.encode(
+            graph: baseGraph,
+            groupChatActivity: activity,
+            fullyAcquaintedRosterKeys: fullyAcquaintedRosterKeys,
+            people: people
+        )
+
+        // The contact-only additions: a genuine new person, plus one whose id collides with
+        // nothing existing but who is otherwise indistinguishable in shape from a real one.
+        let contactOnly1 = node(id: "+15550601", kind: .person, name: "Contact Only One", hasNoMessageEvidence: true)
+        let contactOnly2 = node(id: "+15550602", kind: .person, name: "Contact Only Two", hasNoMessageEvidence: true)
+        let graphWithContactOnly = Graph(nodes: baseGraph.nodes + [contactOnly1, contactOnly2], edges: baseGraph.edges)
+
+        let after = try GraphJSON.encode(
+            graph: graphWithContactOnly,
+            groupChatActivity: activity,
+            fullyAcquaintedRosterKeys: fullyAcquaintedRosterKeys,
+            people: people
+        )
+
+        let decodedBefore = try decodeWithAcquaintances(before)
+        let decodedAfter = try decodeWithAcquaintances(after)
+
+        XCTAssertEqual(decodedBefore.acquaintances.count, 1, "sanity: the base fixture actually produces a pair")
+        XCTAssertEqual(decodedAfter.acquaintances.count, decodedBefore.acquaintances.count)
+        XCTAssertEqual(decodedAfter.acquaintances.first?.a, decodedBefore.acquaintances.first?.a)
+        XCTAssertEqual(decodedAfter.acquaintances.first?.b, decodedBefore.acquaintances.first?.b)
+        XCTAssertEqual(decodedAfter.acquaintances.first?.tier, decodedBefore.acquaintances.first?.tier)
+        XCTAssertEqual(decodedAfter.acquaintances.first?.score, decodedBefore.acquaintances.first?.score)
+        XCTAssertEqual(decodedAfter.edges.count, decodedBefore.edges.count)
+        XCTAssertEqual(decodedAfter.fullyAcquaintedChatIds, decodedBefore.fullyAcquaintedChatIds)
+
+        // Node count grows by exactly the two contact-only additions -- proof the two exports
+        // are not just identical because encode ignored the new nodes outright.
+        XCTAssertEqual(decodedAfter.nodes.count, decodedBefore.nodes.count + 2)
+        XCTAssertTrue(decodedAfter.nodes.contains { $0.id == "+15550601" && $0.hasNoMessageEvidence })
     }
 }

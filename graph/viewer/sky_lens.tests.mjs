@@ -13,7 +13,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-import { computeLens, computeLensMesh, formatPersonLabel, resolvePersonLabel, normalizeEditsPayload } from "./sky_lens.mjs";
+import {
+  computeLens, computeLensMesh, formatPersonLabel, resolvePersonLabel, normalizeEditsPayload,
+  isContactOnlyPerson
+} from "./sky_lens.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -282,6 +285,31 @@ test("normalizeEditsPayload: malformed moves/deleted/names fields fall back to e
     normalizeEditsPayload({ v: 1, moves: "not an object", deleted: "not an array", names: 42 }),
     { v: 1, moves: {}, deleted: [], names: {} }
   );
+});
+
+/* ============================================================
+   isContactOnlyPerson (PLAN.md 2026-08-03): a saved contact with zero message evidence.
+   ============================================================ */
+test("isContactOnlyPerson is true for a person node with hasNoMessageEvidence true", () => {
+  assert.equal(isContactOnlyPerson({ kind: "person", hasNoMessageEvidence: true }), true);
+});
+
+test("isContactOnlyPerson is false for a normal person node (hasNoMessageEvidence false)", () => {
+  assert.equal(isContactOnlyPerson({ kind: "person", hasNoMessageEvidence: false }), false);
+});
+
+test("isContactOnlyPerson is false when hasNoMessageEvidence is absent (an export from before this feature)", () => {
+  assert.equal(isContactOnlyPerson({ kind: "person" }), false);
+});
+
+test("isContactOnlyPerson is false for a group or the user even if hasNoMessageEvidence is somehow true", () => {
+  assert.equal(isContactOnlyPerson({ kind: "group", hasNoMessageEvidence: true }), false);
+  assert.equal(isContactOnlyPerson({ kind: "user", hasNoMessageEvidence: true }), false);
+});
+
+test("isContactOnlyPerson is false for null/undefined", () => {
+  assert.equal(isContactOnlyPerson(null), false);
+  assert.equal(isContactOnlyPerson(undefined), false);
 });
 
 /* ============================================================

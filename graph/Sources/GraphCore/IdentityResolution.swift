@@ -174,6 +174,23 @@ public enum IdentityResolution {
 
     /// "first last" trimmed, falling back to nickname, then organization.
     private static func derivedName(_ record: ContactRecord) -> String? {
+        if let human = humanName(record) { return human }
+        if let organization = record.organization?.trimmingCharacters(in: .whitespaces), !organization.isEmpty {
+            return organization
+        }
+        return nil
+    }
+
+    /// "first last" trimmed, falling back to nickname -- but NEVER organization. Whether there
+    /// is a HUMAN behind a card is a different question from what to show once a message-based
+    /// person already has a node: derivedName (above) still falls back to organization for
+    /// someone who already has a handle, so a saved business you actually texted keeps its name
+    /// exactly as before (PLAN.md's "saved cable company" case). ContactOnlyPeople.derive gates
+    /// node CREATION on this narrower question instead: an organization-only card, an ICE entry,
+    /// or a blank stub gets no node at all, since PLAN.md 2026-08-03 only reverses "no node for
+    /// someone never contacted", not "no node for something that was never a person".
+    /// Internal, not private: ContactOnlyPeople (same module) is the other caller.
+    static func humanName(_ record: ContactRecord) -> String? {
         let fullName = [record.firstName, record.lastName]
             .compactMap { $0?.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
@@ -182,9 +199,6 @@ public enum IdentityResolution {
 
         if let nickname = record.nickname?.trimmingCharacters(in: .whitespaces), !nickname.isEmpty {
             return nickname
-        }
-        if let organization = record.organization?.trimmingCharacters(in: .whitespaces), !organization.isEmpty {
-            return organization
         }
         return nil
     }
