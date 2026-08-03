@@ -79,7 +79,20 @@ public enum PersonFilter {
             }
         }
 
-        let liveChatRowIDs = liveChats(messages: extract.messages, calendar: calendar)
+        // Bucket messages by chat ONCE, not per person: every per-person one-to-one message
+        // list below is a handful of chatRowID lookups into this map instead of a full scan
+        // of extract.messages (previously O(people x messages), the dominant cost in a real
+        // ~2,100-handle / ~110k-message database). liveChats reuses the same map for the same
+        // reason -- it used to build an identical bucketing of its own.
+        var messagesByChat: [Int64: [RawMessage]] = [:]
+        for message in extract.messages {
+            messagesByChat[message.chatRowID, default: []].append(message)
+        }
+        let liveChatRowIDs = liveChats(messagesByChat: messagesByChat, calendar: calendar)
+
+        // Built once and reused by sharesGroupWithContactCardPerson for every person, instead
+        // of that function rebuilding this same ~1,300-entry dictionary on every call.
+        let chatsByRowID = Dictionary(uniqueKeysWithValues: extract.chats.map { ($0.rowID, $0) })
 
         var kept: [Person] = []
         var removed: [RemovedPerson] = []
@@ -87,7 +100,7 @@ public enum PersonFilter {
         for person in people {
             let oneToOneChatRowIDs = oneToOneChatRowIDsByPersonID[person.id] ?? []
             let groupChatRowIDs = groupChatRowIDsByPersonID[person.id] ?? []
-            let oneToOneMessages = extract.messages.filter { oneToOneChatRowIDs.contains($0.chatRowID) }
+            let oneToOneMessages = oneToOneChatRowIDs.flatMap { messagesByChat[$0] ?? [] }
             let fromMeCount = oneToOneMessages.filter(\.isFromMe).count
             let distinctActiveDays = ActivityDays.distinctDays(oneToOneMessages, calendar: calendar)
 
@@ -106,7 +119,7 @@ public enum PersonFilter {
                 || sharesGroupWithContactCardPerson(
                     person: person,
                     groupChatRowIDs: groupChatRowIDs,
-                    chats: extract.chats,
+                    chatsByRowID: chatsByRowID,
                     handleToPersonID: handleToPersonID,
                     personByID: personByID
                 )
@@ -141,12 +154,8 @@ public enum PersonFilter {
 
     /// A thread or group is live when its messages span two or more distinct calendar days,
     /// computed in the given calendar (the caller's current calendar/timezone by default).
-    private static func liveChats(messages: [RawMessage], calendar: Calendar) -> Set<Int64> {
-        var messagesByChat: [Int64: [RawMessage]] = [:]
-        for message in messages {
-            messagesByChat[message.chatRowID, default: []].append(message)
-        }
-        return Set(
+    private static func liveChats(messagesByChat: [Int64: [RawMessage]], calendar: Calendar) -> Set<Int64> {
+        Set(
             messagesByChat
                 .filter { ActivityDays.distinctDays($0.value, calendar: calendar) >= 2 }
                 .keys
@@ -181,12 +190,11 @@ public enum PersonFilter {
     private static func sharesGroupWithContactCardPerson(
         person: Person,
         groupChatRowIDs: Set<Int64>,
-        chats: [RawChat],
+        chatsByRowID: [Int64: RawChat],
         handleToPersonID: [Int64: String],
         personByID: [String: Person]
     ) -> Bool {
         guard !groupChatRowIDs.isEmpty else { return false }
-        let chatsByRowID = Dictionary(uniqueKeysWithValues: chats.map { ($0.rowID, $0) })
         for chatRowID in groupChatRowIDs {
             guard let chat = chatsByRowID[chatRowID] else { continue }
             for handleID in chat.memberHandleRowIDs {
