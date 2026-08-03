@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-import { computeLens, computeLensMesh } from "./sky_lens.mjs";
+import { computeLens, computeLensMesh, formatPersonLabel } from "./sky_lens.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -164,6 +164,41 @@ test("computeLensMesh defaults interactionCount to 0 for an export that predates
   const acq = [{ a: "ana", b: "cass", tier: "likely", score: 0.3, evidence: [] }];
   const result = computeLensMesh(["ana", "cass"], acq);
   assert.deepEqual(result, [{ a: "ana", b: "cass", tier: "likely", interactionCount: 0 }]);
+});
+
+/* ============================================================
+   formatPersonLabel (name-disambiguator label formatting, GraphJSON's `disambiguator`
+   field): a person's name plus an optional quieter suffix distinguishing them from
+   another exported node sharing the exact same display name.
+   ============================================================ */
+
+test("formatPersonLabel returns the suffix untouched when a disambiguator is present", () => {
+  assert.deepEqual(formatPersonLabel("Jon Ashwick", "...9821"), { name: "Jon Ashwick", suffix: "...9821" });
+});
+
+test("formatPersonLabel returns a null suffix when disambiguator is absent (an export that predates the field)", () => {
+  assert.deepEqual(formatPersonLabel("Jon Ashwick", undefined), { name: "Jon Ashwick", suffix: null });
+});
+
+test("formatPersonLabel returns a null suffix for an explicit null disambiguator", () => {
+  assert.deepEqual(formatPersonLabel("Jon Ashwick", null), { name: "Jon Ashwick", suffix: null });
+});
+
+test("formatPersonLabel returns a null suffix for an empty-string disambiguator, never an empty badge", () => {
+  assert.deepEqual(formatPersonLabel("Jon Ashwick", ""), { name: "Jon Ashwick", suffix: null });
+});
+
+test("formatPersonLabel never returns the literal string \"undefined\" for any missing-field shape", () => {
+  for (const missing of [undefined, null, "", 0, false]) {
+    const result = formatPersonLabel("Jon Ashwick", missing);
+    assert.notEqual(result.suffix, "undefined");
+    assert.equal(result.suffix, null);
+  }
+});
+
+test("formatPersonLabel passes the name through unchanged, including a nullish name", () => {
+  assert.equal(formatPersonLabel("Ana Vray", "...1234").name, "Ana Vray");
+  assert.equal(formatPersonLabel(null, "...1234").name, null);
 });
 
 /* ============================================================

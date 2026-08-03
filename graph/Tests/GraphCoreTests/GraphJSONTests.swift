@@ -13,6 +13,7 @@ private struct DecodedNode: Decodable {
     let degree: Int
     let firstMessageDate: String?
     let lastMessageDate: String?
+    let disambiguator: String?
 }
 
 private struct DecodedEdge: Decodable {
@@ -625,5 +626,94 @@ final class GraphJSONTests: XCTestCase {
         XCTAssertTrue(raw.contains("\"firstMessageDate\":null"), "must encode explicit null, not omit the key")
         XCTAssertTrue(raw.contains("\"lastMessageDate\":null"))
         XCTAssertFalse(decoded.hasHistory, "no node in this graph carries a real date")
+    }
+
+    // MARK: - Test 17: two person nodes sharing the exact same resolved name both get a
+    // disambiguator, and the two are distinct from each other.
+
+    func testTwoPersonNodesSharingTheSameNameBothGetADistinctDisambiguator() throws {
+        let a = node(id: "+invented5551110001", kind: .person, name: "Jon Ashwick")
+        let b = node(id: "+invented5559990009", kind: .person, name: "Jon Ashwick")
+        let graph = Graph(nodes: [a, b], edges: [])
+
+        let data = try GraphJSON.encode(graph: graph)
+        let decoded = try decode(data)
+
+        let decodedA = try XCTUnwrap(decoded.nodes.first { $0.id == "+invented5551110001" })
+        let decodedB = try XCTUnwrap(decoded.nodes.first { $0.id == "+invented5559990009" })
+        XCTAssertNotNil(decodedA.disambiguator)
+        XCTAssertNotNil(decodedB.disambiguator)
+        XCTAssertNotEqual(decodedA.disambiguator, decodedB.disambiguator)
+    }
+
+    // MARK: - Test 18: a unique name's disambiguator key is OMITTED entirely, not encoded as
+    // null -- the one field in this schema that deliberately does NOT follow the
+    // never-omit-always-null convention every other optional field here uses.
+
+    func testUniqueNamesDisambiguatorKeyIsOmittedEntirely() throws {
+        let unique = node(id: "+invented5551230000", kind: .person, name: "Solo Person")
+        let graph = Graph(nodes: [unique], edges: [])
+
+        let data = try GraphJSON.encode(graph: graph)
+        let decoded = try decode(data)
+        let raw = try jsonString(data)
+
+        XCTAssertNil(decoded.nodes.first?.disambiguator)
+        XCTAssertFalse(raw.contains("disambiguator"), "a unique name must not add ANY bytes to the export, not even a null key")
+    }
+
+    // MARK: - Test 19: comparison is case-insensitive, through the full encode path.
+
+    func testDisambiguatorCollisionIsCaseInsensitiveThroughEncode() throws {
+        let a = node(id: "+invented1110000001", kind: .person, name: "Robin Alder")
+        let b = node(id: "+invented2220000002", kind: .person, name: "ROBIN ALDER")
+        let graph = Graph(nodes: [a, b], edges: [])
+
+        let data = try GraphJSON.encode(graph: graph)
+        let decoded = try decode(data)
+
+        XCTAssertNotNil(decoded.nodes.first { $0.id == "+invented1110000001" }?.disambiguator)
+        XCTAssertNotNil(decoded.nodes.first { $0.id == "+invented2220000002" }?.disambiguator)
+    }
+
+    // MARK: - Test 20: a group name collision does NOT get a disambiguator -- this feature is
+    // scoped to person nodes only (PLAN's "two contacts can both be John" scenario).
+
+    func testGroupNodesNeverGetADisambiguatorEvenWhenNamesCollide() throws {
+        let user = node(id: "user", kind: .user)
+        let groupA = node(id: "chat:aaa", kind: .group, name: "Trip planning")
+        let groupB = node(id: "chat:bbb", kind: .group, name: "Trip planning")
+        let graph = Graph(nodes: [user, groupA, groupB], edges: [])
+
+        let data = try GraphJSON.encode(graph: graph)
+        let decoded = try decode(data)
+
+        XCTAssertNil(decoded.nodes.first { $0.id == "chat:aaa" }?.disambiguator)
+        XCTAssertNil(decoded.nodes.first { $0.id == "chat:bbb" }?.disambiguator)
+    }
+
+    // MARK: - Test 21: a guess-derived tilde name collides with another identical guess (the
+    // exact resolved string, tilde included, is what participates), never silently with an
+    // unrelated real name -- through the full encode path, guesses parameter included.
+
+    func testGuessDerivedNamesCollideThroughEncodeWithGuessesParameter() throws {
+        let a = node(id: "+invented3330000003", kind: .person) // unnamed -- fills in from guesses
+        let b = node(id: "+invented4440000004", kind: .person) // unnamed -- fills in from guesses
+        let realAlex = node(id: "+invented5550000005", kind: .person, name: "Alex") // a REAL name
+        let graph = Graph(nodes: [a, b, realAlex], edges: [])
+        let guesses: [String: NameGuess] = [
+            "+invented3330000003": NameGuess(name: "Alex"),
+            "+invented4440000004": NameGuess(name: "Alex"),
+        ]
+
+        let data = try GraphJSON.encode(graph: graph, guesses: guesses)
+        let decoded = try decode(data)
+
+        XCTAssertNotNil(decoded.nodes.first { $0.id == "+invented3330000003" }?.disambiguator)
+        XCTAssertNotNil(decoded.nodes.first { $0.id == "+invented4440000004" }?.disambiguator)
+        XCTAssertNil(
+            decoded.nodes.first { $0.id == "+invented5550000005" }?.disambiguator,
+            "the real 'Alex' must stay unique -- '~Alex' and 'Alex' are different resolved strings"
+        )
     }
 }

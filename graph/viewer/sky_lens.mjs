@@ -1,8 +1,18 @@
-/* sky_lens.mjs -- pure selection logic for the sky's connection lens (double-click a
- * person to see who THEY know). No DOM, no canvas, no globals: callers own how the
- * result gets drawn. Tested standalone with plain `node` (see sky_lens.tests.mjs);
- * inlined into template-sky.html by build.py / SkyExportBuilder through the same
- * conditional core-placeholder seam viewer_core.mjs used to fill.
+/* sky_lens.mjs -- the sky's pure, dependency-free viewer-core logic: no DOM, no canvas,
+ * no globals, callers own how any result gets drawn or rendered. Tested standalone with
+ * plain `node` (see sky_lens.tests.mjs); inlined into template-sky.html by build.py /
+ * SkyExportBuilder through the viewer-core placeholder seam (see build.py's own header
+ * comment for that placeholder's exact name -- not spelled out literally in this file,
+ * since this file's own text is what gets inlined in its place).
+ *
+ * Two unrelated concerns share this one file rather than a second inliner seam, which
+ * build.py's own CORE_FILENAME constant supports only one of at a time:
+ *   - the connection lens (double-click a person to see who THEY know) -- computeLens,
+ *     computeLensMesh;
+ *   - name-disambiguator label formatting (two dots sharing the exact same display name,
+ *     GraphJSON's `disambiguator` field) -- formatPersonLabel.
+ * The placeholder seam itself was always this generic; only this file's OWN header
+ * comment used to describe it as lens-specific.
  *
  * Every top-level `export` below must stay at column 0 (no leading whitespace): the
  * inliner strips the `export ` keyword with a regex anchored to the start of the line,
@@ -98,4 +108,16 @@ export function computeLensMesh(neighborIds, acquaintances) {
     result.push({ a: acq.a, b: acq.b, tier: acq.tier, interactionCount: acq.interactionCount || 0 });
   }
   return result;
+}
+
+/// A person's rendered name, plus an optional quieter suffix distinguishing them from
+/// another exported node sharing the exact same display name (GraphJSON's `disambiguator`
+/// field -- e.g. two different "John"s, present only when a real collision exists). Every
+/// falsy shape a missing field can take -- absent, undefined, null, or an empty string --
+/// collapses to the SAME { suffix: null } result: an export built before this field existed,
+/// or a unique name, must render identically to today, never a literal "undefined" string
+/// stitched into a label.
+export function formatPersonLabel(name, disambiguator) {
+  const suffix = (typeof disambiguator === "string" && disambiguator.length > 0) ? disambiguator : null;
+  return { name, suffix };
 }

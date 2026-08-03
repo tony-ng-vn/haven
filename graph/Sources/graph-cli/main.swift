@@ -215,16 +215,6 @@ private func runFilter(_ args: [String]) {
     print("removedTotalCount \(filterResult.removed.count)")
 }
 
-/// Masks all but the last 4 characters of an identifier with 'x'. Used only by `killlist`,
-/// which is an on-screen review tool, not journal-safe output (see main.swift's doc note
-/// at the bottom): a name or a partially masked identifier may appear, but never a full one.
-private func maskIdentifier(_ identifier: String) -> String {
-    let visibleSuffixLength = 4
-    guard identifier.count > visibleSuffixLength else { return identifier }
-    let maskedCount = identifier.count - visibleSuffixLength
-    return String(repeating: "x", count: maskedCount) + identifier.suffix(visibleSuffixLength)
-}
-
 private func runKilllist(_ args: [String]) {
     guard let filterResult = resolveAndFilter(args) else {
         printUsage()
@@ -232,7 +222,11 @@ private func runKilllist(_ args: [String]) {
     }
 
     for removedPerson in filterResult.removed {
-        let label = removedPerson.person.name ?? maskIdentifier(removedPerson.person.id)
+        // A name or a partially masked identifier may appear here (killlist is an on-screen
+        // review tool, not journal-safe output -- see main.swift's doc note at the bottom),
+        // but never a full one: IdentifierMasking.mask is the same rule GraphJSON's name
+        // disambiguator now shares.
+        let label = removedPerson.person.name ?? IdentifierMasking.mask(removedPerson.person.id)
         let facts = removedPerson.facts
         print(
             "\(reasonLabel(removedPerson.reason)) \(label) "
