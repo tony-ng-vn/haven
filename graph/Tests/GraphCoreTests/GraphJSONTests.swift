@@ -716,4 +716,24 @@ final class GraphJSONTests: XCTestCase {
             "the real 'Alex' must stay unique -- '~Alex' and 'Alex' are different resolved strings"
         )
     }
+
+    // MARK: - Test 22: encoding stays byte-identical regardless of input order EVEN WITH a
+    // colliding pair present -- the existing determinism tests only use unique names, so they
+    // would pass even if the disambiguator computation introduced an order dependency.
+
+    func testEncodingWithADisambiguatedPairIsByteIdenticalRegardlessOfInputOrder() throws {
+        let user = node(id: "user", kind: .user)
+        let a = node(id: "+invented6660000006", kind: .person, name: "Casey Fen")
+        let b = node(id: "+invented7770000007", kind: .person, name: "Casey Fen")
+        let c = node(id: "+invented8880000008", kind: .person, name: "Unique Person")
+
+        let forward = Graph(nodes: [user, a, b, c], edges: [])
+        let shuffled = Graph(nodes: [c, user, b, a], edges: [])
+
+        let dataForward = try GraphJSON.encode(graph: forward)
+        let dataShuffled = try GraphJSON.encode(graph: shuffled)
+
+        XCTAssertEqual(dataForward, dataShuffled)
+        XCTAssertTrue(try jsonString(dataForward).contains("\"disambiguator\""), "sanity: the collision actually produced a disambiguator")
+    }
 }
