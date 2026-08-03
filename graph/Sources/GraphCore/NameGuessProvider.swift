@@ -7,10 +7,15 @@ public protocol NameGuessProvider: Sendable {
     func guess(prompt: String) async throws -> NameGuess
 }
 
-/// The only two failure shapes GuessEngine needs to tell apart: an unreachable provider stops
-/// the whole pass (no point hammering a dead server), while a bad response for one target is
-/// just skipped, one guess lost, everything else continues.
+/// The three outcomes GuessEngine needs to tell apart: an unreachable provider stops the whole
+/// pass (no point hammering a dead server); a bad response for one target is just skipped, one
+/// guess lost, everything else continues; and a decline is not a failure at all -- the model
+/// explicitly said it does not have enough evidence, which is the correct answer, not an error.
+/// GuessEngine treats `.declined` the same way it treats `.badResponse` (skip this target, keep
+/// going) but the cases stay distinct so a caller that wants to count "the model didn't know"
+/// separately from "the response was unusable" can.
 public enum NameGuessError: Error, Sendable, Equatable {
     case providerUnreachable
     case badResponse
+    case declined
 }

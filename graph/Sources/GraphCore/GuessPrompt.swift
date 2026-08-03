@@ -26,8 +26,17 @@ public enum GuessPrompt {
 
         lines.append("Based only on these snippets, guess a likely name and a short description of who this is.")
         lines.append("Respond with STRICT JSON only, in exactly this shape: {\"name\": string, \"description\": string}.")
-        lines.append("If you cannot form a good guess, still return your best guess rather than refusing.")
+        // The abstention contract: an empty name is a first-class, explicitly-shaped answer,
+        // not a refusal to be talked out of. This replaces the old instruction that forbade
+        // abstention outright ("still return your best guess rather than refusing"), which is
+        // what forced the model to invent a name for every handle it had no evidence about.
+        lines.append("If the snippets do not give you enough evidence to confidently name this contact, respond with {\"name\": \"\", \"description\": \"\"} rather than guessing -- an empty name means you do not know, and that is a completely acceptable answer.")
+        lines.append("Never invent a name that is not actually supported by the snippets below.")
 
+        // GuessEngine never calls this with an empty snippet list -- it short-circuits before
+        // ever building a prompt when there is zero evidence (no point asking the model to name
+        // someone from nothing). This branch stays only so GuessPrompt remains a correct, total
+        // function for any other caller.
         if snippets.isEmpty {
             lines.append("(No message snippets are available.)")
         } else {

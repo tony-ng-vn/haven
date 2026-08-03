@@ -3,7 +3,7 @@ import GraphCore
 
 private func printUsage() {
     let usage = "usage: graph-cli <stats|people|filter|killlist|graph|json|acquaintances|guess> "
-        + "--chat-db PATH [--contacts-db PATH ...] [--timings]\n"
+        + "--chat-db PATH [--contacts-db PATH ...] [--timings] [--reguess]\n"
     FileHandle.standardError.write(Data(usage.utf8))
 }
 
@@ -17,6 +17,11 @@ private struct ParsedArgs {
     var chatDBPath: String?
     var contactsDBPaths: [String] = []
     var timings: Bool = false
+    /// `guess` only: drop every cached name guess (and only name guesses -- see
+    /// GuessCacheRepair) before running the pass, so every previously-guessed candidate is
+    /// reconsidered fresh under the current prompt/grounding rules. Repairs a cache poisoned by
+    /// an earlier, more permissive prompt without hand-editing the overrides JSON file.
+    var reguess: Bool = false
 }
 
 private func parseArgs(_ args: [String]) -> ParsedArgs? {
@@ -35,6 +40,9 @@ private func parseArgs(_ args: [String]) -> ParsedArgs? {
             index += 2
         case "--timings":
             parsed.timings = true
+            index += 1
+        case "--reguess":
+            parsed.reguess = true
             index += 1
         default:
             return nil
@@ -439,12 +447,25 @@ private final class GuessProgressSink: @unchecked Sendable {
     private let store: OverridesStore
     private(set) var guessedCount = 0
     private(set) var outcome: GuessEngineOutcome = .completed
+    // Per-candidate telemetry (GuessOutcome), counts only -- never a name or any snippet text
+    // (constraint 7). `.accepted` is not tracked separately here: it is exactly `guessedCount`.
+    private(set) var declinedCount = 0
+    private(set) var rejectedUngroundedCount = 0
+    private(set) var noEvidenceCount = 0
+    private(set) var providerErrorCount = 0
     let pendingCount: Int
 
     init(overrides: Overrides, store: OverridesStore, pendingCount: Int) {
         self.overrides = overrides
         self.store = store
         self.pendingCount = pendingCount
+    }
+
+    /// The current overrides value, including every guess recorded so far -- used once the run
+    /// finishes to compute the "after" naming-coverage counts without re-reading from disk.
+    var snapshotOverrides: Overrides {
+        lock.lock(); defer { lock.unlock() }
+        return overrides
     }
 
     func recordGuess(key: String, guess: NameGuess) {
@@ -469,6 +490,76 @@ private final class GuessProgressSink: @unchecked Sendable {
         defer { lock.unlock() }
         self.outcome = outcome
     }
+
+    func recordCandidateOutcome(_ outcome: GuessOutcome) {
+        lock.lock()
+        defer { lock.unlock() }
+        switch outcome {
+        case .accepted:
+            break // already counted via recordGuess
+        case .declinedByModel:
+            declinedCount += 1
+        case .rejectedUngrounded:
+            rejectedUngroundedCount += 1
+        case .noEvidence:
+            noEvidenceCount += 1
+        case .providerError:
+            providerErrorCount += 1
+        }
+    }
+}
+
+/// How many distinct names a guess cache collapses to, and the size of its largest group --
+/// the exact shape of the original hallucination bug (240 guesses, 96 distinct names, one name
+/// repeated 39 times). Counts only: never prints a name itself.
+private func collisionStats(_ nameGuesses: [String: NameGuess]) -> (distinctNames: Int, largestGroup: Int) {
+    guard !nameGuesses.isEmpty else { return (0, 0) }
+    let countByName = Dictionary(grouping: nameGuesses.values, by: \.name).mapValues(\.count)
+    return (countByName.count, countByName.values.max() ?? 0)
+}
+
+/// Counts only (constraint 7): how the current person/group population splits between a
+/// card-derived name (from Contacts), a model-derived name (a cached guess), and no name at
+/// all. This is what a future "N people need names" UI affordance would read, so it stays
+/// cheap (one pass over already-loaded data) and honest (recomputed fresh every run, never
+/// cached itself).
+private func printNamingCoverage(keptPeople: [Person], graph: Graph, nameGuesses: [String: NameGuess]) {
+    var personNamedFromContacts = 0
+    var personNamedFromModel = 0
+    var personUnnamed = 0
+    for person in keptPeople {
+        if person.name != nil {
+            personNamedFromContacts += 1
+        } else if nameGuesses[person.id] != nil {
+            personNamedFromModel += 1
+        } else {
+            personUnnamed += 1
+        }
+    }
+    print("personCandidatesTotal \(keptPeople.count)")
+    print("personNamedFromContacts \(personNamedFromContacts)")
+    print("personNamedFromModel \(personNamedFromModel)")
+    print("personUnnamed \(personUnnamed)")
+
+    // Only live groups are ever candidates (GuessCandidateSelection); a dead group chat was
+    // never eligible for naming in the first place.
+    let liveGroups = graph.nodes.filter { $0.kind == .group && $0.isLive }
+    var groupNamedNatively = 0
+    var groupNamedFromModel = 0
+    var groupUnnamed = 0
+    for node in liveGroups {
+        if node.name != nil {
+            groupNamedNatively += 1
+        } else if nameGuesses[NodeLabel.groupGuessKey(forNodeID: node.id)] != nil {
+            groupNamedFromModel += 1
+        } else {
+            groupUnnamed += 1
+        }
+    }
+    print("groupCandidatesTotal \(liveGroups.count)")
+    print("groupNamedNatively \(groupNamedNatively)")
+    print("groupNamedFromModel \(groupNamedFromModel)")
+    print("groupUnnamed \(groupUnnamed)")
 }
 
 private func outcomeLabel(_ outcome: GuessEngineOutcome) -> String {
@@ -497,11 +588,29 @@ private func runGuess(_ args: [String]) async {
     let graph = GraphBuilder.build(extract: extract, keptPeople: filterResult.kept)
 
     let overridesStore = OverridesStore(fileURL: OverridesStore.defaultFileURL())
-    let overrides: Overrides
+    var overrides: Overrides
     do {
         overrides = try overridesStore.load()
     } catch {
         fail("error: cannot read overrides store")
+    }
+
+    // The cache as it stood before any repair or new guessing this run -- the baseline the
+    // owner needs to see whether a fix (or --reguess) actually helped. Counts only.
+    let before = collisionStats(overrides.nameGuesses)
+    print("guessesBefore \(overrides.nameGuesses.count)")
+    print("distinctNamesBefore \(before.distinctNames)")
+    print("largestCollisionGroupBefore \(before.largestGroup)")
+
+    if parsed.reguess {
+        let (purged, droppedCount) = GuessCacheRepair.purgingNameGuesses(from: overrides)
+        do {
+            try overridesStore.save(purged)
+        } catch {
+            fail("error: cannot write overrides store")
+        }
+        overrides = purged
+        print("purgedGuesses \(droppedCount)")
     }
 
     let sources = GuessCandidateSelection.buildSources(graph: graph, keptPeople: filterResult.kept, extract: extract)
@@ -509,39 +618,63 @@ private func runGuess(_ args: [String]) async {
     let pendingSources = sources.filter { cache[$0.candidate.key] == nil }
     print("pending \(pendingSources.count)")
 
-    guard !pendingSources.isEmpty else {
-        print("guessed 0")
-        print("failed 0")
-        return
-    }
-
-    let candidates = pendingSources.map(\.candidate)
-    let chatRowIDsByKey = Dictionary(uniqueKeysWithValues: pendingSources.map { ($0.candidate.key, $0.chatRowIDs) })
-    let dbPath = chatDBPath
     let sink = GuessProgressSink(overrides: overrides, store: overridesStore, pendingCount: pendingSources.count)
-    let provider = OllamaProvider()
 
-    let snippetSource: @Sendable (String) -> [Snippet] = { key in
-        guard let rowIDs = chatRowIDsByKey[key] else { return [] }
-        return (try? SnippetReader.read(dbPath: dbPath, chatRowIDs: rowIDs)) ?? []
-    }
+    if !pendingSources.isEmpty {
+        let candidates = pendingSources.map(\.candidate)
+        let chatRowIDsByKey = Dictionary(uniqueKeysWithValues: pendingSources.map { ($0.candidate.key, $0.chatRowIDs) })
+        let dbPath = chatDBPath
+        let provider = OllamaProvider()
 
-    await GuessEngine.run(
-        candidates: candidates,
-        cache: cache,
-        snippetSource: snippetSource,
-        provider: provider,
-        onGuess: { key, guess in
-            sink.recordGuess(key: key, guess: guess)
-        },
-        completion: { outcome in
-            sink.recordOutcome(outcome)
+        let snippetSource: @Sendable (String) -> [Snippet] = { key in
+            guard let rowIDs = chatRowIDsByKey[key] else { return [] }
+            return (try? SnippetReader.read(dbPath: dbPath, chatRowIDs: rowIDs)) ?? []
         }
-    )
+
+        await GuessEngine.run(
+            candidates: candidates,
+            cache: cache,
+            snippetSource: snippetSource,
+            provider: provider,
+            onGuess: { key, guess in
+                sink.recordGuess(key: key, guess: guess)
+            },
+            completion: { outcome in
+                sink.recordOutcome(outcome)
+            },
+            onOutcome: { outcome in
+                sink.recordCandidateOutcome(outcome)
+            }
+        )
+    }
 
     print("guessed \(sink.guessedCount)")
-    print("failed \(pendingSources.count - sink.guessedCount)")
+    // NOT a failure count: this is everything that did not end up with a name -- correctly
+    // abstained, correctly rejected as ungrounded, or never asked at all for lack of evidence.
+    // The breakdown below names which of those it actually is; a bare "failed" label would
+    // misread abstention and rejection (the intended, correct outcomes of this fix) as errors.
+    print("notNamed \(pendingSources.count - sink.guessedCount)")
     print("outcome \(outcomeLabel(sink.outcome))")
+
+    // Of everything actually sent to the model (excludes noEvidence, which never reached it,
+    // and anything left untried after a providerUnreachable stop): how many came back grounded,
+    // how many the model itself declined, and how many it guessed but failed grounding. This
+    // three-way split is what tells the owner whether the model or the grounding check is doing
+    // the rejecting.
+    let prompted = sink.guessedCount + sink.declinedCount + sink.rejectedUngroundedCount + sink.providerErrorCount
+    print("prompted \(prompted)")
+    print("noEvidence \(sink.noEvidenceCount)")
+    print("declined \(sink.declinedCount)")
+    print("rejectedUngrounded \(sink.rejectedUngroundedCount)")
+    print("providerError \(sink.providerErrorCount)")
+
+    let finalOverrides = sink.snapshotOverrides
+    let after = collisionStats(finalOverrides.nameGuesses)
+    print("guessesAfter \(finalOverrides.nameGuesses.count)")
+    print("distinctNamesAfter \(after.distinctNames)")
+    print("largestCollisionGroupAfter \(after.largestGroup)")
+
+    printNamingCoverage(keptPeople: filterResult.kept, graph: graph, nameGuesses: finalOverrides.nameGuesses)
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
