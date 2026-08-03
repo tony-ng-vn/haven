@@ -57,11 +57,31 @@ struct AuthorizeView: View {
                     Text("To fix this:").bold()
                     Text("1. Open System Settings > Privacy & Security > Full Disk Access.")
                     Text("2. Add Your Sky to the list, or turn on its toggle if it is already listed.")
-                    Text("3. Come back here and press Re-check.")
+                    Text(
+                        "3. The grant only takes effect the next time Your Sky starts -- quit and "
+                            + "reopen the app (or press Relaunch below) after toggling. Re-check "
+                            + "cannot show a grant made while this same running copy is still open."
+                    )
                 }
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 420, alignment: .leading)
+
+                // Every rebuild is a new app to macOS TCC under ad-hoc signing (no Apple team on
+                // this machine to give successive builds a stable identity): a grant from a
+                // previous copy of Your Sky does not carry over, and the Full Disk Access list
+                // can end up holding a stale entry for a copy that no longer exists. Naming the
+                // running copy's own path is what lets the user tell which entry is the right one.
+                Text(
+                    "An updated or rebuilt copy of Your Sky counts as a new app to macOS. If Your "
+                        + "Sky is already listed above but still shows Blocked, remove that old "
+                        + "entry and add this copy instead -- it is currently running from:\n"
+                        + Bundle.main.bundlePath
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
 
                 HStack(spacing: 12) {
                     Button("Open System Settings") {
@@ -71,6 +91,11 @@ struct AuthorizeView: View {
 
                     Button("Re-check") {
                         model.refreshAccessState()
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button("Relaunch") {
+                        model.relaunch()
                     }
                     .buttonStyle(.bordered)
                 }
