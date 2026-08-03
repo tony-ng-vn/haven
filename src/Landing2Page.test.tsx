@@ -1,0 +1,284 @@
+// @vitest-environment happy-dom
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+
+// DriftSky is stubbed the same way LandingPage.test.tsx stubs it: this page's
+// own job is the layering, the copy, and the reveal interaction, not the
+// star-field animation, which has its own tests (lens.test.ts, DriftSky's own
+// canvas-sizing regression coverage).
+const driftSky = vi.hoisted(() => ({
+  props: null as Record<string, unknown> | null,
+  mounts: 0,
+}));
+vi.mock("./DriftSky", () => ({
+  DriftSky: (props: Record<string, unknown>) => {
+    driftSky.props = props;
+    driftSky.mounts += 1;
+    return null;
+  },
+}));
+
+const { Landing2Page, shardFillCss } = await import("./Landing2Page");
+
+const originalMatchMedia = window.matchMedia;
+
+// A minimal MediaQueryList stand-in covering both queries this page reads at
+// mount (prefersFinePointer, prefersReducedMotion) -- only `.matches` is ever
+// read, so nothing else needs to work.
+function stubMedia({ fine = false, reduced = false }: { fine?: boolean; reduced?: boolean }) {
+  window.matchMedia = ((query: string) => ({
+    matches: query.includes("pointer: fine")
+      ? fine
+      : query.includes("prefers-reduced-motion")
+        ? reduced
+        : false,
+    media: query,
+  })) as typeof window.matchMedia;
+}
+
+afterEach(() => {
+  cleanup();
+  window.matchMedia = originalMatchMedia;
+  driftSky.props = null;
+  driftSky.mounts = 0;
+});
+
+describe("Landing2Page", () => {
+  test("renders with no session, no props, and no backend", () => {
+    stubMedia({ fine: true });
+    render(<Landing2Page />);
+    expect(screen.getByText("YOUR SKY, FOR MAC")).toBeTruthy();
+  });
+
+  test("titles the tab", () => {
+    stubMedia({ fine: true });
+    render(<Landing2Page />);
+    expect(document.title).toBe("Haven - Landing 2");
+  });
+
+  test("mounts a single, non-lens DriftSky as the beneath layer", () => {
+    stubMedia({ fine: true });
+    render(<Landing2Page />);
+    expect(driftSky.mounts).toBe(1);
+    expect(driftSky.props?.className).toBe("landing2-sky");
+    expect(driftSky.props?.lens).toBeUndefined();
+  });
+
+  test("both product headings render", () => {
+    stubMedia({ fine: true });
+    render(<Landing2Page />);
+    expect(screen.getByText("YOUR SKY, FOR MAC")).toBeTruthy();
+    expect(screen.getByText("HAVEN, FOR IPHONE")).toBeTruthy();
+  });
+
+  // The owner's own reference prompt names these seven fragments verbatim;
+  // this pins them so a future edit cannot silently drop or reword one.
+  test("all seven faint in-glass fragments render", () => {
+    stubMedia({ fine: true });
+    render(<Landing2Page />);
+    for (const fragment of [
+      "late night",
+      "alex",
+      "miss you",
+      "good morning",
+      "dinner",
+      "mom",
+      "be back soon",
+    ]) {
+      expect(screen.getByText(fragment)).toBeTruthy();
+    }
+  });
+
+  test("CTA hrefs point at the right routes", () => {
+    stubMedia({ fine: true });
+    render(<Landing2Page />);
+    const sky = screen.getByText("Get Your Sky for Mac").closest("a");
+    const ios = screen.getByText("Join the waitlist").closest("a");
+    expect(sky?.getAttribute("href")).toBe("#/sky");
+    expect(sky?.className).toContain("sky-download");
+    expect(ios?.getAttribute("href")).toBe("#/ios");
+  });
+
+  test("the sample-sky link opens the demo in a new tab, safely", () => {
+    stubMedia({ fine: true });
+    render(<Landing2Page />);
+    const demo = screen.getByText("Explore a sample sky").closest("a");
+    expect(demo?.getAttribute("href")).toBe("/demo-sky.html");
+    expect(demo?.getAttribute("target")).toBe("_blank");
+    expect(demo?.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  // Desktop: hover reveals, and nothing here needs to special-case the
+  // interactive content -- mouseenter/mouseleave only fire on the root's own
+  // boundary crossing (see Landing2Page.tsx's comment).
+  test("a fine pointer reveals on hover and hides on leave, not on click", () => {
+    stubMedia({ fine: true });
+    const { container } = render(<Landing2Page />);
+    const root = container.querySelector(".landing2")!;
+    expect(root.className).not.toContain("landing2-revealed");
+    fireEvent.mouseEnter(root);
+    expect(root.className).toContain("landing2-revealed");
+    fireEvent.click(root);
+    expect(root.className).toContain("landing2-revealed");
+    fireEvent.mouseLeave(root);
+    expect(root.className).not.toContain("landing2-revealed");
+  });
+
+  // Touch/coarse: tapping anywhere on the glass toggles.
+  test("a coarse pointer toggles reveal on tap", () => {
+    stubMedia({ fine: false });
+    const { container } = render(<Landing2Page />);
+    const root = container.querySelector(".landing2")!;
+    expect(root.className).not.toContain("landing2-revealed");
+    fireEvent.click(root);
+    expect(root.className).toContain("landing2-revealed");
+    fireEvent.click(root);
+    expect(root.className).not.toContain("landing2-revealed");
+  });
+
+  // A tap that lands on an actual link must still navigate normally -- this
+  // page's handler never calls preventDefault or stopPropagation, so the
+  // click both reaches the browser's default action AND bubbles to the root.
+  // The reveal toggling proves the second half: if a future edit added
+  // stopPropagation to "protect" the link, this would catch it by the
+  // toggle silently no longer happening on a link tap.
+  test("a tap on a link inside the content layer still bubbles to the root", () => {
+    stubMedia({ fine: false });
+    render(<Landing2Page />);
+    const root = document.querySelector(".landing2")!;
+    const link = screen.getByText("Join the waitlist").closest("a")!;
+    expect(root.className).not.toContain("landing2-revealed");
+    const notPrevented = fireEvent.click(link);
+    expect(root.className).toContain("landing2-revealed");
+    // fireEvent.click returns false only when some handler called
+    // preventDefault -- confirms the link's own default action (navigation)
+    // was never blocked either.
+    expect(notPrevented).toBe(true);
+  });
+
+  test("a coarse pointer never gets the hover handlers", () => {
+    stubMedia({ fine: false });
+    const { container } = render(<Landing2Page />);
+    const root = container.querySelector(".landing2")!;
+    fireEvent.mouseEnter(root);
+    expect(root.className).not.toContain("landing2-revealed");
+  });
+
+  // The advisor's own bar for this test: under reduced motion, a shard must
+  // never carry an inline transform, in either state -- not "transform:
+  // none", genuinely absent, since a CSS @media override cannot win against
+  // an inline style of the same property.
+  test("reduced motion mounts without any transform styles, revealed or not", () => {
+    stubMedia({ fine: true, reduced: true });
+    const { container } = render(<Landing2Page />);
+    const shards = container.querySelectorAll<HTMLElement>(".landing2-shard");
+    expect(shards.length).toBeGreaterThan(0);
+    shards.forEach((shard) => expect(shard.style.transform).toBe(""));
+
+    fireEvent.mouseEnter(container.querySelector(".landing2")!);
+    shards.forEach((shard) => expect(shard.style.transform).toBe(""));
+  });
+
+  // Asserts inequality against the known rest string rather than substring
+  // matching "translate(0px, 0px)" -- a shard whose centroid sits nearly on
+  // the composition's horizontal or vertical centreline can produce a
+  // revealed transform like "translate(0px, 31.2px)", which still contains
+  // that substring and would let a broken (never-actually-moves) shard pass.
+  test("ordinary motion sets a transform once revealed", () => {
+    stubMedia({ fine: true, reduced: false });
+    const { container } = render(<Landing2Page />);
+    const root = container.querySelector(".landing2")!;
+    const shard = container.querySelector<HTMLElement>(".landing2-shard")!;
+    const restTransform = shard.style.transform;
+    expect(restTransform).toBe("translate(0px, 0px) rotate(0deg) scale(1)");
+    fireEvent.mouseEnter(root);
+    expect(shard.style.transform).not.toBe(restTransform);
+  });
+
+  // Item 6 of the visual-correction pass: shards darken (fill opacity +0.08)
+  // rather than fading out on reveal, a deliberate reversal of the previous
+  // rest 0.5 / revealed 0.34 pair.
+  test("shards darken (opacity rises above 1x) rather than fade out on reveal", () => {
+    stubMedia({ fine: true, reduced: false });
+    const { container } = render(<Landing2Page />);
+    const root = container.querySelector(".landing2")!;
+    const shard = container.querySelector<HTMLElement>(".landing2-shard")!;
+    expect(shard.style.opacity).toBe("1");
+    fireEvent.mouseEnter(root);
+    expect(Number(shard.style.opacity)).toBeGreaterThan(1);
+  });
+
+  // Reduced motion keeps every brightness/opacity half of the reveal; only
+  // the movement drops out (the transform test above covers that half).
+  test("reduced motion still darkens shards on reveal, just without moving them", () => {
+    stubMedia({ fine: true, reduced: true });
+    const { container } = render(<Landing2Page />);
+    const root = container.querySelector(".landing2")!;
+    const shard = container.querySelector<HTMLElement>(".landing2-shard")!;
+    expect(shard.style.opacity).toBe("1");
+    fireEvent.mouseEnter(root);
+    expect(Number(shard.style.opacity)).toBeGreaterThan(1);
+    expect(shard.style.transform).toBe("");
+  });
+
+  // style.background itself is not readable back here -- see shardFillCss's
+  // own doc comment: happy-dom cannot parse rgba() inside a gradient
+  // function at all, in any browser-family test environment this repo runs
+  // in. clip-path has no such problem and is a reliable proxy that each
+  // shard's per-cell styling actually ran (22 distinct polygons, not one
+  // shape repeated).
+  test("22 shards and 22 rim outlines render, each shard its own clip-path", () => {
+    stubMedia({ fine: true });
+    const { container } = render(<Landing2Page />);
+    const shards = container.querySelectorAll<HTMLElement>(".landing2-shard");
+    const rims = container.querySelectorAll(".landing2-rim");
+    expect(shards).toHaveLength(22);
+    expect(rims).toHaveLength(22);
+    const clipPaths = new Set(Array.from(shards, (s) => s.style.clipPath));
+    expect(clipPaths.size).toBe(22);
+  });
+
+  // Frost moved from a gradient layer inside shardFillCss (see that
+  // function's own doc comment for why -- it rode the shard's opacity
+  // multiplier upward on reveal, which was the reported "milky glare" bug)
+  // to a separate child element with its own class-toggled opacity. This is
+  // the DOM-level half of that contract: frostyShardIndices itself is unit
+  // tested in landing2Geometry.test.ts for the count (exactly 6 of 22), but
+  // nothing there proves the page actually renders one frost layer per
+  // selected index -- this does.
+  test("exactly 6 shards render a frost child element", () => {
+    stubMedia({ fine: true });
+    const { container } = render(<Landing2Page />);
+    expect(container.querySelectorAll(".landing2-shard-frost")).toHaveLength(6);
+  });
+});
+
+// shardFillCss builds the per-shard gradient string directly (see its own
+// doc comment for why this is a plain-function test rather than a
+// render-and-read-the-DOM one).
+describe("shardFillCss", () => {
+  test("bakes the given restAlpha into both stops of the base gradient", () => {
+    const css = shardFillCss({ angleDeg: 90, lightnessT: 0.5, restAlpha: 0.47 });
+    // The base gradient is the last layer in the string (after the fixed
+    // 0.1-alpha highlight, which must not be confused for restAlpha here).
+    const base = css.split(", linear-gradient(")[1];
+    expect(base, "base linear-gradient layer not found").toBeTruthy();
+    const alphas = [...base.matchAll(/rgba\([^)]+,\s*([0-9.]+)\)/g)].map((m) => Number(m[1]));
+    expect(alphas).toHaveLength(2);
+    alphas.forEach((a) => expect(a).toBeCloseTo(0.47, 5));
+  });
+
+  // Frost is no longer part of this function's own output at all -- see the
+  // page-level "exactly 6 shards render a frost child element" test above
+  // for where that contract is checked now.
+  test("never carries the frost tint -- that is a separate child element now", () => {
+    const material = { angleDeg: 0, lightnessT: 0.5, restAlpha: 0.5 };
+    expect(shardFillCss(material)).not.toContain("255,255,255,0.16");
+  });
+
+  test("the gradient axis reflects the given angle", () => {
+    expect(shardFillCss({ angleDeg: 47.3, lightnessT: 0.2, restAlpha: 0.4 })).toContain(
+      "linear-gradient(47.3deg",
+    );
+  });
+});

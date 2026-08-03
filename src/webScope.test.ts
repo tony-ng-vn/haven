@@ -5,7 +5,8 @@ import { describe, expect, test } from "vitest";
 // What the web is for, encoded so it cannot drift back.
 //
 // iOS is the primary Haven client. The web is the front door and the viewing
-// surface: the waitlist and sign-in, your network as a sky, search, adding
+// surface: the Haven landing and sign-in, the Sky and iOS product pages
+// (which carries the waitlist signup), your network as a sky, search, adding
 // somebody by typing their name, the public card a stranger opens, and the
 // legal and support pages. Ways of MEETING people -- exchanging contact in
 // person, proximity radar -- are things you do with a phone in your hand, and
@@ -95,7 +96,9 @@ describe("the web stays a front door and a viewer", () => {
     // App.tsx too, not merely present on disk.
     const app = readFileSync(join("src", "App.tsx"), "utf8");
     for (const surface of [
-      "Waitlist", // the front door
+      "LandingPage", // the front door
+      "SkyPage", // Your Sky for Mac, the download landing
+      "IosPage", // Haven for iPhone, the waitlist landing
       "SearchAdd", // your network as a sky, search, add by name
       "PersonDetail", // one person's page
       "CardPage", // the public card a stranger opens

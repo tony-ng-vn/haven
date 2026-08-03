@@ -76,10 +76,13 @@ describe("brand SEO for the inhavens query", () => {
     expect(sitemap).toContain("<loc>https://inhavens.com/</loc>");
   });
 
-  test("the waitlist renders the domain as visible text", () => {
+  test("the waitlist form renders the domain as visible text", () => {
     // The layout owns this mention (SEO chrome), not the copy deck; see the
-    // comment beside the fine print in Waitlist.tsx.
-    const waitlist = readFileSync(join(root, "src", "Waitlist.tsx"), "utf8");
-    expect(waitlist).toContain("inhavens.com");
+    // comment beside the fine print in WaitlistForm.tsx.
+    const waitlistForm = readFileSync(
+      join(root, "src", "WaitlistForm.tsx"),
+      "utf8",
+    );
+    expect(waitlistForm).toContain("inhavens.com");
   });
 });

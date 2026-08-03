@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest";
 import { WAITLIST_COPY } from "./waitlistCopy";
 
 const waitlistSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "Waitlist.tsx"),
+  join(dirname(fileURLToPath(import.meta.url)), "WaitlistForm.tsx"),
   "utf8",
 );
 
@@ -28,7 +28,7 @@ describe("waitlist copy", () => {
     });
   });
 
-  test("Waitlist.tsx does not keep a second per-mode copy table", () => {
+  test("WaitlistForm.tsx does not keep a second per-mode copy table", () => {
     // The bug class: a COPY: Record<Mode, ...> next to the layout breakpoint.
     // Layout may still branch on mode; wording must not.
     expect(waitlistSource).toMatch(/WAITLIST_COPY/);

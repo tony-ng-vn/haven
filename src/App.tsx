@@ -7,7 +7,7 @@ import { SearchAdd } from "./SearchAdd";
 import { PersonDetail } from "./PersonDetail";
 import { CaptureTriage } from "./CaptureTriage";
 import { FeedbackWidget } from "./FeedbackWidget";
-import { Waitlist } from "./Waitlist";
+import { LandingPage } from "./LandingPage";
 import { DriftSky } from "./DriftSky";
 import {
   isClerkFlowHash,
@@ -20,6 +20,9 @@ import { CardPage } from "./CardPage";
 import { LegalPage } from "./LegalPage";
 import { CLERK_ROUTING } from "./clerkConfig";
 import { SupportPage } from "./SupportPage";
+import { SkyPage } from "./SkyPage";
+import { IosPage } from "./IosPage";
+import { Landing2Page } from "./Landing2Page";
 
 function ChevronLeft() {
   return (
@@ -285,8 +288,11 @@ export default function App() {
     return <LegalPage doc={legalDocFromPath(pathname)!} />;
   }
   if (view === "support") return <SupportPage />;
+  if (view === "sky") return <SkyPage />;
+  if (view === "ios") return <IosPage />;
+  if (view === "landing2") return <Landing2Page />;
   if (view === "home") return <Home />;
   if (view === "signin") return <SignIn />;
   if (view === "splash") return <Splash />;
-  return <Waitlist />;
+  return <LandingPage />;
 }

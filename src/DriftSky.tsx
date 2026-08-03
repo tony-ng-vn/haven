@@ -3,6 +3,7 @@ import {
   LENS,
   edgeAlpha,
   falloff,
+  gestureEnabled,
   lensFigure,
   isTouchPointer,
   magnify,
@@ -34,15 +35,24 @@ function isFormTarget(target: EventTarget | null): boolean {
 // rim, so it reads as a region of attention rather than a hole in the page.
 // When the pointer is gone or still for a couple of seconds the lens wanders
 // on its own, which is what a phone sees (and what keeps an idle desktop
-// alive). A finger down on the page snaps the lens under it and follows
-// tightly for the press; lifting returns to wander.
-function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
+// alive) -- this wander is on whenever the lens is, `interactive` or not.
+// `interactive` gates only the pointer/touch listeners on top of that: a
+// finger down on the page snaps the lens under it and follows tightly for
+// the press, lifting returns to wander -- but that costs a non-passive
+// touchmove listener that blocks page scroll under a drag, which only a
+// fixed, nothing-to-scroll surface can afford. See gestureEnabled in lens.ts.
+function startDrift(
+  canvas: HTMLCanvasElement,
+  withLens: boolean,
+  interactive: boolean,
+): () => void {
   const ctx = canvas.getContext("2d");
   if (ctx === null) return () => {};
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   // A lens that cannot follow says nothing, so reduced motion gets the still
   // sky and no lens at all rather than a frozen one.
   const lensOn = withLens && !reduce;
+  const gestureOn = gestureEnabled({ lensOn, interactive });
   let w = 0;
   let h = 0;
   let raf = 0;
@@ -260,7 +270,7 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
   if (reduce) frame(0);
   else raf = requestAnimationFrame(frame);
   window.addEventListener("resize", onResize);
-  if (lensOn) {
+  if (gestureOn) {
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointerup", onPointerUp);
@@ -286,23 +296,29 @@ function startDrift(canvas: HTMLCanvasElement, withLens: boolean): () => void {
 
 // The drifting star field as a self-contained background layer. Runs for the
 // host's lifetime and tears down its animation frame on unmount; a single still
-// frame under reduced motion. Shared by the waitlist and the sign-in landing so
-// both ride the exact same sky.
+// frame under reduced motion. Shared across every public page so they all ride
+// the exact same sky.
 //
-// The constellation lens is opt-in: the waitlist takes it, the sign-in landing
-// keeps the plain sky.
+// The constellation lens is opt-in (`lens`): most callers keep the plain sky.
+// `interactive` narrows it further -- it only matters when `lens` is on, and
+// defaults to true so an existing `lens` caller keeps today's behavior
+// unchanged. The landing hero is the one caller that pulls them apart: lens
+// on for every device (the figure and its wander), interactive only for a
+// fine pointer (see gestureEnabled in lens.ts for why).
 export function DriftSky({
   className,
   lens = false,
+  interactive = true,
 }: {
   className?: string;
   lens?: boolean;
+  interactive?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) return;
-    return startDrift(canvas, lens);
-  }, [lens]);
+    return startDrift(canvas, lens, interactive);
+  }, [lens, interactive]);
   return <canvas ref={canvasRef} className={className} aria-hidden="true" />;
 }

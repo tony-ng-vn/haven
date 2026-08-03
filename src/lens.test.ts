@@ -4,6 +4,7 @@ import {
   edgeAlpha,
   falloff,
   figureStars,
+  gestureEnabled,
   lensFigure,
   isTouchPointer,
   magnify,
@@ -124,6 +125,26 @@ describe("isTouchPointer", () => {
     expect(isTouchPointer("")).toBe(true);
     expect(isTouchPointer("mouse")).toBe(false);
     expect(isTouchPointer("pen")).toBe(false);
+  });
+});
+
+describe("gestureEnabled", () => {
+  // The regression this guards: a scrolling page (the landing hero) cannot
+  // afford the non-passive touchmove DriftSky attaches for the drag gesture
+  // -- it would block the page's own scroll on a touch drag. The figure and
+  // its wander (lensOn) must stay on regardless; only the listeners that
+  // gestureEnabled gates may ever be withheld.
+  test("needs both the lens on and interactive to attach the gesture", () => {
+    expect(gestureEnabled({ lensOn: true, interactive: true })).toBe(true);
+  });
+
+  test("a coarse pointer (interactive: false) never gets the gesture, lens or not", () => {
+    expect(gestureEnabled({ lensOn: true, interactive: false })).toBe(false);
+  });
+
+  test("no gesture when the lens itself is off, interactive or not", () => {
+    expect(gestureEnabled({ lensOn: false, interactive: true })).toBe(false);
+    expect(gestureEnabled({ lensOn: false, interactive: false })).toBe(false);
   });
 });
 

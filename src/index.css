@@ -1984,30 +1984,15 @@ feedback-widget.feedback-fab {
   }
 }
 
-/* ============================================================ waitlist (/#/join)
-   The public join page. A world of its own -- flat at rest, one warm light,
-   motion only as confirmation -- laid out around a drifting star field. Ported
-   from the approved prototype. Layout and copy flip at 620px via the
-   [data-mode] attribute React sets from the page width. */
+/* ============================================================ waitlist form
+   The join capture: a name field, an email field that folds in once the name
+   is engaged, and the honest joined/already/error states. Ported from the
+   original full-page join prototype, but it is no longer a page of its own --
+   it is embedded in the iOS product page now (WaitlistForm.tsx, "#/ios"),
+   which owns the headline and framing around it. */
 
-.waitlist {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  background: var(--night);
-  color: var(--text);
-  overflow: hidden;
-  /* Finger drags must aim the constellation, not rubber-band / pan the page
-     (which reads as "the whole sky moves" and steals the gesture). */
-  touch-action: none;
-  overscroll-behavior: none;
-}
-
-.waitlist input,
-.waitlist button {
-  touch-action: manipulation;
-}
-
+/* Shared with the sign-in landing (see .auth-sky): both public pages ride the
+   same drifting star field canvas. */
 .wl-sky {
   position: absolute;
   inset: 0;
@@ -2016,39 +2001,14 @@ feedback-widget.feedback-fab {
   z-index: 0;
 }
 
-.wl-content {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-  padding: clamp(30px, 7vh, 72px) 28px;
-  text-align: left;
-}
-
-.wl-eyebrow {
-  display: block;
-  margin-bottom: 22px;
-  font-size: 13px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.wl-headline {
-  margin: 0;
-  text-wrap: balance;
-}
-
+/* Used today only by the success state below (wl-sub wl-joined-sub), which
+   overrides the margin -- kept as its own rule rather than folded into
+   wl-joined-sub so the type scale stays in one place. */
 .wl-sub {
   margin: 0 0 22px;
   font-size: 18px;
   line-height: 1.55;
   color: var(--muted);
-}
-
-.wl-bottom {
-  max-width: 460px;
 }
 
 /* Name leads on its own row with the submit button; the email row folds in
@@ -2187,6 +2147,23 @@ feedback-widget.feedback-fab {
   color: #ff6b60;
 }
 
+/* Quiet enough to never compete with the join form -- a footnote, not a
+   second call to action. */
+.wl-sky-link {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 12px;
+  color: rgba(242, 239, 233, 0.45);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(242, 239, 233, 0.25);
+}
+
+.wl-sky-link:hover,
+.wl-sky-link:focus-visible {
+  color: rgba(242, 239, 233, 0.7);
+}
+
 /* Success state */
 .wl-check {
   display: inline-flex;
@@ -2218,87 +2195,17 @@ feedback-widget.feedback-fab {
   margin: 0;
 }
 
-/* ---- phone / drift: headline up top, capture at the bottom ---- */
-.waitlist[data-mode="phone"] .wl-content {
-  justify-content: space-between;
-}
-
-.waitlist[data-mode="phone"] .wl-headline {
-  max-width: 12ch;
-  font-size: clamp(38px, 11vw, 58px);
-  font-weight: 700;
-  letter-spacing: -0.045em;
-  line-height: 0.94;
-}
-
-/* ---- desktop / constellation: copy centered in the viewport ---- */
-.waitlist[data-mode="desktop"] .wl-content {
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-  padding: 0 32px;
-}
-
-.waitlist[data-mode="desktop"] .wl-eyebrow {
-  display: none;
-}
-
-.waitlist[data-mode="desktop"] .wl-top {
-  margin-bottom: 18px;
-}
-
-.waitlist[data-mode="desktop"] .wl-headline {
-  max-width: 16ch;
-  font-size: clamp(34px, 5vw, 50px);
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.08;
-}
-
-/* Rhythm funnels toward the CTA: sub gets air above the form, caption hugs it. */
-.waitlist[data-mode="desktop"] .wl-sub {
-  margin: 0 auto 26px;
-  max-width: 44ch;
-}
-
-.waitlist[data-mode="desktop"] .wl-bottom {
-  max-width: 460px;
-  margin: 22px auto 0;
-}
-
-.waitlist[data-mode="desktop"] .wl-form {
-  max-width: 440px;
-  margin: 0 auto;
-}
-
-.waitlist[data-mode="desktop"] .wl-fine,
-.waitlist[data-mode="desktop"] .wl-error {
-  margin-top: 13px;
-  text-align: center;
-}
-
 /* On a real phone the inline field + button can get tight; stack under ~380px. */
 @media (max-width: 380px) {
-  .waitlist[data-mode="phone"] .wl-email-row {
+  .wl-email-row {
     flex-direction: column;
   }
-  .waitlist[data-mode="phone"] .wl-go {
+  .wl-go {
     width: 100%;
   }
 }
 
-/* Entrances: the room settles in on load; the confirmation rises on submit. */
-@keyframes wl-enter-up {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
+/* The confirmation rises on submit. */
 @keyframes wl-rise-in {
   from {
     opacity: 0;
@@ -2310,21 +2217,11 @@ feedback-widget.feedback-fab {
   }
 }
 
-.wl-top {
-  animation: wl-enter-up 640ms var(--ease-out) both;
-}
-
-.wl-bottom {
-  animation: wl-enter-up 640ms var(--ease-out) 130ms both;
-}
-
 .wl-joined {
   animation: wl-rise-in 500ms var(--ease-out) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .wl-top,
-  .wl-bottom,
   .wl-joined,
   .wl-check {
     animation: none;
@@ -2356,6 +2253,13 @@ feedback-widget.feedback-fab {
 .card-sky {
   position: absolute;
   inset: 0;
+  /* <canvas> is a replaced element: inset: 0 alone does not stretch it to
+     fill the containing block the way it would a <div> -- width/height stay
+     at the canvas's intrinsic 300x150 CSS px without these two lines. Same
+     fix as .wl-sky below; see .landing-sky for the bug this caused when it
+     was missing. */
+  width: 100%;
+  height: 100%;
   z-index: 0;
   /* The sky is the backdrop, not the subject: held under the text so a dense
      patch never competes with the name it belongs to. */
@@ -2557,7 +2461,11 @@ a.card-handle:focus-visible {
    the person-name rule up top. */
 .card-quiet-title,
 .legal-back,
-.legal-title {
+.legal-title,
+.sky-title,
+.ios-title,
+.top-nav-brand,
+.landing-hero-title {
   font-family: var(--font-serif);
 }
 
@@ -2638,4 +2546,950 @@ a.card-handle:focus-visible {
   border-top: 1px solid rgba(242, 239, 233, 0.12);
   font-size: 14px;
   color: rgba(242, 239, 233, 0.5);
+}
+
+/* Your Sky download page (inhavens.com/#/sky) --------------------------
+
+   Shares the legal page's column measure -- this is reading, not a hero form
+   -- but keeps its own hero block at the top for the download CTA, and its
+   own step/privacy sections below.
+   ------------------------------------------------------------------------ */
+.sky-page {
+  position: relative;
+  z-index: 1;
+  max-width: 34rem;
+  margin: 0 auto;
+  /* Extra top padding clears the absolutely positioned .top-nav overlaid on
+     .card-page above it (see TopNav). */
+  padding: 88px 24px 96px;
+  text-align: left;
+  color: rgba(242, 239, 233, 0.78);
+}
+
+.sky-hero {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sky-eyebrow {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+.sky-title {
+  font-size: 34px;
+  font-weight: 500;
+  line-height: 1.18;
+  margin: 4px 0 2px;
+  color: var(--text);
+}
+
+.sky-tagline {
+  margin: 0 0 6px;
+  font-size: 17px;
+  line-height: 1.55;
+  color: rgba(242, 239, 233, 0.85);
+}
+
+.sky-download {
+  align-self: flex-start;
+  margin-top: 8px;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 26px;
+  border-radius: 999px;
+  background: var(--accent-fill);
+  color: var(--accent-fill-text);
+  font-size: 16px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: transform var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+.sky-download:hover,
+.sky-download:focus-visible {
+  background: color-mix(in srgb, var(--accent-fill) 90%, #000);
+}
+
+.sky-download-repeat {
+  margin-top: 40px;
+}
+
+.sky-install-note {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(242, 239, 233, 0.55);
+  max-width: 30rem;
+}
+
+.sky-steps,
+.sky-privacy {
+  margin-top: 48px;
+}
+
+.sky-steps h2,
+.sky-privacy h2 {
+  font-size: 15px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(242, 239, 233, 0.55);
+  margin: 0 0 18px;
+}
+
+.sky-step-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sky-step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.sky-step-index {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(242, 239, 233, 0.09);
+  border: 1px solid rgba(242, 239, 233, 0.14);
+  font-size: 13px;
+  color: var(--accent-text);
+}
+
+.sky-step-title {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sky-step-body {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: rgba(242, 239, 233, 0.72);
+}
+
+.sky-privacy ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.sky-privacy li {
+  margin-bottom: 10px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: rgba(242, 239, 233, 0.78);
+}
+
+/* ---------------------------------------------------------------------------
+   Haven landing (inhavens.com/, signed out)
+
+   The front door: a full-viewport hero that puts the product's own world on
+   screen, then two full-width sections (not cards) introducing each product,
+   and a quiet footer. Ordinary document flow, unlike .card-page: the hero is
+   the one fixed-height box (one viewport tall, position: relative), and the
+   rest of the page scrolls past it.
+   ------------------------------------------------------------------------ */
+/* A fixed, page-wide background layer, not scoped to the hero: the sky
+   continues behind every section as the page scrolls, the way the old
+   full-bleed waitlist page did for its one screen. One canvas for the whole
+   page (see LandingPage.tsx), not one per section -- a second canvas would
+   double the animation cost for no visible gain when the first already
+   covers the viewport. z-index: -1 rather than a stacking context on .landing
+   keeps this simple: it paints behind ordinary in-flow content by the normal
+   stacking rules, with nothing else needing a z-index to sit above it.
+
+   Full presence, not the .card-sky 0.55 dim -- the sky is the subject here,
+   not a backdrop behind reading copy.
+
+   width/height: 100% is load-bearing, not decoration -- see .card-sky's
+   comment. Without it this is the bug that shipped: a canvas stuck at its
+   intrinsic 300x150 CSS px, pinned to the top-left, wander and the lens both
+   compressed into that same tiny box. */
+.landing-sky {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
+/* z-index: 1 on every section below is not decoration -- it is what keeps
+   the page's readable content above the fixed z-index: 0 canvas, the exact
+   same explicit background/foreground pairing .card-sky uses with
+   .card-content, .legal-page, .sky-page and .ios-page. A negative z-index on
+   the canvas instead (paints behind ordinary static content without any
+   z-index needed on the foreground) was considered and deliberately not
+   used: it depends on no ancestor between the canvas and its siblings ever
+   acquiring its own stacking context (a transform, an opacity, a filter),
+   which is a fact about the whole page that is easy to invalidate by
+   accident later. Explicit z-index on both sides has no such hidden
+   dependency. */
+.landing-hero {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.landing-hero-content {
+  position: relative;
+  z-index: 1;
+  min-height: 100%;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Lower-third, not centered: the open sky above is where the constellation
+     gesture has room to breathe. */
+  justify-content: flex-end;
+  text-align: center;
+  gap: 16px;
+  padding: 96px 24px clamp(56px, 11vh, 128px);
+}
+
+.landing-hero-title {
+  margin: 0;
+  max-width: 18ch;
+  font-size: clamp(40px, 8vw, 84px);
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: #fff;
+  text-shadow: 0 2px 28px rgba(0, 0, 0, 0.55);
+}
+
+.landing-hero-sub {
+  margin: 0;
+  max-width: 40ch;
+  font-size: clamp(16px, 2vw, 19px);
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.4);
+}
+
+.landing-hero-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+/* The secondary iPhone/waitlist action, everywhere it appears (hero and the
+   iPhone section below): an outline, deliberately quieter than .sky-download's
+   gold fill -- available-today and join-the-waitlist should not read as the
+   same weight of ask. */
+.landing-cta-secondary {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 24px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #fff;
+  text-decoration: none;
+  font-size: 16px;
+  font-weight: 500;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.landing-cta-secondary:hover,
+.landing-cta-secondary:focus-visible {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.landing-hero-note {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Shared by the landing hero, Your Sky, and the iOS page: wordmark left,
+   three plain links right, no pill chrome. Absolutely positioned so it drops
+   onto either a position: relative hero or a position: fixed .card-page
+   without needing to know which. */
+.top-nav {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+}
+
+.top-nav-brand {
+  font-size: 19px;
+  font-weight: 500;
+  color: #fff;
+  text-decoration: none;
+}
+
+.top-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+
+.top-nav-links a {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.75);
+  text-decoration: none;
+}
+
+.top-nav-links a:hover,
+.top-nav-links a:focus-visible {
+  color: #fff;
+}
+
+/* The compliance footer (Footer.tsx), shared by the landing page, Your Sky,
+   and the iOS page: links to the existing privacy/terms/support documents
+   plus a copyright line. Quiet and small on purpose -- it is reference
+   chrome, not something anyone reads unless they came looking for it. */
+.site-footer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 24px 64px;
+  text-align: center;
+}
+
+.site-footer-links {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.site-footer-links a {
+  padding: 4px 6px;
+  color: rgba(242, 239, 233, 0.6);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(242, 239, 233, 0.3);
+}
+
+.site-footer-links a:hover,
+.site-footer-links a:focus-visible {
+  color: var(--text);
+}
+
+.site-footer-copyright {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(242, 239, 233, 0.4);
+}
+
+/* Below the fold: generous full-width sections, not cards. No background of
+   their own, deliberately -- .landing-sky is fixed behind the whole page (see
+   above), so leaving these transparent is what keeps the sky continuous as
+   the page scrolls instead of hitting flat dark past the hero. The text
+   shadow is the same legibility insurance the hero titles carry, now that
+   body copy sits directly over the same full-presence field. */
+.landing-section {
+  position: relative;
+  z-index: 1;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 88px 24px;
+  text-align: left;
+}
+
+.landing-section-title {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-text);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.45);
+}
+
+.landing-section-body {
+  margin: 0 0 28px;
+  max-width: 46ch;
+  font-size: 18px;
+  line-height: 1.6;
+  color: rgba(242, 239, 233, 0.85);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.45);
+}
+
+.landing-footer a:hover,
+.landing-footer a:focus-visible {
+  color: var(--text);
+}
+
+/* The live sample-sky embed in the Your Sky section: a dark framed teaser
+   that swaps for an iframe on click (heyclicky-video style), or on a narrow
+   screen is a direct link that opens the demo in its own tab -- a pan-zoom
+   canvas has little room in a small inline frame and would fight the page's
+   own scroll. */
+.demo-embed {
+  margin-bottom: 28px;
+}
+
+.demo-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  padding: 0;
+  border-radius: var(--radius-lg);
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(242, 239, 233, 0.14);
+  color: inherit;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.demo-frame {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(242, 239, 233, 0.14);
+}
+
+.demo-caption {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: rgba(242, 239, 233, 0.5);
+}
+
+/* ---------------------------------------------------------------------------
+   Haven for iPhone (inhavens.com/#/ios)
+
+   The iOS product landing: introduces the phone app and carries the waitlist
+   signup (see WaitlistForm.tsx). Shares the sky page's column and hero shape
+   -- the two are sibling product pages -- but its call to action is a form,
+   not a download link.
+   ------------------------------------------------------------------------ */
+.ios-page {
+  position: relative;
+  z-index: 1;
+  max-width: 34rem;
+  margin: 0 auto;
+  /* Extra top padding clears the absolutely positioned .top-nav overlaid on
+     .card-page above it (see TopNav). */
+  padding: 88px 24px 96px;
+  text-align: left;
+  color: rgba(242, 239, 233, 0.78);
+}
+
+.ios-hero {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ios-eyebrow {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+.ios-title {
+  font-size: 34px;
+  font-weight: 500;
+  line-height: 1.18;
+  margin: 4px 0 2px;
+  color: var(--text);
+}
+
+.ios-tagline {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.55;
+  color: rgba(242, 239, 233, 0.85);
+}
+
+.ios-status {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(242, 239, 233, 0.55);
+}
+
+.ios-join {
+  margin-top: 28px;
+  max-width: 26rem;
+}
+
+.ios-about {
+  margin-top: 48px;
+}
+
+.ios-about h2 {
+  font-size: 15px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(242, 239, 233, 0.55);
+  margin: 0 0 18px;
+}
+
+.ios-about ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.ios-about li {
+  margin-bottom: 10px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: rgba(242, 239, 233, 0.78);
+}
+
+.ios-about strong {
+  color: rgba(242, 239, 233, 0.92);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+   Landing page 2 (inhavens.com/#/landing2), unlinked
+
+   An experimental concept the owner is evaluating alongside the default
+   landing: the whole viewport as one pane of broken midnight-blue glass over
+   a hidden memory world, mostly assembled at rest and breathing apart on
+   hover (desktop) or tap (touch) to reveal it through the gaps. Three
+   explicit layers, painted in this order (see Landing2Page.tsx):
+     z 0 .landing2-beneath -- the hidden world: sky, scenery, memory text
+     z 1 .landing2-glass   -- the shards, their seams, faint in-glass text
+     z 2 .landing2-content -- the Sky and iPhone product copy
+   No scrolling ancestor here (unlike .landing-sky's page-long scroll), so
+   every layer is position: absolute within .landing2 itself rather than
+   position: fixed to the viewport.
+   ------------------------------------------------------------------------ */
+/* overflow: hidden is deliberate, not a default: revealed shards translate
+   26-48px outward from the composition's centre, and an edge or corner shard
+   moving further outward should look like glass shifting against a window
+   frame -- clipped cleanly at the boundary -- not like a gap of bare page
+   background (or a scrollbar) appearing at the edge of the screen. The
+   tradeoff: on an unusually short viewport, content anchored low (the iPhone
+   copy at top: 66%, the second memory fragment at 90%) can end up clipped
+   rather than reachable by scrolling. Accepted for a single-screen desktop
+   composition; revisit if this concept ever needs to work on a short window. */
+.landing2 {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--night);
+  color: var(--text);
+  overflow: hidden;
+  cursor: default;
+}
+
+.landing2-beneath,
+.landing2-glass,
+.landing2-content {
+  position: absolute;
+  inset: 0;
+}
+
+.landing2-beneath {
+  z-index: 0;
+  overflow: hidden;
+}
+
+.landing2-glass {
+  z-index: 1;
+}
+
+/* pointer-events: none so the layer's own empty space never becomes the
+   click/hover target; landing2-copy below opts back in, since its links and
+   buttons must still receive the pointer. */
+.landing2-content {
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* width/height: 100% is load-bearing -- see driftSkyCanvasSizing.test.ts and
+   .landing-sky's own comment: without it a fixed/absolute canvas falls back
+   to its 300x150 intrinsic size instead of filling this layer. */
+.landing2-sky {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.landing2-scene,
+.landing2-particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Handwritten memory fragments -- a cursive stack distinct from the site's
+   reserved --font-serif (see designTokens.test.ts's serif-count guard, which
+   this page must not touch). They are the reveal's emotional centerpiece, so
+   they run brighter than the rest of the scenery: rest stays a faint grey-
+   gold (invisible anyway under .landing2-scene-el's 0.06 wrapper opacity),
+   but revealed pushes to the accent gold at 0.9 with a two-layer warm glow
+   (tight core + wide bloom) -- through-glass dimming (the shard opacity and
+   veil above it) still tempers the final read, so this errs bright at the
+   source rather than landing faint. Font size raised ~15% (20px -> 23px)
+   for the same reason. */
+.landing2-memory {
+  position: absolute;
+  font-family: "Snell Roundhand", "Apple Chancery", cursive;
+  font-style: italic;
+  font-size: 23px;
+  line-height: 1.35;
+  color: rgba(255, 217, 160, 0.42);
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: color 700ms var(--ease-out), text-shadow 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-memory {
+  color: rgba(255, 217, 160, 0.9);
+  text-shadow:
+    0 0 4px rgba(255, 217, 160, 0.55),
+    0 0 16px rgba(255, 217, 160, 0.35);
+}
+
+.landing2-polaroid {
+  position: absolute;
+  width: 64px;
+  height: 48px;
+  padding: 4px;
+  border-radius: 3px;
+  background: rgba(12, 14, 28, 0.55);
+  border: 2px solid rgba(242, 231, 213, 0.35);
+  pointer-events: none;
+}
+
+.landing2-polaroid svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Shared by every "hidden world" element that must read as almost fully
+   hidden at rest and in full presence on reveal: the moon, the mountains,
+   the trees, and (via this same class added alongside their own) the memory
+   fragments and polaroids. One rule, so "how obscured is the world at rest"
+   is a single number to tune, not one per element. */
+.landing2-scene-el {
+  opacity: 0.06;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-scene-el {
+  opacity: 1;
+}
+
+/* The moon at rest is a barely-there pale disc (its exact hue hardly reads
+   at 0.06 opacity anyway); on reveal it warms to pale gold rather than
+   staying a cold grey. */
+.landing2-moon-disc {
+  fill: #d8dced;
+  transition: fill 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-moon-disc {
+  fill: #ffd9a0;
+}
+
+/* A moonlit rim along the top ridge only, invisible at rest, and a shimmer
+   overlay on the water band underneath it -- both fade in only on reveal
+   (their own opacity: 0, nested inside .landing2-scene-el's 0.06 -> 1 fade,
+   so the combined rest opacity is exactly 0 rather than a faint 0.06).
+   Widened and brightened from the previous pass, alongside the mountain
+   fills themselves, so the ridge actually registers instead of reading as
+   near-invisible near-black on near-black. */
+.landing2-mountain-rim {
+  stroke: rgba(223, 232, 247, 0.65);
+  stroke-width: 0.2;
+  opacity: 0;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-mountain-rim {
+  opacity: 0.75;
+}
+
+/* Shared by the shimmer rect and the specular highlight ellipse -- both are
+   "extra brightness on the water band that only appears revealed", so one
+   rule covers both rather than a near-duplicate second class. */
+.landing2-water-shimmer {
+  opacity: 0;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-water-shimmer {
+  opacity: 1;
+}
+
+/* The cabin window's bloom halo, same nested-zero trick as the water
+   shimmer: present only once revealed, not a brighter version of the
+   whisper-level rest state. */
+.landing2-window-bloom {
+  opacity: 0;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-window-bloom {
+  opacity: 1;
+}
+
+/* The dimming veil: opaque enough at rest that the beneath layer only shows
+   through as faint suggestion, dropping away on reveal. Raised from an
+   original 0.82/0.28 -- paired with the scene elements above now carrying
+   their own near-invisible rest opacity, the veil no longer has to do all
+   of the hiding by itself, but 0.9 keeps rest reading as calm and dark
+   rather than merely dim. */
+.landing2-veil {
+  position: absolute;
+  inset: 0;
+  background: var(--night);
+  opacity: 0.9;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-veil {
+  opacity: 0.06;
+}
+
+/* Each shard covers the full layer and cuts itself down to one Voronoi cell.
+   clip-path, the per-shard gradient fill, and (when the page allows
+   transforms) transform/opacity/transition are all set inline --
+   Landing2Page.tsx's shardMaterial/shardFillCss -- because both the fill and
+   the opacity multiplier vary per shard (see the comment on
+   landing2Geometry.ts's ShardMaterial for why the fill's own alpha is baked
+   in rather than layered under a separate opacity). No backdrop-filter: 22
+   blurred layers is a compositor cost the veil's own opacity already buys
+   the same frosted-obscurity read without.
+
+   opacity is NOT set here: it used to be (a flat 0.5 rest / 0.34 revealed
+   pair), but once it became per-shard and inline, a class rule here would
+   silently lose that fight every time -- inline always wins over a
+   non-important external rule for the same property, so the symptom would
+   be "the CSS looks right but does nothing," not a visible break. */
+.landing2-shard {
+  /* A plain div, unlike .landing2-sky's canvas: inset: 0 alone stretches a
+     non-replaced element to fill its box, no explicit width/height needed. */
+  position: absolute;
+  inset: 0;
+  will-change: transform, opacity;
+}
+
+/* The frost tint for the 6 hash-selected frosty shards: its own child
+   element (not a gradient layer inside .landing2-shard's own background) so
+   its opacity can scale independently of the shard's own opacity multiplier.
+   Baked-in gradient alpha would ride that multiplier UP on reveal along with
+   everything else, which was the reported bug -- a milky glare brighter than
+   the revealed world, exactly backwards from every other shard darkening
+   toward glossy. This is a plain (non-inline) class-toggled opacity, unlike
+   the shard's own, because the 1 -> ~0.33 ratio is the same fixed multiplier
+   for every frosty shard, not a per-shard value -- nothing here needs to be
+   inline, and it inherits the parent's clip-path automatically. */
+.landing2-shard-frost {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.16), transparent 55%);
+  opacity: 1;
+  transition: opacity 900ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.landing2-revealed .landing2-shard-frost {
+  opacity: 0.33;
+}
+
+/* The inner bevel rim: an inset duplicate of each shard's own boundary
+   (landing2Geometry.ts's insetPolygon), stroked with one shared
+   upper-left-bright/lower-right-faint gradient (#landing2-rim, defined once
+   in Landing2Page.tsx and reused per shard via objectBoundingBox units, so
+   "one global light direction" is one gradient, not 22 copies). */
+.landing2-rim {
+  stroke: url(#landing2-rim);
+  stroke-width: 0.14;
+  opacity: 0.18;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-rim {
+  opacity: 0.5;
+}
+
+.landing2-seams {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* opacity is set inline per line (landing2Geometry.ts's edgeOpacity, doubled
+   on reveal and capped) for the same reason shard opacity is inline: it
+   varies per edge, so a shared class rule here could not express it and
+   would only risk fighting the inline value. stroke and stroke-width are
+   uniform across every seam, so they stay here. */
+.landing2-seam-line {
+  stroke: #dfe8f7;
+  stroke-width: 0.12;
+  transition: opacity 700ms var(--ease-out);
+}
+
+/* A blurred duplicate of every seam, painted underneath the crisp lines, so
+   the seams bloom softly rather than reading as thin drawn strokes on a flat
+   sky. One filter over the whole group (not one per line): cheaper, and it
+   is also what keeps a seam near the viewport edge from having its blur
+   clipped by a per-element filter region. */
+.landing2-seam-blur {
+  stroke: #dfe8f7;
+  /* Deliberately close to the crisp line's own 0.12 rather than a wide band
+     -- the blur (stdDeviation 0.35, in Landing2Page.tsx's filter def) is what
+     does the softening; a wide pre-blur stroke on top of that much blur reads
+     as a fat halo rather than a glow. */
+  stroke-width: 0.18;
+  opacity: 0.25;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing2-revealed .landing2-seam-blur {
+  opacity: 0.45;
+}
+
+.landing2-mini-figure polyline {
+  stroke: var(--accent);
+  stroke-width: 0.1;
+  opacity: 0.25;
+}
+
+.landing2-mini-figure circle {
+  fill: var(--accent);
+  opacity: 0.25;
+}
+
+/* Faint in-glass fragments: plain positioned text, not part of the seam SVG,
+   since "sans, letter-spaced" is ordinary CSS type rather than SVG text. */
+.landing2-fragment {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  color: rgba(157, 163, 190, 0.18);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.landing2-copy {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(380px, 34vw);
+  pointer-events: auto;
+}
+
+/* max-width narrowed from the shared 34vw: at left 6%, 34vw can reach 40% of
+   the viewport (6 + 34) on any viewport at or below the ~1118px width where
+   the shared class's 380px cap has not yet taken over -- overlapping the
+   water band's own 35-75% span, which now (see .landing2-water-mask above)
+   carries real, visible content instead of sitting at a flat low opacity.
+   26vw caps the right edge at 32%, a 3-point margin below 35% at every
+   viewport width, not just the crossover point (vw is a fixed percentage of
+   viewport width by definition, so this holds for the whole regime, not one
+   sampled size). Scoped to .landing2-copy-sky only: .landing2-copy-iphone
+   sits at top: 66%, far below the water band's y 30-40% range, so it has no
+   corresponding overlap risk and stays at the shared 34vw. */
+.landing2-copy-sky {
+  left: 6%;
+  top: 26%;
+  max-width: min(380px, 26vw);
+}
+
+.landing2-copy-iphone {
+  left: 4%;
+  top: 66%;
+}
+
+.landing2-glyph {
+  display: block;
+}
+
+/* Letter-spaced sans caps, like .sky-eyebrow -- this page's headings are
+   deliberately not --font-serif; designTokens.test.ts's serif-count guard
+   pins that token to exactly two uses (person names, the editorial rule) and
+   must stay at two. */
+.landing2-eyebrow {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+.landing2-body {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: rgba(242, 239, 233, 0.85);
+  text-shadow: 0 2px 14px rgba(5, 6, 16, 0.65);
+}
+
+.landing2-caption {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(242, 239, 233, 0.5);
+}
+
+.landing2-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 22px;
+  border-radius: 999px;
+  background: rgba(8, 10, 22, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out);
+}
+
+.landing2-pill:hover,
+.landing2-pill:focus-visible {
+  background: rgba(8, 10, 22, 0.78);
+  border-color: rgba(255, 255, 255, 0.28);
 }

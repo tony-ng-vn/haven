@@ -6,6 +6,20 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.45.0
+
+2026-07-31
+
+**Web**
+
+- inhavens.com now opens on a full-screen hero instead of a small corner of text: the same drifting, constellation-lit sky that used to live behind the waitlist now fills the entire page, not just the first screen, so scrolling past the hero never hits flat dark. Star clusters appear and drift across the sky on their own from time to time, on any device; on a mouse or trackpad, dragging across it follows and lights up the figure the headline "Your people are a constellation." is describing. Two calls to action sit side by side under it -- Try Your Sky for Mac, which you can try today, and join the iPhone waitlist, for the phone app still in development. Further down the page, a live sample sky you can click into and explore for yourself (entirely invented people), a short word on what the iPhone app will do, and a quiet footer. Anyone who had a link to the root expecting to join the waitlist still finds it on the first screen, not below a scroll.
+- Haven now has a download page for Your Sky, its Mac companion app, at inhavens.com/#/sky. It walks through the whole flow -- download, authorize access on your Mac, click "Map relationships" -- and says exactly what happens to your data: the analysis runs on your Mac, your messages are never uploaded, and the map is built from who you talked to and how often, never from what you said.
+- Haven for iPhone now has its own page at inhavens.com/#/ios, carrying the waitlist signup that used to live at the root. It introduces what the iPhone app will do -- one profile, connecting with someone in one tap, finding anyone later by any detail you remember -- and says plainly that it is still in development. A quiet link at the bottom of the form points to Your Sky, for anyone who wants a Mac companion in the meantime.
+- The landing page, Your Sky, and the iOS page now share a quiet footer linking to the Privacy Policy, Terms of Service, and Support, plus a copyright line -- the same documents the signed-in app already links to, now reachable from every public page as well.
+- A second, experimental landing concept is live at inhavens.com/#/landing2 -- not linked from anywhere on the site, reachable only by typing the address. The whole screen is one pane of dark broken glass over a hidden nighttime world: a moon over mountains, a warm cabin window among trees, handwritten memories, small gold particles. Resting your pointer over it (or tapping it on a touch screen) lets the glass pieces drift gently apart so the world underneath shows through the cracks. The same Your Sky and Haven for iPhone introductions and buttons sit on top of it. It is one of two directions being weighed for the front door, not a replacement for the page above.
+
+---
+
 ## v0.43.1
 
 2026-08-03
