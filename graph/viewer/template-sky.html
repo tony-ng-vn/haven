@@ -546,6 +546,11 @@
   <div class="opt"><label>Depth haze</label><div class="sw on" id="sw-fog"></div></div>
   <div class="opt"><label>Slow drift</label><div class="sw on" id="sw-spin"></div></div>
   <div class="opt"><label>Group galaxy</label><div class="sw on" id="sw-groups"></div></div>
+  <!-- Off by default (PLAN.md 2026-08-03): a contact you have never texted carries no
+       closeness signal, and a heavy address book would otherwise bury the ranked view the
+       first time it renders. Turning this on reveals a faint outer shell of hollow rings
+       past "Everyone" -- saved contacts with no messages at all. -->
+  <div class="opt"><label>Contacts, no messages</label><div class="sw" id="sw-contacts"></div></div>
   <div class="opt"><label>Names shown</label><input type="range" id="sl-labels" min="10" max="80" value="44"></div>
   <div class="opt"><label>Reveal everyone</label><input type="range" id="sl-reveal" min="0" max="100" value="0"></div>
   <button class="btn" id="tour">&#10022; Take the tour</button>
@@ -714,7 +719,7 @@ function metFraction(dateStr) {
 /// The design's own generator produced {people, groups, edges, byId, adj}; this
 /// produces exactly that, so nothing downstream needs to know the data got real.
 function adaptReal(raw) {
-  const byId = {}, nodes = [], edges = [], people = [], groups = [];
+  const byId = {}, nodes = [], edges = [], people = [], groups = [], contactOnlyPeople = [];
   for (const n of raw.nodes) byId[n.id] = n;
 
   const adj = {};
@@ -750,9 +755,16 @@ function adaptReal(raw) {
         // met is real once the export has history (metFraction); the rest of these
         // (streak/youFirst/lastMsg/arch) still aren't computed from the message table --
         // null, never invented. See header.
-        met: metFraction(n.firstMessageDate), streak: null, youFirst: null, lastMsg: null, arch: null, aP: 0
+        met: metFraction(n.firstMessageDate), streak: null, youFirst: null, lastMsg: null, arch: null, aP: 0,
+        // PLAN.md 2026-08-03: a saved contact with zero message evidence. Kept OUT of the
+        // `people` array below (closeness ranking, rings, springs all key off it) -- there
+        // is no closeness to rank them by, only identity. Still a normal member of `nodes`/
+        // `byId`/`adj` so search, the dossier, renaming, and layout/physics (which iterate
+        // `D.nodes`, not `D.people`) all keep working on them for free.
+        contactOnly: isContactOnlyPerson(n)
       };
-      people.push(p); byId[n.id] = p; nodes.push(p);
+      if (p.contactOnly) contactOnlyPeople.push(p); else people.push(p);
+      byId[n.id] = p; nodes.push(p);
     } else if (n.kind === "group") {
       // Groups are never renameable (SCOPE: renaming only applies to a person), so
       // customName is always null here -- resolvePersonLabel then behaves exactly like
@@ -780,7 +792,7 @@ function adaptReal(raw) {
   people.sort((a, b) => b.strength - a.strength);
   people.forEach((p, i) => { p.rank = i; });
 
-  return { nodes, edges, people, groups, byId, adj };
+  return { nodes, edges, people, groups, contactOnlyPeople, byId, adj };
 }
 
 const D = adaptReal(RAW_FILTERED);
@@ -809,6 +821,12 @@ const R0 = 260, RMAX = 980;
 const HOME = {};
 HOME["user"] = 0;
 for (const p of D.people) HOME[p.id] = R0 + (RMAX - R0) * Math.pow(p.rank / (D.people.length - 1), 0.62);
+// Contact-only people (PLAN.md 2026-08-03) sit on their own fixed shell beyond every
+// closeness ring: there is no rank to place them by, only identity, so "further out than
+// anything ranked" is the whole treatment -- reusing the sky's own existing visual language
+// (RMAX is the outermost "Everyone" ring's own home radius) rather than inventing a new one.
+const RMAX_CONTACT = RMAX + 260;
+for (const p of D.contactOnlyPeople) HOME[p.id] = RMAX_CONTACT;
 /* Two universes, stacked VERTICALLY like abstraction layers: people orbit YOU
    on the ground plane; your group chats float as a layer above. A group's home
    radius inside its layer comes from how active it is, so busy circles hug the core. */
@@ -892,6 +910,7 @@ function removePeopleFromGraph(graph, ids) {
   graph.nodes = filtered.nodes;
   graph.edges = filtered.edges;
   graph.people = graph.people.filter(p => !del.has(p.id));
+  graph.contactOnlyPeople = graph.contactOnlyPeople.filter(p => !del.has(p.id));
   graph.groups = graph.groups.filter(g => !del.has(g.id));   // groups aren't deletable this round, but stay consistent if that ever changes
   for (const id of wanted) { delete graph.byId[id]; delete graph.adj[id]; }
   for (const key in graph.adj) {
@@ -1361,6 +1380,11 @@ function measureAspectTarget(pxW, pxH) {
   const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
   for (const n of D.nodes) {
     if (!OPT.groups && n.kind === "group") continue;
+    // A hidden contact-only node stays out of the auto-fit box, same reasoning as a hidden
+    // group above. focusNode() flips OPT.contacts on the moment one of these becomes the
+    // focus (e.g. via search), so there is no separate "unless focused" exception to keep
+    // in sync here.
+    if (n.contactOnly && !OPT.contacts) continue;
     const p = pos[n.id];
     // Same frame as project(): relative to the camera target, THEN rotated --
     // cX/cY are then only the small residual between look-at point and bbox center.
@@ -1615,7 +1639,13 @@ function resize() {
 }
 window.addEventListener("resize", resize);
 
-const OPT = { fog: true, spin: true, groups: true, labelCap: 44, reveal: 0 };
+// contacts defaults OFF (PLAN.md 2026-08-03): closeness is the sky's whole organizing
+// question, and a contact-only person carries none -- a heavy address book (the brief's own
+// "some people have thousands of contacts" concern) would otherwise bury the ranked view
+// the very first time it renders. The other four options here default ON because they shape
+// how the SAME people already read; this one decides whether a whole different kind of
+// dot appears at all.
+const OPT = { fog: true, spin: true, groups: true, contacts: false, labelCap: 44, reveal: 0 };
 // Radians per frame of idle drift. At 60fps this is one full turn every ~3.5
 // minutes -- slow enough to read as the room breathing rather than a turntable,
 // while still giving the parallax that separates two dots sitting on top of
@@ -1664,6 +1694,10 @@ const rT = n => (n.rankT == null ? n.rank : n.rankT);
 function baseRadius(n) {
   if (n.kind === "user") return 9;
   if (n.kind === "group") return 3 + Math.min(3.6, Math.sqrt(n.size) * 0.8);
+  // Contact-only people (PLAN.md 2026-08-03) have no rank at all (they never enter
+  // D.people) -- a fixed, small radius, same size family as an unnamed number-only
+  // handle just below, since neither carries a closeness signal to scale by.
+  if (n.contactOnly) return 1.9;
   if (n.labelKind === "phone") return 1.7;
   return 2.0 + 5.0 * Math.pow(1 - rT(n) / D.people.length, 3);
 }
@@ -1752,6 +1786,10 @@ function draw() {
   let dmin = 1e9, dmax = -1e9;
   for (const n of D.nodes) {
     if (!OPT.groups && n.kind === "group") continue;
+    // Same OPT.contacts gate as measureAspectTarget above: a hidden contact-only node is
+    // absent from `projected` entirely, which is also what keeps pick() (hit-testing only
+    // ever walks `projected`) from letting the user click an invisible dot.
+    if (n.contactOnly && !OPT.contacts) continue;
     const q = project(pos[n.id]);
     if (!q) continue;
     projected[n.id] = q;
@@ -2054,6 +2092,13 @@ function drawEdges(F, hazeOf, dark) {
 
 /* ---------- per-skin node painters ---------- */
 function drawNode(kind, n, q, hazeT, ghost, dark) {
+  // Contact-only people (PLAN.md 2026-08-03) render identically across all five skins: a
+  // thin hollow ring, never a filled dot, so a glance never confuses "I have their number"
+  // with "we talk". The other four person treatments below all differ per skin because
+  // closeness has a different visual language in each one; contact-only carries no
+  // closeness signal at all, so it deliberately does not grow five bespoke treatments of
+  // its own -- one dim, hollow mark says the same thing in every skin.
+  if (n.contactOnly) return nodeContactOnly(n, q, hazeT, dark);
   const t = ghost ? Math.max(hazeT, 0.94) : hazeT;
   const r = Math.max(0.7, baseRadius(n) * q.ks * 1.05);
   switch (kind) {
@@ -2063,6 +2108,14 @@ function drawNode(kind, n, q, hazeT, ghost, dark) {
     case "watercolor": return nodeWash(n, q, r, t, ghost);
     case "observatory": return nodeGlow(n, q, r, hazeT, ghost);
   }
+}
+
+function nodeContactOnly(n, q, hazeT, dark) {
+  const r = Math.max(1.6, baseRadius(n) * q.ks * 1.05);
+  const alpha = Math.max(0.14, (1 - hazeT) * 0.5).toFixed(3);
+  ctx.strokeStyle = dark ? "rgba(200,205,215," + alpha + ")" : "rgba(90,90,95," + alpha + ")";
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(q.sx, q.sy, r, 0, 7); ctx.stroke();
 }
 
 function nodeFaces(n, q, r, t, ghost) {
@@ -2145,7 +2198,10 @@ function drawNameNodes(F, hazeOf, dark) {
   const cands = [];
   for (const id in projected) {
     const n = D.byId[id];
-    if (n.kind !== "person" || n.labelKind === "phone") continue;
+    // Contact-only people have no rank (they never enter D.people) -- this skin's own
+    // closeness-scaled name-as-node treatment below divides by rank, so they are excluded
+    // here the same way an unnamed phone-only handle already is, one line up.
+    if (n.kind !== "person" || n.labelKind === "phone" || n.contactOnly) continue;
     if (F && !F.near.has(id)) continue;
     const q = projected[id], t = hazeOf(q);
     if (t > 0.72 && !F) continue;
@@ -2810,11 +2866,21 @@ function focusNode(id, viaTrail) {
     if (TRAIL.length > 6) TRAIL.shift();
   }
   if (id === "user") { setViewState("you"); return; }
+  // A contact-only person can only become the focus via search (pick() already excludes
+  // them from the canvas entirely while OPT.contacts is off, so there is no invisible dot
+  // to click) -- surface the toggle so the person just searched for does not immediately
+  // render as nothing.
+  const n = D.byId[id];
+  if (n && n.contactOnly) enableContactsOption();
   lastPersonID = id;
   setViewState("person");
 }
 function kindLabel(n) {
   if (n.kind === "group") return "Group chat · " + n.size + " people";
+  // Checked before labelKind (PLAN.md 2026-08-03): "no messages" is true regardless of
+  // whether this person has since been given a custom name, so it must not be shadowed by
+  // the labelKind === "custom" branch below.
+  if (n.contactOnly) return "Saved contact · no messages · " + n.id;
   if (n.labelKind === "phone") return "No contact card · number only";
   if (n.labelKind === "guess") return "Best guess from messages · " + n.id;
   if (n.labelKind === "custom") return "Custom name · " + n.id;
@@ -2832,6 +2898,12 @@ function avatarHTML(n, cls) {
   const pal = PALETTE[bucketOf(n)];
   if (n.labelKind === "phone")
     return '<div class="' + cls + '" style="background:rgba(160,165,180,0.16);color:rgba(200,205,215,0.8)">#</div>';
+  // Contact-only (PLAN.md 2026-08-03): the same hollow, uncolored treatment the canvas dot
+  // gets, carried over to the DOM avatar (search results, the dossier header) -- a filled
+  // pastel chip is the sky's "we talk" language everywhere else, so this stays outlined
+  // and neutral even though a real name (initials) is known.
+  if (n.contactOnly)
+    return '<div class="' + cls + '" style="background:transparent;border:1px solid rgba(160,165,180,0.55);color:rgba(160,165,180,0.85)">' + esc(initialsOf(n)) + "</div>";
   return '<div class="' + cls + '" style="background:rgb(' + pal.chip + ');color:rgb(' + pal.deep + ')">' + esc(initialsOf(n)) + "</div>";
 }
 function itemHTML(n, meta, barT) {
@@ -2929,7 +3001,11 @@ function dossierEditHTML(n) {
       '<button data-cancel-rename="' + esc(n.id) + '">Cancel</button>' +
       '</div></div>';
   }
-  return '<div class="editaffs"><button data-toggle-move="' + esc(n.id) + '">Move</button>' +
+  // Contact-only people (PLAN.md 2026-08-03) have no closeness rank and so no ring/tier to
+  // move between -- Move is omitted, Rename and Delete work exactly as they do for anyone
+  // else (both are pure identity edits, not inference).
+  const moveButton = n.contactOnly ? "" : '<button data-toggle-move="' + esc(n.id) + '">Move</button>';
+  return '<div class="editaffs">' + moveButton +
     '<button data-toggle-rename="' + esc(n.id) + '">Rename</button>' +
     '<button class="danger" data-toggle-del="' + esc(n.id) + '">Delete</button></div>';
 }
@@ -2961,6 +3037,15 @@ function renderInfo() {
     stats = statHTML(members.length, "members") + statHTML(named, "named") + statHTML(members.length - named, "unknown");
     body = '<div class="sec">Members · closest first</div>' +
       members.map(m => itemHTML(m, "~" + m.strength, m.strength / maxS)).join("");
+  } else if (n.contactOnly) {
+    // PLAN.md 2026-08-03, requirement 2: no inference exists for a contact-only person, so
+    // there is nothing to show past identity -- no messages stat, no closeness rank, no
+    // group/peer lists (n.groups is always empty for them by construction anyway, since
+    // they never appear in any roster). Copy says exactly what is true, not zeros dressed
+    // up as facts.
+    body = '<div class="sec">In your contacts</div>' +
+      '<div class="more">No messages have been exchanged, so there is nothing to map yet -- ' +
+      'this dot only marks that you have their information saved.</div>';
   } else {
     const groups = n.groups.map(g => D.byId[g]).sort((a, b) => b.size - a.size);
     const peers = {};
@@ -3089,7 +3174,16 @@ function sw(id, key) {
   const el = document.getElementById(id);
   el.onclick = () => { OPT[key] = !OPT[key]; el.classList.toggle("on", OPT[key]); };
 }
-sw("sw-fog", "fog"); sw("sw-spin", "spin"); sw("sw-groups", "groups");
+sw("sw-fog", "fog"); sw("sw-spin", "spin"); sw("sw-groups", "groups"); sw("sw-contacts", "contacts");
+/// Programmatic version of sw()'s own click toggle, ON only (never off) -- focusNode calls
+/// this so a contact-only person reached through search does not land on a scene that just
+/// excluded them. A no-op once already on, so it never fights a user who turned it on by hand.
+function enableContactsOption() {
+  if (OPT.contacts) return;
+  OPT.contacts = true;
+  const el = document.getElementById("sw-contacts");
+  if (el) el.classList.add("on");
+}
 document.getElementById("sl-labels").oninput = e => { OPT.labelCap = +e.target.value; };
 document.getElementById("sl-reveal").oninput = e => { OPT.reveal = +e.target.value / 100; };
 document.getElementById("reset").onclick = () => { setViewState("rest"); camT.yaw = 0.5; camT.pitch = -0.5; userZoomed = false; if (iter >= ITERS) camT.dist = sceneDist(); };
@@ -3112,17 +3206,24 @@ function renderSearch(qs) {
       if (i < 0) continue;
       (i === 0 ? starts : mids).push(it);
     }
-    const sc = it => it.n.kind === "person" ? rT(it.n) : 400 - it.n.size;
+    // Contact-only people sort last among matches -- same "always searchable regardless of
+    // the OPT.contacts toggle" contract groups already have (search never gates on
+    // OPT.groups either), but with no closeness rank to sort by, they belong behind every
+    // ranked person rather than at an arbitrary (NaN-derived) position.
+    const sc = it => it.n.kind === "person" ? (it.n.contactOnly ? Infinity : rT(it.n)) : 400 - it.n.size;
     starts.sort((a, b) => sc(a) - sc(b)); mids.sort((a, b) => sc(a) - sc(b));
     sHits = starts.concat(mids).slice(0, 8);
   } else {
-    sHits = SEARCH_IDX.filter(it => it.n.kind === "person").sort((a, b) => a.n.rank - b.n.rank).slice(0, 6);
+    // The empty-query default list is "closest people at a glance" -- a contact-only person
+    // has no closeness to show here at all, so they only ever surface via an actual query.
+    sHits = SEARCH_IDX.filter(it => it.n.kind === "person" && !it.n.contactOnly)
+      .sort((a, b) => a.n.rank - b.n.rank).slice(0, 6);
   }
   sSel = 0;
   searchRes.innerHTML = sHits.length
     ? sHits.map((it, i) => '<div class="sres' + (i === sSel ? " sel" : "") + '" data-id="' + it.id + '">' +
         avatarHTML(it.n, "dot") + "<span>" + esc(it.n.name) + disambHTML(it.n) + '</span><span class="mt">' +
-        (it.n.kind === "group" ? it.n.size + " people" : "#" + (it.n.rank + 1) + " closest") + "</span></div>").join("")
+        (it.n.kind === "group" ? it.n.size + " people" : it.n.contactOnly ? "no messages yet" : "#" + (it.n.rank + 1) + " closest") + "</span></div>").join("")
     : '<div class="snone">No one by that name.</div>';
 }
 function pickSearch(i) {

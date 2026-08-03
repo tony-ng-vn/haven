@@ -5,12 +5,14 @@
  * comment for that placeholder's exact name -- not spelled out literally in this file,
  * since this file's own text is what gets inlined in its place).
  *
- * Two unrelated concerns share this one file rather than a second inliner seam, which
+ * Three unrelated concerns share this one file rather than a second inliner seam, which
  * build.py's own CORE_FILENAME constant supports only one of at a time:
  *   - the connection lens (double-click a person to see who THEY know) -- computeLens,
  *     computeLensMesh;
  *   - name-disambiguator label formatting (two dots sharing the exact same display name,
- *     GraphJSON's `disambiguator` field) -- formatPersonLabel.
+ *     GraphJSON's `disambiguator` field) -- formatPersonLabel;
+ *   - the contact-only gate (PLAN.md 2026-08-03: a saved contact with zero message
+ *     evidence) -- isContactOnlyPerson.
  * The placeholder seam itself was always this generic; only this file's OWN header
  * comment used to describe it as lens-specific.
  *
@@ -162,4 +164,19 @@ export function normalizeEditsPayload(parsed) {
     deleted: Array.isArray(parsed.deleted) ? parsed.deleted : [],
     names: (parsed.names && typeof parsed.names === "object") ? parsed.names : {}
   };
+}
+
+/// Whether an exported node is a contact-only person: PLAN.md 2026-08-03's saved contact
+/// with zero message evidence anywhere in chat.db. A one-line-looking check pulled out into
+/// its own function because SEVERAL call sites in template-sky.html (which array a person
+/// lands in for closeness ranking, which draw routine renders their dot, how search sorts
+/// and labels them, what the dossier card shows) all need the exact same answer and must
+/// never quietly drift apart from each other.
+///
+/// An export from before this feature existed simply lacks `hasNoMessageEvidence` on every
+/// node -- `undefined === true` is already false, but this function makes that contract
+/// explicit and testable rather than leaving every call site to reason it out on its own.
+/// Never true for a group or the user: only a person can be contact-only.
+export function isContactOnlyPerson(node) {
+  return !!node && node.kind === "person" && node.hasNoMessageEvidence === true;
 }
