@@ -31,6 +31,19 @@ public struct GraphNode: Sendable, Equatable {
     public let firstMessageDate: Date?
     /// Latest message date, same scope as firstMessageDate.
     public let lastMessageDate: Date?
+    /// .person only: a saved contact with zero message evidence anywhere in chat.db
+    /// (PLAN.md 2026-08-03, the owner's reversal of "no nodes for people never contacted").
+    /// A boolean on the existing .person kind, not a new NodeKind case: every identity-only
+    /// feature (search, the dossier card, renaming, name-collision disambiguation) already
+    /// works uniformly over `.person`, and giving this its own kind would require touching
+    /// every one of those call sites just to keep behaving the same way they already do.
+    /// Defaults to false so every existing call site (~30, same posture as
+    /// firstMessageDate/lastMessageDate above) keeps constructing a GraphNode unchanged.
+    /// GraphBuilder never sets this true -- it only ever builds message-derived nodes; a
+    /// contact-only node is merged in by its caller (ContactOnlyPeople.derive) at the last
+    /// mile, after every inference (acquaintance derivation, tier scoring, the guess pass)
+    /// has already run over the graph that does NOT include it.
+    public let hasNoMessageEvidence: Bool
 
     public init(
         id: String,
@@ -41,7 +54,8 @@ public struct GraphNode: Sendable, Equatable {
         isLive: Bool,
         degree: Int,
         firstMessageDate: Date? = nil,
-        lastMessageDate: Date? = nil
+        lastMessageDate: Date? = nil,
+        hasNoMessageEvidence: Bool = false
     ) {
         self.id = id
         self.kind = kind
@@ -52,6 +66,7 @@ public struct GraphNode: Sendable, Equatable {
         self.degree = degree
         self.firstMessageDate = firstMessageDate
         self.lastMessageDate = lastMessageDate
+        self.hasNoMessageEvidence = hasNoMessageEvidence
     }
 }
 

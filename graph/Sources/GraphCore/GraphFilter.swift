@@ -27,7 +27,8 @@ extension Graph {
                 isLive: node.isLive,
                 degree: degreeByID[node.id] ?? 0,
                 firstMessageDate: node.firstMessageDate,
-                lastMessageDate: node.lastMessageDate
+                lastMessageDate: node.lastMessageDate,
+                hasNoMessageEvidence: node.hasNoMessageEvidence
             )
         }
 

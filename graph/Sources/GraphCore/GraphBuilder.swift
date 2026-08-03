@@ -298,7 +298,8 @@ public enum GraphBuilder {
                 isLive: node.isLive,
                 degree: degreeByNodeID[node.id] ?? 0,
                 firstMessageDate: node.firstMessageDate,
-                lastMessageDate: node.lastMessageDate
+                lastMessageDate: node.lastMessageDate,
+                hasNoMessageEvidence: node.hasNoMessageEvidence
             )
         }
         return Graph(

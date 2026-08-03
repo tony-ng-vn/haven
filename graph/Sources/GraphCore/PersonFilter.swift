@@ -164,24 +164,41 @@ public enum PersonFilter {
 
     /// Every one of the person's identifiers is .other and is 4-6 ASCII digits.
     private static func isShortcode(_ person: Person) -> Bool {
-        guard !person.identifiers.isEmpty else { return false }
-        return person.identifiers.allSatisfy { identifier in
-            guard case .other(let value) = HandleNormalization.normalize(identifier) else { return false }
-            return (4...6).contains(value.count) && value.allSatisfy { $0.isASCII && $0.isNumber }
-        }
+        identifiersLookLikeShortcodesOnly(person.identifiers)
     }
 
     /// Every identifier is .other and at least one contains a letter. An email identifier
     /// already makes "every identifier is .other" false, so this can never fire for someone
     /// with an email: emails are people, no separate check needed to enforce that.
     private static func isAlphanumericSender(_ person: Person) -> Bool {
-        guard !person.identifiers.isEmpty else { return false }
-        let allOther = person.identifiers.allSatisfy { identifier in
+        identifiersLookLikeAlphanumericSenderOnly(person.identifiers)
+    }
+
+    /// The identifier-only half of isShortcode, pulled out so ContactOnlyPeople.derive can
+    /// apply the exact same rule to a contact card's raw phone/email strings, which never come
+    /// packaged as a Person. `some Collection` rather than `Set`: PersonFilter's own callers
+    /// keep passing a Person's identifier Set unchanged, and a contact card's identifiers are
+    /// naturally an ordered Array (a Set here would hide a duplicate value, mildly wrong for
+    /// something that is not actually a uniqueness-sensitive check). Internal, not private:
+    /// ContactOnlyPeople (same module) is the other caller.
+    static func identifiersLookLikeShortcodesOnly(_ identifiers: some Collection<String>) -> Bool {
+        guard !identifiers.isEmpty else { return false }
+        return identifiers.allSatisfy { identifier in
+            guard case .other(let value) = HandleNormalization.normalize(identifier) else { return false }
+            return (4...6).contains(value.count) && value.allSatisfy { $0.isASCII && $0.isNumber }
+        }
+    }
+
+    /// The identifier-only half of isAlphanumericSender -- see identifiersLookLikeShortcodesOnly
+    /// just above for why this takes a plain identifier collection instead of a Person.
+    static func identifiersLookLikeAlphanumericSenderOnly(_ identifiers: some Collection<String>) -> Bool {
+        guard !identifiers.isEmpty else { return false }
+        let allOther = identifiers.allSatisfy { identifier in
             if case .other = HandleNormalization.normalize(identifier) { return true }
             return false
         }
         guard allOther else { return false }
-        return person.identifiers.contains { identifier in identifier.contains { $0.isLetter } }
+        return identifiers.contains { identifier in identifier.contains { $0.isLetter } }
     }
 
     /// True groups only (2+ distinct resolved people, style 43, per ChatClassification): a
