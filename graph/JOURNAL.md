@@ -8,20 +8,56 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: none; #193 through #197 all merged to graph-main 2026-08-02 (real dates for the scrubber, sky-only UI, 5x pipeline perf, the connection lens, vitest-glob fix)
+- Open PRs: none; #193-#197 and #199-#202 merged to graph-main, #198 merged graph-main into main (owner-directed) -- all 2026-08-02/03
 - Build position: the two-plane sky (template-sky.html plus sky_lens.mjs through the conditional core-placeholder seam) is the product's ONLY presentation, per owner directive 2026-08-02.
   The native Canvas render and the v4 map viewer are deleted; recover via git history at #190/#192 if ever needed.
-  Pipeline runs ~0.9s end to end on the real database (was ~5.9s); graph-cli json has a --timings flag.
-  Suite: 197 Swift tests plus 12 lens node tests (node graph/viewer/sky_lens.tests.mjs), all green on graph-main.
+  The acquaintance layer now has two evidence types: co-membership scoring and direct interactions (tapbacks/replies, 3+ promotes to strong); the lens shows second-degree links, the mesh among revealed neighbors, and disambiguators for colliding names.
+  Pipeline runs ~0.7-0.9s end to end on the real database (was ~5.9s); graph-cli json has a --timings flag.
+  Suite: 234 Swift tests plus 28 viewer node tests (node graph/viewer/sky_lens.tests.mjs), all green on graph-main.
 - Goal-criteria status: unchanged from 2026-07-31 EXCEPT criterion (5): the bipartite image export was deliberately deleted with the native render, owner-approved; the exported sky HTML is the shareable artifact now.
-- Waiting on user: unlock-session visual pass (now includes the lens), install Ollama + a model for live guesses, grant the app FDA for the first real in-app import
-- Open follow-ups: no UI path remains to CREATE hide/remove/fully-acquainted marks (the native context menu was the only creator; the toolbar's clearing actions remain live) -- needs a sky-side affordance; the dead-groups toggle is inert; strengthAt still models growth between real arrival and now (real per-month counts are the honest upgrade); P3 tier tuning stands.
-- Integration branch: `graph-main`; PRs merge there after green CI and lead review, main stays untouched, user merges graph-main to main
+- Ollama: live (llama3.2), guess cache populated for every pending handle as of 2026-08-03.
+- App install: /Applications/Your Sky.app is the canonical copy; ad-hoc signing means every update needs a fresh FDA grant (the authorize screen now explains this and offers Relaunch).
+- Open follow-ups: sky-side creation UI for hide/remove/fully-acquainted marks (confirmed tier has zero UI feeders); guess quality (19 collision groups of repeated generic guesses); dead-groups toggle inert; real per-month history for strengthAt; stable signing identity (needs owner); P3 tuning of tier and interaction thresholds.
+- Integration branch: `graph-main`; PRs merge there after green CI and lead review; main is owner-merged (first merge happened as #198 on owner direction).
 - Journal discipline: the canonical charter and journal copies live in the main checkout at `graph/`; mirror into the graph-main worktree, always editing the main-checkout copy first
-- Blocked on user: Ollama, the plan's default local provider, not yet installed (needed only at P2 step 7)
-- Next intent: rebuild the downloadable YourSky.zip from this graph-main; then a sky-side affordance for creating marks; then P3 tuning
+- Next intent: sky-side affordance for creating marks; then guess-quality tuning; then P3 thresholds
 
 ## Entries
+
+### 2026-08-02/03 late session: main merge, mesh, interaction evidence, authorize fix, name disambiguation (PRs #198-#202)
+
+Owner-directed continuation of the same evening.
+Ollama went live (llama3.2), the app shipped to main for the first time, and the acquaintance layer gained its second evidence type.
+
+DONE
+
+- PR #198 (merged BY THE OWNER'S DIRECTION into main): graph-main merged to main for the first time, via PR because main's branch protection requires the test check; verified data-clean first (tracked files audited, only synthetic fixture present, exports/ ignored).
+- Ollama verified end to end: the real guess pass named 40/40 pending handles, 0 failures, ~25s total. The app has been accumulating guesses for ~2 days (195 guess-named people in the export).
+- Two feasibility probes, both via temporary CLI subcommands that were run once and discarded (never committed):
+  (1) Mention yield: scanning all message text for unique-first-name mentions would add at most 15 hits / 7 novel pairs across the whole history, likely mostly false matches. Confirms the mentions deferral.
+  (2) Interaction yield: tapback adds plus threaded replies give 10,506 rows, 2,835 person-to-person interactions, 465 distinct pairs (206 with 3+), of which 348 were merely likely and 43 had no edge at all. Metadata only, deterministic, ~60x the mention yield.
+- PR #199 (merged): the lens mesh -- acquaintance pairs BETWEEN two revealed neighbors draw as dimmer lens lines, answering "does C know A" when lensing B shows both. computeLensMesh in sky_lens.mjs, 6 new node tests red-first; lead-authored (small, seam fresh in context).
+- PR #201 (merged): interactions become acquaintance evidence. Extraction reads tapback adds (2000-2999) and thread_originator_guid replies as RawInteraction (metadata only; guid map resolved inside extraction, not stored on messages); GroupChatActivity carries per-chat pair counts; 3+ total interactions promotes a pair to at least strong, never demotes, floor-bypassing (constant in AcquaintanceScoring); JSON evidence gains interactionCount per chat and per pair; interaction-backed lens edges draw slightly brighter. Real-db effect on a frozen snapshot: strong 104 -> 245, likely 992 -> 852, one below-floor pair promoted into existence. Timings +7.7%, within the set budget. 211 Swift / 22 node tests.
+- PR #200 (merged): the authorize screen stopped lying about macOS. Root cause of "re-check not working": FDA grants apply at process launch (Re-check in a running process can never turn green), and the ad-hoc-signed app is a NEW app to TCC on every rebuild, so prior grants do not carry. Fix: a Relaunch button (spawn-verified before terminate, pure command builder unit-tested), honest instructions, and the running copy's on-disk path shown on screen. The app now lives at /Applications/Your Sky.app as the canonical install; zero signing identities exist on this machine, so re-grants after updates remain a fact of life until a stable identity exists.
+- PR #202 (merged): name-collision disambiguation, the owner's "two John Nguyens" edge case. Identity was never at risk (people key on identifiers; same-name merges queue for a human, never auto-merge); the fix is display-side: a masked last-4 suffix exported per colliding name, rendered quietly in labels, card, search, roster. Lead-verified distribution on the real export: 137 card names (4 collide -- two real same-name pairs exist) plus 195 guess names (150 collide across 19 groups, largest 39, because the model repeats generic guesses).
+
+VERIFIED BY THE LEAD
+
+- Every PR diff-reviewed; every merge gated on a personally read green test check (the #196 lesson applied).
+- #202's reported "only 3 real names" figure did not match the earlier probe; re-measured independently from the branch build before merging: 137 card / 195 guessed, finding confirmed in substance, reported numbers corrected here.
+- Final suite on merged graph-main after #202: 234 Swift tests, 28 node tests, xcodebuild Release clean (rebuild for /Applications and the download zip is the closing step).
+
+PROCESS
+
+- Four delegated packages this batch (interactions, authorize, names, plus the #195 rebase earlier); lead-authored code: the #199 mesh and the two discarded probes.
+- The two probes are the pattern worth keeping: a temporary subcommand, one real-data run, integers-only output, git checkout to discard, decision made on measurement.
+
+BLOCKED / NEXT
+
+- Guess quality is now the visible P3 item: 19 collision groups among guessed names means the model pass repeats generic answers; prompt or acceptance-rule tuning, measured against the real cache.
+- The sky-side marker/hide/remove creation UI remains the top build item (confirmed tier still has zero feeders in the UI).
+- A stable code-signing identity would end the regrant-after-every-update cycle; needs the owner to create one (free Apple ID in Xcode suffices).
+- Interaction threshold (3) and the tier thresholds stay P3-tunable together.
 
 ### 2026-08-02: owner-directed session -- speed, one sky, the connection lens (PRs #193-#197)
 

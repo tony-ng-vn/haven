@@ -130,6 +130,11 @@ A dentist on a normal number that you once replied to passes every filter, and a
 Handles with no contact card are included, labeled by number plus a model-derived guess at who they are.
 The guess is always visibly marked as a guess.
 
+Colliding display names are disambiguated at export time (owner edge case, 2026-08-02).
+When two or more people resolve to the same display name (card names and guesses alike, case-insensitive), each carries a masked-suffix disambiguator (last 4 characters of their identifier, never more) that the viewer renders quietly beside the name in labels, the card, search, and the roster.
+Identity was never at risk -- people key on phone/email, and same-name merges are always queued for a human, never automatic -- this is purely so two dots named alike can be told apart.
+Measured 2026-08-03: 4 of 137 card-named people collide (two real same-name pairs); 150 of 195 guess-named people collide because the local model repeats generic guesses, which is a guess-quality P3 item, not a display bug.
+
 No nodes for people never contacted.
 
 ### Group chats
@@ -203,12 +208,18 @@ Derivation runs over the built graph only, with no new database reads:
   Acquaintance does not expire when a chat goes quiet; liveness gates group-node rendering, not evidence.
 - The score is the sum over all shared chats.
 
-Tiers, from score:
+Direct interactions are first-class evidence (owner directive 2026-08-02).
+When one person tapbacks or reply-threads another person's message inside a shared chat, that is a directed, deterministic interaction between the two, recorded on this Mac as pure metadata (guid pointers and types, never message text).
+Extraction captures tapback adds (associated_message_type 2000-2999) and threaded replies (thread_originator_guid); self-interactions and pairs involving the user are dropped (user edges are already ground truth).
+Interactions are counted per pair per chat and ride the same evidence path as co-active days.
+Measured 2026-08-02 on the real database: 2,835 person-to-person interactions across 465 pairs, promoting roughly 140 pairs past the co-membership math alone.
+
+Tiers, from score and interactions:
 
 - `confirmed`: the user has vouched for the pair via the marker below. Never produced by scoring alone.
-- `strong`: score at or above 1.0.
+- `strong`: score at or above 1.0, OR total interactions at or above 3 (constant in AcquaintanceScoring, P3-tunable). Interactions never demote, and a pair with 3+ interactions gets an edge even below the likely floor.
 - `likely`: score at or above 0.2.
-- Below 0.2, no acquaintance edge is recorded.
+- Below 0.2 with fewer than 3 interactions, no acquaintance edge is recorded.
 
 Absence of an edge means "no observed evidence", never "these people do not know each other".
 The weights and thresholds are calibrated guesses in the P3 sense: measure against the real graph, journal the numbers, tune.
@@ -219,7 +230,7 @@ The marking is an override, stored with the rest of the curation, and it survive
 It is keyed by the chat's sorted resolved member identifiers, never by chat guid or row id: the people are the durable identity of the marking, so the key survives both resync renumbering and service-split merges.
 Unmarking demotes the pairs back to whatever their observed score earns.
 
-Evidence is stored on every acquaintance edge: each shared chat with its name, member count, and count of co-active days.
+Evidence is stored on every acquaintance edge: each shared chat with its name, member count, count of co-active days, and count of direct interactions.
 The interface can always answer "why do you think these two know each other" by listing exactly that.
 
 One acquaintance edge per pair, however many chats underlie it.
