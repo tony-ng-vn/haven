@@ -62,3 +62,31 @@ function toSet(value) {
   if (value instanceof Set) return value;
   return new Set(Array.isArray(value) ? value : []);
 }
+
+/// Acquaintance pairs BETWEEN two of the lens's OWN neighbors -- never involving the
+/// lensed person themselves, whose own edges to each neighbor are computeLens's job.
+/// This is what answers "does C know A" when lensing B reveals both A and C: the
+/// export already carries that A-C pair if any evidence exists (co-membership or a
+/// direct thread produces its own acquaintance entry regardless of B), so this is a
+/// second read of the SAME acquaintances array, not a new signal.
+///
+/// `neighborIds` is expected to already be filtered (deleted/absent removed), the same
+/// contract computeLens's own result already satisfies -- this function does no
+/// filtering of its own beyond checking BOTH ends are in the given set.
+export function computeLensMesh(neighborIds, acquaintances) {
+  const idSet = toSet(neighborIds);
+  if (idSet.size < 2) return [];
+  if (!Array.isArray(acquaintances) || acquaintances.length === 0) return [];
+
+  const seen = new Set();
+  const result = [];
+  for (const acq of acquaintances) {
+    if (!acq || acq.a === acq.b) continue;
+    if (!idSet.has(acq.a) || !idSet.has(acq.b)) continue;
+    const key = acq.a < acq.b ? acq.a + "|" + acq.b : acq.b + "|" + acq.a;
+    if (seen.has(key)) continue;   // one entry per pair in a well-formed export; defensive only
+    seen.add(key);
+    result.push({ a: acq.a, b: acq.b, tier: acq.tier });
+  }
+  return result;
+}

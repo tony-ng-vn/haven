@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-import { computeLens } from "./sky_lens.mjs";
+import { computeLens, computeLensMesh } from "./sky_lens.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -90,6 +90,47 @@ test("computeLens ignores an acquaintance pair that does not involve the focused
 test("computeLens accepts a Set for deletedIds/nodeIds as well as an array", () => {
   const result = computeLens("bo", ACQUAINTANCES, EDGES, new Set(["ana"]), new Set(NODE_IDS));
   assert.deepEqual(result.map(r => r.neighborId).sort(), ["cass", "dev"]);
+});
+
+test("computeLensMesh returns a pair for two neighbors who also know each other, tier passed through", () => {
+  // dev/bo is in ACQUAINTANCES but bo is the lensed person here, not a neighbor -- only
+  // ana/bo's neighbor-to-neighbor counterpart matters: neither ana nor cass/dev pairs
+  // exist above, so build a dedicated fixture naming two neighbors directly.
+  const acq = [
+    { a: "ana", b: "bo", tier: "strong", score: 1, evidence: [] },   // focus(dev)-neighbor, ignored here
+    { a: "ana", b: "cass", tier: "likely", score: 0.3, evidence: [] } // neighbor-to-neighbor
+  ];
+  const result = computeLensMesh(["ana", "cass"], acq);
+  assert.deepEqual(result, [{ a: "ana", b: "cass", tier: "likely" }]);
+});
+
+test("computeLensMesh excludes a pair where only one end is a lens neighbor", () => {
+  const acq = [{ a: "ana", b: "someoneElse", tier: "strong", score: 1, evidence: [] }];
+  assert.deepEqual(computeLensMesh(["ana", "cass"], acq), []);
+});
+
+test("computeLensMesh returns [] with fewer than two neighbor ids", () => {
+  assert.deepEqual(computeLensMesh(["ana"], ACQUAINTANCES), []);
+  assert.deepEqual(computeLensMesh([], ACQUAINTANCES), []);
+});
+
+test("computeLensMesh returns [] when acquaintances is missing", () => {
+  assert.deepEqual(computeLensMesh(["ana", "cass"], undefined), []);
+  assert.deepEqual(computeLensMesh(["ana", "cass"], null), []);
+  assert.deepEqual(computeLensMesh(["ana", "cass"], []), []);
+});
+
+test("computeLensMesh dedupes a pair that appears more than once", () => {
+  const acq = [
+    { a: "ana", b: "cass", tier: "likely", score: 0.3, evidence: [] },
+    { a: "cass", b: "ana", tier: "likely", score: 0.3, evidence: [] } // same pair, flipped, defensive only
+  ];
+  assert.equal(computeLensMesh(["ana", "cass"], acq).length, 1);
+});
+
+test("computeLensMesh accepts a Set for neighborIds", () => {
+  const acq = [{ a: "ana", b: "cass", tier: "strong", score: 1, evidence: [] }];
+  assert.deepEqual(computeLensMesh(new Set(["ana", "cass"]), acq), [{ a: "ana", b: "cass", tier: "strong" }]);
 });
 
 /* ============================================================
