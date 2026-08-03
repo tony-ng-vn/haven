@@ -192,11 +192,25 @@ public enum GraphJSON {
         )
     }
 
-    // A fresh formatter per call, not a shared static: ISO8601DateFormatter is not Sendable,
-    // and this file's public encode entry point has no actor isolation to lean on.
+    // A cached ISO8601DateFormatter, not a fresh one per call: allocating a new formatter for
+    // every dated node (up to twice each, first and last message date) measured as the single
+    // largest cost in a real-database `json` export. Date.ISO8601FormatStyle (a plain Sendable
+    // value, so a static let would have been the simpler fix) was tried first and rejected: it
+    // rounds a sub-second fraction sitting within floating-point distance of a whole second
+    // DOWN, while ISO8601DateFormatter rounds it UP, and message.date (nanoseconds / 1e9 as a
+    // Double) produces exactly that fraction for real rows in the real database -- confirmed by
+    // a byte-for-byte diff against this branch's pre-fix output, one second off on one node's
+    // date out of several hundred. Byte-compatibility with the existing export format wins over
+    // the newer, natively-Sendable API. `nonisolated(unsafe)` instead of `Sendable`, because
+    // ISO8601DateFormatter predates Sendable and cannot conform to it, but it is safe to share
+    // across calls here regardless: it is configured once at first use and never mutated again,
+    // and Foundation's Formatter family is documented safe for concurrent read-only formatting
+    // on modern SDKs (only concurrent mutation of a formatter's configuration is unsafe).
+    nonisolated(unsafe) private static let formatter = ISO8601DateFormatter()
+
     private static func isoString(_ date: Date?) -> String? {
         guard let date else { return nil }
-        return ISO8601DateFormatter().string(from: date)
+        return formatter.string(from: date)
     }
 
     // kindLabel/reasonLabel below have no default case on purpose: a new NodeKind or

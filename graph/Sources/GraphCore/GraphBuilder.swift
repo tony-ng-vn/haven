@@ -116,6 +116,17 @@ public enum GraphBuilder {
 
             let (groupFirstDate, groupLastDate) = minMaxDate(combinedMessages)
 
+            // Bucket this group's own messages by handle ONCE, not per member: a large group
+            // (real data goes up to 32 members) used to re-scan combinedMessages from scratch
+            // for every single member, an O(members x messages) pass per group. A member can
+            // still own more than one handleRowID (multi-service), so this is a lookup per
+            // handle, unioned per person, not a straight 1:1 map.
+            var messagesByHandleRowID: [Int64: [RawMessage]] = [:]
+            for message in combinedMessages {
+                guard let handleRowID = message.handleRowID else { continue }
+                messagesByHandleRowID[handleRowID, default: []].append(message)
+            }
+
             groupNodes.append(
                 GraphNode(
                     id: groupID,
@@ -138,10 +149,7 @@ public enum GraphBuilder {
             var activeDaysByPersonID: [String: Set<Date>] = [:]
             for personID in merged.roster.sorted() {
                 guard let person = personByID[personID] else { continue }
-                let ownMessages = combinedMessages.filter {
-                    guard let handleRowID = $0.handleRowID else { return false }
-                    return person.handleRowIDs.contains(handleRowID)
-                }
+                let ownMessages = person.handleRowIDs.flatMap { messagesByHandleRowID[$0] ?? [] }
                 let daySet = ActivityDays.daySet(ownMessages, calendar: calendar)
                 activeDaysByPersonID[personID] = daySet
                 let edge = GraphEdge(

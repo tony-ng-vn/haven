@@ -2,12 +2,9 @@ import Foundation
 import GraphCore
 
 private func printUsage() {
-    FileHandle.standardError.write(
-        Data(
-            "usage: graph-cli <stats|people|filter|killlist|graph|json|acquaintances|guess> --chat-db PATH [--contacts-db PATH ...]\n"
-                .utf8
-        )
-    )
+    let usage = "usage: graph-cli <stats|people|filter|killlist|graph|json|acquaintances|guess> "
+        + "--chat-db PATH [--contacts-db PATH ...] [--timings]\n"
+    FileHandle.standardError.write(Data(usage.utf8))
 }
 
 private func fail(_ message: String) -> Never {
@@ -19,6 +16,7 @@ private func fail(_ message: String) -> Never {
 private struct ParsedArgs {
     var chatDBPath: String?
     var contactsDBPaths: [String] = []
+    var timings: Bool = false
 }
 
 private func parseArgs(_ args: [String]) -> ParsedArgs? {
@@ -35,11 +33,29 @@ private func parseArgs(_ args: [String]) -> ParsedArgs? {
             guard index + 1 < args.count else { return nil }
             parsed.contactsDBPaths.append(args[index + 1])
             index += 2
+        case "--timings":
+            parsed.timings = true
+            index += 1
         default:
             return nil
         }
     }
     return parsed
+}
+
+/// Stage timing for `json --timings`: numbers only to stderr, no path or database content
+/// (constraint 7's journal-safe posture applies here too, not just to killlist/json's stdout).
+/// Wall-clock via ContinuousClock, not a CPU-time API: the thing worth reporting is what the
+/// user actually waits on.
+private func timed<T>(_ label: String, enabled: Bool, _ block: () -> T) -> T {
+    guard enabled else { return block() }
+    let clock = ContinuousClock()
+    let start = clock.now
+    let result = block()
+    let elapsed = clock.now - start
+    let ms = Double(elapsed.components.seconds) * 1000.0 + Double(elapsed.components.attoseconds) * 1e-15
+    FileHandle.standardError.write(Data("timing \(label) \(String(format: "%.1f", ms))ms\n".utf8))
+    return result
 }
 
 private func printStats(_ stats: ExtractStats) {
@@ -301,12 +317,35 @@ private func runGraph(_ args: [String]) {
 /// Not journal-safe, like `killlist` (see main.swift's doc note at the bottom): prints real
 /// contact and group display names as JSON, for an external HTML viewer built in parallel
 /// against the schema this produces.
+///
+/// With `--timings`, also prints each pipeline stage's wall-clock cost to stderr (numbers
+/// only, journal-safe): chat.db extraction, Contacts extraction, identity resolution, person
+/// filtering, graph build, acquaintance derivation, JSON encode, and the end-to-end total.
+/// Acquaintance derivation normally runs INSIDE GraphJSON.encode (its only caller with a
+/// reason to see the number); under `--timings` it additionally runs here, standalone, so its
+/// own cost is reported apart from encode's -- one redundant pass, paid only in diagnostic
+/// mode, rather than changing GraphJSON's public signature (App and SkyExportBuilder also
+/// call it).
 private func runJSON(_ args: [String]) {
-    guard let (extract, filterResult) = resolveExtractAndFilter(args) else {
+    guard let parsed = parseArgs(args), let chatDBPath = parsed.chatDBPath else {
         printUsage()
         exit(64)
     }
-    let built = GraphBuilder.buildDetailed(extract: extract, keptPeople: filterResult.kept)
+    let timingsEnabled = parsed.timings
+    let clock = ContinuousClock()
+    let overallStart = clock.now
+
+    let extract = timed("chatDBExtract", enabled: timingsEnabled) { loadChatExtract(chatDBPath) }
+    let contacts = timed("contactsExtract", enabled: timingsEnabled) { loadContacts(parsed.contactsDBPaths) }
+    let identity = timed("identityResolution", enabled: timingsEnabled) {
+        IdentityResolution.resolve(handles: extract.handles, contacts: contacts)
+    }
+    let filterResult = timed("personFilter", enabled: timingsEnabled) {
+        PersonFilter.apply(extract: extract, people: identity.people)
+    }
+    let built = timed("graphBuild", enabled: timingsEnabled) {
+        GraphBuilder.buildDetailed(extract: extract, keptPeople: filterResult.kept)
+    }
 
     // Same overrides file `guess` writes to and the app reads/writes: a name guessed by
     // either one shows up (tilde-prefixed, per NodeLabel) in every later `json` export,
@@ -316,18 +355,38 @@ private func runJSON(_ args: [String]) {
     let overridesStore = OverridesStore(fileURL: OverridesStore.defaultFileURL())
     let overrides = (try? overridesStore.load()) ?? Overrides()
 
-    let data: Data
-    do {
-        data = try GraphJSON.encode(
+    if timingsEnabled {
+        let translatedRosterKeys = AcquaintanceRosterKey.resolve(
+            stored: overrides.fullyAcquaintedRosterKeys,
+            people: filterResult.kept
+        )
+        _ = timed("acquaintanceDerivation", enabled: true) {
+            AcquaintanceDerivation.derive(
+                groupChatActivity: built.groupChatActivity,
+                fullyAcquaintedRosterKeys: translatedRosterKeys
+            )
+        }
+    }
+
+    let encoded: Data? = timed("jsonEncode", enabled: timingsEnabled) {
+        try? GraphJSON.encode(
             graph: built.graph,
             groupChatActivity: built.groupChatActivity,
             fullyAcquaintedRosterKeys: overrides.fullyAcquaintedRosterKeys,
             people: filterResult.kept,
             guesses: overrides.nameGuesses
         )
-    } catch {
+    }
+    guard let data = encoded else {
         fail("error: cannot encode graph")
     }
+
+    if timingsEnabled {
+        let totalElapsed = clock.now - overallStart
+        let totalMs = Double(totalElapsed.components.seconds) * 1000.0 + Double(totalElapsed.components.attoseconds) * 1e-15
+        FileHandle.standardError.write(Data("timing total \(String(format: "%.1f", totalMs))ms\n".utf8))
+    }
+
     FileHandle.standardOutput.write(data)
 }
 
