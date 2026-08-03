@@ -2,21 +2,19 @@
 """Build a connection-graph viewer HTML file from a `graph-cli json` export.
 
 template-sky.html, the two-plane closeness sky, is the product's only graph presentation.
-It declares only the __GRAPH_JSON__ placeholder -- its viewer logic is already inline, so
-nothing gets injected but data.
-
-The __VIEWER_CORE_JS__ placeholder and its inlining mechanism stay in this script as a seam
-for a follow-up feature, even though no template declares it today: for a template that DOES
-declare __VIEWER_CORE_JS__, this script would inline CORE_FILENAME's exact contents into the
-template's single script block by stripping the `export ` keyword from its `export function` /
-`export const` declarations -- nothing else about the file's text would change. The regex used
-for stripping exports is literally:
+It declares the __GRAPH_JSON__ placeholder (its own graph data) and the __VIEWER_CORE_JS__
+placeholder, which CORE_FILENAME (sky_lens.mjs, the connection lens's pure neighbor-selection
+logic) fills: this script inlines CORE_FILENAME's exact contents into the template's single
+script block by stripping the `export ` keyword from its `export function` / `export const`
+declarations -- nothing else about the file's text changes. The regex used for stripping
+exports is literally:
 
     re.sub(r"(?m)^export (function|const)\\b", r"\\1", core_src)
 
-Core inlining applies only to templates that declare __VIEWER_CORE_JS__: template-sky.html
-omits it, so it is built with no core substitution at all -- CORE_FILENAME is not even read
-for that build, and does not need to exist on disk.
+Core inlining is skipped entirely for a template that omits __VIEWER_CORE_JS__ (CORE_FILENAME
+is not even read in that case, and does not need to exist on disk) -- kept as a conditional,
+not a hard requirement, so a future template with its logic fully inline again is still a
+valid shape.
 
 The RAW graph export is injected the same way it always has been, at the __GRAPH_JSON__ placeholder -- every template must declare that one, exactly once, regardless of whether it also uses the core placeholder.
 
@@ -43,7 +41,7 @@ from pathlib import Path
 
 JSON_PLACEHOLDER = "__GRAPH_JSON__"
 CORE_PLACEHOLDER = "__VIEWER_CORE_JS__"
-CORE_FILENAME = "viewer_core.mjs"
+CORE_FILENAME = "sky_lens.mjs"
 
 
 def strip_exports(core_src):
@@ -87,10 +85,10 @@ def main(argv):
         print(f"error: {JSON_PLACEHOLDER} appears {json_count} times in template, expected exactly 1", file=sys.stderr)
         return 1
 
-    # __VIEWER_CORE_JS__ is optional: template-sky.html inlines its own logic
-    # and never mentions it, so zero occurrences means "skip core inlining
-    # entirely" -- CORE_FILENAME is not even read for that build. More than
-    # one occurrence is the same corruption risk as __GRAPH_JSON__ above.
+    # __VIEWER_CORE_JS__ is optional, not required, so this stays a template-shape
+    # check rather than a hard requirement: zero occurrences means "skip core
+    # inlining entirely" -- CORE_FILENAME is not even read for that build. More
+    # than one occurrence is the same corruption risk as __GRAPH_JSON__ above.
     core_count = template.count(CORE_PLACEHOLDER)
     if core_count > 1:
         print(f"error: {CORE_PLACEHOLDER} appears {core_count} times in template, expected 0 or 1", file=sys.stderr)

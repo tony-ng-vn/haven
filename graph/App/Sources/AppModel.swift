@@ -219,10 +219,11 @@ final class AppModel {
                 guesses: overrides.nameGuesses
             )
             let template = try String(contentsOf: Self.templateURL(), encoding: .utf8)
-            // template-sky.html's viewer logic is already inline -- no separate core .mjs
-            // resource to look up or splice in (SkyExportBuilder.build treats a template with
-            // no __VIEWER_CORE_JS__ placeholder as a valid shape and a nil source as correct).
-            let html = try SkyExportBuilder.build(template: template, viewerCoreSource: nil, graphJSON: json)
+            // template-sky.html declares the viewer-core placeholder for the connection
+            // lens's pure selection logic -- sky_lens.mjs, bundled alongside the template
+            // and spliced in here exactly like build.py does for the standalone export path.
+            let viewerCore = try String(contentsOf: Self.viewerCoreURL(), encoding: .utf8)
+            let html = try SkyExportBuilder.build(template: template, viewerCoreSource: viewerCore, graphJSON: json)
             let url = Self.skyHTMLURL()
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
@@ -250,6 +251,17 @@ final class AppModel {
             // user can fix -- fail loudly at the one call site that needs it rather than
             // letting every future caller re-discover the same nil.
             fatalError("template-sky.html was not found in the app bundle -- check project.yml's resources entry")
+        }
+        return url
+    }
+
+    /// The bundled viewer/sky_lens.mjs resource (the connection lens's pure selection
+    /// logic) -- same fatalError-on-missing posture as templateURL() above, and for the
+    /// same reason: a missing bundled resource here is a packaging bug, not something a
+    /// user's own retry could ever fix.
+    nonisolated private static func viewerCoreURL() -> URL {
+        guard let url = Bundle.main.url(forResource: "sky_lens", withExtension: "mjs") else {
+            fatalError("sky_lens.mjs was not found in the app bundle -- check project.yml's resources entry")
         }
         return url
     }
