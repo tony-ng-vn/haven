@@ -1,15 +1,14 @@
 import Foundation
 import Observation
-import CoreGraphics
 import GraphCore
 
-/// Where the app is in loading its own data. `.ready` carries both the built Graph (for
-/// static facts like node kind/name) and the already-ticking ForceSimulation (for position);
-/// splitting them would mean re-deriving one from the other on every frame.
+/// Where the app is in loading its own data. `.ready` carries the built Graph the pipeline
+/// produced; the Sky viewer lays its own nodes out in JavaScript once GraphJSON crosses over,
+/// so nothing on this side needs simulated node positions.
 enum AppState {
     case loading
     case needsPermission(explanation: String)
-    case ready(graph: Graph, simulation: ForceSimulation)
+    case ready(graph: Graph)
     case failed(message: String)
 }
 
@@ -17,6 +16,12 @@ enum AppState {
 /// no longer mutated directly (see AppModel.hideNode): it is re-derived from Overrides on
 /// every rebuild, via HiddenNodeOverride, so the actual source of truth for what is hidden
 /// lives in the overrides store, not here.
+///
+/// `showDeadGroups` is stored and toggleable but currently inert: the layout engine that
+/// used to gate its node set on this flag is gone along with the native Canvas render, and
+/// the Sky export always ships every node regardless (GraphJSON.encode does not filter by
+/// isLive). Left in place rather than removed, since it is not on this consolidation's
+/// deletion list and a future feature could read it when rebuilding Sky picks this back up.
 struct DisplayOptions: Equatable {
     var dateRange: ClosedRange<Date>?
     var showDeadGroups: Bool = false
@@ -74,16 +79,10 @@ final class AppModel {
     /// turns out to have no messages at all -- the toolbar's date pickers are expected to
     /// disable themselves in that case rather than show a meaningless range.
     private(set) var messageDateBounds: ClosedRange<Date>?
-    /// Which node is focused, if any. Lives here rather than in GraphView's own @State: the
-    /// toolbar's Focus chip is chrome hoisted above GraphView (see ContentView), and a
-    /// rebuild tears GraphView down and reconstructs it (a fresh assembly animation, PLAN.md-
-    /// intended behavior) -- view-local state would be silently wiped on every date-range or
-    /// dead-groups change, taking the chip with it.
-    private(set) var focusedNodeID: String?
     /// The most recent successfully-built graph, kept around after `state` moves back to
-    /// `.loading` for a rebuild. Toolbar chrome (the Focus chip's name) is hoisted above
-    /// GraphView and would otherwise flicker away for the fraction of a second a rebuild's
-    /// `.loading` flash is visible; reading this instead of `state` directly avoids that.
+    /// `.loading` for a rebuild. recomputeHiddenNodeIDs reads this rather than `state`
+    /// directly, since it needs the graph to still be available during the brief `.loading`
+    /// flash a rebuild produces.
     private(set) var lastReadyGraph: Graph?
     /// The people the current graph was built from: post time-filter, post asserted-merge
     /// resolve, post removed-people drop. A GraphNode alone does not carry a person's full
@@ -134,11 +133,6 @@ final class AppModel {
     /// never an invented percentage: MappingView shows exactly what has actually happened
     /// so far, nothing modeled.
     private(set) var mappingPhase: MappingPhase = .idle
-    /// Sky (the in-app WKWebView) is the default post-onboarding view; the toolbar's toggle
-    /// flips this. Lives on the model, not view-local @State, for the same reason
-    /// focusedNodeID does (see its own doc comment) -- a rebuild tears GraphView down and
-    /// would otherwise silently flip the toggle back.
-    private(set) var showNativeGraphView = false
     /// Where the built sky HTML lives on disk, if it has ever been built. Non-nil does not
     /// mean the file still exists right now (see hasBuiltSky in Onboarding.initialStep's
     /// caller) -- callers that care check FileManager themselves.
@@ -188,10 +182,10 @@ final class AppModel {
     /// here from ContentView's `.task` on purpose: the old on-appear load meant the app read
     /// chat.db before the user had ever seen Welcome, and "Map relationships" was then a
     /// no-op against an already-consumed `hasStartedLoading` guard.
-    func startMapping(windowSize: CGSize) {
+    func startMapping() {
         onboardingStep = Onboarding.next(from: onboardingStep, event: .startMapping)
         mappingPhase = .extracting
-        load(windowSize: windowSize, force: true) { [weak self] in
+        load(force: true) { [weak self] in
             self?.finishMapping()
         }
     }
@@ -209,7 +203,7 @@ final class AppModel {
             onboardingStep = Onboarding.next(from: onboardingStep, event: .permissionsRevoked)
             return
         }
-        guard case .ready(let graph, _) = state else {
+        guard case .ready(let graph) = state else {
             // .failed: leave onboardingStep at .mapping so MappingView's own failure
             // surfacing (via AppState.failed) stays visible instead of silently
             // advancing past a load that did not actually succeed.
@@ -260,10 +254,6 @@ final class AppModel {
         return url
     }
 
-    func toggleGraphViewMode() {
-        showNativeGraphView.toggle()
-    }
-
     /// Whether the polygres CLI is present at all -- the toolbar hides "Sync people"
     /// entirely rather than showing a button that can only ever fail on a machine that
     /// never installed it (PLAN.md's own scripts/sync_polygres.py resolves the same path).
@@ -282,7 +272,6 @@ final class AppModel {
     /// database -- only Resync does that (see resync()).
     private var cachedExtract: ChatExtract?
     private var cachedContacts: [ContactRecord]?
-    private var lastWindowSize = CGSize(width: 1200, height: 900)
 
     init(overridesStore: OverridesStore = OverridesStore(fileURL: OverridesStore.defaultFileURL())) {
         let home = NSHomeDirectory()
@@ -301,15 +290,14 @@ final class AppModel {
         refreshAccessState()
     }
 
-    /// Runs the pipeline sized to the window the graph will render into. `force` distinguishes
-    /// the initial on-appear call (never forced, so a spurious second call from `.task` is a
-    /// no-op) from the permission view's Try Again and the toolbar's Resync (both forced,
-    /// since by then a load has already run at least once). `onSettled`, when given, fires
-    /// once this whole load AND (if one starts) the guess pass it triggers have both finished
-    /// -- syncPeople() is the only caller that needs that, to know when it is safe to hand the
-    /// freshly-guessed graph to the sync script; every other caller passes nil and does not pay
-    /// for the bookkeeping.
-    func load(windowSize: CGSize, force: Bool = false, onSettled: (@MainActor () -> Void)? = nil) {
+    /// Runs the pipeline. `force` distinguishes the initial on-appear call (never forced, so a
+    /// spurious second call from `.task` is a no-op) from the permission view's Try Again and
+    /// the toolbar's Resync (both forced, since by then a load has already run at least once).
+    /// `onSettled`, when given, fires once this whole load AND (if one starts) the guess pass
+    /// it triggers have both finished -- syncPeople() is the only caller that needs that, to
+    /// know when it is safe to hand the freshly-guessed graph to the sync script; every other
+    /// caller passes nil and does not pay for the bookkeeping.
+    func load(force: Bool = false, onSettled: (@MainActor () -> Void)? = nil) {
         guard force || !hasStartedLoading else {
             onSettled?()
             return
@@ -317,14 +305,6 @@ final class AppModel {
         hasStartedLoading = true
         state = .loading
 
-        // A window can report a zero (or otherwise degenerate) size on first layout, before
-        // its first real geometry pass. Every node's initial position is a fraction of this
-        // size from center; at zero, every node starts stacked exactly on top of the user,
-        // and the layout never spreads out from there. 400x300 is an arbitrary but sane floor
-        // -- smaller than any real window this app would run in, big enough to actually
-        // scatter nodes.
-        let safeWindowSize = CGSize(width: max(windowSize.width, 400), height: max(windowSize.height, 300))
-        lastWindowSize = safeWindowSize
         let chatDBPath = chatDBPath
         let contactsDBPaths = contactsDBPaths
         let overridesStore = overridesStore
@@ -375,7 +355,7 @@ final class AppModel {
     /// interaction method below replays against the in-memory cache; this is the one that
     /// does not.
     func resync() {
-        load(windowSize: lastWindowSize, force: true)
+        load(force: true)
     }
 
     // MARK: - Sync people (Polygres)
@@ -403,7 +383,7 @@ final class AppModel {
 
         Task {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                self.load(windowSize: self.lastWindowSize, force: true) {
+                self.load(force: true) {
                     continuation.resume()
                 }
             }
@@ -412,11 +392,10 @@ final class AppModel {
     }
 
     /// Invokes `python3 scripts/sync_polygres.py`. The script itself writes `exports/graph.json`
-    /// nowhere -- callers are expected to have exported it via `graph-cli json` first; for the
-    /// app's own use here, the CLI export step is out of scope for this button (PLAN.md's own
-    /// export path is the toolbar's separate Export... button, a PNG, not this JSON). This
-    /// method's job is narrowly the sync step: re-derive names, then run the sync script
-    /// against whatever exports/graph.json already exists on disk.
+    /// nowhere -- callers are expected to have exported it via `graph-cli json` first; that CLI
+    /// export step is out of scope for this button. This method's job is narrowly the sync
+    /// step: re-derive names, then run the sync script against whatever exports/graph.json
+    /// already exists on disk.
     private func runPolygresSyncScript() async {
         let scriptURL = Self.repoRoot.appendingPathComponent("scripts/sync_polygres.py")
         let process = Process()
@@ -477,13 +456,11 @@ final class AppModel {
         return firstLine.isEmpty ? "No output from sync script" : firstLine
     }
 
-    /// Re-derives graph + simulation (and the hidden-id mapping, and the merge queue) from
-    /// the cached extract/contacts using the current displayOptions and overrides. Called
-    /// once after the initial load, and again whenever dateRange, showDeadGroups, or a merge
-    /// answer changes: a fresh assembly animation on every such change is accepted, even
-    /// desirable, behavior (PLAN.md's assembly is not a one-time intro, it is what settling
-    /// looks like). `triggeringGuessPass` is true only right after a REAL load (see load()):
-    /// that is the only time new candidates could possibly exist to guess names for.
+    /// Re-derives the graph (and the hidden-id mapping, and the merge queue) from the cached
+    /// extract/contacts using the current displayOptions and overrides. Called once after the
+    /// initial load, and again whenever dateRange, showDeadGroups, or a merge answer changes.
+    /// `triggeringGuessPass` is true only right after a REAL load (see load()): that is the
+    /// only time new candidates could possibly exist to guess names for.
     func rebuild(triggeringGuessPass: Bool = false, onSettled: (@MainActor () -> Void)? = nil) {
         guard let extract = cachedExtract, let contacts = cachedContacts else {
             onSettled?()
@@ -493,10 +470,9 @@ final class AppModel {
         mappingPhase = .building
         let options = displayOptions
         let currentOverrides = overrides
-        let windowSize = lastWindowSize
 
         Task.detached(priority: .userInitiated) {
-            let result = Self.derive(extract: extract, contacts: contacts, overrides: currentOverrides, options: options, windowSize: windowSize)
+            let result = Self.derive(extract: extract, contacts: contacts, overrides: currentOverrides, options: options)
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.state = result.state
@@ -506,7 +482,7 @@ final class AppModel {
                 self.mergeQueue = result.mergeQueue
                 self.displayOptions.hiddenNodeIDs = result.hiddenNodeIDs
                 self.removedPersonCount = result.removedPersonCount
-                if case .ready(let graph, _) = result.state {
+                if case .ready(let graph) = result.state {
                     self.lastReadyGraph = graph
                     let peopleCount = graph.nodes.filter { $0.kind == .person }.count
                     let groupCount = graph.nodes.filter { $0.kind == .group }.count
@@ -516,14 +492,6 @@ final class AppModel {
                     self.startGuessPassIfNeeded(extract: extract, onSettled: onSettled)
                 } else {
                     onSettled?()
-                }
-                // A time filter (or, less plausibly, a dead-groups toggle or a merge) can drop
-                // the currently focused node from the rebuilt graph entirely. A focus chip
-                // pointing at a node that no longer exists is worse than clearing it.
-                if case .ready(let graph, _) = result.state,
-                   let focusedNodeID = self.focusedNodeID,
-                   !graph.nodes.contains(where: { $0.id == focusedNodeID }) {
-                    self.focusedNodeID = nil
                 }
             }
         }
@@ -543,7 +511,7 @@ final class AppModel {
     /// transient-only discipline).
     private func startGuessPassIfNeeded(extract: ChatExtract, onSettled: (@MainActor () -> Void)? = nil) {
         guessTask?.cancel()
-        guard case .ready(let graph, _) = state else {
+        guard case .ready(let graph) = state else {
             onSettled?()
             return
         }
@@ -630,8 +598,7 @@ final class AppModel {
         extract: ChatExtract,
         contacts: [ContactRecord],
         overrides: Overrides,
-        options: DisplayOptions,
-        windowSize: CGSize
+        options: DisplayOptions
     ) -> DeriveResult {
         let filteredExtract: ChatExtract
         if let range = options.dateRange {
@@ -657,7 +624,6 @@ final class AppModel {
 
         let built = GraphBuilder.buildDetailed(extract: filteredExtract, keptPeople: keptPeople)
         let graph = built.graph
-        let simulation = ForceSimulation(graph: graph, size: windowSize, includeDeadGroups: options.showDeadGroups)
 
         let hiddenNodeIDs = HiddenNodeOverride.nodeIDs(
             people: keptPeople,
@@ -672,7 +638,7 @@ final class AppModel {
         )
 
         return DeriveResult(
-            state: .ready(graph: graph, simulation: simulation),
+            state: .ready(graph: graph),
             resolvedPeople: identity.people,
             keptPeople: keptPeople,
             groupChatActivity: built.groupChatActivity,
@@ -709,12 +675,11 @@ final class AppModel {
         rebuild()
     }
 
-    /// Render-only, same as before step 8: never rebuilds the simulation, positions keep
-    /// their current layout. What changed is where the hidden set comes from -- this now
-    /// records the person's identifiers (or the group's guid) into the overrides store and
-    /// saves, so the hide survives a resync, then re-derives displayOptions.hiddenNodeIDs
-    /// with the same HiddenNodeOverride mapping rebuild() itself uses (cheap: no database
-    /// read, no simulation rebuild, just a small set computation).
+    /// Render-only: never rebuilds the graph, only what is excluded from what draws. Records
+    /// the person's identifiers (or the group's guid) into the overrides store and saves, so
+    /// the hide survives a resync, then re-derives displayOptions.hiddenNodeIDs with the same
+    /// HiddenNodeOverride mapping rebuild() itself uses (cheap: no database read, just a small
+    /// set computation).
     func hideNode(_ id: String) {
         if id.hasPrefix("chat:") {
             overrides.hiddenGroupGUIDs.insert(String(id.dropFirst("chat:".count)))
@@ -723,10 +688,6 @@ final class AppModel {
         }
         saveOverrides()
         recomputeHiddenNodeIDs()
-        // A focus chip pointing at a node the user just hid is confusing, not useful.
-        if focusedNodeID == id {
-            focusedNodeID = nil
-        }
     }
 
     func unhideAll() {
@@ -822,58 +783,6 @@ final class AppModel {
                 answers: overrides.mergeAnswers
             )
         }
-    }
-
-    func setFocus(_ id: String?) {
-        focusedNodeID = id
-    }
-
-    func clearFocus() {
-        focusedNodeID = nil
-    }
-
-    /// The toolbar's Export button is enabled only in this state (GraphImageRenderer needs an
-    /// actual graph + simulation to render from).
-    var isReady: Bool {
-        if case .ready = state { return true }
-        return false
-    }
-
-    enum ExportError: Error {
-        case notReady
-    }
-
-    /// Renders THE CURRENT VIEW STATE per PLAN.md's export goal: the whole simulated layout
-    /// at its native canvas-space positions (never the on-screen zoom/pan), always rest-state
-    /// (no focus dimming, regardless of the current focusedNodeID), with whatever time filter/
-    /// dead-group toggle/hidden nodes are already baked into the current `graph`/`simulation`/
-    /// displayOptions. The actual rendering (rasterizing at scale 3 over hundreds of nodes,
-    /// then PNG-encoding) is real CPU work, so it runs off the main actor -- but ForceSimulation
-    /// itself is not Sendable, so positions/radii (plain Sendable dictionaries) are snapshotted
-    /// here on the main actor first, and only those, plus the already-Sendable Graph, cross
-    /// into the detached task.
-    func exportImage(to url: URL) async throws {
-        guard case .ready(let graph, let simulation) = state else {
-            throw ExportError.notReady
-        }
-        let positions = simulation.positions
-        let radii = simulation.radii
-        let hiddenNodeIDs = displayOptions.hiddenNodeIDs
-        let canvasSize = lastWindowSize
-        let guesses = overrides.nameGuesses
-
-        try await Task.detached(priority: .userInitiated) {
-            let image = GraphImageRenderer.render(
-                graph: graph,
-                positions: positions,
-                radii: radii,
-                hiddenNodeIDs: hiddenNodeIDs,
-                canvasSize: canvasSize,
-                scale: 3,
-                guesses: guesses
-            )
-            try GraphImageExport.writePNG(image: image, to: url)
-        }.value
     }
 
     private func saveOverrides() {

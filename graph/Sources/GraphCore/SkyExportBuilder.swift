@@ -3,11 +3,12 @@ import Foundation
 /// Fills a sky template's placeholder(s) in-process, the app's own equivalent of
 /// viewer/build.py -- a downloaded build ships with no Python and no repo checkout, so this
 /// cannot shell out to the script; it has to do the same substitution natively.
-/// __GRAPH_JSON__ is always required, exactly once. __VIEWER_CORE_JS__ is CONDITIONAL: some
-/// templates (template-v4.html, the map presentation) declare it because their viewer logic
-/// lives in a separate viewer_core.mjs; others (template-sky.html, the two-plane ringed sky)
-/// have their logic inline already and never mention it at all. build.py is gaining this same
-/// conditional in parallel -- see that file's own header comment for the shared source of truth.
+/// __GRAPH_JSON__ is always required, exactly once. __VIEWER_CORE_JS__ is CONDITIONAL: the
+/// current template (template-sky.html, the two-plane ringed sky) has its viewer logic
+/// inline already and never mentions it at all, so `viewerCoreSource` is nil for that build.
+/// The conditional itself is a seam kept for a template that DOES split its logic out into a
+/// separate core JS source -- build.py carries the same conditional, in parallel, for its own
+/// standalone build path; see that file's own header comment.
 public enum SkyExportBuilder {
     public enum BuildError: Error, Equatable, Sendable {
         /// A required placeholder is missing from the template entirely -- shipping it
@@ -35,7 +36,7 @@ public enum SkyExportBuilder {
     /// textually identical to that Python raw string (`\\b` here is Swift's escaping of the
     /// same literal `\b` token) so the two can be diffed by eye and never silently drift
     /// apart; cross-checked at the time this landed by running both implementations against
-    /// the real viewer_core.mjs and confirming byte-identical output.
+    /// a real core JS source and confirming byte-identical output.
     ///
     /// A function, not a stored `static let`: `Regex` is not `Sendable`, and Swift 6's
     /// strict concurrency checking rejects a non-Sendable type held in mutable global state --
@@ -59,8 +60,9 @@ public enum SkyExportBuilder {
 
         // __VIEWER_CORE_JS__: conditional on the template. Zero occurrences (template-sky.html)
         // skips core inlining entirely -- a nil source is fine, there is nowhere to splice it.
-        // Exactly one occurrence (template-v4.html) requires a real source. More than one is
-        // always an error, independent of what the caller passed for the source.
+        // Exactly one occurrence (a template that splits its logic into a separate core JS
+        // source) requires a real source. More than one is always an error, independent of
+        // what the caller passed for the source.
         let coreCount = occurrenceCount(of: corePlaceholder, in: template)
         var result = template
         if coreCount > 1 {

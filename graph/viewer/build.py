@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
 """Build a connection-graph viewer HTML file from a `graph-cli json` export.
 
-Two templates live in this directory; this script builds either one:
+template-sky.html, the two-plane closeness sky, is the product's only graph presentation.
+It declares only the __GRAPH_JSON__ placeholder -- its viewer logic is already inline, so
+nothing gets injected but data.
 
-    template-sky.html    the two-plane closeness sky. Declares only the
-                          __GRAPH_JSON__ placeholder -- its viewer logic is
-                          already inline, so nothing gets injected but data.
-    template-v4.html     the acquaintance map. Declares both __GRAPH_JSON__
-                          and __VIEWER_CORE_JS__, so it gets data plus the
-                          shared core.
-
-TESTED CODE == SHIPPED CODE, mechanically, not by convention:
-viewer_core.mjs is the single source of truth for the viewer's pure logic (adapt/degrade, community + region detection, the "everyone here knows each other" tier recompute, shortest path, stale-mark rejection, the deterministic layout).
-tests.mjs imports it directly and runs under plain `node`.
-For a template that declares the __VIEWER_CORE_JS__ placeholder, this script inlines that EXACT file into the template's single script block by stripping the `export ` keyword from its `export function` / `export const` declarations -- nothing else about the file's text changes -- and splicing the result in at the placeholder.
-Core inlining applies only to templates that declare __VIEWER_CORE_JS__: a template that omits it (template-sky.html today) is built with no core substitution at all -- viewer_core.mjs is not even read for that build.
-The regex used for stripping exports is literally:
+The __VIEWER_CORE_JS__ placeholder and its inlining mechanism stay in this script as a seam
+for a follow-up feature, even though no template declares it today: for a template that DOES
+declare __VIEWER_CORE_JS__, this script would inline CORE_FILENAME's exact contents into the
+template's single script block by stripping the `export ` keyword from its `export function` /
+`export const` declarations -- nothing else about the file's text would change. The regex used
+for stripping exports is literally:
 
     re.sub(r"(?m)^export (function|const)\\b", r"\\1", core_src)
+
+Core inlining applies only to templates that declare __VIEWER_CORE_JS__: template-sky.html
+omits it, so it is built with no core substitution at all -- CORE_FILENAME is not even read
+for that build, and does not need to exist on disk.
 
 The RAW graph export is injected the same way it always has been, at the __GRAPH_JSON__ placeholder -- every template must declare that one, exactly once, regardless of whether it also uses the core placeholder.
 
@@ -27,12 +26,11 @@ To verify the shipped script is what it claims to be, extract the built output's
       open(sys.argv[1]).read(), re.S).group(1))" out.html > /tmp/extracted.js
     node --check /tmp/extracted.js
 
-That one-liner also works pointed at either template itself (pre-build): __GRAPH_JSON__ and __VIEWER_CORE_JS__ are bare identifiers, which are syntactically valid JavaScript on their own, so an un-built template already passes node --check even though the placeholders it declares are not bound to anything at runtime yet.
+That one-liner also works pointed at the template itself (pre-build): __GRAPH_JSON__ and __VIEWER_CORE_JS__ are bare identifiers, which are syntactically valid JavaScript on their own, so an un-built template already passes node --check even though the placeholders it declares are not bound to anything at runtime yet.
 
 usage:
     graph-cli json --chat-db ... --contacts-db ... > exports/graph.json
     python3 build.py exports/graph.json exports/my-graph.html template-sky.html
-    python3 build.py exports/graph.json exports/my-graph.html template-v4.html
 
 All three arguments are required.
 There is deliberately no default template: a silent default once rendered the wrong design while the output filename said otherwise, and this script would rather fail loudly than repeat that.
@@ -91,7 +89,7 @@ def main(argv):
 
     # __VIEWER_CORE_JS__ is optional: template-sky.html inlines its own logic
     # and never mentions it, so zero occurrences means "skip core inlining
-    # entirely" -- viewer_core.mjs is not even read for that build. More than
+    # entirely" -- CORE_FILENAME is not even read for that build. More than
     # one occurrence is the same corruption risk as __GRAPH_JSON__ above.
     core_count = template.count(CORE_PLACEHOLDER)
     if core_count > 1:

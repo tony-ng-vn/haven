@@ -33,9 +33,9 @@ targets:
       # of moving it would make the two drift. `buildPhase: resources` (rather than relying on
       # extension inference) is what actually gets it into Copy Bundle Resources; a bare path
       # here would otherwise be treated as a source file. template-sky.html (the two-plane
-      # ringed sky, restored as the product's sky presentation) has only the __GRAPH_JSON__
+      # ringed sky, the app's only graph presentation) has only the __GRAPH_JSON__
       # placeholder -- its viewer logic is already inline, so no separate core .mjs resource
-      # is bundled alongside it the way template-v4.html needed one.
+      # needs to be bundled alongside it.
       - path: ../viewer/template-sky.html
         buildPhase: resources
     dependencies:

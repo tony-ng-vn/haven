@@ -6,7 +6,6 @@ import GraphCore
 /// started yet, and splitting them would duplicate the whole visual frame for no reason.
 struct ReadyToMapView: View {
     let model: AppModel
-    let windowSize: CGSize
 
     var body: some View {
         VStack(spacing: 20) {
@@ -27,7 +26,7 @@ struct ReadyToMapView: View {
             .frame(maxWidth: 460)
 
             Button("Map relationships") {
-                model.startMapping(windowSize: windowSize)
+                model.startMapping()
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
