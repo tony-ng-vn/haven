@@ -14,14 +14,21 @@ private struct JSONNode: Encodable {
     let degree: Int
     let firstMessageDate: String?
     let lastMessageDate: String?
+    /// Present ONLY when two or more exported person nodes share this exact resolved display
+    /// name (NameDisambiguation.disambiguators) -- unlike `name`, an absent disambiguator is
+    /// encoded by OMITTING the key entirely (encodeIfPresent, not encode), not JSON null, so a
+    /// unique name's payload does not grow at all for the common case.
+    let disambiguator: String?
 
     private enum CodingKeys: String, CodingKey {
-        case id, kind, name, hasContactCard, isLive, degree, firstMessageDate, lastMessageDate
+        case id, kind, name, hasContactCard, isLive, degree, firstMessageDate, lastMessageDate, disambiguator
     }
 
     // Hand-written, not synthesized: the synthesized Encodable calls encodeIfPresent for an
     // Optional and would silently omit the key for a nil name, but the schema promises JSON
     // null. container.encode(_:forKey:) on an Optional is what actually emits null.
+    // disambiguator is the one exception -- see its own doc comment for why it deliberately
+    // uses encodeIfPresent instead.
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
@@ -32,6 +39,7 @@ private struct JSONNode: Encodable {
         try container.encode(degree, forKey: .degree)
         try container.encode(firstMessageDate, forKey: .firstMessageDate)
         try container.encode(lastMessageDate, forKey: .lastMessageDate)
+        try container.encodeIfPresent(disambiguator, forKey: .disambiguator)
     }
 }
 
@@ -123,20 +131,37 @@ public enum GraphJSON {
         // within one node/edge object, not the position of elements in the nodes/edges
         // arrays, which otherwise reflects whatever order the caller happened to build the
         // Graph in. Two runs on unchanged data must be byte-identical.
-        let nodes = graph.nodes
-            .sorted { $0.id < $1.id }
-            .map {
-                JSONNode(
-                    id: $0.id,
-                    kind: kindLabel($0.kind),
-                    name: NodeLabel.resolve(node: $0, guesses: guesses),
-                    hasContactCard: $0.hasContactCard,
-                    isLive: $0.isLive,
-                    degree: $0.degree,
-                    firstMessageDate: isoString($0.firstMessageDate),
-                    lastMessageDate: isoString($0.lastMessageDate)
-                )
+        let sortedNodes = graph.nodes.sorted { $0.id < $1.id }
+
+        // Resolved once, up front: both the node's own `name` field AND the cross-node
+        // collision check below need the exact same resolved string (real name, or a
+        // guess-derived tilde name), so there is only one place that string is ever computed.
+        let resolvedNames: [(node: GraphNode, name: String?)] = sortedNodes
+            .map { ($0, NodeLabel.resolve(node: $0, guesses: guesses)) }
+
+        // PERSON nodes only (PLAN's own contacts-collision scenario -- "two contacts can both
+        // be John"): a group name collision is a different, much rarer situation this feature
+        // does not address.
+        let disambiguatorByID = NameDisambiguation.disambiguators(
+            namesByID: resolvedNames.compactMap { node, name in
+                guard node.kind == .person, let name else { return nil }
+                return (id: node.id, name: name)
             }
+        )
+
+        let nodes = resolvedNames.map { node, name in
+            JSONNode(
+                id: node.id,
+                kind: kindLabel(node.kind),
+                name: name,
+                hasContactCard: node.hasContactCard,
+                isLive: node.isLive,
+                degree: node.degree,
+                firstMessageDate: isoString(node.firstMessageDate),
+                lastMessageDate: isoString(node.lastMessageDate),
+                disambiguator: disambiguatorByID[node.id]
+            )
+        }
         let edges = graph.edges
             .sorted { $0.id < $1.id }
             .map { JSONEdge(a: $0.nodeIDA, b: $0.nodeIDB, reason: reasonLabel($0.reason), strength: $0.strength) }

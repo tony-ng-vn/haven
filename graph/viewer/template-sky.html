@@ -121,6 +121,13 @@
                font-size: 9.5px; font-weight: 700; }
   .item .dot.sq { border-radius: 7px; }
   .item .col { flex: 1; min-width: 0; }
+  /* Wraps .nm (which truncates with an ellipsis) and .disamb as a flex row: .nm keeps
+     shrinking to fit, .disamb (flex: none) never shrinks and is never clipped, so a
+     name long enough to truncate still leaves its disambiguator badge fully visible --
+     the one thing that badge exists to show. */
+  .item .nmrow { display: flex; align-items: baseline; min-width: 0; }
+  .item .nmrow .nm { flex: 1; min-width: 0; }
+  .item .nmrow .disamb { flex: none; }
   .item .nm { font-size: 12.5px; white-space: nowrap; overflow: hidden;
               text-overflow: ellipsis; line-height: 1.3; }
   .item .nm.dim { color: rgba(255,255,255,0.55); font-style: italic; }
@@ -128,6 +135,12 @@
                margin-top: 3px; }
   .item .bar i { display: block; height: 100%; border-radius: 2px; background: #d6a45e; }
   .item .mt { font-size: 10.5px; color: rgba(255,255,255,0.45); flex: none; }
+  /* Two people sharing the exact same display name (GraphJSON's `disambiguator`): a
+     quieter, smaller badge right after the name -- never a new color language, the same
+     "secondary text" treatment .mt already uses everywhere else in this file. Unscoped
+     (not ".item .disamb") so the one rule covers every surface the badge appears on:
+     item rows, roster rows, search results, and the dossier's larger .info-name. */
+  .disamb { font-size: 10.5px; color: rgba(255,255,255,0.4); margin-left: 5px; font-weight: 400; font-style: normal; }
   .more { font-size: 11px; color: rgba(255,255,255,0.4); padding: 5px 6px 2px; }
 
   /* ---- search, time travel, crumbs, facts ---- */
@@ -232,6 +245,7 @@
   .item .nm { font-size: 12px; font-family: Georgia, serif; color: #efe6d4; }
   .item .nm.dim { color: rgba(239,230,212,0.5); }
   .item .mt { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(214,164,94,0.7); }
+  .disamb { font-size: 9px; font-family: Georgia, serif; color: rgba(214,164,94,0.65); }
   .item .bar { background: rgba(235,205,150,0.1); }
   .item .bar i { background: linear-gradient(90deg, #8a6430, #e9c384); box-shadow: 0 0 6px rgba(233,195,132,0.5); }
   .item .dot { font-family: Georgia, serif; }
@@ -638,9 +652,15 @@ function adaptReal(raw) {
       let days = 0;
       for (const e of adj[n.id]) if (e.type === "thread") days = Math.max(days, e.strength);
       const { name, labelKind } = labelInfo(n.name, n.id);
+      // A quieter suffix distinguishing this person from another exported node sharing the
+      // exact same display name (e.g. two "John"s) -- absent for a unique name, and always
+      // null (never "undefined") for an export built before GraphJSON gained this field.
+      // Resolved once here, not per render call site: everywhere this person's name is
+      // rendered just reads p.disambiguator directly.
+      const disambiguator = formatPersonLabel(name, n.disambiguator).suffix;
       const p = {
         id: n.id, kind: "person", name, strength: days, days,
-        labelKind, groups: [],
+        labelKind, groups: [], disambiguator,
         // met is real once the export has history (metFraction); the rest of these
         // (streak/youFirst/lastMsg/arch) still aren't computed from the message table --
         // null, never invented. See header.
@@ -2180,12 +2200,19 @@ function labelPass(skin, F, hazeOf, dark) {
   const cap = F ? 48 : OPT.labelCap;
   const boxes = [];
   let placed = 0;
+  const suffixFont = "10px Georgia, serif";
   for (const c of cands) {
     if (placed >= cap) break;
     const off = Math.max(3, baseRadius(c.n) * c.q.ks * 1.1) + (skin.key === "faces" && c.n.rank < 90 ? 7 : 4);
     const text = c.n.kind === "group" ? c.n.name.toUpperCase() : c.n.name;
     const f2 = c.n.kind === "group" ? "600 9.5px Georgia, serif" : font;
-    const w = textW(text, f2);
+    // A person's disambiguator (two nodes sharing the exact same resolved name) rides beside
+    // the name as a smaller suffix -- included in the box width up front so the overlap-
+    // avoidance packing below reserves room for it too, never just for the name alone.
+    const suffix = c.n.kind === "person" && c.n.disambiguator ? " " + c.n.disambiguator : "";
+    const nameW = textW(text, f2);
+    const suffixW = suffix ? textW(suffix, suffixFont) : 0;
+    const w = nameW + suffixW;
     ctx.font = f2;
     // Four candidate anchors, not one: focused sets cluster around their center,
     // and a right-side-only label loses half of what it could have placed.
@@ -2207,15 +2234,28 @@ function labelPass(skin, F, hazeOf, dark) {
     }
     if (!box) continue;
     boxes.push(box); placed++;
+    const base = c.n.kind === "group" ? [235, 195, 135] : (c.n.labelKind === "guess" ? [222, 178, 128] : [238, 235, 226]);
     if (dark) {
-      const base = c.n.kind === "group" ? [235, 195, 135] : (c.n.labelKind === "guess" ? [222, 178, 128] : [238, 235, 226]);
       ctx.fillStyle = "rgba(5,6,10," + (0.55 * (1 - c.t)).toFixed(3) + ")";
       ctx.fillText(text, x + 1, y + 1);
       ctx.fillStyle = mixTo(base, NIGHT, c.t * 0.8);
     } else {
       ctx.fillStyle = mixTo(c.n.kind === "group" || c.n.labelKind === "guess" ? BROWNRGB : INK, PAPER, c.t * 0.85);
     }
+    ctx.font = f2;
     ctx.fillText(text, x, y);
+    if (suffix) {
+      // Quieter than the name: the same base color, blended further toward the background
+      // than the name itself is (a fixed extra amount on top of whatever haze fade `c.t`
+      // already applies) -- this file's own way of saying "dimmer" without alpha
+      // compositing, matching every other faded element it already draws this way.
+      ctx.font = suffixFont;
+      ctx.fillStyle = dark
+        ? mixTo(base, NIGHT, Math.min(1, c.t * 0.8 + 0.42))
+        : mixTo(c.n.kind === "group" || c.n.labelKind === "guess" ? BROWNRGB : INK, PAPER, Math.min(1, c.t * 0.85 + 0.42));
+      ctx.fillText(suffix, x + nameW, y);
+      ctx.font = f2;   // restore: labelPass must always leave ctx.font at f2, same as before this suffix existed
+    }
   }
 }
 
@@ -2413,7 +2453,12 @@ function rosterRowHTML(p, maxS) {
   const moved = Object.prototype.hasOwnProperty.call(EDITS.moves, p.id) ? '<span class="movedtag">moved</span>' : "";
   return '<div class="rrow" data-row="' + esc(p.id) + '">' +
     '<div class="rbody item" data-focus="' + esc(p.id) + '">' + avatarHTML(p, "dot") +
-    '<div class="col"><div class="nm' + dim + '">' + esc(p.name) + moved + '</div>' +
+    // .disamb sits OUTSIDE .nm, not inside it: .nm truncates a long name with an ellipsis
+    // (overflow: hidden), and a badge living inside that clipped box would be the first
+    // thing to disappear -- exactly the surface (a roster listing many same-named people)
+    // where being able to tell them apart matters most. .nmrow (flex, min-width:0) lets
+    // .nm keep shrinking/truncating on its own while .disamb (flex: none) never does.
+    '<div class="col"><div class="nmrow"><div class="nm' + dim + '">' + esc(p.name) + moved + '</div>' + disambHTML(p) + '</div>' +
     '<div class="bar"><i style="width:' + Math.round(Math.max(0.03, p.strength / (maxS || 1)) * 100) + '%"></i></div></div></div>' +
     '<span class="rmt">#' + (p.rank + 1) + '</span>' +
     '<div class="ractions"><button class="ricon" data-toggle-move="' + esc(p.id) + '" title="Move to a different ring">&#8597;</button>' +
@@ -2601,6 +2646,13 @@ function setViewState(s) {
    ============================================================ */
 const infoEl = document.getElementById("info");
 function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+/// The quiet, secondary-text disambiguator badge for a person carrying one (two dots
+/// sharing the exact same display name) -- "" for anyone else (groups, the user, or a
+/// person whose name happens to be unique), so every call site can just concatenate it
+/// right after the escaped name with no extra branching of its own.
+function disambHTML(n) {
+  return n.disambiguator ? '<span class="disamb">' + esc(n.disambiguator) + '</span>' : "";
+}
 function focusNode(id, viaTrail) {
   if (!viaTrail && focusID && focusID !== id) {
     TRAIL.push(focusID);
@@ -2636,7 +2688,9 @@ function itemHTML(n, meta, barT) {
   const bar = barT != null
     ? '<div class="bar"><i style="width:' + Math.round(Math.max(0.03, barT) * 100) + '%"></i></div>' : "";
   return '<div class="item" data-id="' + n.id + '">' + avatarHTML(n, "dot") +
-    '<div class="col"><div class="nm' + dim + '">' + esc(nm) + "</div>" + bar + "</div>" +
+    // Same .nmrow wrapper as rosterRowHTML, same reason: .nm's ellipsis must never clip
+    // the disambiguator badge sitting after it.
+    '<div class="col"><div class="nmrow"><div class="nm' + dim + '">' + esc(nm) + "</div>" + disambHTML(n) + "</div>" + bar + "</div>" +
     (meta ? '<span class="mt">' + meta + "</span>" : "") + "</div>";
 }
 function statHTML(v, l) { return '<div class="stat"><b>' + v + "</b><span>" + l + "</span></div>"; }
@@ -2721,7 +2775,7 @@ function renderInfo() {
   // whether or not a saved contact name masks it in the display name above.
   const idCopy = n.kind === "person" ? copyChip(n.id) : "";
   let head = '<div class="info-head">' + avatarHTML(n) +
-    '<div><div class="info-name">' + esc(dispName) + '</div><div class="info-sub">' +
+    '<div><div class="info-name">' + esc(dispName) + disambHTML(n) + '</div><div class="info-sub">' +
     (n.kind === "user" ? "That’s you, at the center" : kindLabel(n)) +
     '</div>' + idCopy + '</div><button class="info-x" id="info-x">&#10005;</button></div>';
   let stats = "", body = "";
@@ -2869,7 +2923,7 @@ function renderSearch(qs) {
   sSel = 0;
   searchRes.innerHTML = sHits.length
     ? sHits.map((it, i) => '<div class="sres' + (i === sSel ? " sel" : "") + '" data-id="' + it.id + '">' +
-        avatarHTML(it.n, "dot") + "<span>" + esc(it.n.name) + '</span><span class="mt">' +
+        avatarHTML(it.n, "dot") + "<span>" + esc(it.n.name) + disambHTML(it.n) + '</span><span class="mt">' +
         (it.n.kind === "group" ? it.n.size + " people" : "#" + (it.n.rank + 1) + " closest") + "</span></div>").join("")
     : '<div class="snone">No one by that name.</div>';
 }
