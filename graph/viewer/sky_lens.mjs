@@ -1,6 +1,6 @@
 /* sky_lens.mjs -- pure selection logic for the sky's connection lens (double-click a
  * person to see who THEY know). No DOM, no canvas, no globals: callers own how the
- * result gets drawn. Tested standalone with plain `node` (see sky_lens.test.mjs);
+ * result gets drawn. Tested standalone with plain `node` (see sky_lens.tests.mjs);
  * inlined into template-sky.html by build.py / SkyExportBuilder through the same
  * conditional core-placeholder seam viewer_core.mjs used to fill.
  *
