@@ -14,4 +14,10 @@ public enum AcquaintanceScoring {
     /// coActiveDayWeight stops accruing past this many days in a single chat: PLAN.md's
     /// example is 6 shared days contributing +0.5, not +0.6.
     public static let coActiveDayCapPerChat: Int = 5
+    /// A pair whose TOTAL tapback/reply interaction count (summed across every shared chat)
+    /// reaches this many is promoted to at least `strong`, regardless of what co-membership
+    /// scoring alone would have given them -- direct, deterministic evidence two people know
+    /// each other outweighs the co-activity heuristic. Never demotes, and never produces
+    /// `confirmed` (that tier is reserved for the user's own marker).
+    public static let interactionPromotionThreshold: Int = 3
 }

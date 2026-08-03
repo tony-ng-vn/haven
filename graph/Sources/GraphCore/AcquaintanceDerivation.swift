@@ -29,6 +29,10 @@ public enum AcquaintanceDerivation {
         // pair whose chats are otherwise all sub-threshold -- collected separately from
         // scoreByPair so marking never depends on what score happened to accumulate.
         var confirmedPairs: Set<PairKey> = []
+        // Summed across every chat a pair shares, same as scoreByPair -- GroupChatActivity has
+        // already resolved this to person ids and dropped self/user-involved interactions
+        // (GraphBuilder), so this is a plain per-chat lookup and running total, nothing more.
+        var interactionCountByPair: [PairKey: Int] = [:]
 
         for chatActivity in groupChatActivity {
             let members = chatActivity.roster.sorted()
@@ -48,14 +52,20 @@ public enum AcquaintanceDerivation {
                     let coActiveDays = daysA.intersection(daysB).count
                     let cappedDays = min(coActiveDays, AcquaintanceScoring.coActiveDayCapPerChat)
                     let contribution = baseWeight + Double(cappedDays) * AcquaintanceScoring.coActiveDayWeight
+                    // members is sorted, so personA < personB already -- PersonPairKey.make
+                    // would self-sort the same way regardless, but this chat's own roster loop
+                    // has already done that work.
+                    let pairInteractionCount = chatActivity.interactionCountByPair[PersonPairKey.make(personA, personB)] ?? 0
 
                     scoreByPair[key, default: 0] += contribution
+                    interactionCountByPair[key, default: 0] += pairInteractionCount
                     evidenceByPair[key, default: []].append(
                         AcquaintanceEvidence(
                             chatId: chatActivity.chatId,
                             chatName: chatActivity.name,
                             memberCount: n,
-                            coActiveDays: coActiveDays // raw, uncapped: a fact, not a scoring input
+                            coActiveDays: coActiveDays, // raw, uncapped: a fact, not a scoring input
+                            interactionCount: pairInteractionCount
                         )
                     )
                     if isMarked {
@@ -67,19 +77,29 @@ public enum AcquaintanceDerivation {
 
         var result: [Acquaintance] = []
         for (key, score) in scoreByPair {
+            let totalInteractionCount = interactionCountByPair[key] ?? 0
             let tier: AcquaintanceTier
             if confirmedPairs.contains(key) {
                 tier = .confirmed
             } else if score >= AcquaintanceScoring.strongThreshold {
                 tier = .strong
+            } else if totalInteractionCount >= AcquaintanceScoring.interactionPromotionThreshold {
+                // Direct interaction evidence promotes to at least strong even when
+                // co-membership scoring alone would have placed the pair at likely, or would
+                // have dropped them below the likely floor entirely (a pair with real
+                // tapback/reply evidence must never be MISSING from the export just because
+                // they rarely share active days).
+                tier = .strong
             } else if score >= AcquaintanceScoring.likelyThreshold {
                 tier = .likely
             } else {
-                continue // below likely and never marked: no acquaintance edge recorded (PLAN.md)
+                continue // below likely, not marked, and fewer than the interaction threshold: no edge (PLAN.md)
             }
 
             let evidence = (evidenceByPair[key] ?? []).sorted { $0.chatId < $1.chatId }
-            result.append(Acquaintance(a: key.a, b: key.b, tier: tier, score: score, evidence: evidence))
+            result.append(
+                Acquaintance(a: key.a, b: key.b, tier: tier, score: score, evidence: evidence, interactionCount: totalInteractionCount)
+            )
         }
 
         // scoreByPair is a Dictionary (unordered iteration); sort here so the same input always

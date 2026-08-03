@@ -50,9 +50,14 @@ private struct JSONAcquaintanceEvidence: Encodable {
     let chatName: String?
     let memberCount: Int
     let coActiveDays: Int
+    /// Tapback/reply interactions between this pair in THIS chat only. This encoder always
+    /// emits the key (never omits it), same posture as coActiveDays; an export produced BEFORE
+    /// this field existed simply lacks the key entirely, which sky_lens.mjs's own reader treats
+    /// as 0 via a coalescing default -- see its doc comment for that fallback.
+    let interactionCount: Int
 
     private enum CodingKeys: String, CodingKey {
-        case chatId, chatName, memberCount, coActiveDays
+        case chatId, chatName, memberCount, coActiveDays, interactionCount
     }
 
     func encode(to encoder: Encoder) throws {
@@ -61,6 +66,7 @@ private struct JSONAcquaintanceEvidence: Encodable {
         try container.encode(chatName, forKey: .chatName)
         try container.encode(memberCount, forKey: .memberCount)
         try container.encode(coActiveDays, forKey: .coActiveDays)
+        try container.encode(interactionCount, forKey: .interactionCount)
     }
 }
 
@@ -70,6 +76,9 @@ private struct JSONAcquaintance: Encodable {
     let tier: String
     let score: Double
     let evidence: [JSONAcquaintanceEvidence]
+    /// Sum of every evidence entry's interactionCount -- the pair's total across every shared
+    /// chat. See JSONAcquaintanceEvidence's own doc comment for the omitted-key/zero contract.
+    let interactionCount: Int
 }
 
 private struct JSONGraph: Encodable {
@@ -168,9 +177,11 @@ public enum GraphJSON {
                                 chatId: $0.chatId,
                                 chatName: resolvedNameByID[$0.chatId] ?? nil,
                                 memberCount: $0.memberCount,
-                                coActiveDays: $0.coActiveDays
+                                coActiveDays: $0.coActiveDays,
+                                interactionCount: $0.interactionCount
                             )
-                        }
+                        },
+                    interactionCount: acquaintance.interactionCount
                 )
             }
         let fullyAcquaintedChatIds = groupChatActivity

@@ -19,9 +19,16 @@ final class AcquaintanceDerivationTests: XCTestCase {
         _ chatId: String,
         name: String? = nil,
         roster: Set<String>,
-        activeDaysByPersonID: [String: Set<Date>] = [:]
+        activeDaysByPersonID: [String: Set<Date>] = [:],
+        interactionCountByPair: [String: Int] = [:]
     ) -> GroupChatActivity {
-        GroupChatActivity(chatId: chatId, name: name, roster: roster, activeDaysByPersonID: activeDaysByPersonID)
+        GroupChatActivity(
+            chatId: chatId,
+            name: name,
+            roster: roster,
+            activeDaysByPersonID: activeDaysByPersonID,
+            interactionCountByPair: interactionCountByPair
+        )
     }
 
     private func acquaintance(_ result: [Acquaintance], _ a: String, _ b: String) -> Acquaintance? {
@@ -175,5 +182,103 @@ final class AcquaintanceDerivationTests: XCTestCase {
         let unmarkedPair = try XCTUnwrap(acquaintance(unmarkedResult, "+15550007", "+15550008"))
         XCTAssertEqual(unmarkedPair.tier, .strong, "score alone (1.0) already earns strong once the marker is gone")
         XCTAssertEqual(unmarkedPair.score, 1.0, accuracy: 1e-9, "unmarking changes the tier decision, never the observed score")
+    }
+
+    // MARK: - Interaction-evidence promotion (AcquaintanceScoring.interactionPromotionThreshold)
+
+    // Test 9: fewer than the threshold (2) leaves the pair at its score-based tier, but the raw
+    // count still shows up in evidence -- interactions are always reported, promotion is separate.
+    func testTwoInteractionsDoNotPromoteAndStillShowInEvidence() throws {
+        let fillersA = (1...9).map { "+1710000\($0)" }
+        let fillersB = (1...9).map { "+1810000\($0)" }
+        let chatA = chat(
+            "chat:int-a", roster: Set(["+15561111", "+15562222"] + fillersA),
+            interactionCountByPair: [PersonPairKey.make("+15561111", "+15562222"): 1]
+        )
+        let chatB = chat(
+            "chat:int-b", roster: Set(["+15561111", "+15562222"] + fillersB),
+            interactionCountByPair: [PersonPairKey.make("+15561111", "+15562222"): 1]
+        )
+
+        let result = AcquaintanceDerivation.derive(groupChatActivity: [chatA, chatB], fullyAcquaintedRosterKeys: [])
+
+        let pair = try XCTUnwrap(acquaintance(result, "+15561111", "+15562222"))
+        XCTAssertEqual(pair.tier, .likely, "score alone (0.1+0.1=0.2) already earns likely; 2 total interactions is below the promotion threshold of 3")
+        XCTAssertEqual(pair.interactionCount, 2, "the total across both chats")
+        XCTAssertEqual(pair.evidence.map(\.interactionCount).sorted(), [1, 1], "each chat reports its own per-chat count")
+    }
+
+    // Test 10: reaching the threshold (3) promotes a pair that would otherwise only be likely.
+    func testThreeInteractionsPromoteALikelyPairToStrong() throws {
+        let fillersA = (1...9).map { "+1720000\($0)" }
+        let fillersB = (1...9).map { "+1820000\($0)" }
+        let chatA = chat(
+            "chat:int-c", roster: Set(["+15563333", "+15564444"] + fillersA),
+            interactionCountByPair: [PersonPairKey.make("+15563333", "+15564444"): 2]
+        )
+        let chatB = chat(
+            "chat:int-d", roster: Set(["+15563333", "+15564444"] + fillersB),
+            interactionCountByPair: [PersonPairKey.make("+15563333", "+15564444"): 1]
+        )
+
+        let result = AcquaintanceDerivation.derive(groupChatActivity: [chatA, chatB], fullyAcquaintedRosterKeys: [])
+
+        let pair = try XCTUnwrap(acquaintance(result, "+15563333", "+15564444"))
+        XCTAssertEqual(pair.score, 0.2, accuracy: 1e-9, "score alone would only earn likely")
+        XCTAssertEqual(pair.tier, .strong, "3 total interactions promotes past the score-based likely tier")
+        XCTAssertEqual(pair.interactionCount, 3)
+    }
+
+    // Test 11: reaching the threshold creates a pair as strong even though score alone (a single
+    // 20-person chat, base weight 1/19) would have dropped them below the likely floor entirely --
+    // proven against the same shape as testPairInOnlyATwentyPersonChatIsDroppedWhileAnUnrelatedPairStillScores,
+    // this time with real interaction evidence between two of the twenty.
+    func testThreeInteractionsCreateABelowFloorPairAsStrong() throws {
+        let twentyRoster = Set((1...20).map { "+1610\(String(format: "%04d", $0))" })
+        let sortedTwenty = Array(twentyRoster).sorted()
+        let (personA, personB) = (sortedTwenty[0], sortedTwenty[1])
+        let bigChat = chat(
+            "chat:big20-int", roster: twentyRoster,
+            interactionCountByPair: [PersonPairKey.make(personA, personB): 3]
+        )
+
+        let result = AcquaintanceDerivation.derive(groupChatActivity: [bigChat], fullyAcquaintedRosterKeys: [])
+
+        let pair = try XCTUnwrap(acquaintance(result, personA, personB), "must exist despite scoring below the likely floor")
+        XCTAssertEqual(pair.tier, .strong)
+        XCTAssertEqual(pair.interactionCount, 3)
+        // Every OTHER pair in this 20-person chat has zero interactions and stays dropped,
+        // exactly like the no-interactions version of this fixture -- interaction evidence
+        // creates only the specific pair it actually applies to.
+        let anotherPair = (sortedTwenty[2], sortedTwenty[3])
+        XCTAssertNil(acquaintance(result, anotherPair.0, anotherPair.1))
+    }
+
+    // Test 12: a marker-confirmed pair stays confirmed regardless of interaction count -- the
+    // marker always wins, interactions are never a path to (or away from) confirmed.
+    func testConfirmedPairIsUnaffectedByInteractionCount() throws {
+        let trio = chat(
+            "chat:trio-confirmed-int", roster: ["+15565555", "+15566666"],
+            interactionCountByPair: [PersonPairKey.make("+15565555", "+15566666"): 10]
+        )
+        let key = AcquaintanceRosterKey.canonicalize(["+15565555", "+15566666"])
+
+        let result = AcquaintanceDerivation.derive(groupChatActivity: [trio], fullyAcquaintedRosterKeys: [key])
+
+        let pair = try XCTUnwrap(acquaintance(result, "+15565555", "+15566666"))
+        XCTAssertEqual(pair.tier, .confirmed, "the marker always wins, even with interaction evidence that would also justify strong")
+        XCTAssertEqual(pair.interactionCount, 10, "the interaction count is still reported as a fact, independent of the tier decision")
+    }
+
+    // Test 13: interactions never demote -- a pair already strong on score alone stays strong
+    // whether or not it also carries interaction evidence.
+    func testInteractionsNeverDemoteAnAlreadyStrongPair() throws {
+        let trio = chat("chat:trio-strong-no-int", roster: ["+15567777", "+15568888"])
+
+        let result = AcquaintanceDerivation.derive(groupChatActivity: [trio], fullyAcquaintedRosterKeys: [])
+
+        let pair = try XCTUnwrap(acquaintance(result, "+15567777", "+15568888"))
+        XCTAssertEqual(pair.tier, .strong)
+        XCTAssertEqual(pair.interactionCount, 0, "no interaction evidence at all -- still strong on score alone")
     }
 }

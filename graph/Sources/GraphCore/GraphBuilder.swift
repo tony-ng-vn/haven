@@ -45,6 +45,11 @@ public enum GraphBuilder {
             messagesByChat[message.chatRowID, default: []].append(message)
         }
 
+        var interactionsByChat: [Int64: [RawInteraction]] = [:]
+        for interaction in extract.interactions {
+            interactionsByChat[interaction.chatRowID, default: []].append(interaction)
+        }
+
         // Person -> the one-to-one-classified chat rowIDs whose roster includes their handle.
         // A merged, multi-service person can own several (a different single-handle roster
         // for each service), which is exactly why this is a person-to-chats map, not 1:1.
@@ -164,8 +169,38 @@ public enum GraphBuilder {
                     edgesByID[edge.id] = edge
                 }
             }
+            // Tapback/reply evidence for this merged group: union across every pre-merge
+            // service-split row (an interaction only ever attaches to the one raw chat row it
+            // literally happened in, so summing across the merge's rows is a plain count, never
+            // a double count of the same event). Resolved to person ids here, not left as raw
+            // handles: only here is identity resolution (handleToPersonID, already merging
+            // multi-service handles into one Person) available, so this is also where a
+            // same-person-via-different-handles self-interaction and any interaction naming the
+            // user (nil handleRowID on either side) are dropped for scoring -- extraction
+            // already dropped the narrower same-RAW-handle self-case, but only GraphBuilder can
+            // catch the cross-handle case or know which person id is "the user".
+            let combinedInteractions = merged.chatRowIDs.sorted().flatMap { interactionsByChat[$0] ?? [] }
+            var interactionCountByPair: [String: Int] = [:]
+            for interaction in combinedInteractions {
+                guard let actorHandleRowID = interaction.actorHandleRowID,
+                      let targetHandleRowID = interaction.targetHandleRowID
+                else { continue } // nil on either side is the user: not scored as a pair
+                guard let actorPersonID = handleToPersonID[actorHandleRowID],
+                      let targetPersonID = handleToPersonID[targetHandleRowID]
+                else { continue } // a handle filtered out of keptPeople resolves to nothing
+                guard actorPersonID != targetPersonID else { continue } // self, across merged handles
+                let key = PersonPairKey.make(actorPersonID, targetPersonID)
+                interactionCountByPair[key, default: 0] += 1
+            }
+
             groupChatActivity.append(
-                GroupChatActivity(chatId: groupID, name: merged.name, roster: merged.roster, activeDaysByPersonID: activeDaysByPersonID)
+                GroupChatActivity(
+                    chatId: groupID,
+                    name: merged.name,
+                    roster: merged.roster,
+                    activeDaysByPersonID: activeDaysByPersonID,
+                    interactionCountByPair: interactionCountByPair
+                )
             )
 
             // userGroupMembership: one per group node, always, strength from the user's own

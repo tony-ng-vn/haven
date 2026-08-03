@@ -61,6 +61,35 @@ public struct RawMessage: Sendable, Equatable {
     }
 }
 
+/// One resolved tapback-add or threaded-reply interaction between two message senders in one
+/// chat -- metadata only (constraint 3): a guid string is used transiently inside
+/// ChatDatabase.extract() to resolve the target, but never survives onto this struct, so this
+/// type carries nothing the message-text-never-carried discipline test needs to worry about.
+///
+/// `actorHandleRowID`/`targetHandleRowID` follow RawMessage.handleRowID's own convention: nil
+/// means the user (is_from_me on that side), never "unresolvable" -- an interaction whose
+/// target guid does not resolve to any known message is simply never emitted at all (see
+/// ChatDatabase.extract). A same-raw-handle self-interaction (tapbacking or replying to one's
+/// own message, actorHandleRowID == targetHandleRowID including both nil) is dropped here, at
+/// extraction; the broader cross-handle self-case (the same PERSON via two merged handles) and
+/// "drop for scoring if either side is the user" are GraphBuilder's job instead, since only
+/// GraphBuilder has resolved person identity to check against (see its own doc comment).
+public struct RawInteraction: Sendable, Equatable {
+    public let chatRowID: Int64
+    public let actorHandleRowID: Int64?
+    public let targetHandleRowID: Int64?
+    /// The interaction message's own date (the reaction/reply, not the original) -- lets
+    /// TimeFilter restrict interactions to the same window it already restricts messages to.
+    public let date: Date
+
+    public init(chatRowID: Int64, actorHandleRowID: Int64?, targetHandleRowID: Int64?, date: Date) {
+        self.chatRowID = chatRowID
+        self.actorHandleRowID = actorHandleRowID
+        self.targetHandleRowID = targetHandleRowID
+        self.date = date
+    }
+}
+
 /// The in-memory working model produced by extracting one chat.db.
 public struct ChatExtract: Sendable, Equatable {
     public let handles: [RawHandle]
@@ -68,12 +97,22 @@ public struct ChatExtract: Sendable, Equatable {
     public let messages: [RawMessage]
     /// Messages with no chat_message_join row: skipped, not fatal, counted for measurement.
     public let unjoinedMessageCount: Int
+    /// Tapback/reply interactions resolved during extraction (see RawInteraction). Defaults to
+    /// empty so every existing call site keeps constructing a ChatExtract unchanged.
+    public let interactions: [RawInteraction]
 
-    public init(handles: [RawHandle], chats: [RawChat], messages: [RawMessage], unjoinedMessageCount: Int) {
+    public init(
+        handles: [RawHandle],
+        chats: [RawChat],
+        messages: [RawMessage],
+        unjoinedMessageCount: Int,
+        interactions: [RawInteraction] = []
+    ) {
         self.handles = handles
         self.chats = chats
         self.messages = messages
         self.unjoinedMessageCount = unjoinedMessageCount
+        self.interactions = interactions
     }
 }
 

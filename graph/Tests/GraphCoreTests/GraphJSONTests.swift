@@ -27,6 +27,7 @@ private struct DecodedAcquaintanceEvidence: Decodable {
     let chatName: String?
     let memberCount: Int
     let coActiveDays: Int
+    let interactionCount: Int
 }
 
 private struct DecodedAcquaintance: Decodable {
@@ -35,6 +36,7 @@ private struct DecodedAcquaintance: Decodable {
     let tier: String
     let score: Double
     let evidence: [DecodedAcquaintanceEvidence]
+    let interactionCount: Int
 }
 
 private struct DecodedGraph: Decodable {
@@ -560,6 +562,50 @@ final class GraphJSONTests: XCTestCase {
         XCTAssertEqual(decodedNode.firstMessageDate, expectedFirst)
         XCTAssertEqual(decodedNode.lastMessageDate, expectedLast)
         XCTAssertTrue(decoded.hasHistory, "at least one node has a real firstMessageDate")
+    }
+
+    // MARK: - Test 15b: interactionCount encodes on both the acquaintance (total) and its
+    // evidence (per-chat), and stays 0 -- never omitted -- for a pair with no interaction
+    // evidence at all (the ordinary co-membership-only case every earlier test here exercises).
+
+    func testInteractionCountEncodesTotalAndPerChatAndDefaultsToZero() throws {
+        let user = node(id: "user", kind: .user)
+        let a = node(id: "+15550801", kind: .person, name: "A")
+        let b = node(id: "+15550802", kind: .person, name: "B")
+        let groupWithInteractions = node(id: "chat:with-interactions", kind: .group, name: "With interactions")
+        let groupWithout = node(id: "chat:without-interactions", kind: .group, name: "Without interactions")
+        let graph = Graph(nodes: [user, a, b, groupWithInteractions, groupWithout], edges: [])
+        let activity = [
+            GroupChatActivity(
+                chatId: "chat:with-interactions", name: "With interactions",
+                roster: ["+15550801", "+15550802"], activeDaysByPersonID: [:],
+                interactionCountByPair: [PersonPairKey.make("+15550801", "+15550802"): 4]
+            ),
+        ]
+
+        let data = try GraphJSON.encode(graph: graph, groupChatActivity: activity, fullyAcquaintedRosterKeys: [])
+        let decoded = try decodeWithAcquaintances(data)
+
+        let pair = try XCTUnwrap(decoded.acquaintances.first)
+        XCTAssertEqual(pair.interactionCount, 4, "total across every shared chat")
+        XCTAssertEqual(pair.evidence.count, 1)
+        XCTAssertEqual(pair.evidence[0].interactionCount, 4, "the one chat's own per-chat count")
+
+        // Now the zero-safe case: the same pair, same score-earning chat, but no interaction
+        // evidence recorded at all -- interactionCount must still be present and equal to 0,
+        // never an omitted key (the same convention memberCount/coActiveDays already follow).
+        let zeroActivity = [
+            GroupChatActivity(
+                chatId: "chat:without-interactions", name: "Without interactions",
+                roster: ["+15550801", "+15550802"], activeDaysByPersonID: [:]
+            ),
+        ]
+        let zeroData = try GraphJSON.encode(graph: graph, groupChatActivity: zeroActivity, fullyAcquaintedRosterKeys: [])
+        let zeroDecoded = try decodeWithAcquaintances(zeroData)
+        let zeroPair = try XCTUnwrap(zeroDecoded.acquaintances.first)
+        XCTAssertEqual(zeroPair.interactionCount, 0)
+        XCTAssertEqual(zeroPair.evidence[0].interactionCount, 0)
+        XCTAssertTrue(try jsonString(zeroData).contains("\"interactionCount\":0"), "the key must be present, not omitted, when the count is zero")
     }
 
     // MARK: - Test 16: a node with no dates encodes explicit JSON null (not an omitted key),

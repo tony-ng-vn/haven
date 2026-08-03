@@ -39,7 +39,7 @@ test("computeLens matches the pair regardless of whether the focused person is a
   // "ana" is acq.a in the ana/bo pair, and acq.b in nothing here -- flip roles to confirm both sides work.
   const acq = [{ a: "cass", b: "ana", tier: "strong", score: 1, evidence: [] }];
   const result = computeLens("ana", acq, [], [], NODE_IDS);
-  assert.deepEqual(result, [{ neighborId: "cass", tier: "strong", directToYou: false }]);
+  assert.deepEqual(result, [{ neighborId: "cass", tier: "strong", directToYou: false, interactionCount: 0 }]);
 });
 
 test("computeLens marks directToYou true only for a neighbor with a real one-to-one thread to user", () => {
@@ -52,7 +52,7 @@ test("computeLens marks directToYou true only for a neighbor with a real one-to-
 test("computeLens does not treat a group-membership edge to user as directToYou", () => {
   // bo's only edge to "user machinery" is via the group g1 (userGroupMembership), never a real thread.
   const result = computeLens("cass", [{ a: "bo", b: "cass", tier: "likely", score: 0.3, evidence: [] }], EDGES, [], NODE_IDS);
-  assert.deepEqual(result, [{ neighborId: "bo", tier: "likely", directToYou: false }]);
+  assert.deepEqual(result, [{ neighborId: "bo", tier: "likely", directToYou: false, interactionCount: 0 }]);
 });
 
 test("computeLens excludes a neighbor listed in deletedIds", () => {
@@ -101,7 +101,7 @@ test("computeLensMesh returns a pair for two neighbors who also know each other,
     { a: "ana", b: "cass", tier: "likely", score: 0.3, evidence: [] } // neighbor-to-neighbor
   ];
   const result = computeLensMesh(["ana", "cass"], acq);
-  assert.deepEqual(result, [{ a: "ana", b: "cass", tier: "likely" }]);
+  assert.deepEqual(result, [{ a: "ana", b: "cass", tier: "likely", interactionCount: 0 }]);
 });
 
 test("computeLensMesh excludes a pair where only one end is a lens neighbor", () => {
@@ -130,7 +130,40 @@ test("computeLensMesh dedupes a pair that appears more than once", () => {
 
 test("computeLensMesh accepts a Set for neighborIds", () => {
   const acq = [{ a: "ana", b: "cass", tier: "strong", score: 1, evidence: [] }];
-  assert.deepEqual(computeLensMesh(new Set(["ana", "cass"]), acq), [{ a: "ana", b: "cass", tier: "strong" }]);
+  assert.deepEqual(computeLensMesh(new Set(["ana", "cass"]), acq), [{ a: "ana", b: "cass", tier: "strong", interactionCount: 0 }]);
+});
+
+/* ============================================================
+   interactionCount passthrough (tapback/reply evidence, GraphCore's
+   AcquaintanceScoring.interactionPromotionThreshold) -- both computeLens and
+   computeLensMesh must pass the export's per-pair interactionCount through untouched, and
+   fall back to 0 for an export produced before the field existed.
+   ============================================================ */
+
+test("computeLens passes interactionCount through for a pair that carries it", () => {
+  const acq = [{ a: "bo", b: "dev", tier: "strong", score: 1, evidence: [], interactionCount: 5 }];
+  const result = computeLens("bo", acq, EDGES, [], NODE_IDS);
+  assert.deepEqual(result, [{ neighborId: "dev", tier: "strong", directToYou: false, interactionCount: 5 }]);
+});
+
+test("computeLens defaults interactionCount to 0 for an export that predates the field", () => {
+  // No `interactionCount` key at all on the acquaintance entry -- exactly what an export built
+  // before this feature shipped looks like.
+  const acq = [{ a: "bo", b: "dev", tier: "strong", score: 1, evidence: [] }];
+  const result = computeLens("bo", acq, EDGES, [], NODE_IDS);
+  assert.deepEqual(result, [{ neighborId: "dev", tier: "strong", directToYou: false, interactionCount: 0 }]);
+});
+
+test("computeLensMesh passes interactionCount through for a pair that carries it", () => {
+  const acq = [{ a: "ana", b: "cass", tier: "likely", score: 0.3, evidence: [], interactionCount: 7 }];
+  const result = computeLensMesh(["ana", "cass"], acq);
+  assert.deepEqual(result, [{ a: "ana", b: "cass", tier: "likely", interactionCount: 7 }]);
+});
+
+test("computeLensMesh defaults interactionCount to 0 for an export that predates the field", () => {
+  const acq = [{ a: "ana", b: "cass", tier: "likely", score: 0.3, evidence: [] }];
+  const result = computeLensMesh(["ana", "cass"], acq);
+  assert.deepEqual(result, [{ a: "ana", b: "cass", tier: "likely", interactionCount: 0 }]);
 });
 
 /* ============================================================

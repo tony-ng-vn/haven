@@ -22,12 +22,18 @@ public struct AcquaintanceEvidence: Sendable, Equatable {
     /// The RAW (uncapped) count of days both people were active in this chat -- a fact, unlike
     /// the capped count AcquaintanceScoring actually adds to the score.
     public let coActiveDays: Int
+    /// Tapback/reply interactions between this pair observed in THIS chat only -- a fact, like
+    /// coActiveDays, never itself capped or weighted (AcquaintanceScoring.
+    /// interactionPromotionThreshold compares against the pair's TOTAL across every chat, on
+    /// Acquaintance itself, not this per-chat figure).
+    public let interactionCount: Int
 
-    public init(chatId: String, chatName: String?, memberCount: Int, coActiveDays: Int) {
+    public init(chatId: String, chatName: String?, memberCount: Int, coActiveDays: Int, interactionCount: Int = 0) {
         self.chatId = chatId
         self.chatName = chatName
         self.memberCount = memberCount
         self.coActiveDays = coActiveDays
+        self.interactionCount = interactionCount
     }
 }
 
@@ -43,8 +49,20 @@ public struct Acquaintance: Sendable, Equatable {
     public let tier: AcquaintanceTier
     public let score: Double
     public let evidence: [AcquaintanceEvidence]
+    /// Sum of every evidence entry's interactionCount -- the total tapback/reply count across
+    /// every shared chat, the figure AcquaintanceScoring.interactionPromotionThreshold compares
+    /// against. Set once at derivation, not recomputed from evidence at read time, the same
+    /// posture `score` itself already has.
+    public let interactionCount: Int
 
-    public init(a: String, b: String, tier: AcquaintanceTier, score: Double, evidence: [AcquaintanceEvidence]) {
+    public init(
+        a: String,
+        b: String,
+        tier: AcquaintanceTier,
+        score: Double,
+        evidence: [AcquaintanceEvidence],
+        interactionCount: Int = 0
+    ) {
         if a <= b {
             self.a = a
             self.b = b
@@ -55,5 +73,6 @@ public struct Acquaintance: Sendable, Equatable {
         self.tier = tier
         self.score = score
         self.evidence = evidence
+        self.interactionCount = interactionCount
     }
 }

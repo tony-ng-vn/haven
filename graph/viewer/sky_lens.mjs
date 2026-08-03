@@ -53,7 +53,15 @@ export function computeLens(focusedPersonId, acquaintances, edges, deletedIds, n
     if (deletedSet.has(neighborId) || !nodeSet.has(neighborId)) continue;
     if (seen.has(neighborId)) continue;   // one entry per pair in a well-formed export; defensive only
     seen.add(neighborId);
-    result.push({ neighborId, tier: acq.tier, directToYou: directToYouIds.has(neighborId) });
+    // interactionCount defaults to 0 for an export that predates the field (or, defensively,
+    // any acquaintance entry missing it) -- never undefined, so a caller's `>= 3` comparison
+    // never has to special-case "field absent" as distinct from "field present and zero".
+    result.push({
+      neighborId,
+      tier: acq.tier,
+      directToYou: directToYouIds.has(neighborId),
+      interactionCount: acq.interactionCount || 0
+    });
   }
   return result;
 }
@@ -86,7 +94,8 @@ export function computeLensMesh(neighborIds, acquaintances) {
     const key = acq.a < acq.b ? acq.a + "|" + acq.b : acq.b + "|" + acq.a;
     if (seen.has(key)) continue;   // one entry per pair in a well-formed export; defensive only
     seen.add(key);
-    result.push({ a: acq.a, b: acq.b, tier: acq.tier });
+    // Same zero-default as computeLens's own interactionCount -- see its doc comment.
+    result.push({ a: acq.a, b: acq.b, tier: acq.tier, interactionCount: acq.interactionCount || 0 });
   }
   return result;
 }
