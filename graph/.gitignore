@@ -1,0 +1,30 @@
+# Build output
+.build/
+DerivedData/
+*.xcodeproj/
+*.xcworkspace/
+
+# Real or extracted personal data must never be committed (GOAL.md constraint 3).
+# Synthetic test fixtures are created in temp dirs at runtime, never checked in.
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.abcddb
+cache/
+exports/
+overrides/
+
+# Rendered graphs and screenshots contain real names
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.tiff
+
+.DS_Store
+
+# Python bytecode
+__pycache__/
