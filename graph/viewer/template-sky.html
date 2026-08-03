@@ -12,10 +12,12 @@
   not read or write any real data -- open it anywhere, it is just HTML+JS+Canvas.
 
   Interaction: drag to orbit, scroll to zoom, shift-drag to pan, click a dot to
-  orbit that person, click yourself for your inner circle, double-click a person
+  orbit that person, click yourself for your inner circle, cmd+click a person
   for the connection lens (who THEY know, marked by whether each neighbor also
-  reaches you directly), arrow keys switch the 5 node-rendering skins, 1/2/3
-  switch view states, Esc clears focus.
+  reaches you directly), double-click empty space to dive toward the cursor
+  (double-clicking a dot is just two plain clicks -- it focuses, it does not
+  also dive), arrow keys switch the 5 node-rendering skins, 1/2/3 switch view
+  states, Esc clears focus.
 -->
 <html lang="en">
 <head>
@@ -28,8 +30,15 @@
   canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
   canvas.dragging { cursor: grabbing; }
 
+  /* right:118px (not 22px) clears the timerail for the same reason .roster does (see its
+     own comment): the panel is bottom-anchored and the rail is top-anchored, so on a
+     short window the panel's top edge climbs past the rail's bottom edge and can cover
+     the ENTIRE rail (play/pause, the scrub slider, and the date), not just a corner --
+     measured directly at 1000x600, where without this offset the range slider was fully
+     unreachable behind the panel. Horizontal separation fixes it at any window height,
+     unlike a vertical gap which shrinks as the window gets shorter. */
   .panel {
-    position: fixed; bottom: 22px; right: 22px; z-index: 9999;
+    position: fixed; bottom: 22px; right: 118px; z-index: 9999;
     background: rgba(24,22,19,0.94); border: 1px solid rgba(255,255,255,0.13);
     border-radius: 12px; padding: 10px 12px 11px; color: #fff;
     box-shadow: 0 12px 38px rgba(0,0,0,0.4); user-select: none;
@@ -73,6 +82,17 @@
   .hint { font-size: 10.5px; line-height: 1.55; color: rgba(255,255,255,0.44);
           margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,0.1); }
   .hint b { color: rgba(255,255,255,0.72); font-weight: 600; }
+  /* The gesture legend, permanently visible in the timeline's side rail (never a modal
+     or a dismissible tour) -- same quiet secondary-text treatment as .hint, just
+     narrower and centered to fit the rail's own column instead of the wide bottom panel.
+     .timerail has no explicit width, so its longest unwrapped line here (currently
+     "cmd-click lens") is what actually sets the rail's own ~81px rendered width -- both
+     .roster's and .panel's 118px right-offset were measured against that number, so a
+     future wording change wide enough to force a wrap (or shrink the rail) should
+     re-verify those two clearances, not just this legend's own readability. */
+  .railhint { font-size: 9.5px; line-height: 1.6; color: rgba(255,255,255,0.44); text-align: center;
+              margin-top: 2px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); }
+  .railhint b { color: rgba(255,255,255,0.72); font-weight: 600; }
 
   /* ---- node info sidebar ---- */
   .info {
@@ -165,16 +185,33 @@
   .sres .mt { margin-left: auto; font-size: 10.5px; color: rgba(255,255,255,0.45); flex: none; }
   .sres.sel, .sres:hover { background: rgba(255,255,255,0.1); }
   .snone { padding: 12px; font-size: 12px; color: rgba(255,255,255,0.4); }
-  .timebar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 9997;
-             display: flex; align-items: center; gap: 10px; width: min(380px, 42vw);
-             background: rgba(24,22,19,0.9); border: 1px solid rgba(255,255,255,0.13); border-radius: 999px;
-             padding: 8px 14px; backdrop-filter: blur(12px);
-             font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
-  .timebar button { background: none; border: none; color: #d6a45e; font-size: 13px; cursor: pointer;
-                    width: 20px; padding: 0; flex: none; }
-  .timebar input { flex: 1; }
-  .timebar .tdate { font-size: 11px; color: rgba(255,255,255,0.6); min-width: 62px; text-align: right;
-                    font-variant-numeric: tabular-nums; }
+  /* A vertical side rail, not a bottom bar: the timeline used to run the full width of
+     the bottom edge, competing with the sky's own horizontal space for the scene itself.
+     Right side (see this file's own PR notes for why): the left edge's only persistent
+     occupant is the small, pointer-events:none masthead, but the dossier card that opens
+     there is wide and can run tall; the right edge already groups every other view
+     "control" (zoom, the options panel), so the timeline joins them as one more control
+     rather than sitting alone on the information side. Unlike the roster/dossier
+     conditional overlap on the opposite edge, the rail is ALWAYS present, so it cannot
+     simply win a shared space the way that pair does -- .roster and .panel are both
+     offset instead (see each one's own comment) so neither one's controls ever end up
+     under the rail, at any window size either shares with it. */
+  .timerail { position: fixed; top: 84px; right: 22px; z-index: 9995;
+              display: flex; flex-direction: column; align-items: center; gap: 10px;
+              background: rgba(24,22,19,0.9); border: 1px solid rgba(255,255,255,0.13); border-radius: 16px;
+              padding: 14px 11px 12px; backdrop-filter: blur(12px);
+              font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  .timerail button { background: none; border: none; color: #d6a45e; font-size: 13px; cursor: pointer; padding: 0; }
+  /* appearance: slider-vertical is non-standard but the well-established, purpose-built
+     WebKit (and Chromium) way to get a real, fully keyboard-operable vertical
+     <input type=range> -- verified directly against this exact WKWebView engine
+     (getComputedStyle resolves to "slider-vertical", not silently dropped to "auto")
+     before committing to it over the writing-mode alternative; see the PR body for the
+     verification method and why writing-mode was rejected. */
+  .timerail input[type=range] { -webkit-appearance: slider-vertical; appearance: slider-vertical;
+                                 width: 8px; height: 168px; margin: 2px 0; }
+  .timerail .tdate { font-size: 11px; color: rgba(255,255,255,0.6); text-align: center;
+                      white-space: nowrap; font-variant-numeric: tabular-nums; }
   .crumbs { padding: 8px 12px 7px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 11px;
             color: rgba(255,255,255,0.42); display: flex; flex-wrap: wrap; gap: 3px 5px; align-items: center; }
   .crumb { color: #d6a45e; cursor: pointer; }
@@ -204,7 +241,7 @@
         border: 1px solid rgba(235,205,150,0.35); border-bottom-width: 2px;
         background: rgba(235,205,150,0.08); color: #ecd9b0;
         font: 600 10px -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: 0.04em; }
-  .panel, .info, .search, .timebar, .khint {
+  .panel, .info, .search, .timerail, .khint {
     background: linear-gradient(180deg, rgba(22,19,14,0.93), rgba(12,11,9,0.95));
     border: 1px solid rgba(235,205,150,0.16);
     box-shadow: 0 1px 0 rgba(255,244,214,0.07) inset, 0 24px 60px rgba(0,0,0,0.55);
@@ -280,6 +317,8 @@
           border-color: rgba(235,205,150,0.4); }
   .hint { border-top: 1px solid rgba(235,205,150,0.12); font-size: 10px; color: rgba(242,231,210,0.4); }
   .hint b { color: rgba(236,217,176,0.85); }
+  .railhint { border-top: 1px solid rgba(235,205,150,0.12); font-size: 9px; color: rgba(242,231,210,0.4); }
+  .railhint b { color: rgba(236,217,176,0.85); }
   .search { width: 400px; }
   .search input { font: italic 17px Georgia, serif; padding: 15px 16px;
                   border-bottom: 1px solid rgba(235,205,150,0.14); color: #f2e7d2; }
@@ -287,9 +326,9 @@
   .sres .mt { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(214,164,94,0.7); }
   .sres.sel, .sres:hover { background: rgba(235,205,150,0.1); }
   .snone { font: italic 12.5px Georgia, serif; }
-  .timebar { padding: 9px 16px; gap: 12px; }
-  .timebar .tdate { font: 600 12px Georgia, serif; color: #ecd9b0; }
-  .timebar button { color: #e9c384; }
+  .timerail { padding: 14px 12px 12px; gap: 12px; }
+  .timerail .tdate { font: 600 12px Georgia, serif; color: #ecd9b0; }
+  .timerail button { color: #e9c384; }
   input[type=range] { -webkit-appearance: none; appearance: none; height: 16px; background: none; }
   input[type=range]::-webkit-slider-runnable-track { height: 2px; border-radius: 2px;
     background: linear-gradient(90deg, rgba(233,195,132,0.7), rgba(235,205,150,0.15)); }
@@ -299,6 +338,15 @@
   input[type=range]::-moz-range-track { height: 2px; background: rgba(235,205,150,0.3); }
   input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%;
     background: #e9c384; border: 1px solid rgba(60,44,20,0.8); }
+  /* The same track/thumb as every other range input above, axes swapped for a vertical
+     slider: the track's long dimension is now `height` (100% of the input's own tall
+     box) instead of `width`, its thickness `width: 2px` instead of `height: 2px`; the
+     thumb centers on that thin track with `margin-left` instead of `margin-top`, same
+     -5.5px math (half of thumb-minus-track: (13-2)/2). */
+  .timerail input[type=range]::-webkit-slider-runnable-track { width: 2px; height: 100%; border-radius: 2px;
+    background: linear-gradient(180deg, rgba(233,195,132,0.7), rgba(235,205,150,0.15)); }
+  .timerail input[type=range]::-webkit-slider-thumb { margin-top: 0; margin-left: -5.5px; }
+  .timerail input[type=range]::-moz-range-track { width: 2px; height: 100%; background: rgba(235,205,150,0.3); }
   .info-body::-webkit-scrollbar, .search-res::-webkit-scrollbar { width: 8px; }
   .info-body::-webkit-scrollbar-thumb, .search-res::-webkit-scrollbar-thumb {
     background: rgba(235,205,150,0.18); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
@@ -347,7 +395,18 @@
   .chiptip .pop { display: block; margin-top: 6px; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(214,164,94,0.85); }
 
   /* ---- ring roster / edits: one right-side panel, mutually exclusive modes ---- */
-  .roster { position: fixed; top: 66px; right: 22px; z-index: 9993; width: 296px;
+  /* right:118px (not 22px) clears the timerail: the rail sits at right:22px and measures
+     ~81px wide, so its left edge lands ~103px from the window edge; each roster row's own
+     .ractions column (move/delete) sits flush against the roster's right edge, and the
+     rail is ALWAYS present (unlike the roster/dossier conditional overlap below), so
+     without this offset the rail would sit on top of those buttons and eat every click
+     whenever a ring roster or the Edits panel is open. Verified by measuring both rects
+     with a ring roster open; see the PR body.
+     Trade-off this offset introduces: moving 96px further left brings the roster's own
+     left edge within reach of .info (the dossier) on a narrow window -- measured
+     overlapping below ~690px wide with the dossier open, never at any height alone.
+     Not fixed this round (see the PR body); flagging so it isn't mistaken for unnoticed. */
+  .roster { position: fixed; top: 66px; right: 118px; z-index: 9993; width: 296px;
             max-height: min(60vh, calc(100vh - 190px)); display: flex; flex-direction: column;
             background: linear-gradient(180deg, rgba(22,19,14,0.93), rgba(12,11,9,0.95));
             border: 1px solid rgba(235,205,150,0.16); border-radius: 14px;
@@ -408,6 +467,31 @@
   .editaffs button:hover { background: rgba(235,205,150,0.1); }
   .editaffs button.danger:hover { border-color: rgba(220,120,110,0.6); color: #f2a89e; }
   .editexpand { margin: 7px 10px 2px; padding: 7px 8px; border-radius: 8px; background: rgba(235,205,150,0.05); }
+  /* Mirrors .rexpand's own .ep/.epicks/.econfirm rules (the ring roster's row-expand) --
+     .editexpand (the dossier card's own move/delete/rename expand box) never had its own
+     copy of these, so its move-picker and delete-confirm buttons were relying on
+     unstyled browser defaults; fixed here alongside adding the rename input that needs
+     the same treatment. */
+  .editexpand .ep { font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(214,164,94,0.7); margin: 0 2px 5px; }
+  .editexpand .epicks { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 2px; }
+  .editexpand .epicks button { background: none; border: 1px solid rgba(235,205,150,0.22); border-radius: 999px;
+                                padding: 4px 9px; font-size: 10px; color: rgba(242,231,210,0.72); cursor: pointer;
+                                font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  .editexpand .epicks button:hover { background: rgba(235,205,150,0.1); }
+  .editexpand .epicks button.cur { background: linear-gradient(180deg, #e9c384, #cf9f56); color: #241a0c; font-weight: 700; border-color: transparent; }
+  .editexpand .epicks button.go { border-color: rgba(150,215,150,0.5); color: #cdeec0; }
+  .editexpand .epicks button.go:hover { background: rgba(150,215,150,0.12); }
+  .editexpand .econfirm { padding: 0 2px; display: flex; align-items: center; gap: 8px; }
+  .editexpand .econfirm span { font-size: 11px; color: rgba(242,231,210,0.7); flex: 1; }
+  .editexpand .econfirm button { background: none; border: 1px solid rgba(235,205,150,0.25); border-radius: 7px;
+                                  padding: 4px 9px; font-size: 10.5px; color: #ecd9b0; cursor: pointer;
+                                  font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  .editexpand .econfirm button.go { border-color: rgba(220,120,110,0.6); color: #f2a89e; }
+  .editexpand .econfirm button:hover { background: rgba(235,205,150,0.1); }
+  .renamein { display: block; width: 100%; margin: 0 0 6px; padding: 6px 8px; border-radius: 7px;
+              background: rgba(0,0,0,0.25); border: 1px solid rgba(235,205,150,0.25); color: #f2e7d2;
+              font-size: 12.5px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  .renamein:focus { outline: none; border-color: rgba(235,205,150,0.6); background: rgba(0,0,0,0.35); }
 </style>
 </head>
 <body>
@@ -420,7 +504,7 @@
 <div class="zoomctl"><button id="z-in" title="Zoom in">+</button><button id="z-out" title="Zoom out">&minus;</button></div>
 <div class="ringbar" id="ringbar">
   <button data-t="0">Inner circle</button><button data-t="1">Close friends</button><button data-t="2">Friends</button><button data-t="3">Familiar</button><button data-t="4">Everyone</button>
-  <span class="sep"></span><button class="editsbtn" id="edits-btn" title="Review moved and deleted people">Edits<span class="edot"></span></button>
+  <span class="sep"></span><button class="editsbtn" id="edits-btn" title="Review moved, renamed, and deleted people">Edits<span class="edot"></span></button>
 </div>
 <div class="chiptip" id="chiptip"></div>
 <div class="roster" id="roster">
@@ -435,10 +519,13 @@
   <input id="search-in" placeholder="Search people and circles&hellip;" spellcheck="false">
   <div class="search-res" id="search-res"></div>
 </div>
-<div class="timebar" id="timebar" title="Travel through your history">
+<div class="timerail" id="timerail" title="Travel through your history">
   <button id="tb-play">&#9654;</button>
   <input type="range" id="tb-range" min="0" max="1000" value="1000">
   <span class="tdate" id="tb-date">Today</span>
+  <div class="railhint">
+    <b>click</b> focus<br><b>&#8984;-click</b> lens<br><b>esc</b> clear
+  </div>
 </div>
 <div class="tourcap" id="tourcap"></div>
 
@@ -466,7 +553,7 @@
   <div class="hint">
     <b>Drag</b> orbit - <b>scroll</b> dive toward your cursor - <b>shift-drag</b> pan - <b>&#8984;K</b> find anyone<br>
     <b>Click a dot</b> to open their card - <b>click a square</b> for a group chat - <b>click yourself</b> for your inner circle<br>
-    <b>Double-click a person</b> to see who they know - a ring on a dot marks whether that person also reaches you directly<br>
+    <b>&#8984;-click a person</b> to see who they know - a ring on a dot marks whether that person also reaches you directly<br>
     <b>Hover</b> lights a whole constellation - <b>&#9654;</b> plays your history - <b>esc</b> clears
   </div>
 </div>
@@ -506,16 +593,6 @@ __VIEWER_CORE_JS__
 let _s = 20260731;
 function rnd() { _s = (_s * 1664525 + 1013904223) % 4294967296; return _s / 4294967296; }
 
-/// A leading "~" on a name marks a model guess (inferred from message
-/// content, not a saved contact card); strip it for display and flag it
-/// via labelKind so the UI can style it differently. A missing name means
-/// the export has nothing but the raw id (phone/email) -- show that.
-function labelInfo(rawName, fallbackId) {
-  if (rawName && rawName.startsWith("~")) return { name: rawName.slice(1), labelKind: "guess" };
-  if (rawName) return { name: rawName, labelKind: "name" };
-  return { name: fallbackId, labelKind: "phone" };
-}
-
 /* ============================================================
    People edits: move-to-ring and delete, kept in localStorage so
    they survive a reload. Pure functions below take plain data in
@@ -554,25 +631,34 @@ function filterDeleted(nodes, edges, deletedIds) {
   };
 }
 const EDITS_KEY = "havenSky.peopleEdits.v1";
+// The try/catch and localStorage access are the only things that can't run outside a
+// browser; the actual "what does a parsed payload MEAN" rule is normalizeEditsPayload
+// (sky_lens.mjs), so it can be node-tested without a DOM. `v` stays 1: adding `names`
+// is additive to the existing v1 shape (normalizeEditsPayload defaults a missing key),
+// never a version bump that would reset an existing user's real moves/deleted.
 function loadEdits() {
   try {
     const raw = localStorage.getItem(EDITS_KEY);
-    if (!raw) return { v: 1, moves: {}, deleted: [] };
-    const p = JSON.parse(raw);
-    if (!p || p.v !== 1) return { v: 1, moves: {}, deleted: [] };   // unknown shape: start clean rather than misread it
-    return { v: 1, moves: (p.moves && typeof p.moves === "object") ? p.moves : {}, deleted: Array.isArray(p.deleted) ? p.deleted : [] };
-  } catch (err) { return { v: 1, moves: {}, deleted: [] }; }   // file:// / private-mode storage can throw -- fall back to no edits
+    return normalizeEditsPayload(raw ? JSON.parse(raw) : null);
+  } catch (err) { return normalizeEditsPayload(null); }   // file:// / private-mode storage can throw -- fall back to no edits
 }
 const EDITS = loadEdits();
 function saveEdits() {
   try { localStorage.setItem(EDITS_KEY, JSON.stringify(EDITS)); } catch (err) { /* edits stay in-memory only this session */ }
 }
+// Every raw export node, by id -- the ORIGINAL name/disambiguator as exported, never
+// touched by a live rename. setCustomName needs this: resolvePersonLabel always takes
+// the true raw name as its base, never the previous render's already-resolved one, or a
+// second rename would resolve against the FIRST custom name instead of the export.
+const RAW_NODE_BY_ID = Object.fromEntries(RAW.nodes.map(n => [n.id, n]));
 // A deleted person's own name/labelKind, captured before they're filtered out of
-// the graph, so the Edits panel can still show who "Restore" would bring back.
+// the graph, so the Edits panel can still show who "Restore" would bring back --
+// their custom name (if they had one) included, since that's what the user actually
+// called them and is more recognizable than falling back to a guess or contact name.
 const DELETED_SNAPSHOT = {};
 for (const n of RAW.nodes) {
   if (EDITS.deleted.indexOf(n.id) < 0) continue;
-  const li = labelInfo(n.name, n.id);
+  const li = resolvePersonLabel(n.name, EDITS.names[n.id], n.id);
   DELETED_SNAPSHOT[n.id] = { id: n.id, name: li.name, labelKind: li.labelKind };
 }
 // "user" can never be deleted -- guard here too, in case a stray localStorage
@@ -651,7 +737,7 @@ function adaptReal(raw) {
       // not a close friend, 200 across three years is.
       let days = 0;
       for (const e of adj[n.id]) if (e.type === "thread") days = Math.max(days, e.strength);
-      const { name, labelKind } = labelInfo(n.name, n.id);
+      const { name, labelKind } = resolvePersonLabel(n.name, EDITS.names[n.id], n.id);
       // A quieter suffix distinguishing this person from another exported node sharing the
       // exact same display name (e.g. two "John"s) -- absent for a unique name, and always
       // null (never "undefined") for an export built before GraphJSON gained this field.
@@ -668,7 +754,10 @@ function adaptReal(raw) {
       };
       people.push(p); byId[n.id] = p; nodes.push(p);
     } else if (n.kind === "group") {
-      const { name, labelKind } = labelInfo(n.name, "");
+      // Groups are never renameable (SCOPE: renaming only applies to a person), so
+      // customName is always null here -- resolvePersonLabel then behaves exactly like
+      // the old labelInfo(n.name, "") did.
+      const { name, labelKind } = resolvePersonLabel(n.name, null, "");
       const g = {
         id: n.id, kind: "group", name, size: 0, members: [], groups: [],
         isLive: n.isLive, labelKind, met: metFraction(n.firstMessageDate)
@@ -877,10 +966,61 @@ function deletePerson(personId) {
   DELETED_SNAPSHOT[personId] = { id: personId, name: p.name, labelKind: p.labelKind };
   if (EDITS.deleted.indexOf(personId) < 0) EDITS.deleted.push(personId);
   delete EDITS.moves[personId];   // a deleted person's ring override is meaningless
+  // EDITS.names[personId] deliberately survives a delete, unlike moves: revertDelete()
+  // reloads the page and re-adapts from RAW + EDITS, so keeping the name here is exactly
+  // what makes a restored person come back with their custom name intact, not their guess.
   removePeopleFromGraph(D, [personId]);
   saveEdits();
   recomputeDerivedAggregates();
 }
+// A rename never touches rank, physics position, or which nodes exist -- a name has no
+// bearing on any of those -- so unlike delete/restore this mutates the already-adapted
+// person in place and recomputes live, the same posture moveOverride already has.
+// Resolves against RAW_NODE_BY_ID's untouched original name, never the person's current
+// (possibly already custom) p.name: renaming a second time must resolve against the
+// export, not against whatever the FIRST rename left behind.
+//
+// Gated on rawNode, not D.byId[personId]: a renamed-then-deleted person has already been
+// dropped from D.byId by removePeopleFromGraph, but their EDITS.names entry (and its
+// Revert button in the Edits panel) is still very much live -- rawNode always survives
+// since RAW_NODE_BY_ID never loses anyone, so the clear-rename affordance keeps working
+// on a deleted person instead of silently no-op'ing. p itself only exists (and only gets
+// touched) for someone still on screen.
+function setCustomName(personId, rawValue) {
+  const rawNode = RAW_NODE_BY_ID[personId];
+  if (!rawNode || rawNode.kind !== "person") return;
+  const trimmed = (rawValue || "").trim();
+  if (trimmed) EDITS.names[personId] = trimmed; else delete EDITS.names[personId];
+  const p = D.byId[personId];
+  if (p) {
+    const resolved = resolvePersonLabel(rawNode.name, EDITS.names[personId], rawNode.id);
+    p.name = resolved.name; p.labelKind = resolved.labelKind;
+  }
+  // A deleted person has no live p to re-derive from, but their Edits-panel row still
+  // shows a name (see DELETED_SNAPSHOT fallback in renderEditsPanelBody) -- keep that
+  // snapshot in sync so clearing/re-setting the name is reflected there too, not just
+  // in EDITS.names, and only if they were ever deleted in the first place.
+  if (DELETED_SNAPSHOT[personId]) {
+    const resolved = resolvePersonLabel(rawNode.name, EDITS.names[personId], rawNode.id);
+    DELETED_SNAPSHOT[personId].name = resolved.name;
+    DELETED_SNAPSHOT[personId].labelKind = resolved.labelKind;
+  }
+  saveEdits();
+  if (p) {
+    recomputeDerivedAggregates();   // walks D.people/D.adj/D.groups; also re-renders the roster/badge as a side effect
+  } else {
+    // No live person to recompute anything from, but the Edits panel's Renamed row and the
+    // edits badge both still need to reflect this -- without an explicit refresh here, the
+    // Revert button on a renamed-then-deleted person's row looks dead: the state changes
+    // (EDITS.names loses the key) but nothing on screen shows it happened.
+    renderRoster();
+    renderEditsBadge();
+  }
+}
+// The clear-rename affordance: same outcome as saving an empty value, spelled out as its
+// own function since "clear" is a distinct button, not a text field a user has to empty
+// out by hand first.
+function clearCustomName(personId) { setCustomName(personId, ""); }
 // Restoring a deleted person needs their rank re-derived among everyone else,
 // a home shell radius, and a seeded physics position -- the exact pipeline that
 // only runs once at load. Rebuilding that live risked far more than it saved,
@@ -892,7 +1032,7 @@ function revertDelete(personId) {
   location.reload();
 }
 function resetAllEdits() {
-  EDITS.moves = {}; EDITS.deleted = [];
+  EDITS.moves = {}; EDITS.deleted = []; EDITS.names = {};
   saveEdits();
   location.reload();
 }
@@ -1488,7 +1628,7 @@ let lastPersonID = D.people[3].id;
 let projected = {};
 
 /* ============================================================
-   The connection lens: double-click a person to see who THEY know, each neighbor
+   The connection lens: cmd+click a person to see who THEY know, each neighbor
    marked by whether that neighbor also connects straight to you. Active only while
    LENS_ID still matches the current focus -- see setLens/clearLens and every branch
    of setViewState below, which is the single place focus actually changes.
@@ -1510,8 +1650,8 @@ function setLens(id) {
 function clearLens() {
   LENS_ID = null; LENS = []; LENS_BY_ID = new Map(); LENS_MESH = [];
 }
-/// The dblclick handler's own entry point: people only (the user is never lensable,
-/// and a group has no acquaintance pairs of its own to reveal) -- double-clicking
+/// The cmd+click gesture's own entry point (clickAt): people only (the user is never
+/// lensable, and a group has no acquaintance pairs of its own to reveal) -- cmd+clicking
 /// anything else is a harmless no-op, same as it always was before the lens existed.
 function toggleLens(id) {
   const n = D.byId[id];
@@ -2316,7 +2456,10 @@ window.addEventListener("mousemove", e => {
   lx = e.clientX; ly = e.clientY;
 });
 window.addEventListener("mouseup", e => {
-  if (dragging && moved < 5) clickAt(e.clientX, e.clientY);
+  // moved < 5 is what already tells a real drag (orbit/pan) apart from a click, cmd
+  // held or not -- a cmd-drag to orbit never reaches clickAt at all, so it can never
+  // fire the lens by accident.
+  if (dragging && moved < 5) clickAt(e.clientX, e.clientY, e.metaKey);
   dragging = false; cv.classList.remove("dragging");
 });
 cv.addEventListener("wheel", e => {
@@ -2337,15 +2480,12 @@ cv.addEventListener("wheel", e => {
   cam.dist = nd;
 }, { passive: false });
 cv.addEventListener("dblclick", e => {
-  // Prefer the id the two constituent single clicks already settled on (see
-  // lastClickID's own comment) over a fresh pick, which can miss once the camera
-  // has started gliding toward the focus those same clicks just landed. 800ms is
-  // generous slack above any real double-click interval -- the two are otherwise
-  // causally back-to-back -- while still not reusing a click from an unrelated,
-  // much earlier gesture.
-  const fresh = lastClickID && (performance.now() - lastClickAt) < 800;
-  const hit = fresh ? lastClickID : pick(e.clientX, e.clientY);
-  if (hit) { toggleLens(hit); return; }   // node double-clicks belong to the lens
+  // The lens now lives on cmd+click (clickAt), not double-click -- double-clicking
+  // empty space is just the zoom-toward-cursor gesture below. Double-clicking a node is
+  // two plain clicks first (mouseup already ran clickAt/focusNode for each one), so diving
+  // the camera here too would fight focusNode's own target on the very same gesture --
+  // bail out and leave a node double-click as plain focus.
+  if (pick(e.clientX, e.clientY)) return;
   const k = FOCAL / cam.dist;
   const X1 = (e.clientX - W / 2 - cam.panX - cam.shiftX) / (k * cam.fit) + cam.cX;
   const Y1 = (e.clientY - H / 2 - cam.panY) / (k * cam.fit) + cam.cY;
@@ -2448,8 +2588,11 @@ function rosterRowExpandHTML(id) {
     RING_LABELS.map((label, i) => '<button class="' + (p.tier === i ? "cur" : "") + '" data-move="' + esc(id) + '" data-tier="' + i + '">' + esc(label) + "</button>").join("") +
     "</div></div>";
 }
+// "guess"/"phone" read as uncertain (dim, italic); "name" and "custom" are both a
+// deliberate, confident label and read the same as each other -- a rename is not a guess.
+function isUncertainLabel(labelKind) { return labelKind === "guess" || labelKind === "phone"; }
 function rosterRowHTML(p, maxS) {
-  const dim = p.labelKind !== "name" ? " dim" : "";
+  const dim = isUncertainLabel(p.labelKind) ? " dim" : "";
   const moved = Object.prototype.hasOwnProperty.call(EDITS.moves, p.id) ? '<span class="movedtag">moved</span>' : "";
   return '<div class="rrow" data-row="' + esc(p.id) + '">' +
     '<div class="rbody item" data-focus="' + esc(p.id) + '">' + avatarHTML(p, "dot") +
@@ -2477,10 +2620,10 @@ function renderRingRoster() {
 }
 function renderEditsPanelBody() {
   rosterTitleEl.textContent = "Edits";
-  const moveIds = Object.keys(EDITS.moves), delIds = EDITS.deleted;
-  rosterCountEl.textContent = (moveIds.length + delIds.length) + " total";
-  if (!moveIds.length && !delIds.length) {
-    rosterListEl.innerHTML = '<div class="snone">No edits yet. Move or delete someone from their card, or from a ring roster.</div>';
+  const moveIds = Object.keys(EDITS.moves), delIds = EDITS.deleted, nameIds = Object.keys(EDITS.names);
+  rosterCountEl.textContent = (moveIds.length + delIds.length + nameIds.length) + " total";
+  if (!moveIds.length && !delIds.length && !nameIds.length) {
+    rosterListEl.innerHTML = '<div class="snone">No edits yet. Move, rename, or delete someone from their card, or from a ring roster.</div>';
     return;
   }
   let html = "";
@@ -2492,6 +2635,17 @@ function renderEditsPanelBody() {
       html += '<div class="editrow-item"><span class="einame">' + esc(p.name) + '</span>' +
         '<span class="eito">&rarr; ' + esc(RING_LABELS[p.tier]) + '</span>' +
         '<button class="editrevert" data-revert-move="' + esc(id) + '">Revert</button></div>';
+    }
+  }
+  if (nameIds.length) {
+    html += '<div class="sec">Renamed &middot; ' + nameIds.length + '</div>';
+    for (const id of nameIds) {
+      // A renamed-then-deleted person is gone from D.byId; DELETED_SNAPSHOT still has their
+      // (custom) name, same fallback the Deleted section below already relies on -- without
+      // it this row would show the raw phone/email while every other row shows a name.
+      const p = D.byId[id] || DELETED_SNAPSHOT[id];
+      html += '<div class="editrow-item"><span class="einame">' + esc(p ? p.name : id) + '</span>' +
+        '<button class="editrevert" data-revert-rename="' + esc(id) + '">Revert</button></div>';
     }
   }
   if (delIds.length) {
@@ -2511,7 +2665,7 @@ function renderRoster() {
   else { rosterEl.classList.remove("open"); ROSTER_EXPANDED = null; ROSTER_EXPAND_KIND = null; }
 }
 function renderEditsBadge() {
-  const has = Object.keys(EDITS.moves).length > 0 || EDITS.deleted.length > 0;
+  const has = Object.keys(EDITS.moves).length > 0 || EDITS.deleted.length > 0 || Object.keys(EDITS.names).length > 0;
   editsBtnEl.classList.toggle("has", has);
 }
 rosterListEl.addEventListener("click", e => {
@@ -2529,6 +2683,8 @@ rosterListEl.addEventListener("click", e => {
   if (rm) { revertMove(rm.dataset.revertMove); return; }
   const rd = e.target.closest("[data-revert-delete]");
   if (rd) { revertDelete(rd.dataset.revertDelete); return; }
+  const rn = e.target.closest("[data-revert-rename]");
+  if (rn) { clearCustomName(rn.dataset.revertRename); return; }
   if (e.target.id === "edits-reset-all") { resetAllEdits(); return; }
   const fb = e.target.closest("[data-focus]");
   if (fb) focusNode(fb.dataset.focus);
@@ -2549,18 +2705,14 @@ function pick(x, y) {
   }
   return best;
 }
-// The dblclick handler's own record of "what did the click just before this one
-// actually hit" -- a native dblclick fires immediately after this same mouseup's
-// clickAt already ran (mousedown, mouseup, click, mousedown, mouseup, click,
-// dblclick, all synchronous), but by the time it fires the camera may already be
-// gliding toward a fresh focus target, and re-picking at the dblclick's own
-// coordinates can land on empty space or a different, since-moved node. Trusting
-// the id this run of clickAt just decided sidesteps that race entirely.
-let lastClickID = null, lastClickAt = 0;
-function clickAt(x, y) {
+// One gesture, one outcome: cmd+click (isLensGesture) always means "toggle the lens",
+// never also the plain-click focus change, even when the lens has nothing to toggle
+// (empty space, a group, the user) -- toggleLens itself already no-ops for anything but
+// a person, so this never needs its own duplicate kind check.
+function clickAt(x, y, isLensGesture) {
   const id = pick(x, y);
-  if (!id) { setViewState("rest"); lastClickID = null; return; }
-  lastClickID = id; lastClickAt = performance.now();
+  if (isLensGesture) { if (id) toggleLens(id); return; }
+  if (!id) { setViewState("rest"); return; }
   focusNode(id);
 }
 // Frame a set of nodes: centroid + the distance that fits them all on screen.
@@ -2622,11 +2774,10 @@ function setViewState(s) {
     camT.tx = f.cx; camT.ty = f.cy; camT.tz = f.cz; camT.dist = f.dist;
   } else {
     focusID = lastPersonID;
-    // Focus landing on the SAME id the lens already tracks (the two constituent
-    // single clicks of a double-click on the already-lensed person, or a plain
-    // re-click) leaves the lens exactly as it was -- only a genuine move to a
-    // DIFFERENT node clears it, so a stale lens never survives to describe
-    // someone who is no longer focused.
+    // Focus landing on the SAME id the lens already tracks (a plain re-click, or focus
+    // arriving here via the trail/crumbs) leaves the lens exactly as it was -- only a
+    // genuine move to a DIFFERENT node clears it, so a stale lens never survives to
+    // describe someone who is no longer focused.
     if (LENS_ID !== null && LENS_ID !== focusID) clearLens();
     PULSE.id = focusID; PULSE.t = performance.now();
     const n = D.byId[lastPersonID];
@@ -2666,6 +2817,7 @@ function kindLabel(n) {
   if (n.kind === "group") return "Group chat · " + n.size + " people";
   if (n.labelKind === "phone") return "No contact card · number only";
   if (n.labelKind === "guess") return "Best guess from messages · " + n.id;
+  if (n.labelKind === "custom") return "Custom name · " + n.id;
   // The identifier rides along with the name: a saved contact name hides which number
   // or address it actually resolves to, and that is exactly what you need when two
   // people look alike or a name turns out to be attached to the wrong handle.
@@ -2683,7 +2835,7 @@ function avatarHTML(n, cls) {
   return '<div class="' + cls + '" style="background:rgb(' + pal.chip + ');color:rgb(' + pal.deep + ')">' + esc(initialsOf(n)) + "</div>";
 }
 function itemHTML(n, meta, barT) {
-  const dim = n.kind !== "user" && n.labelKind !== "name" ? " dim" : "";
+  const dim = n.kind !== "user" && isUncertainLabel(n.labelKind) ? " dim" : "";
   const nm = n.kind === "group" && n.labelKind === "phone" ? "Unnamed group" : n.name;
   const bar = barT != null
     ? '<div class="bar"><i style="width:' + Math.round(Math.max(0.03, barT) * 100) + '%"></i></div>' : "";
@@ -2751,9 +2903,9 @@ function crumbsHTML() {
     '<span class="crumb" data-ci="' + i + '">' + esc(crumbTitle(id)) + "</span><span>\u203a</span>").join("") +
     '<b style="color:rgba(255,255,255,0.75);font-weight:600">' + esc(crumbTitle(focusID)) + "</b></div>";
 }
-let DOSSIER_EDIT_ID = null, DOSSIER_EDIT_KIND = null;   // "move" | "delete", scoped to one focused person
+let DOSSIER_EDIT_ID = null, DOSSIER_EDIT_KIND = null;   // "move" | "delete" | "rename", scoped to one focused person
 function dossierEditHTML(n) {
-  if (n.kind !== "person") return "";   // groups aren't editable this round, and "user" can never move or delete
+  if (n.kind !== "person") return "";   // groups aren't editable this round, and "user" can never move, delete, or rename
   if (DOSSIER_EDIT_ID === n.id && DOSSIER_EDIT_KIND === "delete") {
     return '<div class="editexpand"><div class="econfirm"><span>Delete this person? Their edges disappear too.</span>' +
       '<button data-cancel-del="' + esc(n.id) + '">Cancel</button>' +
@@ -2764,7 +2916,21 @@ function dossierEditHTML(n) {
       RING_LABELS.map((label, i) => '<button class="' + (n.tier === i ? "cur" : "") + '" data-move="' + esc(n.id) + '" data-tier="' + i + '">' + esc(label) + "</button>").join("") +
       "</div></div>";
   }
+  if (DOSSIER_EDIT_ID === n.id && DOSSIER_EDIT_KIND === "rename") {
+    const hasCustom = Object.prototype.hasOwnProperty.call(EDITS.names, n.id);
+    // esc() alone only handles & and < (fine for text nodes); a name lands in a value="" attribute
+    // here, so quotes need escaping too or a name containing one breaks the markup (see copyChip).
+    const nameAttr = esc(n.name).replace(/"/g, "&quot;");
+    return '<div class="editexpand"><div class="ep">Rename</div>' +
+      '<input type="text" class="renamein" id="rename-in" value="' + nameAttr + '" maxlength="80" placeholder="Custom name" autocomplete="off" spellcheck="false">' +
+      '<div class="epicks">' +
+      '<button class="go" data-save-rename="' + esc(n.id) + '">Save</button>' +
+      (hasCustom ? '<button data-clear-rename="' + esc(n.id) + '">Use derived name</button>' : '') +
+      '<button data-cancel-rename="' + esc(n.id) + '">Cancel</button>' +
+      '</div></div>';
+  }
   return '<div class="editaffs"><button data-toggle-move="' + esc(n.id) + '">Move</button>' +
+    '<button data-toggle-rename="' + esc(n.id) + '">Rename</button>' +
     '<button class="danger" data-toggle-del="' + esc(n.id) + '">Delete</button></div>';
 }
 function renderInfo() {
@@ -2790,7 +2956,7 @@ function renderInfo() {
       '<div class="more">' + (F.total - top.length) + " quieter conversations wait in the haze</div>";
   } else if (n.kind === "group") {
     const members = n.members.map(id => D.byId[id]).sort((a, b) => b.strength - a.strength);
-    const named = members.filter(m => m.labelKind === "name").length;
+    const named = members.filter(m => !isUncertainLabel(m.labelKind)).length;
     const maxS = members.length ? members[0].strength : 1;
     stats = statHTML(members.length, "members") + statHTML(named, "named") + statHTML(members.length - named, "unknown");
     body = '<div class="sec">Members · closest first</div>' +
@@ -2851,8 +3017,39 @@ infoEl.addEventListener("click", e => {
   if (mv) { DOSSIER_EDIT_ID = null; moveOverride(mv.dataset.move, +mv.dataset.tier); return; }
   const cd = e.target.closest("[data-confirm-del]");
   if (cd) { DOSSIER_EDIT_ID = null; deletePerson(cd.dataset.confirmDel); return; }
+  const tr = e.target.closest("[data-toggle-rename]");
+  if (tr) {
+    DOSSIER_EDIT_ID = tr.dataset.toggleRename; DOSSIER_EDIT_KIND = "rename"; renderInfo();
+    const input = document.getElementById("rename-in");
+    if (input) { input.focus(); input.select(); }
+    return;
+  }
+  const crn = e.target.closest("[data-cancel-rename]");
+  if (crn) { DOSSIER_EDIT_ID = null; renderInfo(); return; }
+  const sr = e.target.closest("[data-save-rename]");
+  if (sr) {
+    const input = document.getElementById("rename-in");
+    DOSSIER_EDIT_ID = null;
+    setCustomName(sr.dataset.saveRename, input ? input.value : "");
+    return;
+  }
+  const clr = e.target.closest("[data-clear-rename]");
+  if (clr) { DOSSIER_EDIT_ID = null; clearCustomName(clr.dataset.clearRename); return; }
   const it = e.target.closest(".item");
   if (it && it.dataset.id !== focusID) focusNode(it.dataset.id);
+});
+// Enter saves the rename, Esc cancels it -- typing in the rename field must not also
+// trigger the sky's own global Esc-clears-focus / keyboard shortcuts.
+infoEl.addEventListener("keydown", e => {
+  if (!e.target.matches("#rename-in")) return;
+  if (e.key === "Enter") {
+    e.preventDefault();
+    const id = DOSSIER_EDIT_ID;
+    DOSSIER_EDIT_ID = null;
+    setCustomName(id, e.target.value);
+    return;
+  }
+  if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); DOSSIER_EDIT_ID = null; renderInfo(); }
 });
 infoEl.addEventListener("mouseover", e => {
   const it = e.target.closest(".item");
@@ -2864,6 +3061,7 @@ window.addEventListener("keydown", e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openSearch(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "h") { e.preventDefault(); togglePanel(); return; }
   if (document.activeElement === searchIn) return;   // the input handles its own keys
+  if (document.activeElement && document.activeElement.matches("#rename-in")) return;   // ditto for an in-progress rename
   if (e.key === "/") { e.preventDefault(); openSearch(); return; }
   if (e.key === "Escape") {
     stopTour(); setViewState("rest"); closePanel();

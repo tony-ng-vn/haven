@@ -121,3 +121,45 @@ export function formatPersonLabel(name, disambiguator) {
   const suffix = (typeof disambiguator === "string" && disambiguator.length > 0) ? disambiguator : null;
   return { name, suffix };
 }
+
+/// The sky's one label-resolution rule: a user-typed custom name wins over everything,
+/// then a real (contact-card) name, then a model guess (tilde-stripped), then the raw id
+/// as a last resort. `labelKind` is "custom"/"name"/"guess"/"phone" respectively -- the
+/// same four-state vocabulary template-sky.html already styles by (only "guess" and
+/// "phone" render dim/uncertain; a custom name is a deliberate, confident choice and
+/// reads exactly like a real name).
+///
+/// A custom name that happens to collide with another displayed name is not this
+/// function's problem: the export's `disambiguator` field is keyed to the PERSON, not to
+/// whichever name string happens to be showing, so a caller who already has one just
+/// passes this function's `name` straight into formatPersonLabel(name, disambiguator) --
+/// no special-casing needed here or there.
+export function resolvePersonLabel(rawName, customName, fallbackId) {
+  const trimmedCustom = typeof customName === "string" ? customName.trim() : "";
+  if (trimmedCustom) return { name: trimmedCustom, labelKind: "custom" };
+  if (rawName && rawName.startsWith("~")) return { name: rawName.slice(1), labelKind: "guess" };
+  if (rawName) return { name: rawName, labelKind: "name" };
+  return { name: fallbackId, labelKind: "phone" };
+}
+
+/// The pure heart of loadEdits: given whatever JSON.parse handed back for the
+/// localStorage payload (or null/undefined for "nothing stored yet"), returns a safe
+/// { v, moves, deleted, names } shape. localStorage access, JSON.parse itself, and the
+/// try/catch around a throwing storage backend all stay in template-sky.html -- this
+/// function only ever sees plain, already-parsed values (or the absence of one).
+///
+/// `names` (custom renames, keyed by person id) is additive to the existing v1 shape: a
+/// payload saved before renaming existed simply lacks the key, which is a normal, valid
+/// v1 payload, not an "unknown shape" -- it must load fine and keep its real moves/deleted,
+/// never fall through to the reset-to-empty branch below just because one newer key is
+/// absent.
+export function normalizeEditsPayload(parsed) {
+  const empty = { v: 1, moves: {}, deleted: [], names: {} };
+  if (!parsed || parsed.v !== 1) return empty;
+  return {
+    v: 1,
+    moves: (parsed.moves && typeof parsed.moves === "object") ? parsed.moves : {},
+    deleted: Array.isArray(parsed.deleted) ? parsed.deleted : [],
+    names: (parsed.names && typeof parsed.names === "object") ? parsed.names : {}
+  };
+}
