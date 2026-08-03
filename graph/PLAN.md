@@ -135,7 +135,11 @@ When two or more people resolve to the same display name (card names and guesses
 Identity was never at risk -- people key on phone/email, and same-name merges are always queued for a human, never automatic -- this is purely so two dots named alike can be told apart.
 Measured 2026-08-03: 4 of 137 card-named people collide (two real same-name pairs); 150 of 195 guess-named people collide because the local model repeats generic guesses, which is a guess-quality P3 item, not a display bug.
 
-No nodes for people never contacted.
+**Contacts never messaged DO appear (owner directive 2026-08-03, reversing the original "no nodes for people never contacted").**
+They carry no closeness signal, so they cannot join the rings honestly: they render as hollow rings on their own shell past the outermost band, off by default, toggleable.
+They are excluded from every inference -- no acquaintance edges, no interaction evidence, no tier scoring, never a lens neighbor or mesh pair -- because having someone's number is not evidence you know them.
+They participate normally in identity: search, dossier, rename, disambiguation.
+Measured 2026-08-03: 253 cards, 184 already resolved to an existing person, 68 new contact-only nodes, 1 excluded as non-person; acquaintance pairs and edge counts unchanged, proving no inference leaked.
 
 ### Group chats
 

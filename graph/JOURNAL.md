@@ -8,18 +8,19 @@ Real measurements belong here. Real names and message content do not.
 
 ## Standing state
 
-- Open PRs: #203-#208 all merged to graph-main 2026-08-03; guess-attribution and contact-only-people in flight
+- Open PRs: none; #203-#210 all merged to graph-main 2026-08-03
 - Build position: template-sky.html is the ONLY presentation. Acquaintance evidence is co-membership scoring PLUS direct interactions (tapback/reply, 3+ promotes to strong). The lens is cmd+click (not double-click), the time scrubber is a right-edge vertical rail, and people can be renamed in place.
   Message text: attributedBody is decoded, so the model pass sees ~all 111k messages instead of the 1.8 percent carrying plain `text`.
   Name guessing: the model may abstain, no-evidence candidates are never prompted, and a name is accepted only if its tokens literally appear in the snippets shown.
-  Suite: 277 Swift tests plus 41 viewer node tests, green on graph-main.
+  Contacts never messaged appear as hollow rings on their own outer shell, off by default, excluded from all inference.
+  Suite: 300 Swift tests plus 46 viewer node tests, green on graph-main.
 - Goal-criteria status: unchanged except criterion (5); the bipartite image export was deleted with the native render, owner-approved.
 - BLOCKED ON OWNER (blocks the signed build): the "Your Sky Local Signing" certificate exists in the login keychain but carries NO trust settings, so zero code-signing identities resolve. Set Trust -> Code Signing -> Always Trust in Keychain Access. Until then every rebuild costs a fresh Full Disk Access grant, so avoid gratuitous reinstalls.
 - App install: /Applications/Your Sky.app; graph/scripts/update_app.sh rebuilds, reinstalls, relaunches, refuses stale-branch installs, and warns when an install would cost the grant.
 - Open follow-ups: sky-side creation UI for hide/remove/fully-acquainted marks (confirmed tier has no feeder); the void mention-yield probe needs re-measuring post-decoder; dead-groups toggle inert; real per-month history for strengthAt; P3 tuning of tier and interaction thresholds.
 - Integration branch: `graph-main`; PRs merge there after green CI and lead review; main is owner-merged (first merge was #198).
 - Journal discipline: canonical charter and journal live in the main checkout at `graph/`; mirror into the graph-main worktree, editing the main-checkout copy first.
-- Next intent: land the two in-flight packages, then the marks-creation UI
+- Next intent: the marks-creation UI (confirmed tier has no feeder), then re-measure the void mention probe, then P3 threshold tuning
 
 ## Entries
 
@@ -56,7 +57,8 @@ VERIFIED BY THE LEAD
 BLOCKED / NEXT
 
 - BLOCKED ON OWNER: the self-signed certificate exists in the login keychain but has NO trust settings, so `security find-identity -p codesigning` reports zero identities and the signed build cannot happen. Owner must set Trust -> Code Signing -> Always Trust in Keychain Access (needs their password; never scriptable from here). Until then every rebuild still costs an FDA regrant, which is why the lead stopped reinstalling.
-- IN FLIGHT: guess attribution (scoping a name to messages the candidate themselves sent, plus a uniqueness rule) and contact-only people (the owner's sixth ask).
+- PR #209 (merged): guess attribution. The lead's shared-group-chat hypothesis was REFUTED by measurement -- 0 of 120 colliding pairs shared any chat; the real cause was a common-word name appearing in 938 messages across 304 unrelated chats, grounding independently for many people. Fixed by scoping grounding to snippets the candidate THEMSELVES sent, plus a uniqueness rule dropping every member of any name collision. Real data: 52 guesses -> 20, person-only largest collision group reaches 1, with the two effects reported separately (17 lost to scoping, 13 to uniqueness).
+- PR #210 (merged): contacts never messaged, the owner's sixth ask. 253 cards -> 184 already a person, 68 new contact-only nodes, 1 excluded as a nameless stub. Hollow rings on their own shell past the outermost band, toggle defaults off, excluded from inference STRUCTURALLY (appended after derivation has already run, so no code path reaches scoring) and proven by assertion plus real data: acquaintance pairs 1082 -> 1082, edges 958 -> 958. The agent also caught that a native-toolbar toggle would have been silently inert against the static exported sky, and put the control in the sky's own panel instead.
 - The sky-side creation UI for hide/remove/fully-acquainted marks still has no feeder, so the confirmed tier stays empty.
 
 ### 2026-08-02/03 late session: main merge, mesh, interaction evidence, authorize fix, name disambiguation (PRs #198-#202)
