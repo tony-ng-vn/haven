@@ -451,6 +451,7 @@ private final class GuessProgressSink: @unchecked Sendable {
     // (constraint 7). `.accepted` is not tracked separately here: it is exactly `guessedCount`.
     private(set) var declinedCount = 0
     private(set) var rejectedUngroundedCount = 0
+    private(set) var rejectedScopedCount = 0
     private(set) var noEvidenceCount = 0
     private(set) var providerErrorCount = 0
     let pendingCount: Int
@@ -501,6 +502,8 @@ private final class GuessProgressSink: @unchecked Sendable {
             declinedCount += 1
         case .rejectedUngrounded:
             rejectedUngroundedCount += 1
+        case .rejectedScoped:
+            rejectedScopedCount += 1
         case .noEvidence:
             noEvidenceCount += 1
         case .providerError:
@@ -516,6 +519,15 @@ private func collisionStats(_ nameGuesses: [String: NameGuess]) -> (distinctName
     guard !nameGuesses.isEmpty else { return (0, 0) }
     let countByName = Dictionary(grouping: nameGuesses.values, by: \.name).mapValues(\.count)
     return (countByName.count, countByName.values.max() ?? 0)
+}
+
+/// Same as collisionStats, but over PERSON guesses only ("group:"-prefixed keys excluded).
+/// The "two distinct handles must not share a name" guarantee (GuessAttribution) is about
+/// people/phone numbers specifically -- a report that mixes in group-name collisions (two
+/// different unnamed group chats both guessed as, say, "Family") would make an unrelated,
+/// out-of-scope coincidence look like this rule failed.
+private func personCollisionStats(_ nameGuesses: [String: NameGuess]) -> (distinctNames: Int, largestGroup: Int) {
+    collisionStats(nameGuesses.filter { !$0.key.hasPrefix("group:") })
 }
 
 /// Counts only (constraint 7): how the current person/group population splits between a
@@ -598,9 +610,11 @@ private func runGuess(_ args: [String]) async {
     // The cache as it stood before any repair or new guessing this run -- the baseline the
     // owner needs to see whether a fix (or --reguess) actually helped. Counts only.
     let before = collisionStats(overrides.nameGuesses)
+    let personBefore = personCollisionStats(overrides.nameGuesses)
     print("guessesBefore \(overrides.nameGuesses.count)")
     print("distinctNamesBefore \(before.distinctNames)")
     print("largestCollisionGroupBefore \(before.largestGroup)")
+    print("personLargestCollisionGroupBefore \(personBefore.largestGroup)")
 
     if parsed.reguess {
         let (purged, droppedCount) = GuessCacheRepair.purgingNameGuesses(from: overrides)
@@ -658,21 +672,43 @@ private func runGuess(_ args: [String]) async {
 
     // Of everything actually sent to the model (excludes noEvidence, which never reached it,
     // and anything left untried after a providerUnreachable stop): how many came back grounded,
-    // how many the model itself declined, and how many it guessed but failed grounding. This
-    // three-way split is what tells the owner whether the model or the grounding check is doing
-    // the rejecting.
-    let prompted = sink.guessedCount + sink.declinedCount + sink.rejectedUngroundedCount + sink.providerErrorCount
+    // how many the model itself declined, how many it guessed but failed grounding outright, and
+    // how many it guessed a name that WAS grounded but only in a message someone else sent
+    // (rejectedScoped -- this run's own fix; see GuessAttribution/GuessEngine). Reported
+    // separately from rejectedUngrounded and from duplicateNameKeysDropped below specifically so
+    // the two fixes' effects (scoping vs. uniqueness) are never conflated into one number.
+    let prompted = sink.guessedCount + sink.declinedCount + sink.rejectedUngroundedCount + sink.rejectedScopedCount + sink.providerErrorCount
     print("prompted \(prompted)")
     print("noEvidence \(sink.noEvidenceCount)")
     print("declined \(sink.declinedCount)")
     print("rejectedUngrounded \(sink.rejectedUngroundedCount)")
+    print("rejectedScoped \(sink.rejectedScopedCount)")
     print("providerError \(sink.providerErrorCount)")
 
-    let finalOverrides = sink.snapshotOverrides
+    // Attribution: grounding (per candidate) does not imply the name is actually about THAT
+    // candidate rather than a third party mentioned in their conversation -- see GuessAttribution's
+    // own doc comment for the measured mechanism. This is a full-cache correction, not scoped to
+    // this run's new guesses: it also cleans up a collision that predates this rule entirely.
+    let (attributed, duplicateKeys) = GuessAttribution.resolvingDuplicatePersonNames(in: sink.snapshotOverrides.nameGuesses)
+    var finalOverrides = sink.snapshotOverrides
+    finalOverrides.nameGuesses = attributed
+    do {
+        try overridesStore.save(finalOverrides)
+    } catch {
+        fail("error: cannot write overrides store")
+    }
+    print("duplicateNameKeysDropped \(duplicateKeys.count)")
+
     let after = collisionStats(finalOverrides.nameGuesses)
+    let personAfter = personCollisionStats(finalOverrides.nameGuesses)
     print("guessesAfter \(finalOverrides.nameGuesses.count)")
     print("distinctNamesAfter \(after.distinctNames)")
     print("largestCollisionGroupAfter \(after.largestGroup)")
+    // The DoD target ("largest collision group must reach 1") is about people/handles
+    // specifically -- two different unnamed GROUP chats coincidentally guessed the same display
+    // name is a real but unrelated coincidence, not the misattribution this fix targets, so it
+    // is reported separately rather than conflated into the combined number above.
+    print("personLargestCollisionGroupAfter \(personAfter.largestGroup)")
 
     printNamingCoverage(keptPeople: filterResult.kept, graph: graph, nameGuesses: finalOverrides.nameGuesses)
 }
