@@ -17,11 +17,25 @@ public struct GroupChatActivity: Sendable, Equatable {
     /// service-split row). A lurker maps to an empty set, never an absent key -- every roster
     /// member appears here, matching groupMembership's own "lurkers get an edge too".
     public let activeDaysByPersonID: [String: Set<Date>]
+    /// Per pair, how many tapback/reply interactions were observed between them in this ONE
+    /// chat (union across every merged service-split row, same as activeDaysByPersonID) --
+    /// already resolved to person ids and already dropped of self/user-involved interactions by
+    /// GraphBuilder, so AcquaintanceDerivation can read this as a plain fact. Keyed by
+    /// PersonPairKey.make(a, b); a pair absent here simply had zero interactions in this chat.
+    /// Defaults to empty so every existing call site keeps constructing this type unchanged.
+    public let interactionCountByPair: [String: Int]
 
-    public init(chatId: String, name: String?, roster: Set<String>, activeDaysByPersonID: [String: Set<Date>]) {
+    public init(
+        chatId: String,
+        name: String?,
+        roster: Set<String>,
+        activeDaysByPersonID: [String: Set<Date>],
+        interactionCountByPair: [String: Int] = [:]
+    ) {
         self.chatId = chatId
         self.name = name
         self.roster = roster
         self.activeDaysByPersonID = activeDaysByPersonID
+        self.interactionCountByPair = interactionCountByPair
     }
 }

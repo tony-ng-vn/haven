@@ -39,7 +39,10 @@ final class ChatDBFixture {
                 handle_id INTEGER,
                 service TEXT,
                 date INTEGER,
-                is_from_me INTEGER
+                is_from_me INTEGER,
+                associated_message_guid TEXT,
+                associated_message_type INTEGER DEFAULT 0,
+                thread_originator_guid TEXT
             );
             CREATE TABLE chat_message_join (
                 chat_id INTEGER,
@@ -102,6 +105,9 @@ final class ChatDBFixture {
     }
 
     /// handleID nil mirrors a from-me row where handle_id is 0 or NULL in the real db.
+    /// associatedMessageGuid/associatedMessageType model a tapback (ADD is 2000-2999, REMOVE is
+    /// 3000+); threadOriginatorGuid models a threaded reply. Both default to "this is a plain
+    /// message, neither a tapback nor a reply" so every existing call site is unaffected.
     func insertMessage(
         rowID: Int64,
         guid: String = UUID().uuidString,
@@ -110,12 +116,18 @@ final class ChatDBFixture {
         handleID: Int64?,
         service: String,
         dateNanoseconds: Int64,
-        isFromMe: Bool
+        isFromMe: Bool,
+        associatedMessageGuid: String? = nil,
+        associatedMessageType: Int = 0,
+        threadOriginatorGuid: String? = nil
     ) throws {
         try builder.run(
             """
-            INSERT INTO message (ROWID, guid, text, attributedBody, handle_id, service, date, is_from_me)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO message (
+                ROWID, guid, text, attributedBody, handle_id, service, date, is_from_me,
+                associated_message_guid, associated_message_type, thread_originator_guid
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
         ) { statement in
             sqlite3_bind_int64(statement, 1, rowID)
@@ -138,6 +150,9 @@ final class ChatDBFixture {
             sqlite3_bind_text(statement, 6, service, -1, SQLITE_TRANSIENT)
             sqlite3_bind_int64(statement, 7, dateNanoseconds)
             sqlite3_bind_int64(statement, 8, isFromMe ? 1 : 0)
+            Self.bindOptionalText(statement, 9, associatedMessageGuid)
+            sqlite3_bind_int64(statement, 10, Int64(associatedMessageType))
+            Self.bindOptionalText(statement, 11, threadOriginatorGuid)
         }
     }
 

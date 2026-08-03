@@ -40,8 +40,12 @@ final class GroupChatActivityTests: XCTestCase {
         RawMessage(rowID: rowID, chatRowID: chatRowID, handleRowID: handleRowID, isFromMe: isFromMe, date: date)
     }
 
-    private func extract(chats: [RawChat], messages: [RawMessage]) -> ChatExtract {
-        ChatExtract(handles: [], chats: chats, messages: messages, unjoinedMessageCount: 0)
+    private func extract(chats: [RawChat], messages: [RawMessage], interactions: [RawInteraction] = []) -> ChatExtract {
+        ChatExtract(handles: [], chats: chats, messages: messages, unjoinedMessageCount: 0, interactions: interactions)
+    }
+
+    private func interaction(chatRowID: Int64, actor: Int64?, target: Int64?, date: Date) -> RawInteraction {
+        RawInteraction(chatRowID: chatRowID, actorHandleRowID: actor, targetHandleRowID: target, date: date)
     }
 
     // MARK: - Test 1: a dead group (isLive == false) still gets a GroupChatActivity entry
@@ -106,5 +110,46 @@ final class GroupChatActivityTests: XCTestCase {
         let pair = try XCTUnwrap(acquaintances.first { $0.a == "+14155552000" && $0.b == "+14155552001" })
         XCTAssertEqual(pair.score, 1.1, accuracy: 1e-9, "n=2 base 1.0 + one shared day * 0.1, counted once across the merged chat")
         XCTAssertEqual(pair.evidence.count, 1, "one shared chat, one evidence entry -- never one per pre-merge row")
+    }
+
+    // MARK: - Test 3: interaction counts also union across service-split rows into ONE
+    // GroupChatActivity entry -- a tapback on the imessage row and a reply on the sms row both
+    // count toward the SAME merged pair, summed, never lost or double-counted.
+
+    func testServiceSplitChatsUnionInteractionCountsIntoOneEntry() throws {
+        let a = person(id: "+14155553000", handleRowIDs: [3000])
+        let b = person(id: "+14155553001", handleRowIDs: [3001])
+        let imessageChat = chat(rowID: 903, guid: "z-imessage-int", members: [3000, 3001], displayName: "Trip planning")
+        let smsChat = chat(rowID: 904, guid: "a-sms-int", members: [3000, 3001], displayName: "Trip planning")
+        let messages = [
+            message(rowID: 1, chatRowID: 903, handleRowID: 3000, isFromMe: false, date: utcDate(2024, 1, 1)),
+            message(rowID: 2, chatRowID: 904, handleRowID: 3001, isFromMe: false, date: utcDate(2024, 1, 1)),
+        ]
+        let interactions = [
+            // A tapback on the imessage-service row: b reacting to a.
+            interaction(chatRowID: 903, actor: 3001, target: 3000, date: utcDate(2024, 1, 1)),
+            // A reply on the sms-service row: a replying to b -- same merged group, different
+            // pre-merge chat row, must still add to the SAME pair's total.
+            interaction(chatRowID: 904, actor: 3000, target: 3001, date: utcDate(2024, 1, 2)),
+        ]
+
+        let built = GraphBuilder.buildDetailed(
+            extract: extract(chats: [imessageChat, smsChat], messages: messages, interactions: interactions),
+            keptPeople: [a, b],
+            calendar: utc
+        )
+
+        XCTAssertEqual(built.groupChatActivity.count, 1)
+        let activity = try XCTUnwrap(built.groupChatActivity.first)
+        XCTAssertEqual(
+            activity.interactionCountByPair[PersonPairKey.make("+14155553000", "+14155553001")], 2,
+            "both pre-merge rows' interactions count toward the one merged group's total"
+        )
+
+        let acquaintances = AcquaintanceDerivation.derive(groupChatActivity: built.groupChatActivity, fullyAcquaintedRosterKeys: [])
+        let pair = try XCTUnwrap(acquaintances.first { $0.a == "+14155553000" && $0.b == "+14155553001" })
+        XCTAssertEqual(pair.interactionCount, 2)
+        XCTAssertEqual(pair.evidence.count, 1, "still one shared (merged) chat, one evidence entry")
+        XCTAssertEqual(pair.evidence[0].interactionCount, 2, "the merged chat's evidence reports the summed count")
     }
 }

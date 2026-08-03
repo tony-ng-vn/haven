@@ -23,6 +23,10 @@ final class TimeFilterTests: XCTestCase {
         RawChat(rowID: rowID, guid: guid, style: style, chatIdentifier: nil, serviceName: nil, displayName: nil, memberHandleRowIDs: members)
     }
 
+    private func interaction(chatRowID: Int64, actor: Int64?, target: Int64?, date: Date) -> RawInteraction {
+        RawInteraction(chatRowID: chatRowID, actorHandleRowID: actor, targetHandleRowID: target, date: date)
+    }
+
     func testBoundaryDatesAreInclusiveAndOutsideDatesAreDropped() {
         let from = utcDate(2024, 6, 1)
         let to = utcDate(2024, 6, 30)
@@ -95,5 +99,23 @@ final class TimeFilterTests: XCTestCase {
 
         let graph = GraphBuilder.build(extract: filtered, keptPeople: filterResult.kept)
         XCTAssertFalse(graph.nodes.contains { $0.id == "+14155550200" }, "the dropped person must not appear as a graph node either")
+    }
+
+    // Interactions ride the same window messages do: a tapback/reply outside the scrubbed
+    // range must not still count as evidence just because it survived in the raw extract.
+    func testInteractionsOutsideTheWindowAreDropped() {
+        let interactions = [
+            interaction(chatRowID: 1, actor: 100, target: 200, date: utcDate(2024, 5, 31, hour: 23)), // just before
+            interaction(chatRowID: 1, actor: 100, target: 200, date: utcDate(2024, 6, 15)), // inside
+            interaction(chatRowID: 1, actor: 100, target: 200, date: utcDate(2024, 7, 1)), // just after
+        ]
+        let extract = ChatExtract(
+            handles: [], chats: [], messages: [], unjoinedMessageCount: 0, interactions: interactions
+        )
+
+        let filtered = TimeFilter.apply(extract: extract, from: utcDate(2024, 6, 1), to: utcDate(2024, 6, 30))
+
+        XCTAssertEqual(filtered.interactions.count, 1)
+        XCTAssertEqual(filtered.interactions.first?.date, utcDate(2024, 6, 15))
     }
 }

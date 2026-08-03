@@ -183,6 +183,194 @@ final class ChatDatabaseExtractionTests: XCTestCase {
         XCTAssertEqual(extract.messages.count, 3)
     }
 
+    // MARK: - Interaction extraction (tapback/reply evidence)
+
+    // Test 11: a tapback ADD is resolved into one interaction naming actor and target.
+    func testTapbackAddIsCountedAsAnInteraction() throws {
+        let fixture = try ChatDBFixture()
+        defer { fixture.close() }
+
+        try fixture.insertHandle(rowID: 1, id: "+15551110001", service: "iMessage") // original sender
+        try fixture.insertHandle(rowID: 2, id: "+15551110002", service: "iMessage") // reactor
+        try fixture.insertChat(rowID: 1, guid: "chat-tapback", style: 43, chatIdentifier: "tapback-group")
+        try fixture.insertChatHandleJoin(chatID: 1, handleID: 1)
+        try fixture.insertChatHandleJoin(chatID: 1, handleID: 2)
+
+        try fixture.insertMessage(
+            rowID: 1, guid: "original-guid-1", handleID: 1, service: "iMessage",
+            dateNanoseconds: 700_000_000_000_000_000, isFromMe: false
+        )
+        try fixture.insertChatMessageJoin(chatID: 1, messageID: 1)
+
+        try fixture.insertMessage(
+            rowID: 2, guid: "tapback-guid-1", handleID: 2, service: "iMessage",
+            dateNanoseconds: 700_000_001_000_000_000, isFromMe: false,
+            associatedMessageGuid: "original-guid-1", associatedMessageType: 2000
+        )
+        try fixture.insertChatMessageJoin(chatID: 1, messageID: 2)
+        fixture.close()
+
+        let extract = try ChatDatabase.extract(path: fixture.url.path)
+
+        XCTAssertEqual(extract.interactions.count, 1)
+        let interaction = try XCTUnwrap(extract.interactions.first)
+        XCTAssertEqual(interaction.chatRowID, 1)
+        XCTAssertEqual(interaction.actorHandleRowID, 2, "the reactor is the actor")
+        XCTAssertEqual(interaction.targetHandleRowID, 1, "the original sender is the target")
+    }
+
+    // Test 12: a tapback REMOVE (type >= 3000) is not counted.
+    func testTapbackRemoveIsNotCounted() throws {
+        let fixture = try ChatDBFixture()
+        defer { fixture.close() }
+
+        try fixture.insertHandle(rowID: 1, id: "+15551120001", service: "iMessage")
+        try fixture.insertHandle(rowID: 2, id: "+15551120002", service: "iMessage")
+        try fixture.insertChat(rowID: 1, guid: "chat-tapback-remove", style: 43, chatIdentifier: "remove-group")
+        try fixture.insertChatHandleJoin(chatID: 1, handleID: 1)
+        try fixture.insertChatHandleJoin(chatID: 1, handleID: 2)
+
+        try fixture.insertMessage(
+            rowID: 1, guid: "original-guid-2", handleID: 1, service: "iMessage",
+            dateNanoseconds: 700_000_000_000_000_000, isFromMe: false
+        )
+        try fixture.insertChatMessageJoin(chatID: 1, messageID: 1)
+
+        try fixture.insertMessage(
+            rowID: 2, guid: "tapback-remove-guid", handleID: 2, service: "iMessage",
+            dateNanoseconds: 700_000_001_000_000_000, isFromMe: false,
+            associatedMessageGuid: "original-guid-2", associatedMessageType: 3000
+        )
+        try fixture.insertChatMessageJoin(chatID: 1, messageID: 2)
+        fixture.close()
+
+        let extract = try ChatDatabase.extract(path: fixture.url.path)
+
+        XCTAssertTrue(extract.interactions.isEmpty, "a retracted reaction (REMOVE, >= 3000) is not evidence")
+    }
+
+    // Test 13: a threaded reply (thread_originator_guid) is counted as an interaction.
+    func testThreadedReplyIsCountedAsAnInteraction() throws {
+        let fixture = try ChatDBFixture()
+        defer { fixture.close() }
+
+        try fixture.insertHandle(rowID: 1, id: "+15551130001", service: "iMessage")
+        try fixture.insertHandle(rowID: 2, id: "+15551130002", service: "iMessage")
+        try fixture.insertChat(rowID: 1, guid: "chat-reply", style: 43, chatIdentifier: "reply-group")
+        try fixture.insertChatHandleJoin(chatID: 1, handleID: 1)
+        try fixture.insertChatHandleJoin(chatID: 1, handleID: 2)
+
+        try fixture.insertMessage(
+            rowID: 1, guid: "original-guid-3", handleID: 1, service: "iMessage",
+            dateNanoseconds: 700_000_000_000_000_000, isFromMe: false
+        )
+        try fixture.insertChatMessageJoin(chatID: 1, messageID: 1)
+
+        try fixture.insertMessage(
+            rowID: 2, guid: "reply-guid-1", handleID: 2, service: "iMessage",
+            dateNanoseconds: 700_000_001_000_000_000, isFromMe: false,
+            threadOriginatorGuid: "original-guid-3"
+        )
+        try fixture.insertChatMessageJoin(chatID: 1, messageID: 2)
+        fixture.close()
+
+        let extract = try ChatDatabase.extract(path: fixture.url.path)
+
+        XCTAssertEqual(extract.interactions.count, 1)
+        let interaction = try XCTUnwrap(extract.interactions.first)
+        XCTAssertEqual(interaction.actorHandleRowID, 2)
+        XCTAssertEqual(interaction.targetHandleRowID, 1)
+    }
+
+    // Test 14: all three of Apple's prefixed guid forms resolve to the same bare target.
+    func testPrefixedGUIDFormsAllResolveToTheirBareTarget() throws {
+        let fixture = try ChatDBFixture()
+        defer { fixture.close() }
+
+        try fixture.insertHandle(rowID: 1, id: "+15551140001", service: "iMessage")
+        try fixture.insertHandle(rowID: 2, id: "+15551140002", service: "iMessage")
+        try fixture.insertChat(rowID: 1, guid: "chat-prefix", style: 43, chatIdentifier: "prefix-group")
+        try fixture.insertChatHandleJoin(chatID: 1, handleID: 1)
+        try fixture.insertChatHandleJoin(chatID: 1, handleID: 2)
+
+        try fixture.insertMessage(
+            rowID: 1, guid: "bare-original", handleID: 1, service: "iMessage",
+            dateNanoseconds: 700_000_000_000_000_000, isFromMe: false
+        )
+        try fixture.insertChatMessageJoin(chatID: 1, messageID: 1)
+
+        let prefixedForms = ["p:0/bare-original", "p:1/bare-original", "bp:bare-original"]
+        var nextRowID: Int64 = 2
+        for prefixed in prefixedForms {
+            try fixture.insertMessage(
+                rowID: nextRowID, guid: "tapback-\(nextRowID)", handleID: 2, service: "iMessage",
+                dateNanoseconds: 700_000_001_000_000_000, isFromMe: false,
+                associatedMessageGuid: prefixed, associatedMessageType: 2000
+            )
+            try fixture.insertChatMessageJoin(chatID: 1, messageID: nextRowID)
+            nextRowID += 1
+        }
+        fixture.close()
+
+        let extract = try ChatDatabase.extract(path: fixture.url.path)
+
+        XCTAssertEqual(extract.interactions.count, 3, "all three prefixed forms must resolve to the same bare-original target")
+        for interaction in extract.interactions {
+            XCTAssertEqual(interaction.targetHandleRowID, 1)
+            XCTAssertEqual(interaction.actorHandleRowID, 2)
+        }
+    }
+
+    // Test 15: a self-tapback (reacting to one's own message, same raw handle) is dropped.
+    func testSelfTapbackIsDropped() throws {
+        let fixture = try ChatDBFixture()
+        defer { fixture.close() }
+
+        try fixture.insertHandle(rowID: 1, id: "+15551150001", service: "iMessage")
+        try fixture.insertChat(rowID: 1, guid: "chat-self", style: 43, chatIdentifier: "self-group")
+        try fixture.insertChatHandleJoin(chatID: 1, handleID: 1)
+
+        try fixture.insertMessage(
+            rowID: 1, guid: "original-guid-self", handleID: 1, service: "iMessage",
+            dateNanoseconds: 700_000_000_000_000_000, isFromMe: false
+        )
+        try fixture.insertChatMessageJoin(chatID: 1, messageID: 1)
+
+        try fixture.insertMessage(
+            rowID: 2, guid: "tapback-guid-self", handleID: 1, service: "iMessage",
+            dateNanoseconds: 700_000_001_000_000_000, isFromMe: false,
+            associatedMessageGuid: "original-guid-self", associatedMessageType: 2000
+        )
+        try fixture.insertChatMessageJoin(chatID: 1, messageID: 2)
+        fixture.close()
+
+        let extract = try ChatDatabase.extract(path: fixture.url.path)
+
+        XCTAssertTrue(extract.interactions.isEmpty, "tapbacking one's own message is not evidence of knowing someone else")
+    }
+
+    // Test 16: an unresolvable target guid (no message in this db carries it) is skipped silently.
+    func testUnresolvableTargetGUIDIsSkippedSilently() throws {
+        let fixture = try ChatDBFixture()
+        defer { fixture.close() }
+
+        try fixture.insertHandle(rowID: 1, id: "+15551160001", service: "iMessage")
+        try fixture.insertChat(rowID: 1, guid: "chat-unresolvable", style: 43, chatIdentifier: "unresolvable-group")
+        try fixture.insertChatHandleJoin(chatID: 1, handleID: 1)
+
+        try fixture.insertMessage(
+            rowID: 1, guid: "tapback-guid-dangling", handleID: 1, service: "iMessage",
+            dateNanoseconds: 700_000_000_000_000_000, isFromMe: false,
+            associatedMessageGuid: "no-such-original-guid", associatedMessageType: 2000
+        )
+        try fixture.insertChatMessageJoin(chatID: 1, messageID: 1)
+        fixture.close()
+
+        let extract = try ChatDatabase.extract(path: fixture.url.path)
+
+        XCTAssertTrue(extract.interactions.isEmpty)
+    }
+
     // Test 10: a message with no chat_message_join row is skipped and counted, not fatal.
     func testUnjoinedMessageIsSkippedAndCounted() throws {
         let fixture = try ChatDBFixture()

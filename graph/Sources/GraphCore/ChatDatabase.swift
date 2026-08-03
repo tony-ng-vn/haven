@@ -21,11 +21,13 @@ public struct ChatDatabase: Sendable {
         let chats = try Self.readChats(connection, memberMap: memberMap)
         let messages = try Self.readMessages(connection)
         let unjoinedCount = try Self.readUnjoinedMessageCount(connection)
+        let interactions = try Self.readInteractions(connection)
         return ChatExtract(
             handles: handles,
             chats: chats,
             messages: messages,
-            unjoinedMessageCount: unjoinedCount
+            unjoinedMessageCount: unjoinedCount,
+            interactions: interactions
         )
     }
 
@@ -116,6 +118,90 @@ public struct ChatDatabase: Sendable {
             )
         }
         return messages
+    }
+
+    /// Tapback ADD types (a reaction being applied); REMOVE types (a reaction being retracted,
+    /// >= 3000) are deliberately excluded -- a retracted reaction is not evidence anyone still
+    /// endorses it.
+    private static let tapbackAddTypeRange: ClosedRange<Int> = 2000...2999
+
+    /// Resolved tapback/reply interactions: metadata only, message.text/attributedBody never
+    /// selected (constraint 3). Two extra full-ish passes over `message` (a plain per-guid scan,
+    /// then a WHERE-filtered scan helped by the real db's own indexes on thread_originator_guid
+    /// and associated_message_guid IS NOT NULL) -- no O(people x messages) rescan.
+    private static func readInteractions(_ connection: SQLiteReadOnlyConnection) throws -> [RawInteraction] {
+        // Pass 1: every message's own guid -> (handleRowID, isFromMe), used only to resolve a
+        // tapback/reply's TARGET (the message it points at). Built from the whole table, not
+        // just joined rows: a target can in principle be a message this extractor otherwise
+        // never surfaces (e.g. itself unjoined), and this map is purely a lookup, never emitted.
+        var senderByGUID: [String: (handleRowID: Int64?, isFromMe: Bool)] = [:]
+        try connection.query("SELECT guid, handle_id, is_from_me FROM message") { statement in
+            guard let guid = statement.columnText(0) else { return }
+            let rawHandleID = statement.columnNullableInt64(1)
+            let handleID: Int64? = (rawHandleID == nil || rawHandleID == 0) ? nil : rawHandleID
+            senderByGUID[guid] = (handleRowID: handleID, isFromMe: statement.columnInt(2) != 0)
+        }
+
+        var interactions: [RawInteraction] = []
+        try connection.query(
+            """
+            SELECT message.ROWID, chat_message_join.chat_id, message.handle_id, message.is_from_me,
+                   message.date, message.associated_message_guid, message.associated_message_type,
+                   message.thread_originator_guid
+            FROM message
+            JOIN chat_message_join ON chat_message_join.message_id = message.ROWID
+            WHERE (message.associated_message_type BETWEEN 2000 AND 2999 AND message.associated_message_guid IS NOT NULL)
+               OR message.thread_originator_guid IS NOT NULL
+            ORDER BY message.ROWID
+            """
+        ) { statement in
+            let chatRowID = statement.columnInt64(1)
+            let rawActorHandleID = statement.columnNullableInt64(2)
+            let actorHandleRowID: Int64? = (rawActorHandleID == nil || rawActorHandleID == 0) ? nil : rawActorHandleID
+            let associatedGuid = statement.columnText(5)
+            let associatedType = statement.columnInt(6)
+            let threadOriginatorGuid = statement.columnText(7)
+
+            // A row that is BOTH a tapback add and a reply (unseen in practice, Apple's schema
+            // does not forbid it) resolves via the tapback target only -- one interaction per
+            // row, never two, so a single ambiguous row cannot double-count a pair.
+            let targetGuid: String?
+            if tapbackAddTypeRange.contains(associatedType), let associatedGuid {
+                targetGuid = stripGUIDPrefix(associatedGuid)
+            } else if let threadOriginatorGuid {
+                targetGuid = stripGUIDPrefix(threadOriginatorGuid) // already bare; stripping is a no-op
+            } else {
+                targetGuid = nil
+            }
+            guard let targetGuid, let target = senderByGUID[targetGuid] else { return } // unresolvable: skip silently
+            let targetHandleRowID: Int64? = target.isFromMe ? nil : target.handleRowID
+
+            guard actorHandleRowID != targetHandleRowID else { return } // same raw handle (or both the user): self, dropped here
+
+            interactions.append(
+                RawInteraction(
+                    chatRowID: chatRowID,
+                    actorHandleRowID: actorHandleRowID,
+                    targetHandleRowID: targetHandleRowID,
+                    date: date(fromAppleEpochNanoseconds: statement.columnInt64(4))
+                )
+            )
+        }
+        return interactions
+    }
+
+    /// Apple prefixes a tapback's associated_message_guid with "p:0/", "p:1/", or "bp:";
+    /// thread_originator_guid is already bare. Strip a "/"-prefixed form first (keep only the
+    /// substring after the LAST "/"), else strip a leading "bp:", else use the guid as given --
+    /// a bare guid matches neither rule and passes through unchanged either way.
+    private static func stripGUIDPrefix(_ raw: String) -> String {
+        if let slashIndex = raw.lastIndex(of: "/") {
+            return String(raw[raw.index(after: slashIndex)...])
+        }
+        if raw.hasPrefix("bp:") {
+            return String(raw.dropFirst(3))
+        }
+        return raw
     }
 
     private static func readUnjoinedMessageCount(_ connection: SQLiteReadOnlyConnection) throws -> Int {

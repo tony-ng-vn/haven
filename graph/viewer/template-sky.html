@@ -1310,6 +1310,14 @@ function drawIsoEdges() {
   }
 }
 
+// Mirrors GraphCore's AcquaintanceScoring.interactionPromotionThreshold (Swift) -- that is the
+// source of truth for what counts as real tapback/reply evidence, hardcoded here since the
+// viewer has no access to the Swift constant. A boosted edge is the SAME ink and dash style as
+// a plain one, just a touch brighter: real interaction evidence earns slightly more presence,
+// never a new color or line language.
+const INTERACTION_EDGE_THRESHOLD = 3;
+const INTERACTION_ALPHA_BOOST = 0.08;
+
 /// The lens's own connections: every acquaintance edge from the lensed person to a
 /// neighbor present in the sky, drawn in the lens's cool ink (never the warm ember/gold
 /// "connects to you" language, which the focus edges and the direct-to-you ring already
@@ -1324,7 +1332,8 @@ function drawLensEdges(dark) {
     const B = projected[neighborId];
     if (!B) continue;
     const solid = entry.tier !== "likely";
-    const alpha = solid ? (dark ? 0.55 : 0.5) : (dark ? 0.24 : 0.22);
+    let alpha = solid ? (dark ? 0.55 : 0.5) : (dark ? 0.24 : 0.22);
+    if ((entry.interactionCount || 0) >= INTERACTION_EDGE_THRESHOLD) alpha += INTERACTION_ALPHA_BOOST;
     ctx.lineWidth = solid ? 1.3 : 0.8;
     ctx.strokeStyle = "rgba(" + LENS_INK.join(",") + "," + alpha.toFixed(3) + ")";
     ctx.beginPath(); ctx.moveTo(A.sx, A.sy); ctx.lineTo(B.sx, B.sy); ctx.stroke();
@@ -1338,7 +1347,8 @@ function drawLensEdges(dark) {
     const PA = projected[pair.a], PB = projected[pair.b];
     if (!PA || !PB) continue;
     const solid = pair.tier !== "likely";
-    const alpha = solid ? (dark ? 0.28 : 0.24) : (dark ? 0.12 : 0.10);
+    let alpha = solid ? (dark ? 0.28 : 0.24) : (dark ? 0.12 : 0.10);
+    if ((pair.interactionCount || 0) >= INTERACTION_EDGE_THRESHOLD) alpha += INTERACTION_ALPHA_BOOST;
     ctx.lineWidth = solid ? 0.9 : 0.6;
     ctx.strokeStyle = "rgba(" + LENS_INK.join(",") + "," + alpha.toFixed(3) + ")";
     ctx.beginPath(); ctx.moveTo(PA.sx, PA.sy); ctx.lineTo(PB.sx, PB.sy); ctx.stroke();
