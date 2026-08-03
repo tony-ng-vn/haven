@@ -2,7 +2,7 @@ import Foundation
 import GraphCore
 
 private func printUsage() {
-    let usage = "usage: graph-cli <stats|people|filter|killlist|graph|json|acquaintances|guess> "
+    let usage = "usage: graph-cli <stats|people|filter|killlist|graph|json|acquaintances|contacts|guess> "
         + "--chat-db PATH [--contacts-db PATH ...] [--timings] [--reguess]\n"
     FileHandle.standardError.write(Data(usage.utf8))
 }
@@ -203,6 +203,79 @@ private func resolveAndFilter(_ args: [String]) -> FilterResult? {
     resolveExtractAndFilter(args)?.1
 }
 
+// MARK: - Contact-only people (PLAN.md 2026-08-03)
+//
+// A contact card with no message evidence anywhere in chat.db gets a node too, marked
+// hasNoMessageEvidence, merged into the exported Graph only at the last mile -- see
+// ContactOnlyPeople.derive's own doc comment for why this never reaches GraphBuilder,
+// keptPeople, or GuessCandidateSelection. Kept out of resolveExtractAndFilter/runGuess
+// entirely: this file's own `guess` subcommand and its helper are someone else's live
+// editing surface right now, and neither needs to know contact-only people exist.
+
+private func contactOnlyExclusionReasonLabel(_ reason: ContactOnlyExclusionReason) -> String {
+    switch reason {
+    case .matchesExistingPerson: return "matchesExistingPerson"
+    case .noHumanName: return "noHumanName"
+    case .shortcode: return "shortcode"
+    case .alphanumericSender: return "alphanumericSender"
+    case .duplicateWithinContactOnly: return "duplicateWithinContactOnly"
+    }
+}
+
+/// Counts only (constraint 7), like `stats`/`people`/`filter`/`graph`/`acquaintances`: how
+/// the real address book splits between "already a person via messages", "excluded as a
+/// non-person", and "a genuine new contact-only node" -- plus the before/after node, edge,
+/// and acquaintance-pair counts a reviewer needs to confirm nothing about the message-based
+/// graph moved when contact-only nodes are merged in at the last mile.
+private func runContacts(_ args: [String]) {
+    guard let parsed = parseArgs(args), let chatDBPath = parsed.chatDBPath else {
+        printUsage()
+        exit(64)
+    }
+    let extract = loadChatExtract(chatDBPath)
+    let contacts = loadContacts(parsed.contactsDBPaths)
+    let identity = IdentityResolution.resolve(handles: extract.handles, contacts: contacts)
+    let filterResult = PersonFilter.apply(extract: extract, people: identity.people)
+    let built = GraphBuilder.buildDetailed(extract: extract, keptPeople: filterResult.kept)
+
+    let derivation = ContactOnlyPeople.derive(
+        contacts: contacts,
+        matchedIdentifiers: ContactOnlyPeople.messageHandleIdentifiers(extract)
+    )
+
+    print("contactCardsTotal \(contacts.count)")
+    for reason in ContactOnlyExclusionReason.allCases {
+        let count = derivation.excluded.filter { $0.reason == reason }.count
+        print("excluded[\(contactOnlyExclusionReasonLabel(reason))] \(count)")
+    }
+    print("contactOnlyNodesCreated \(derivation.people.count)")
+
+    let overridesStore = OverridesStore(fileURL: OverridesStore.defaultFileURL())
+    let fullyAcquaintedRosterKeys = (try? overridesStore.load())?.fullyAcquaintedRosterKeys ?? []
+    let translatedRosterKeys = AcquaintanceRosterKey.resolve(stored: fullyAcquaintedRosterKeys, people: filterResult.kept)
+    // Recomputed identically before/after: AcquaintanceDerivation reads groupChatActivity and
+    // the roster keys only, never graph.nodes, so this proves the "unchanged" claim on the
+    // record rather than assuming it from the derivation's own inputs being untouched.
+    let acquaintancesBefore = AcquaintanceDerivation.derive(
+        groupChatActivity: built.groupChatActivity,
+        fullyAcquaintedRosterKeys: translatedRosterKeys
+    )
+
+    let contactOnlyNodes = ContactOnlyPeople.asGraphNodes(derivation.people)
+    let graphAfter = Graph(nodes: built.graph.nodes + contactOnlyNodes, edges: built.graph.edges)
+    let acquaintancesAfter = AcquaintanceDerivation.derive(
+        groupChatActivity: built.groupChatActivity,
+        fullyAcquaintedRosterKeys: translatedRosterKeys
+    )
+
+    print("personNodesBefore \(built.graph.nodes.filter { $0.kind == .person }.count)")
+    print("personNodesAfter \(graphAfter.nodes.filter { $0.kind == .person }.count)")
+    print("edgesBefore \(built.graph.edges.count)")
+    print("edgesAfter \(graphAfter.edges.count)")
+    print("acquaintancePairsBefore \(acquaintancesBefore.count)")
+    print("acquaintancePairsAfter \(acquaintancesAfter.count)")
+}
+
 private func runFilter(_ args: [String]) {
     guard let filterResult = resolveAndFilter(args) else {
         printUsage()
@@ -348,6 +421,18 @@ private func runJSON(_ args: [String]) {
     let built = timed("graphBuild", enabled: timingsEnabled) {
         GraphBuilder.buildDetailed(extract: extract, keptPeople: filterResult.kept)
     }
+    // Merged into the exported nodes only, right before encode -- never into built.graph
+    // itself, so nothing above this line (GraphBuilder, keptPeople) or below it that reads
+    // built.graph directly (the acquaintance timing probe just under this) ever sees a
+    // contact-only node (PLAN.md 2026-08-03; see ContactOnlyPeople.derive's own doc comment).
+    let contactOnlyNodes = timed("contactOnlyPeople", enabled: timingsEnabled) {
+        ContactOnlyPeople.asGraphNodes(
+            ContactOnlyPeople.derive(
+                contacts: contacts,
+                matchedIdentifiers: ContactOnlyPeople.messageHandleIdentifiers(extract)
+            ).people
+        )
+    }
 
     // Same overrides file `guess` writes to and the app reads/writes: a name guessed by
     // either one shows up (tilde-prefixed, per NodeLabel) in every later `json` export,
@@ -370,9 +455,10 @@ private func runJSON(_ args: [String]) {
         }
     }
 
+    let exportGraph = Graph(nodes: built.graph.nodes + contactOnlyNodes, edges: built.graph.edges)
     let encoded: Data? = timed("jsonEncode", enabled: timingsEnabled) {
         try? GraphJSON.encode(
-            graph: built.graph,
+            graph: exportGraph,
             groupChatActivity: built.groupChatActivity,
             fullyAcquaintedRosterKeys: overrides.fullyAcquaintedRosterKeys,
             people: filterResult.kept,
@@ -682,7 +768,7 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 // `killlist` prints real names and partially-masked identifiers to stdout for the lead's
 // on-screen review of real data, and `json` prints real contact and group display names as
 // stdout JSON for an external HTML viewer (per this step's brief). `stats`, `people`,
-// `filter`, `graph`, and `acquaintances` remain counts-only.
+// `filter`, `graph`, `acquaintances`, and `contacts` remain counts-only.
 switch arguments.first {
 case "stats":
     runStats(Array(arguments.dropFirst()))
@@ -698,6 +784,8 @@ case "json":
     runJSON(Array(arguments.dropFirst()))
 case "acquaintances":
     runAcquaintances(Array(arguments.dropFirst()))
+case "contacts":
+    runContacts(Array(arguments.dropFirst()))
 case "guess":
     await runGuess(Array(arguments.dropFirst()))
 default:
