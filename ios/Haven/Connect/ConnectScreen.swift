@@ -47,6 +47,7 @@ struct ConnectScreen: View {
         } actions: {
             actions
         }
+        .havenDismissable()
         .presentationDragIndicator(.visible)
         // Light on commit. Two people ending up in each other's directories is
         // the most commit-like thing in the app, and it was silent.

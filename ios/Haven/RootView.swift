@@ -11,10 +11,11 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
+        LaunchLog.markOnce("RootView first body")
         // Split into `screen` and one modifier deliberately: with the switch
         // and the feedback condition in a single expression, the type-checker
         // gives up ("unable to type-check in reasonable time").
-        screen
+        return screen
             // Signing in is a completed task, so it gets the success haptic. It
             // lives here rather than on the welcome screen, because success
             // swaps that screen out and a haptic on a view being unmounted may

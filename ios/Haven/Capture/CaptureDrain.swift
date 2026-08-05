@@ -55,6 +55,17 @@ struct DrainResult: Equatable, Sendable {
 struct CaptureDrain {
     let queue: CaptureQueue
     let sink: CaptureSink
+    /// How long one item's send may run before this loop gives up on it and
+    /// moves to the next.
+    ///
+    /// `ConvexCaptureSink` already bounds its own mutations, but this is the
+    /// backstop: `CaptureSync.run()`'s `isRunning` guard only resets once
+    /// `run()` itself returns, so a sink that hangs on any one item -- bounded
+    /// or not -- would otherwise stall this whole loop and, with it, every
+    /// capture sync for the rest of the session. Overridable so a test that
+    /// models a sink whose call never returns does not itself wait out the
+    /// real deadline.
+    var deadline: TimeInterval = HavenNetwork.deadline
 
     func run() async -> DrainResult {
         var result = DrainResult()
@@ -62,7 +73,7 @@ struct CaptureDrain {
             switch capture.payload {
             case .profile(let profile):
                 do {
-                    let outcome = try await sink.saveProfile(profile)
+                    let outcome = try await bounded { try await sink.saveProfile(profile) }
                     if outcome.noteTruncated { result.truncatedNotes += 1 }
                     try? queue.remove(capture)
                     result.sent += 1
@@ -74,7 +85,7 @@ struct CaptureDrain {
                 }
             case .manual(let manual):
                 do {
-                    let outcome = try await sink.saveManual(manual)
+                    let outcome = try await bounded { try await sink.saveManual(manual) }
                     if outcome.noteTruncated { result.truncatedNotes += 1 }
                     try? queue.remove(capture)
                     result.sent += 1
@@ -86,7 +97,11 @@ struct CaptureDrain {
                 }
             case .screenshot(let screenshot):
                 let url = queue.imageURL(named: screenshot.fileName)
-                guard let image = try? Data(contentsOf: url) else {
+                // Off the calling actor: CaptureSync.run() is @MainActor, and
+                // this loop is otherwise called straight from it with nothing
+                // in between to hop off the main thread for a plain
+                // synchronous disk read.
+                guard let image = await Self.readImage(at: url) else {
                     // The image is gone, so this can never be uploaded.
                     // Keeping it would retry it on every launch forever.
                     try? queue.remove(capture)
@@ -94,7 +109,7 @@ struct CaptureDrain {
                     continue
                 }
                 do {
-                    try await sink.saveScreenshot(image)
+                    try await bounded { try await sink.saveScreenshot(image) }
                     try? queue.remove(capture)
                     result.sent += 1
                 } catch {
@@ -103,5 +118,23 @@ struct CaptureDrain {
             }
         }
         return result
+    }
+
+    private func bounded<Value>(_ call: @escaping () async throws -> Value) async throws -> Value {
+        let work = Task { try await call() }
+        guard let value = await work.value(within: .seconds(deadline)) else {
+            throw DrainError.timedOut
+        }
+        return value
+    }
+
+    private static func readImage(at url: URL) async -> Data? {
+        await Task.detached(priority: .utility) {
+            try? Data(contentsOf: url)
+        }.value
+    }
+
+    enum DrainError: Error {
+        case timedOut
     }
 }

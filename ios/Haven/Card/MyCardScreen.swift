@@ -1,4 +1,3 @@
-import ClerkKit
 import ConvexMobile
 import SwiftUI
 
@@ -24,6 +23,7 @@ struct MyCardScreen: View {
 
     @State private var editing: CardEditor?
     @State private var photo: Image?
+    @State private var confirmingSignOut = false
     @State private var confirmingDelete = false
     @State private var legalDocument: LegalDocument?
 
@@ -63,7 +63,7 @@ struct MyCardScreen: View {
         // A sheet covers them completely, so they carry on redrawing something
         // nobody can see until it is dismissed. The code is the other reason to
         // stop: something being read by a camera should hold still.
-        .havenAmbientPaused(editing != nil || confirmingDelete || showingCode)
+        .havenAmbientPaused(editing != nil || confirmingSignOut || confirmingDelete || showingCode)
         // Only while there is a card to turn back. The widget can land here
         // with the network down, and then the screen is a "could not load"
         // message with nothing on it to tap: raising the brightness there would
@@ -72,11 +72,30 @@ struct MyCardScreen: View {
         .sheet(item: $editing) { target in
             sheet(for: target)
         }
+        .alert("Sign out?", isPresented: $confirmingSignOut) {
+            Button("Sign out") {
+                Task { await model.signOut() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            // Routine, not a warning: the account and everyone saved to it
+            // are untouched, which is the whole difference from the alert
+            // below.
+            Text("You can sign back into this account anytime.")
+        }
         .alert("Delete your account?", isPresented: $confirmingDelete) {
             Button("Delete", role: .destructive) {
                 Task {
+                    // Routed through model.signOut() rather than a bare
+                    // Clerk.shared.auth.signOut(): this is the one path where
+                    // somebody explicitly asked for their data to be gone,
+                    // and a raw sign-out here left the share extension's
+                    // directory mirror and any still-queued captures on
+                    // disk, unkeyed by account, for the next person who
+                    // signs in on this phone to inherit. See
+                    // LocalAccountState's own doc comment.
                     if await model.deleteAccount() {
-                        try? await Clerk.shared.auth.signOut()
+                        await model.signOut()
                     }
                 }
             }
@@ -203,6 +222,14 @@ struct MyCardScreen: View {
                 .havenGroupLabel()
                 .padding(.top, 26)
                 .padding(.bottom, 6)
+            // Quieter than the row below on purpose, and first: signing out
+            // is routine and reversible, so the row that reads as ordinary
+            // sits where someone's eye lands first, and the one warning
+            // about permanent loss sits after it.
+            HavenRow(
+                title: "Sign out",
+                action: { confirmingSignOut = true }
+            )
             // Warned rather than merely listed. It used to be one hairline
             // below "Role", in the same colour, on a screen people open to fix
             // a typo in their name.

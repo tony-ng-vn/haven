@@ -168,4 +168,15 @@ struct DirectoryMirrorStore {
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
         return try? Self.decoder.decode(DirectoryMirror.self, from: data)
     }
+
+    /// Removes the mirror. There is no per-user key here to scope a load or a
+    /// save to -- see `LocalAccountState`'s doc comment for why signing out
+    /// has to reach for this rather than trusting one to arrive on its own.
+    ///
+    /// Removing a file that is not there is not a failure: an account that
+    /// never synced has nothing to clear either.
+    func clear() throws {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        try FileManager.default.removeItem(at: fileURL)
+    }
 }

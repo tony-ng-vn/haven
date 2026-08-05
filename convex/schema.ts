@@ -210,6 +210,18 @@ export default defineSchema({
     count: v.number(),
   }).index("by_user_action", ["userId", "action"]),
 
+  // One row per Composio toolkit, caching the auth config id ensureAuthConfig
+  // creates the first time anyone connects that toolkit. Not per-user: an
+  // auth config is Composio's OAuth app registration for a toolkit, shared by
+  // every Haven user who connects it, so there is exactly one row per toolkit
+  // for the life of the deployment.
+  composioAuthConfigs: defineTable({
+    // Composio's toolkit slug ("linkedin", "instagram", "twitter"), not
+    // Haven's platform name -- see TOOLKIT_SLUG in composio.ts for the map.
+    toolkit: v.string(),
+    authConfigId: v.string(),
+  }).index("by_toolkit", ["toolkit"]),
+
   // A user's own Haven card. `username` is the one handle the product has:
   // the legacy web meet-exchange claims it via setUsername and the beacon QR
   // encodes it as inhavens.com/<username>. Everything below it is the Phase 1

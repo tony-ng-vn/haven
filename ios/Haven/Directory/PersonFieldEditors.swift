@@ -151,6 +151,7 @@ struct PersonTextEditor: View {
                 }
             }
         }
+        .havenDismissable()
     }
 
     private func commit() {
@@ -240,6 +241,7 @@ struct PersonHandlesEditor: View {
         } actions: {
             GhostButton(title: "Done") { dismiss() }
         }
+        .havenDismissable()
         .sheet(item: $adding) { platform in
             PersonHandleValueEditor(platform: platform.name) { value in
                 await add(platform.name, value: value)
@@ -337,6 +339,7 @@ private struct PersonHandleValueEditor: View {
             PrimaryButton(title: "Save", isLoading: working, action: commit)
                 .disabled(parsed == nil)
         }
+        .havenDismissable()
     }
 
     private func commit() {

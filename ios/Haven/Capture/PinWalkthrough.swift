@@ -35,17 +35,9 @@ struct PinWalkthrough: View {
                             PinHowTo()
                         } label: {
                             // Dressed as PrimaryButton, which is a Button and
-                            // so cannot carry a push of its own.
-                            Text("Show me how")
-                                .font(HavenFont.buttonLabel)
-                                .foregroundStyle(HavenColor.creamInk)
-                                .padding(.vertical, 13)
-                                .padding(.horizontal, 20)
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                                .background(
-                                    HavenColor.cream,
-                                    in: RoundedRectangle(cornerRadius: 12)
-                                )
+                            // so cannot carry a push of its own -- PrimaryLabel
+                            // is the same look with no Button attached.
+                            PrimaryLabel(title: "Show me how")
                         }
                         .buttonStyle(PressScaleStyle())
 
@@ -54,6 +46,10 @@ struct PinWalkthrough: View {
                 }
             )
         }
+        // On the whole stack, not the root screen: the close has to stay on
+        // screen once "Show me how" pushes PinHowTo, because someone reading
+        // the three steps is still inside this dialog, not a new one.
+        .havenDismissable()
     }
 }
 
@@ -196,13 +192,7 @@ private struct PinHowTo: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         } actions: {
             ShareLink(item: Self.practiceProfile) {
-                Text("Open a share sheet")
-                    .font(HavenFont.buttonLabel)
-                    .foregroundStyle(HavenColor.creamInk)
-                    .padding(.vertical, 13)
-                    .padding(.horizontal, 20)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(HavenColor.cream, in: RoundedRectangle(cornerRadius: 12))
+                PrimaryLabel(title: "Open a share sheet")
             }
             .buttonStyle(PressScaleStyle())
             .accessibilityLabel("Open a share sheet to practise on")

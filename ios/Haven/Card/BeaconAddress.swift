@@ -8,6 +8,13 @@ import SwiftUI
 /// card's business; this hands back the code at its true resolution, one
 /// pixel per module, so the screen can scale it with no interpolation and keep
 /// the edges square. A blurred module is a module a camera has to guess at.
+///
+/// `@MainActor` rather than a lock around `cache`: the only caller is
+/// `QRCodeView.body` in `CardBack.swift`, which is already main-actor work by
+/// virtue of being a SwiftUI view body, so this costs nothing there and turns
+/// a stray call from off the main actor into a compile error instead of a
+/// race on `cache`.
+@MainActor
 enum QRCode {
     /// How much of the code can be damaged and still read.
     ///
@@ -15,6 +22,19 @@ enum QRCode {
     /// camera at an angle, without the density that H's 30% would add to a code
     /// this short.
     static let correctionLevel = "M"
+
+    /// Reused rather than built per call. Apple documents `CIContext`
+    /// creation as one of the more expensive Core Image operations -- it
+    /// compiles a whole rendering pipeline -- and `CardBack` sits inside the
+    /// card's drift animation, which redraws whatever it wraps on every
+    /// frame the card's front is on screen, code showing or not.
+    private static let context = CIContext()
+
+    /// One image per address this device has already drawn. The code is a
+    /// pure function of `text`, and a single card only ever has one address
+    /// at a time, so this never holds more than a handful of entries for the
+    /// life of the app.
+    private static var cache: [String: CGImage] = [:]
 
     /// The code for `text`, at one pixel per module, or nil if CoreImage
     /// refuses it.
@@ -30,6 +50,8 @@ enum QRCode {
     /// reliably anywhere else, and being read by somebody else's phone is this
     /// thing's entire job.
     static func image(for text: String) -> CGImage? {
+        if let cached = cache[text] { return cached }
+
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(text.utf8)
         filter.correctionLevel = correctionLevel
@@ -39,8 +61,12 @@ enum QRCode {
         toned.inputImage = code
         toned.color0 = CIColor(color: UIColor(HavenColor.night))
         toned.color1 = CIColor(color: UIColor(HavenColor.ink))
-        guard let output = toned.outputImage else { return nil }
-        return CIContext().createCGImage(output, from: output.extent)
+        guard let output = toned.outputImage,
+              let image = context.createCGImage(output, from: output.extent)
+        else { return nil }
+
+        cache[text] = image
+        return image
     }
 }
 

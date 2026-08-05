@@ -45,8 +45,8 @@
 	<!--
 	  The export-compliance answer, given once here instead of by hand on every
 	  upload. False is the truthful answer, not a shortcut: the only encryption
-	  Haven uses is HTTPS to Convex and Clerk plus the SHA256 nonce Sign in with
-	  Apple requires, and both are exempt under category 5 part 2.
+	  Haven uses is HTTPS to Convex and Clerk, which is exempt under category 5
+	  part 2.
 
 	  Revisit this if Haven ever ships its own cryptography, which is a real
 	  possibility the day connect tokens or end-to-end shared notes land.

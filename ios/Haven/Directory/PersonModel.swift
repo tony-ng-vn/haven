@@ -235,21 +235,33 @@ final class PersonModel: ObservableObject {
     }
 
     /// Writes the note, or clears it when the editor is empty.
+    ///
+    /// Bounded like every other write in this file: `defer { isSaving = false }`
+    /// only fires once this function's own scope exits, and the client
+    /// reconnects rather than failing, so an unbounded call with no network
+    /// would suspend here forever -- Save stuck disabled and the note trapped
+    /// in an editor nobody could dismiss without losing it.
     func saveNote() async {
         guard canSave else { return }
         isSaving = true
         failure = nil
-        defer { isSaving = false }
-        guard isLive else { return }
-        do {
-            let _: Person? = try await convex.mutation(
-                "people:editPerson",
-                with: Self.noteArguments(id: personId, draft: draft)
-            )
-        } catch {
+        guard isLive else {
+            isSaving = false
+            return
+        }
+        let arguments = Self.noteArguments(id: personId, draft: draft)
+        let work = Task { () throws -> Bool in
+            let _: Person? = try await convex.mutation("people:editPerson", with: arguments)
+            return true
+        }
+        let saved = await work.value(within: .seconds(HavenNetwork.deadline)) ?? false
+        isSaving = false
+        guard saved else {
             // Said out loud and the draft left alone: a note someone typed is
-            // the one thing on this screen that exists nowhere else yet.
+            // the one thing on this screen that exists nowhere else yet. A
+            // timeout lands here too, the same way a thrown error always did.
             failure = "Haven could not save that note. Your words are still here."
+            return
         }
     }
 

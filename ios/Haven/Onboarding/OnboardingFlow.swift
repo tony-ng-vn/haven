@@ -21,9 +21,10 @@ struct OnboardingFlow: View {
     }
 
     var body: some View {
+        LaunchLog.markOnce("first OnboardingFlow appearance")
         // Split from the switch below deliberately: with both in one expression
         // the type-checker gives up ("unable to type-check in reasonable time").
-        question
+        return question
             .sensoryFeedback(.impact(weight: .light), trigger: model.commits)
     }
 
@@ -51,9 +52,17 @@ struct OnboardingFlow: View {
             // Only for someone who just answered something. A session that
             // opened with every question already answered has nothing to
             // reveal, and replaying the moment would cheapen it.
+            //
+            // Its own sky, not `model.sky`: the questions had to seed from
+            // the userId because there was no handle yet, but by the reveal
+            // there is, and My Card, Connect and the public web card all draw
+            // this person from it. The reveal is the one moment meant to
+            // introduce their sky, so it has to be the sky they keep.
             CardRevealScreen(
                 card: card,
-                sky: model.sky,
+                sky: SkyGenerator.build(
+                    seed: RevealSky.seed(username: card.username, userId: userId)
+                ),
                 confirm: { revealed = true },
                 addMore: {
                     opensCard = true

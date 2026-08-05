@@ -132,22 +132,31 @@ final class AskModel: ObservableObject {
         reply = ""
     }
 
+    /// Bounded the same way every write in the app is: `people:ask` reads the
+    /// whole network through a model and the client reconnects rather than
+    /// failing, so an unbounded call on a dead connection would leave
+    /// `.thinking` running forever with nothing left to time it out.
     private func run(_ question: String, after priorTurns: [AskTurn]) async {
         state = .thinking
         let sent = AskModel.arguments(question: question, turns: priorTurns)
         guard isLive else { return }
-        do {
-            let answer: AskAnswer = try await convex.action("people:ask", with: sent)
-            // Committed only once it lands. A question that failed was never
-            // part of the conversation, and replaying it on the next call
-            // would ask the model to refine something it never saw.
-            turns = priorTurns + [AskTurn(role: .user, text: question)]
-            state = .answered(answer)
-        } catch {
+        let work = Task { () throws -> AskAnswer in
+            try await convex.action("people:ask", with: sent)
+        }
+        guard let answer = await work.value(within: .seconds(HavenNetwork.deadline)) else {
             // The rate limiter and the length guards all come back as errors,
             // and none is worth its own screen -- but a silent failure on a
             // paid call is the one thing that would make this feel broken.
-            state = .failed("Haven could not answer that. Try again in a moment.")
+            // A timeout reads the same way: either one lands here.
+            // The owner's copy, verbatim by request: a failure here should
+            // read as the kid stepping out, not as an error code.
+            state = .failed("Haven is taking a little coffee break. The kid needs a little break. Haven will come back soon.")
+            return
         }
+        // Committed only once it lands. A question that failed was never
+        // part of the conversation, and replaying it on the next call
+        // would ask the model to refine something it never saw.
+        turns = priorTurns + [AskTurn(role: .user, text: question)]
+        state = .answered(answer)
     }
 }

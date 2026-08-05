@@ -123,6 +123,51 @@ struct OnboardingTests {
     }
 }
 
+// Which sky the reveal draws: the permanent one, seeded from the handle My
+// Card, Connect and the public web card all already draw from, not the
+// userId-seeded one the questions were shown with.
+@Suite("Reveal sky seed")
+struct RevealSkySeedTests {
+    @Test("the reveal seeds from the handle once there is one")
+    func seedsFromHandle() {
+        #expect(RevealSky.seed(username: "mayachen", userId: "user_2abcDEF") == "mayachen")
+    }
+
+    // Not actually reachable through `MyCard.username`, which is not
+    // optional, but the fallback is what stops an empty handle from ever
+    // drawing an empty figure or crashing the reveal.
+    @Test("an empty handle falls back to the seed the questions used")
+    func fallsBackToUserId() {
+        #expect(RevealSky.seed(username: "", userId: "user_2abcDEF") == "user_2abcDEF")
+    }
+}
+
+// The one rule `OnboardingModel.importAvatar` cannot skip: a photo somebody
+// chose is never replaced by one a connection merely proved.
+@Suite("Avatar import")
+struct AvatarImportTests {
+    @Test("a card with no photo yet is worth importing into")
+    func noPhotoYet() {
+        #expect(AvatarImport.shouldReplace(MyCard(username: "maya")) == true)
+    }
+
+    @Test("a card that already has a photo is never overwritten")
+    func alreadyHasPhoto() {
+        var card = MyCard(username: "maya")
+        card.photoStorageId = "storage_abc123"
+        #expect(AvatarImport.shouldReplace(card) == false)
+    }
+
+    // Not reachable through the real call path -- `saveContact` always sets
+    // `card` before `importAvatar` runs -- but nil is not "unknown, so try
+    // it": with nowhere yet to attach a photo, this stays a no like an
+    // existing one does, not a yes like an empty card would suggest.
+    @Test("no card yet is not imported into either")
+    func noCardYet() {
+        #expect(AvatarImport.shouldReplace(nil) == false)
+    }
+}
+
 // The server's record of what happened to each question, and how it meets the
 // device store that used to be the only one.
 @Suite("Onboarding progress, recorded")

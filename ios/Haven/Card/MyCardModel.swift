@@ -158,6 +158,24 @@ final class MyCardModel: ObservableObject {
         return done
     }
 
+    /// Signs out and clears whatever this device kept for the account that is
+    /// leaving, not only the Clerk session.
+    ///
+    /// The account itself is untouched -- signing out is routine, unlike
+    /// `deleteAccount`, and the same person can sign back into it a moment
+    /// later. What has to go is the local state nothing keys by user id;
+    /// `LocalAccountState`'s own doc comment says exactly what and why.
+    /// `try?` on the sign-out call for the same reason `deleteAccount`
+    /// tolerates its own failures reads as a retry rather than a silent
+    /// swallow: `RootView` reads `convex.authState`, and a Clerk session that
+    /// somehow survives this call leaves the person looking at the same
+    /// screen with a working retry (tap Sign out again) rather than a screen
+    /// that lied about what happened.
+    func signOut() async {
+        try? await Clerk.shared.auth.signOut()
+        LocalAccountState.clear()
+    }
+
     /// Runs a write with the bounded wait and the one failure message the whole
     /// screen shares.
     private func write(_ body: @escaping () async throws -> MyCard) async {

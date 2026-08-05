@@ -32,35 +32,68 @@ struct AddPersonSheet: View {
     private var nameMatches: [MirrorPerson] { draft.nameMatches(in: mirror) }
 
     var body: some View {
+        // One scrolling piece, not HavenScreen's pinned slots. The pinned
+        // question and pinned actions exist for onboarding's ceremony -- a
+        // question that owns the top of the screen while answers move under
+        // it. This sheet is a form, and a form reads as one object: title,
+        // fields and buttons travel together, and with the keyboard up the
+        // Save button is the end of the form rather than a layer the Note
+        // field slides beneath.
         HavenScreen(
-            question: "Add someone",
-            hint: "Their name, one way to reach them, and the line you want to remember.",
-            contentAlignment: .top
-        ) {
-            VStack(alignment: .leading, spacing: 20) {
-                nameField
-                handleSection
-                noteField
-                attachSection
-                if didFail {
-                    Text("Haven could not save that. Your words are still here.")
-                        .havenSecondary()
-                        .foregroundStyle(HavenColor.star)
+            contentAlignment: .top,
+            header: { EmptyView() },
+            content: {
+                VStack(alignment: .leading, spacing: 0) {
+                    titleBlock
+                    VStack(alignment: .leading, spacing: 20) {
+                        nameField
+                        handleSection
+                        noteField
+                        attachSection
+                        if didFail {
+                            Text("Haven could not save that. Your words are still here.")
+                                .havenSecondary()
+                                .foregroundStyle(HavenColor.star)
+                        }
+                    }
+                    // A paragraph break, not a line break: the title block
+                    // introduces the form, and the first field starting too
+                    // close reads as part of the sentence above it.
+                    .padding(.top, 28)
+                    VStack(spacing: 8) {
+                        PrimaryButton(title: "Save", action: save)
+                            .disabled(!draft.canSave)
+                        GhostButton(title: "Cancel") { dismiss() }
+                    }
+                    .padding(.top, 28)
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } actions: {
-            VStack(spacing: 8) {
-                PrimaryButton(title: "Save", action: save)
-                    .disabled(!draft.canSave)
-                GhostButton(title: "Cancel") { dismiss() }
-            }
-        }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            },
+            actions: { EmptyView() }
+        )
+        .havenDismissable()
         .presentationDragIndicator(.visible)
         // Light on commit, per the design tokens. Writing somebody down is a
         // commit; the sheet closing is the receipt, and this is what the
         // receipt feels like.
         .sensoryFeedback(.impact(weight: .light), trigger: saves)
+    }
+
+    /// The title and its one-line introduction, scrolling with the form.
+    ///
+    /// Six points between them, not QuestionHeader's four: the hint wraps to
+    /// two lines here, and a gap tighter than the hint's own line spacing
+    /// makes the title read as the hint's first line rather than its heading.
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Add someone")
+                .havenQuestion()
+            Text("Their name, one way to reach them, and the line you want to remember.")
+                .havenHint()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 
     private var nameField: some View {

@@ -18,6 +18,9 @@ struct HavenTabs: View {
     /// feel like it had not worked.
     var opensCard = false
 
+    /// Feeds the People screen's title. Its own subscription rather than a
+    /// share of My Card's: see `MyNameModel`'s own doc comment for why.
+    @StateObject private var name = MyNameModel()
     @State private var tab: Tab = .people
     @State private var peopleRoute: [Destination] = []
     /// The Search tab's own stack. Its own, not a share of People's: a person
@@ -46,6 +49,7 @@ struct HavenTabs: View {
                 // imitating it and then having to keep the two in step.
                 DirectoryScreen(
                     userId: userId,
+                    firstName: name.firstName,
                     openSearch: { tab = .search },
                     openPerson: { peopleRoute.append(.person(id: $0)) }
                 )
@@ -84,6 +88,7 @@ struct HavenTabs: View {
             )
         }
         .onAppear {
+            LaunchLog.markOnce("first HavenTabs appearance")
             if opensCard { openCard(showingCode: false) }
         }
         // The Lock Screen widget's tap arrives here, and lands on the card

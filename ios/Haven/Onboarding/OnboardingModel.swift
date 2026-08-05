@@ -162,6 +162,35 @@ enum OnboardingLoad: Equatable {
     case unreachable
 }
 
+/// Which seed the reveal draws its figure from.
+///
+/// Every question before the reveal is seeded from the Clerk user id, because
+/// the card has no handle yet on the first one. By the time the reveal shows,
+/// the server has minted a permanent one, and every other place that draws
+/// this person's sky -- My Card, Connect, the public web card -- seeds from
+/// it. Carrying the userId-seeded figure through to the reveal would make the
+/// one moment meant to introduce someone's sky a preview of a sky nobody sees
+/// again.
+enum RevealSky {
+    /// `username` is not actually optional on `MyCard`, but this stays
+    /// defensive rather than trust that: an empty handle falls back to the
+    /// seed the questions were already drawn with, never a crash and never an
+    /// empty figure.
+    static func seed(username: String, userId: String) -> String {
+        username.isEmpty ? userId : username
+    }
+}
+
+/// Whether a newly proven photo is worth importing over what a card already
+/// has. Pulled out of `OnboardingModel.importAvatar` as its own pure check --
+/// that method cannot be unit tested without a network, but the one rule
+/// inside it -- never overwrite a photo somebody chose -- can be.
+enum AvatarImport {
+    static func shouldReplace(_ card: MyCard?) -> Bool {
+        card?.hasPhoto == false
+    }
+}
+
 /// Drives onboarding: the card as it stands, which question is on screen, and
 /// the one sky every screen in the flow draws.
 @MainActor
@@ -192,8 +221,8 @@ final class OnboardingModel: ObservableObject {
     /// spinner: the question stays up through the star ignition, and a second
     /// tap in that window would fire the same write twice.
     private var committing = false
-    /// The avatar an authorization handed back, waiting for its contact answer
-    /// to land.
+    /// The photo URL a Composio connection handed back, waiting for its
+    /// contact answer to land.
     private var pendingAvatar: String?
     private var cancellable: AnyCancellable?
 
@@ -257,21 +286,22 @@ final class OnboardingModel: ObservableObject {
         await importAvatar()
     }
 
-    /// Holds the avatar a provider handed back, for `saveContact` to import
-    /// once the contact answer itself has landed.
+    /// Holds the photo URL a Composio connection handed back, for
+    /// `saveContact` to import once the contact answer itself has landed.
     ///
-    /// Remembered rather than imported on the spot because an authorization can
-    /// be followed by a panel, a correction, and a Continue -- and the photo
-    /// should arrive with the answer, not during the editing of it.
+    /// Remembered rather than imported on the spot because a connection can
+    /// be followed by a fallback panel, a correction, and a Continue -- and
+    /// the photo should arrive with the answer, not during the editing of it.
     func rememberAvatar(_ url: String?) {
         pendingAvatar = url
     }
 
-    /// Brings the provider's avatar into Haven's own storage.
+    /// Brings Composio's proven photo URL into Haven's own storage.
     ///
-    /// Only when there is no photo yet. Every successful authorization returns
-    /// one, and a person who has already chosen a photo has said what they want
-    /// their card to show; a payload is not an argument against that. Haven
+    /// Only when there is no photo yet. Not every connection hands one back
+    /// -- X's is not proven live, and Composio simply omits it when absent --
+    /// and a person who has already chosen a photo has said what they want
+    /// their card to show; a URL is not an argument against that. Haven
     /// cannot tell a photo somebody picked from one it imported, so it never
     /// replaces either.
     ///
@@ -280,7 +310,7 @@ final class OnboardingModel: ObservableObject {
     /// there. Nothing here is worth interrupting the reveal for.
     func importAvatar() async {
         guard let source = pendingAvatar, let url = URL(string: source) else { return }
-        guard card?.hasPhoto == false else {
+        guard AvatarImport.shouldReplace(card) else {
             pendingAvatar = nil
             return
         }
@@ -379,6 +409,7 @@ final class OnboardingModel: ObservableObject {
             firstValueOnly: true
         ) { [weak self] card in
             guard let self else { return }
+            LaunchLog.markOnce("first profiles:getMyCard result")
             self.card = card
             // Both stores, then the catch-up. A skip recorded on another phone
             // has to be honoured here, and a skip made here while offline has
@@ -390,6 +421,7 @@ final class OnboardingModel: ObservableObject {
             self.load = .ready
         } onSilence: { [weak self] in
             guard let self, self.load == .loading else { return }
+            LaunchLog.markOnce("first profiles:getMyCard result")
             self.load = .unreachable
         }
     }

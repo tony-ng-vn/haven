@@ -33,6 +33,7 @@ struct PersonEditor: View {
         } actions: {
             GhostButton(title: "Done") { dismiss() }
         }
+        .havenDismissable()
         .sheet(item: $editing) { field in
             editor(for: field)
         }

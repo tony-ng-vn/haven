@@ -8,6 +8,11 @@ import SwiftUI
 /// is the only thing here that works today.
 struct DirectoryScreen: View {
     let userId: String
+    /// The caller's own first name, for the title. Read from `HavenTabs`'s
+    /// `MyNameModel` rather than a subscription of this screen's own -- see
+    /// that type's doc comment for why the People screen does not open a
+    /// second read of the same card.
+    var firstName: String?
     /// Focusing a search field belongs to the Search tab, so the field here
     /// hands the whole interaction over rather than imitating it.
     let openSearch: () -> Void
@@ -24,10 +29,12 @@ struct DirectoryScreen: View {
 
     init(
         userId: String,
+        firstName: String? = nil,
         openSearch: @escaping () -> Void,
         openPerson: @escaping (String) -> Void
     ) {
         self.userId = userId
+        self.firstName = firstName
         self.openSearch = openSearch
         self.openPerson = openPerson
         _model = StateObject(wrappedValue: DirectoryModel())
@@ -42,11 +49,13 @@ struct DirectoryScreen: View {
     /// A loaded screen that never opens a socket, for previews.
     init(
         userId: String,
+        firstName: String? = nil,
         openSearch: @escaping () -> Void,
         openPerson: @escaping (String) -> Void = { _ in },
         preview: DirectoryLoad
     ) {
         self.userId = userId
+        self.firstName = firstName
         self.openSearch = openSearch
         self.openPerson = openPerson
         _model = StateObject(wrappedValue: DirectoryModel(preview: preview))
@@ -100,18 +109,37 @@ struct DirectoryScreen: View {
         Task { await requestCaptureDrain.run() }
     }
 
-    /// "People", with a count once there is one worth giving.
-    ///
-    /// Nobody is left off rather than shown as a zero: the empty state below
-    /// already says it, and a title reading "People 0" says it twice and colder.
+    /// "Tony's Haven", or "Your Haven" before the name is known. See
+    /// `PeopleTitle` for the possessive rule.
     private var title: String {
-        guard let count = model.count, count > 0 else { return "People" }
-        // A first page that filled up has more behind it, so the number is a
-        // floor rather than a total, and says so.
-        return model.countIsPartial ? "People \(count)+" : "People \(count)"
+        PeopleTitle.title(firstName: firstName)
     }
 
     private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            #if DEBUG
+            // Which build this is, not just which version: two installs of
+            // the same version number, one just rebuilt over the simulator,
+            // otherwise read identically. Never compiled into a release or
+            // App Store build -- see DevBuildLabel's own doc comment.
+            if let caption = DevBuildLabel.caption(
+                version: DevBuildInfo.version,
+                builtAt: DevBuildInfo.builtAt
+            ) {
+                Text(caption)
+                    .havenSecondary()
+                    // Wraps rather than truncates: at accessibility sizes the
+                    // default single-line clip cut it to "v1.0.0 - built
+                    // Aug...", losing the one part of this line -- the time
+                    // -- that actually distinguishes one build from another.
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            #endif
+            searchButton
+        }
+    }
+
+    private var searchButton: some View {
         Button(action: openSearch) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
@@ -309,14 +337,24 @@ private let previewFirstPage = DirectoryPage(
     isDone: false
 )
 
-private func previewScreen(_ load: DirectoryLoad) -> some View {
+private func previewScreen(_ load: DirectoryLoad, firstName: String? = "Alex") -> some View {
     NavigationStack {
-        DirectoryScreen(userId: "preview_user", openSearch: {}, preview: load)
+        DirectoryScreen(
+            userId: "preview_user",
+            firstName: firstName,
+            openSearch: {},
+            preview: load
+        )
     }
 }
 
 #Preview("People, empty") {
     previewScreen(.ready(emptyDirectory))
+}
+
+// The title before a name has loaded, or without one to show.
+#Preview("People, no name yet") {
+    previewScreen(.ready(emptyDirectory), firstName: nil)
 }
 
 #Preview("People, with people") {
