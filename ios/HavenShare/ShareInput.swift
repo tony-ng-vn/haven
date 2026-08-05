@@ -3,9 +3,11 @@ import UniformTypeIdentifiers
 
 /// Reads what the share sheet handed over.
 ///
-/// A profile URL wins over an image when an app offers both, because an app
-/// that shares a profile alongside its picture is sharing the profile. An
-/// image on its own rides the existing screenshot pipeline instead.
+/// A profile URL wins over a text message, which wins over an image, when an
+/// app offers more than one: an app that shares a profile alongside its
+/// picture is sharing the profile, and a URL attachment is a link Haven does
+/// not have to go find inside a sentence first. An image on its own rides the
+/// existing screenshot pipeline instead.
 enum ShareInput {
     static func read(
         _ items: [NSExtensionItem],
@@ -24,6 +26,21 @@ enum ShareInput {
             }
         }
 
+        // LinkedIn's own app shares a profile this way: a message with the
+        // link inside it, never a URL attachment at all. ShareSubject owns
+        // deciding what counts as a profile link; this only hands it more
+        // than one candidate string to try.
+        for provider in providers {
+            guard provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) else {
+                continue
+            }
+            if let text = try? await provider.loadItem(forTypeIdentifier: UTType.plainText.identifier),
+                let subject = ShareSubject(embeddedInText: describe(text))
+            {
+                return subject
+            }
+        }
+
         for provider in providers {
             guard provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) else {
                 continue
@@ -35,7 +52,9 @@ enum ShareInput {
         return nil
     }
 
-    /// A shared URL arrives as an NSURL, and occasionally as the string of one.
+    /// A shared URL arrives as an NSURL, and occasionally as the string of
+    /// one; a shared message arrives as a string already. Both passes read
+    /// through this, so neither has to know which.
     private static func describe(_ item: NSSecureCoding) -> String {
         if let url = item as? URL { return url.absoluteString }
         if let string = item as? String { return string }

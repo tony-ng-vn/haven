@@ -8,6 +8,7 @@ import Testing
 // produces one. Whether it scans is a physical question answered by pointing a
 // phone at a screen, not by an assertion.
 
+@MainActor
 @Suite("Beacon")
 struct BeaconTests {
     @Test("a code points at Haven's own address")

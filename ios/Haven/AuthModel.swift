@@ -12,6 +12,9 @@ final class AuthModel: ObservableObject {
     init() {
         convex.authState
             .receive(on: DispatchQueue.main)
+            .handleEvents(receiveOutput: { _ in
+                LaunchLog.markOnce("first Clerk auth-state resolution")
+            })
             .assign(to: &$authState)
     }
 }

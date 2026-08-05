@@ -73,6 +73,7 @@ struct HandlesEditor: View {
         } actions: {
             GhostButton(title: "Done") { dismiss() }
         }
+        .havenDismissable()
         .sheet(item: $adding) { platform in
             HandleValueEditor(platform: platform) { value in
                 await add(platform, value: value)
@@ -166,6 +167,7 @@ private struct HandleValueEditor: View {
             PrimaryButton(title: "Save", isLoading: working, action: commit)
                 .disabled(parsed == nil)
         }
+        .havenDismissable()
     }
 
     private func commit() {

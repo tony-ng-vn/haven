@@ -7,6 +7,12 @@ import SwiftUI
 /// too bright. Static under Reduce Motion.
 struct DustLayer: View {
     @HavenReduceMotion private var reduceMotion
+    // DustLayer is the ambient background behind nearly every screen
+    // (HavenScreen's `.dust` case), so a sheet presented from almost anywhere
+    // in Haven leaves this running behind it. Paused the same way AnimatedSky
+    // and CardDriftClock are, or it keeps waking at display rate to redraw
+    // motes nobody can see for as long as the sheet is up.
+    @Environment(\.havenAmbientPaused) private var paused
 
     // Static, not stored per instance: the field is seeded and identical every
     // time, and SwiftUI re-creates view structs freely.
@@ -20,7 +26,7 @@ struct DustLayer: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         } else {
-            TimelineView(.animation) { timeline in
+            TimelineView(.animation(paused: paused)) { timeline in
                 let time = timeline.date.timeIntervalSinceReferenceDate
                 Canvas(rendersAsynchronously: true) { context, size in
                     Mote.draw(Self.motes, in: &context, size: size, time: time)

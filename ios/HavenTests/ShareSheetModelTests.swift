@@ -261,3 +261,71 @@ struct ShareSubjectTests {
         #expect(ShareSubject(sharedURL: "met at the conference") == nil)
     }
 }
+
+// LinkedIn's own app proved, on device, that it shares a profile as a
+// message with the link inside it, never as a URL attachment -- ShareInput
+// hands the whole message to `embeddedInText` rather than owning a second
+// parser, so this is where that decision is actually checked.
+@Suite("What a text share becomes")
+struct ShareSubjectTextTests {
+    @Test("LinkedIn's own message has the link inside a sentence")
+    func linkedInMessage() {
+        #expect(
+            ShareSubject(
+                embeddedInText:
+                    "Tony Nguyen sent you this LinkedIn link: https://www.linkedin.com/in/tony-buildd"
+            )
+            == .profile(
+                link: ProfileLink(platform: .linkedin, handle: "tony-buildd"),
+                profileUrl: "https://www.linkedin.com/in/tony-buildd"
+            )
+        )
+    }
+
+    // A trailing period is the sentence ending, not part of the handle --
+    // left on, this would silently save the wrong slug rather than fail to
+    // parse at all.
+    @Test("trailing sentence punctuation does not become part of the handle")
+    func trailingPunctuation() {
+        #expect(
+            ShareSubject(embeddedInText: "Check out my profile: https://www.linkedin.com/in/tony-buildd.")
+                == .profile(
+                    link: ProfileLink(platform: .linkedin, handle: "tony-buildd"),
+                    profileUrl: "https://www.linkedin.com/in/tony-buildd"
+                )
+        )
+    }
+
+    // A message that is nothing but the link, the way `sharedURL` already
+    // accepts a bare scheme-less domain on its own.
+    @Test("a bare scheme-less link on its own is still a subject")
+    func bareLink() {
+        #expect(
+            ShareSubject(embeddedInText: "linkedin.com/in/tony-buildd")
+                == .profile(
+                    link: ProfileLink(platform: .linkedin, handle: "tony-buildd"),
+                    profileUrl: "https://linkedin.com/in/tony-buildd"
+                )
+        )
+    }
+
+    // A link buried among other words -- a caption, not just a bare share --
+    // is still found; the search is exhaustive, not "the first word only".
+    @Test("a link among other words is still found")
+    func linkAmongOtherWords() {
+        #expect(
+            ShareSubject(embeddedInText: "check this out https://instagram.com/mai.makes it's great")
+                == .profile(
+                    link: ProfileLink(platform: .instagram, handle: "mai.makes"),
+                    profileUrl: "https://instagram.com/mai.makes"
+                )
+        )
+    }
+
+    @Test("a message with no link in it is not a subject")
+    func noLink() {
+        #expect(ShareSubject(embeddedInText: "great meeting you today!") == nil)
+        #expect(ShareSubject(embeddedInText: "") == nil)
+        #expect(ShareSubject(embeddedInText: "   ") == nil)
+    }
+}

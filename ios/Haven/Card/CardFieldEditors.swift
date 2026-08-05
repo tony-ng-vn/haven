@@ -158,6 +158,7 @@ struct TextFieldEditor: View {
                 }
             }
         }
+        .havenDismissable()
     }
 
     private func commit() {
@@ -253,6 +254,7 @@ struct AddressEditor: View {
             PrimaryButton(title: "Save", isLoading: working, action: commit)
                 .disabled(candidate == nil || isUnchanged)
         }
+        .havenDismissable()
     }
 
     /// The line under the field: the page this would be, or the rule it is
@@ -324,6 +326,7 @@ struct PhotoEditor: View {
                 }
             }
         }
+        .havenDismissable()
         .onChange(of: picked) { _, item in
             guard let item else { return }
             Task {
@@ -418,6 +421,7 @@ struct CityFieldEditor: View {
                 }
             }
         }
+        .havenDismissable()
     }
 
     private func choose(_ suggestion: CitySuggestion) {

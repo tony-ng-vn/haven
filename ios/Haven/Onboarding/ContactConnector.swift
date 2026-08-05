@@ -1,79 +1,156 @@
-import AuthenticationServices
-import ClerkKit
+import ConvexMobile
+import Foundation
 
-/// What a finished authorization handed back.
-struct ConnectedAccount {
-    /// Present only where the provider sends it. X does; LinkedIn does not,
-    /// which is the whole reason its confirm panel exists.
-    let username: String?
-    let fullName: String
-    /// The provider's avatar. Importing it into Haven's storage is a separate
-    /// job; it is carried here so that job has something to import.
-    let imageUrl: String?
+/// What `composio:initiateSocialConnection` answers.
+enum InitiateResult: Equatable {
+    /// Nothing to prove yet: open `url` in a browser, then poll
+    /// `connectedAccountId` with `ContactConnector.poll`.
+    case redirect(url: URL, connectedAccountId: String)
+    /// Already connected -- Composio's own dedupe found a live connection, so
+    /// there is no browser trip at all.
+    case already(handle: String)
+    /// The account exists but is a kind Composio's profile tool cannot read
+    /// (a personal Instagram account, not creator or business).
+    case unsupportedAccount
+    case failed
 }
 
-enum ContactConnectError: Error {
-    case notSignedIn
-    /// Backing out of the provider's page. A choice, not a failure.
+/// What `ContactConnector.poll` settles on, once a browser trip is done.
+enum SocialConnectOutcome: Equatable {
+    /// `photoUrl` is Composio's, not Haven's: nil wherever the platform's
+    /// profile tool did not hand one back, which for LinkedIn and Instagram
+    /// never happens and for X is the common case (see `PROFILE_TOOL`'s
+    /// comment on `composio.ts` -- X's photo field is not live-proven).
+    case connected(handle: String, photoUrl: String?)
+    case unsupportedAccount
+    /// The connection failed or expired, or nothing came back before the
+    /// deadline -- polling never distinguishes the two, because neither is
+    /// something the person can act on differently.
+    case failed
+    /// Backing out of the browser page. A choice, not a failure.
     case cancelled
 }
 
-/// Links an external account to the signed-in Clerk user.
+/// Links a social platform to the signed-in person through Composio, not
+/// Clerk.
+///
+/// Composio's managed OAuth apps return what these platforms hide from
+/// Clerk's own connections: LinkedIn's real vanityName, and a username for an
+/// Instagram creator or business account -- both, where the same call proves
+/// one, with a profile photo URL. Clerk still signs people in; this type
+/// never touches identity, only what a connection proves. The backend does
+/// the platform-specific work (`convex/composio.ts`) and never downloads the
+/// photo itself -- this is transport and polling only, and `OnboardingModel`
+/// is what imports the URL it hands back.
 enum ContactConnector {
-    /// Connects `provider`, reusing whatever Clerk already holds.
-    ///
-    /// Linking is not a fresh act every time it is asked for. Someone may have
-    /// signed in with this provider, linked it on another device, or got as far
-    /// as the browser before the app was killed -- and in Clerk an external
-    /// account is a future sign-in connection, so creating a second one is both
-    /// wrong and something the API refuses. Three cases, in order:
-    ///
-    /// - already verified: return it, with no browser trip at all
-    /// - half-linked: prepare a fresh authorization for the account that exists
-    /// - nothing yet: create one
-    @MainActor
-    static func connect(_ provider: OAuthProvider) async throws -> ConnectedAccount {
-        guard let signedIn = Clerk.shared.user else { throw ContactConnectError.notSignedIn }
-        // What Clerk knows now, not what this device last saw. An account linked
-        // elsewhere is invisible until the user is reloaded.
-        let user = (try? await signedIn.reload()) ?? signedIn
+    /// How often a browser trip is checked while it is open.
+    private static let pollInterval: Duration = .seconds(2)
+    /// How long altogether: long enough to actually authorize in the browser,
+    /// short enough that walking away does not poll forever.
+    private static let pollDeadline: TimeInterval = 120
 
-        if let verified = user.verifiedExternalAccounts.first(where: { matches($0, provider) }) {
-            return ConnectedAccount(verified)
+    /// Starts a connection for `platform`. Never called for `.phone`, which
+    /// has nothing to authorize against -- `ContactScreen` keeps it in the
+    /// typed group, so this is a defensive `.failed` rather than a crash.
+    static func initiate(_ platform: MyCard.Platform) async -> InitiateResult {
+        guard platform != .phone else { return .failed }
+        let work = Task { () throws -> InitiateResponse in
+            try await convex.action(
+                "composio:initiateSocialConnection",
+                with: ["platform": platform.rawValue]
+            )
         }
+        guard let response = await work.value(within: .seconds(HavenNetwork.deadline)) else {
+            return .failed
+        }
+        return Self.map(response)
+    }
 
-        do {
-            let pending: ExternalAccount
-            if let half = user.externalAccounts.first(where: { matches($0, provider) }) {
-                // Here but unverified: the browser trip never finished, and the
-                // authorization URL it carries has gone stale. Asking for a
-                // fresh one beats creating a second account.
-                pending = try await half.prepareReauthorization()
-            } else {
-                pending = try await user.createExternalAccount(provider: provider)
+    /// Polls after the browser trip, until Composio says what happened or the
+    /// deadline is reached.
+    ///
+    /// The deadline is this loop's own, not `Task.value(within:)`'s: that
+    /// helper bounds the *wait*, not the *work* (see `TaskDeadline.swift`) --
+    /// a task it gives up on keeps running. Wrapping this whole loop in one
+    /// would leave it polling in the background forever once the bound hit,
+    /// which defeats the point. Each individual poll call is bounded the same
+    /// way every network call in the app is; the loop's own deadline is the
+    /// thing that actually stops it.
+    ///
+    /// Cancelling the calling task -- the browser sheet being dismissed by
+    /// hand -- ends this immediately: `Task.sleep` throws the moment
+    /// cancellation lands, and that is caught below rather than left to
+    /// unwind on its own, so the caller gets `.cancelled` instead of nothing.
+    static func poll(platform: MyCard.Platform, connectedAccountId: String) async -> SocialConnectOutcome {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(pollDeadline))
+        while ContinuousClock.now < deadline {
+            let work = Task { () throws -> CompleteResponse in
+                try await convex.action(
+                    "composio:completeSocialConnection",
+                    with: ["platform": platform.rawValue, "connectedAccountId": connectedAccountId]
+                )
             }
-            return ConnectedAccount(try await pending.reauthorize())
-        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
-            throw ContactConnectError.cancelled
+            if let response = await work.value(within: .seconds(HavenNetwork.deadline)),
+               let outcome = Self.step(response) {
+                return outcome
+            }
+            // Either the call timed out, or the account is still pending --
+            // both mean "ask again shortly," not "give up."
+            do {
+                try await Task.sleep(for: pollInterval)
+            } catch {
+                return .cancelled
+            }
+        }
+        return .failed
+    }
+
+    /// Pure so it is testable without a fake network: what an
+    /// `initiateSocialConnection` response means to the UI.
+    static func map(_ response: InitiateResponse) -> InitiateResult {
+        switch response.status {
+        case "redirect":
+            guard let raw = response.redirectUrl, let url = URL(string: raw),
+                  let connectedAccountId = response.connectedAccountId else { return .failed }
+            return .redirect(url: url, connectedAccountId: connectedAccountId)
+        case "already":
+            guard let handle = response.handle, !handle.isEmpty else { return .failed }
+            return .already(handle: handle)
+        case "unsupported_account":
+            return .unsupportedAccount
+        default:
+            return .failed
         }
     }
 
-    /// Clerk has shipped this field both with and without the `oauth_` prefix,
-    /// so match either rather than betting on which shape this SDK sends.
-    private static func matches(_ account: ExternalAccount, _ provider: OAuthProvider) -> Bool {
-        account.provider == provider.strategy || "oauth_\(account.provider)" == provider.strategy
+    /// Pure so it is testable without a fake network: what one
+    /// `completeSocialConnection` response means. `nil` means "still
+    /// pending, ask again" -- the only outcome `poll`'s loop does not return
+    /// straight to its own caller.
+    static func step(_ response: CompleteResponse) -> SocialConnectOutcome? {
+        switch response.status {
+        case "connected":
+            guard let handle = response.handle, !handle.isEmpty else { return .failed }
+            return .connected(handle: handle, photoUrl: response.photoUrl)
+        case "unsupported_account":
+            return .unsupportedAccount
+        case "failed":
+            return .failed
+        default:
+            return nil
+        }
     }
 }
 
-private extension ConnectedAccount {
-    init(_ account: ExternalAccount) {
-        self.init(
-            username: account.username,
-            fullName: [account.firstName, account.lastName]
-                .compactMap { $0 }
-                .filter { !$0.isEmpty }
-                .joined(separator: " "),
-            imageUrl: account.imageUrl
-        )
-    }
+struct InitiateResponse: Decodable {
+    let status: String
+    let redirectUrl: String?
+    let connectedAccountId: String?
+    let handle: String?
+}
+
+struct CompleteResponse: Decodable {
+    let status: String
+    let handle: String?
+    let photoUrl: String?
 }

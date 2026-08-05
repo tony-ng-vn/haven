@@ -62,6 +62,12 @@ final class DirectoryModel: ObservableObject {
     @Published private(set) var isLoadingMore = false
 
     /// How many rows the current subscription asks for.
+    ///
+    /// A `Double`, not an `Int`: ConvexEncodable wraps a `FixedWidthInteger` as
+    /// `{"$integer": base64}`, and `paginationOptsValidator` on the server
+    /// types `numItems` as `v.number()` -- a float64 that refuses that
+    /// wrapper. Sent as an `Int` this reads perfectly and fails validation on
+    /// every call.
     private(set) var window = DirectoryModel.pageSize
 
     private var cancellable: AnyCancellable?
@@ -71,7 +77,7 @@ final class DirectoryModel: ObservableObject {
 
     /// How many more rows each scroll to the end asks for. Comfortably more
     /// than most directories hold, so most people never page at all.
-    private static let pageSize = 50
+    private static let pageSize: Double = 50
 
     init() {
         isLive = true
@@ -96,26 +102,6 @@ final class DirectoryModel: ObservableObject {
     /// the first page landed would be worse than one that waits a beat.
     var isEmpty: Bool {
         if case .ready(let page) = load { return page.page.isEmpty }
-        return false
-    }
-
-    /// How many people to say there are.
-    ///
-    /// Nil while loading or unreachable, because a count of zero and a count we
-    /// could not read are different things and only one of them is "nobody".
-    var count: Int? {
-        if case .ready(let page) = load { return page.page.count }
-        return nil
-    }
-
-    /// True while there are more people behind what is loaded, so the count is
-    /// a floor rather than a total.
-    ///
-    /// A transient now rather than a permanent state: scrolling to the end
-    /// loads the rest and the number becomes exact. Before paging existed this
-    /// said "50+" to somebody with 300 people and never stopped saying it.
-    var countIsPartial: Bool {
-        if case .ready(let page) = load { return !page.isDone }
         return false
     }
 

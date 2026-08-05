@@ -1,25 +1,19 @@
-import AuthenticationServices
 import ClerkKit
 import ClerkKitUI
 import SwiftUI
 
 /// Screen 0. Sign-in and the mood screen are one screen: the wordmark and a
-/// single line carry the mood, and signing in is the only thing to do.
+/// single line carry the mood, and the two doors into an account are the
+/// only decisions here.
 ///
-/// Apple is the primary action because App Store guideline 4.8 requires it once
-/// any third-party login exists. Every other provider stays behind the ghost,
-/// which keeps this screen at one decision.
+/// Sign up and sign in are two different flows, chosen up front, rather than
+/// one "Continue" that guesses which a person meant and asks again if it
+/// guessed wrong.
 struct WelcomeScreen: View {
-    @Environment(Clerk.self) private var clerk
     @HavenReduceMotion private var reduceMotion
 
     @State private var arrived = false
-    @State private var isSigningIn = false
-    @State private var showingOtherOptions = false
-    @State private var failure: String?
-    /// Counts failures rather than triggering on the message, so a second
-    /// identical failure still gets its haptic.
-    @State private var failureCount = 0
+    @State private var authSheet: AuthSheet?
     @State private var legalDocument: LegalDocument?
 
     var body: some View {
@@ -46,48 +40,39 @@ struct WelcomeScreen: View {
             .accessibilityElement(children: .combine)
         } actions: {
             VStack(spacing: 8) {
-                if let failure {
-                    Text(failure)
-                        .havenBody()
-                        .multilineTextAlignment(.center)
-                        .transition(.opacity)
-                }
-
-                // The Apple logo is not decoration: the HIG requires it on a
-                // custom Sign in with Apple button, in the title's colour.
-                PrimaryButton(
-                    title: "Continue with Apple",
-                    systemImage: "apple.logo",
-                    isLoading: isSigningIn
-                ) {
-                    Task { await signInWithApple() }
+                // Sign up leads: a pre-launch app has no existing users, so
+                // nearly everyone who reaches this screen needs an account
+                // rather than a way back into one they already have.
+                //
+                // Apple is not one of the two doors here. Removed 2026-08-04:
+                // the production Clerk plan allows at most three social
+                // connections, and Google, LinkedIn and X spend all three.
+                // Guideline 4.8 requires a privacy-equivalent login (Sign in
+                // with Apple) once a third-party login exists, so this has to
+                // come back before App Store submission -- it is set aside
+                // for now, not a decision to ship without it.
+                PrimaryButton(title: "Sign up") {
+                    authSheet = .signUp
                 }
                 .arriving(arrived, after: 1.15, still: reduceMotion)
 
-                // Not "Other sign-in options": at accessibility text sizes that
-                // wraps at its own hyphen, giving "Other sign- / in options".
-                // This phrasing has no hyphen to break at.
-                GhostButton(title: "Other ways to sign in") {
-                    showingOtherOptions = true
+                GhostButton(title: "Sign in") {
+                    authSheet = .signIn
                 }
-                .disabled(isSigningIn)
                 .arriving(arrived, after: 1.32, still: reduceMotion)
 
                 // Guideline 5.1.1(i) wants the privacy policy reachable inside
                 // the app, and this screen is where someone decides whether to
                 // sign in at all, so the pages are offered before the account
-                // exists, not only after (My Card carries them too). Not
-                // disabled during sign-in: reading the policy is never the
-                // wrong moment.
+                // exists, not only after (My Card carries them too).
                 legalLinks
                     .arriving(arrived, after: 1.45, still: reduceMotion)
             }
         }
-        .sheet(isPresented: $showingOtherOptions) {
-            AuthView()
+        .sheet(item: $authSheet) { sheet in
+            AuthView(mode: sheet.mode)
         }
         .legalSheet($legalDocument)
-        .sensoryFeedback(.error, trigger: failureCount)
         .task { arrived = true }
     }
 
@@ -112,19 +97,21 @@ struct WelcomeScreen: View {
         }
     }
 
-    private func signInWithApple() async {
-        failure = nil
-        isSigningIn = true
-        defer { isSigningIn = false }
+    /// Which mode `AuthView` opens in. One sheet rather than two `.sheet`
+    /// modifiers on this view, which already carries the legal sheet as
+    /// well -- a screen stacking three presentations is a screen where one
+    /// of them quietly stops opening.
+    private enum AuthSheet: Identifiable {
+        case signUp
+        case signIn
 
-        do {
-            try await clerk.auth.signInWithApple()
-        } catch {
-            // Dismissing the system sheet is a choice, not a failure, so it
-            // must not leave an error sitting on the screen.
-            guard !error.isAppleSignInCancellation else { return }
-            failure = "That did not go through. Try again, or use another option."
-            failureCount += 1
+        var id: Self { self }
+
+        var mode: AuthView.Mode {
+            switch self {
+            case .signUp: return .signUp
+            case .signIn: return .signIn
+            }
         }
     }
 }
@@ -139,12 +126,6 @@ private extension View {
         opacity(still || arrived ? 1 : 0)
             .offset(y: still || arrived ? 0 : 9)
             .animation(still ? nil : HavenMotion.easeOut(0.9).delay(delay), value: arrived)
-    }
-}
-
-private extension Error {
-    var isAppleSignInCancellation: Bool {
-        (self as? ASAuthorizationError)?.code == .canceled
     }
 }
 

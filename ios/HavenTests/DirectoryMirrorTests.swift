@@ -160,6 +160,29 @@ struct DirectoryMirrorStoreTests {
         #expect(store.load() == mirror)
     }
 
+    // What sign-out relies on: LocalAccountState clears the mirror without
+    // knowing or caring whether one was ever written.
+    @Test("clearing removes a saved mirror")
+    func clearRemovesTheMirror() throws {
+        let (store, root) = makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try store.save(mirror)
+        try store.clear()
+
+        #expect(store.load() == nil)
+    }
+
+    @Test("clearing with nothing saved is not a failure")
+    func clearWithNothingSaved() throws {
+        let (store, root) = makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try store.clear()
+
+        #expect(store.load() == nil)
+    }
+
     // The mirror is a cache, never the source of truth. Before the app has
     // ever run, there is nothing to read, and the sheet still has to open.
     @Test("no mirror yet is nobody, not a failure")

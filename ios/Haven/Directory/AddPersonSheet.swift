@@ -56,6 +56,7 @@ struct AddPersonSheet: View {
                 GhostButton(title: "Cancel") { dismiss() }
             }
         }
+        .havenDismissable()
         .presentationDragIndicator(.visible)
         // Light on commit, per the design tokens. Writing somebody down is a
         // commit; the sheet closing is the receipt, and this is what the

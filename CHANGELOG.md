@@ -6,6 +6,48 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.47.0
+
+2026-08-04
+
+**iOS**
+
+- Connecting LinkedIn, Instagram or X on the contact question now fills in your real, proven address automatically, the same way X's always has -- LinkedIn no longer needs a guessed slug checked by hand unless the connection itself fails.
+- Instagram can now be connected at all, for creator and business accounts; a personal account is told so before it ever gets stuck, both on the row itself and if the connection is tried anyway.
+- A connected account fills in your photo again, the same as it always did -- carried over to the new connection method, not lost with the old one.
+- Sharing a link from Safari can now find Haven in the share sheet. It was registered and installed correctly the whole time; the rule that was supposed to let it in required every single item Safari attaches to a share -- the page's own text and a snapshot, not just the link -- to be something Haven explicitly claimed, so one unclaimed extra silently hid it every time.
+- Sharing a profile from apps that send it as a message rather than a link -- LinkedIn's own app among them -- now reaches Haven too, with the profile link found inside the message.
+- The Lock Screen widget actually renders now, instead of the system's own grey "please try again" placeholder -- it was missing one required setup step, invisible until an owner actually put it on a real Lock Screen -- and it now has a wider version with Haven's name on it, for the slot people actually add it to next to the clock, not just the small circle.
+- When Ask cannot answer, Haven now says it is taking a little coffee break and will come back soon, instead of a flat error line.
+- The People tab is now named for you -- "Tony's Haven" rather than a bare count of who you have saved -- and reads "Your Haven" until your name has loaded.
+- The People tab, a person's own page, and My Card now keep listening for changes for as long as you are on them, instead of quietly going silent after sitting still for a few seconds. That silent cutoff is why a person you just added used to show up in Search well before they showed up on the People tab that led you there.
+- The People tab no longer shows a long scroll bar running most of the way down the screen for just a handful of saved people.
+- Haven now shows itself the moment you tap the icon, instead of a blank screen while it quietly finished setting up sign-in behind the scenes first -- that setup still has to happen, it just no longer holds up the first thing you see.
+- The moment behind that first screen is the night sky now, not a plain loading spinner -- Haven waits on the sky everywhere else, and the launch screen is no longer the one exception.
+- My Card now has a Sign out button, quieter than and above Delete your account: until now the only way off an account on this phone was deleting it.
+
+**Backend**
+
+- Haven now asks Composio, not Clerk, for what LinkedIn, Instagram and X actually know about someone's account, because Composio's managed connections hand back real profile data Clerk's own connections never surface.
+- Deleting your Haven account now also disconnects LinkedIn, Instagram and X at Composio, so the OAuth access you granted them does not keep working under an account that no longer exists.
+
+---
+
+## v0.46.0
+
+2026-08-03
+
+**iOS**
+
+- The People list can load past its first fifty again, and the share sheet's offline copy of your directory loads at all: both were asking the server for rows in a shape it silently refused, so scrolling to the bottom of a longer list, or opening the share sheet before ever launching the app, went nowhere.
+- Haven no longer hangs on a dead connection, and this reaches further than it first looks. Saving a note about someone, asking Haven who fits a need, and syncing a profile shared in while offline could each get stuck waiting forever for a reply that was never coming -- the note trapped in an editor with no way to save or leave it, the ask screen with no way back to search, and every capture silently going nowhere until the app was force-quit. Chasing that down found the guarantee underneath all of Haven's saves: every one of them trusted a shared "give up after a few seconds of silence" rule that was not actually being kept, so editing your card, answering an onboarding question, and editing someone you had already saved could each have hung the same way without ever showing why. All of it now genuinely gives up and offers to try again, rather than only appearing to.
+- The sky revealed at the end of onboarding is now the sky that person keeps. It used to show the placeholder figure the questions were seeded with, before the card had a permanent address; the reveal now draws the same constellation My Card, Connect and the public web card all already show.
+- The faint drifting dust behind every screen now pauses while a sheet is open over it, the same way the sky and the card's own drift already do -- less battery spent animating something nobody can see.
+- The welcome screen now offers Sign up and Sign in as their own doors, rather than one button that guessed which you meant. Signing in with Apple is set aside for now, since the production accounts plan only has room for three outside logins and Google, LinkedIn and X fill them.
+- Every dialog Haven opens over the app now carries a visible close button in the top corner, so leaving one no longer depends on already knowing you can swipe it away.
+
+---
+
 ## v0.45.0
 
 2026-07-31

@@ -3,35 +3,17 @@
 <plist version="1.0">
 <dict>
 	<!--
-	  Clerk's signInWithApple() is native ASAuthorization, not a web sheet, and
-	  ASAuthorizationAppleIDProvider needs this entitlement to answer at all.
-	  The simulator does not enforce it, so the welcome screen's primary button
-	  works in development and fails on a real device with error 1000, which
-	  reads as "Apple is down" rather than "the entitlement is missing".
-
-	  Needs the matching Sign In with Apple capability on the App ID in the
-	  developer portal; the entitlement alone does not provision.
+	  Universal links (a tap on inhavens.com/<handle> opening Haven instead of
+	  Safari) are DEFERRED, and their associated-domains entitlement is
+	  deliberately absent: the free personal team the project signs with does
+	  not support that capability, and Xcode's automatic signing refuses to
+	  build an app that declares it. The links were never functional anyway --
+	  the apple-app-site-association file in `public/` still carries a
+	  placeholder Team ID, so a scanned code lands in Safari today either way.
+	  Re-add `com.apple.developer.associated-domains` with
+	  `applinks:inhavens.com` in the same commit that joins the paid developer
+	  program and puts the real Team ID in that file.
 	-->
-	<key>com.apple.developer.applesignin</key>
-	<array>
-		<string>Default</string>
-	</array>
-	<!--
-	  What makes a tap on inhavens.com/<handle> open Haven instead of Safari.
-	  iOS fetches https://inhavens.com/.well-known/apple-app-site-association on
-	  install and honours whatever that file claims; the file lives in `public/`
-	  and a test keeps it from claiming the site's own pages.
-
-	  Needs the Associated Domains capability on the App ID in the developer
-	  portal, and the file needs the real Team ID in place of its placeholder.
-	  Neither is something a commit can do, and until both are done a scanned
-	  code still lands in Safari -- which is what it does today, so nothing
-	  regresses while they are outstanding.
-	-->
-	<key>com.apple.developer.associated-domains</key>
-	<array>
-		<string>applinks:inhavens.com</string>
-	</array>
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)com.inhavens.haven</string>
@@ -43,9 +25,8 @@
 	  of an error.
 
 	  Needs the group registered in the developer portal and added to both App
-	  IDs, the same way the Sign In with Apple capability above does. The
-	  simulator does not enforce it, so a missing registration shows up only on
-	  a real device -- as captures that vanish.
+	  IDs. The simulator does not enforce it, so a missing registration shows
+	  up only on a real device -- as captures that vanish.
 	-->
 	<key>com.apple.security.application-groups</key>
 	<array>

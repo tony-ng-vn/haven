@@ -30,6 +30,41 @@ enum ShareSubject: Equatable, Sendable {
         self = .profile(link: link, profileUrl: Self.withoutTracking(normalized))
     }
 
+    /// The profile link embedded somewhere in a free-form share message, or
+    /// nil when none of it is one.
+    ///
+    /// LinkedIn's own app proved, on device, that it shares a profile as a
+    /// sentence with the link inside it ("Tony Nguyen sent you this LinkedIn
+    /// link: https://www.linkedin.com/in/tony-buildd"), not as a URL
+    /// attachment -- `ShareInput` in the extension hands the whole message
+    /// here rather than trying to find the link itself, because deciding
+    /// what counts as a profile link is `sharedURL`'s job already and a
+    /// second decider is a second place for the two to disagree.
+    ///
+    /// The whole trimmed message is tried first, which is what accepts a bare
+    /// scheme-less handle shared on a line by itself the same way `sharedURL`
+    /// already does. Failing that, every whitespace-separated word is offered
+    /// in turn, stripped of sentence punctuation it is not part of -- a
+    /// trailing period after "tony-buildd." is the sentence ending, not the
+    /// handle, and left on it would silently save the wrong one rather than
+    /// fail to parse at all.
+    init?(embeddedInText text: String) {
+        let trimmed = text.trimmedLikeJS
+        guard !trimmed.isEmpty else { return nil }
+        if let whole = ShareSubject(sharedURL: trimmed) {
+            self = whole
+            return
+        }
+        for word in trimmed.split(whereSeparator: \.isJSWhitespace) {
+            let candidate = Self.strippingTrailingPunctuation(String(word))
+            if let found = ShareSubject(sharedURL: candidate) {
+                self = found
+                return
+            }
+        }
+        return nil
+    }
+
     /// The profile URL without the share sheet's tracking noise (`?s=`,
     /// `?igsh=`, the four `utm_*`), so re-sharing one person twice does not
     /// file two different URLs against them.
@@ -38,6 +73,19 @@ enum ShareSubject: Equatable, Sendable {
         // A trailing slash is the same page, so it is the same link.
         return stripped.count > 1 && stripped.hasSuffix("/")
             ? String(stripped.dropLast()) : String(stripped)
+    }
+
+    /// Sentence punctuation a word can trail without being part of a link:
+    /// "...tony-buildd." ends in a period that belongs to the sentence.
+    /// Never a leading strip -- nothing a person writes puts punctuation in
+    /// front of a link the way a sentence puts it after one.
+    private static func strippingTrailingPunctuation(_ word: String) -> String {
+        let punctuation: Set<Character> = [".", ",", "!", "?", ";", ":", ")", "]", "}", "'", "\""]
+        var trimmed = Substring(word)
+        while let last = trimmed.last, punctuation.contains(last) {
+            trimmed.removeLast()
+        }
+        return String(trimmed)
     }
 }
 

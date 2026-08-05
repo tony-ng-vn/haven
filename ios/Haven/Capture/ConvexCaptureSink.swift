@@ -48,12 +48,11 @@ struct ConvexCaptureSink: CaptureSink {
         guard let contentType = ImageFormat.contentType(of: image) else {
             throw SinkError.notAnImage
         }
-        let url: String = try await convex.mutation("captures:generateUploadUrl")
+        let url: String = try await bounded { try await convex.mutation("captures:generateUploadUrl") }
         let storageId = try await PhotoUpload.send(image, to: url, contentType: contentType)
-        let _: String = try await convex.mutation(
-            "captures:createCapture",
-            with: ["screenshotId": storageId]
-        )
+        let _: String = try await bounded {
+            try await convex.mutation("captures:createCapture", with: ["screenshotId": storageId])
+        }
     }
 
     private func saveShared(
@@ -74,10 +73,27 @@ struct ConvexCaptureSink: CaptureSink {
         // and an explicit null is a different thing to Convex.
         if let note { args["note"] = note }
         if let attachToPersonId { args["attachToPersonId"] = attachToPersonId }
-        return try await convex.mutation("people:saveSharedProfile", with: args)
+        return try await bounded { try await convex.mutation("people:saveSharedProfile", with: args) }
+    }
+
+    /// Bounds one mutation the way every write elsewhere in the app is
+    /// bounded: the client reconnects rather than failing, so an unbounded
+    /// call on a dead connection would hang here forever. This file has no UI
+    /// to say so -- a hang would stall `CaptureDrain`'s loop over the queue
+    /// and, with it, `CaptureSync.isRunning` for the rest of the session,
+    /// silently stopping every capture from draining until the app relaunches.
+    /// A timeout throws instead, which the drain's own per-item `catch`
+    /// already turns into "kept for next time".
+    private func bounded<Value>(_ call: @escaping () async throws -> Value) async throws -> Value {
+        let work = Task { try await call() }
+        guard let value = await work.value(within: .seconds(HavenNetwork.deadline)) else {
+            throw SinkError.timedOut
+        }
+        return value
     }
 
     enum SinkError: Error {
         case notAnImage
+        case timedOut
     }
 }

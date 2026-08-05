@@ -30,13 +30,19 @@ struct AskPanel: View {
     }
 
     private var thinking: some View {
-        HStack(spacing: 10) {
-            ProgressView().tint(HavenColor.faint)
-            Text("Reading everyone you know...")
-                .havenSecondary()
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                ProgressView().tint(HavenColor.faint)
+                Text("Reading everyone you know...")
+                    .havenSecondary()
+            }
+            .accessibilityElement(children: .combine)
+            // Every other state here has a way back to search; thinking is
+            // bounded now, but a person should never have to wait out a
+            // network call to leave a screen.
+            GhostButton(title: "Back to search", action: onDismiss)
         }
         .padding(.top, 8)
-        .accessibilityElement(children: .combine)
     }
 
     private func failed(_ message: String) -> some View {

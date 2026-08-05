@@ -36,17 +36,9 @@ struct LockScreenExplainer: View {
                             WidgetHowTo()
                         } label: {
                             // Dressed as PrimaryButton, which is a Button and
-                            // so cannot carry a push of its own.
-                            Text("Show me how")
-                                .font(HavenFont.buttonLabel)
-                                .foregroundStyle(HavenColor.creamInk)
-                                .padding(.vertical, 13)
-                                .padding(.horizontal, 20)
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                                .background(
-                                    HavenColor.cream,
-                                    in: RoundedRectangle(cornerRadius: 12)
-                                )
+                            // so cannot carry a push of its own -- PrimaryLabel
+                            // is the same look with no Button attached.
+                            PrimaryLabel(title: "Show me how")
                         }
                         .buttonStyle(PressScaleStyle())
 
@@ -55,6 +47,10 @@ struct LockScreenExplainer: View {
                 }
             )
         }
+        // On the whole stack, not the root screen: the close has to stay on
+        // screen once "Show me how" pushes WidgetHowTo, because someone
+        // reading the three steps is still inside this dialog, not a new one.
+        .havenDismissable()
     }
 }
 

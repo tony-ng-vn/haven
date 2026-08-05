@@ -26,8 +26,14 @@ enum HavenNetwork {
     ///     in the middle of answering. Everywhere else, an edit made on another
     ///     device should land.
     ///   - onSilence: called when the stream ends without ever producing a
-    ///     value. Any ending counts, not just a failure: a timeout finishes the
-    ///     stream quietly, and that is what "we never heard back" looks like.
+    ///     value -- for a `firstValueOnly` read, a timeout finishes the stream
+    ///     quietly, and that is what "we never heard back" looks like. For a
+    ///     live subscription, the deadline only guards that first answer; once
+    ///     one has arrived, `onSilence` is reserved for the underlying
+    ///     subscription actually ending (the client gave up reconnecting), not
+    ///     for an ordinary quiet stretch between real changes. See the
+    ///     live-subscription branch below for why that distinction is load
+    ///     bearing rather than cosmetic.
     @MainActor
     static func subscribe<Value: Decodable>(
         to name: String,
@@ -38,12 +44,75 @@ enum HavenNetwork {
         onSilence: @escaping () -> Void
     ) -> AnyCancellable {
         let stream = convex.subscribe(to: name, with: args, yielding: Value.self)
-        let bounded = firstValueOnly
-            ? stream.first().eraseToAnyPublisher()
-            : stream.eraseToAnyPublisher()
-        return bounded
-            .timeout(.seconds(deadline), scheduler: DispatchQueue.main)
-            .receive(on: DispatchQueue.main)
-            .sink { _ in onSilence() } receiveValue: { onValue($0) }
+
+        if firstValueOnly {
+            return stream.first()
+                .timeout(.seconds(deadline), scheduler: DispatchQueue.main)
+                .receive(on: DispatchQueue.main)
+                .sink { _ in onSilence() } receiveValue: { onValue($0) }
+        }
+
+        return LiveSubscription.attach(
+            to: stream,
+            deadline: deadline,
+            onValue: onValue,
+            onSilence: onSilence
+        )
+    }
+}
+
+/// The live-subscription half of `HavenNetwork.subscribe`, pulled out on its
+/// own so its timing can be tested against a plain publisher rather than a
+/// deployment -- see `HavenNetworkTests`.
+enum LiveSubscription {
+    /// A live subscription answers once and then, correctly, goes quiet
+    /// between real changes -- a directory nobody has touched in the last
+    /// minute is not unreachable, it is just unchanged. Combine's `.timeout`
+    /// resets its timer on every element, so wrapping the whole stream in it,
+    /// which is what `HavenNetwork.subscribe` used to do with no branch for
+    /// this case, silently completed the stream -- for good, with no error
+    /// and no way back -- the first time two pushes landed further apart than
+    /// `deadline`. Every caller that reads this way (`DirectoryModel`,
+    /// `MyCardModel`, `PersonModel`, `MyNameModel`, `SearchModel`'s facets
+    /// read) would then sit on a dead subscription forever, showing whatever
+    /// it last received, with nothing on screen saying so: their `onSilence`
+    /// handlers all guard on still being in `.loading`, exactly the case this
+    /// was failing outside of. The deadline here only bounds the wait for the
+    /// *first* answer; nothing past that point carries a deadline of its own,
+    /// because nothing should -- a live subscription's job is to sit open and
+    /// wait.
+    @MainActor
+    static func attach<P: Publisher>(
+        to stream: P,
+        deadline: TimeInterval,
+        scheduler: DispatchQueue = .main,
+        onValue: @escaping (P.Output) -> Void,
+        onSilence: @escaping () -> Void
+    ) -> AnyCancellable {
+        var answered = false
+        let subscription = stream
+            .receive(on: scheduler)
+            .sink(
+                receiveCompletion: { _ in
+                    // Any ending is silence, whether or not it already
+                    // answered: a live subscription that drops off the
+                    // network now is unreachable now, not only at the start.
+                    onSilence()
+                },
+                receiveValue: { value in
+                    answered = true
+                    onValue(value)
+                }
+            )
+        let watchdog = DispatchWorkItem {
+            guard !answered else { return }
+            onSilence()
+        }
+        scheduler.asyncAfter(deadline: .now() + deadline, execute: watchdog)
+
+        return AnyCancellable {
+            subscription.cancel()
+            watchdog.cancel()
+        }
     }
 }

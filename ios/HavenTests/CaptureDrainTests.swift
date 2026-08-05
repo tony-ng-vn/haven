@@ -12,9 +12,18 @@ private final class FakeSink: CaptureSink, @unchecked Sendable {
     /// or the network never reaches.
     var failing: Set<String> = []
     var truncating: Set<String> = []
+    /// Handles whose save takes far longer than this test could ever wait out
+    /// before it answers -- standing in for a connection that never comes
+    /// back. Long on purpose, now that `Task.value(within:)` is actually
+    /// bounded: what these tests below have to prove is that `CaptureDrain`
+    /// returns while this is still running, not that it eventually finishes.
+    var hangingFor: [String: Duration] = [:]
 
     func saveProfile(_ profile: QueuedCapture.Profile) async throws -> SharedProfileOutcome {
         profiles.append(profile)
+        if let delay = hangingFor[profile.link.handle] {
+            try? await Task.sleep(for: delay)
+        }
         if failing.contains(profile.link.handle) { throw SinkError.refused }
         return SharedProfileOutcome(
             status: "created",
@@ -40,6 +49,8 @@ private final class FakeSink: CaptureSink, @unchecked Sendable {
 
     enum SinkError: Error { case refused }
 }
+
+// withTestTimeout lives in TestTimeout.swift, shared with TaskDeadlineTests.
 
 private func makeQueue() -> (queue: CaptureQueue, root: URL) {
     let root = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -186,6 +197,70 @@ struct CaptureDrainTests {
         #expect(result.sent == 0)
         #expect(result.kept == 1)
         #expect(queue.pending().count == 1)
+    }
+
+    // A hung mutation is not a fast throw, it is a call that never comes
+    // back -- what a reconnecting client looks like from the drain's side.
+    // Nothing here must wedge on that: CaptureSync.run()'s isRunning guard
+    // only ever resets once this function returns, and a drain stuck on one
+    // item is every future capture sync silently doing nothing for the rest
+    // of the session.
+    //
+    // The sink is set to answer in an hour, comfortably longer than this
+    // test or the whole suite runs for, so a passing result can only mean
+    // CaptureDrain's own 0.05s deadline is what ended the wait -- not the
+    // sink finishing on its own, which the first version of this test could
+    // not tell apart from a real bound.
+    @Test("a hung send is still kept, while the sink is still pending")
+    func hungSendIsKept() async throws {
+        let (queue, root) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try queue.enqueue(profile("a", at: 100))
+        let sink = FakeSink()
+        sink.hangingFor = ["a": .seconds(3600)]
+        sink.failing = ["a"]
+
+        // withTestTimeout is the test's own safety net, independent of
+        // whatever CaptureDrain's own deadline does, so a regression here
+        // fails this test rather than hanging the suite.
+        let start = ContinuousClock.now
+        let result = try await withTestTimeout {
+            await CaptureDrain(queue: queue, sink: sink, deadline: 0.05).run()
+        }
+        let elapsed = ContinuousClock.now - start
+
+        #expect(result.sent == 0)
+        #expect(result.kept == 1)
+        #expect(queue.pending().count == 1)
+        // Generous above the 0.05s deadline for scheduling jitter, and far
+        // below anything an hour-long sink could have produced -- the drain
+        // did not wait for it.
+        #expect(elapsed < .seconds(1), "\(elapsed)")
+    }
+
+    // The same failure, one item further back, must not leave the drain
+    // stuck on the hung one before it ever reaches the item that would
+    // have gone through cleanly.
+    @Test("a hung send does not block a good one behind it")
+    func hungSendDoesNotBlockTheRest() async throws {
+        let (queue, root) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try queue.enqueue(profile("stuck", at: 100))
+        try queue.enqueue(profile("good", at: 200))
+        let sink = FakeSink()
+        sink.hangingFor = ["stuck": .seconds(3600)]
+        sink.failing = ["stuck"]
+
+        let start = ContinuousClock.now
+        let result = try await withTestTimeout {
+            await CaptureDrain(queue: queue, sink: sink, deadline: 0.05).run()
+        }
+        let elapsed = ContinuousClock.now - start
+
+        #expect(result.kept == 1)
+        #expect(result.sent == 1)
+        #expect(sink.profiles.map(\.link.handle) == ["stuck", "good"])
+        #expect(elapsed < .seconds(1), "\(elapsed)")
     }
 
     // One capture the server will not take must not strand the ones behind

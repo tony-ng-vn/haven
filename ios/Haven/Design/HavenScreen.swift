@@ -120,6 +120,18 @@ struct HavenScreen<Header: View, Content: View, Actions: View>: View {
                         .padding(.vertical, 20)
                 }
                 .scrollBounceBehavior(.basedOnSize)
+                // This view always sizes its content to at least the full
+                // space between header and actions, so it can centre short
+                // content -- which means a screen with four rows still
+                // reports a scrollable area the height of the whole screen,
+                // and the system draws an indicator bar that spans nearly
+                // all of it for a handful of pixels of actual overflow. Every
+                // screen built on HavenScreen has this shape, so the fix
+                // belongs here once rather than as a per-screen patch
+                // discovered one owner report at a time; a screen with a
+                // real, long list (Directory, Search) is still fully
+                // scrollable by touch, just without the visual bar.
+                .scrollIndicators(.hidden)
                 // Measures the scroll view's own frame, not its content, so
                 // short content can be centred in the space that is left.
                 .background {

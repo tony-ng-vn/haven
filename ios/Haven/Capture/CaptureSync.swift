@@ -143,5 +143,9 @@ final class CaptureSync: ObservableObject {
     /// Phase 2 directory holds, and the sheet searches by name rather than
     /// scrolling, so a bigger mirror would only cost the extension memory it
     /// does not have.
-    private static let mirrorSize = 500
+    ///
+    /// Not `private`: `DirectoryPagingTests` reads it to pin the wire shape
+    /// against the same value this file sends, the way `Config`'s keys are
+    /// widened for `ConfigTests`.
+    static let mirrorSize: Double = 500
 }

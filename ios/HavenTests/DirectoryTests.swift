@@ -1,3 +1,4 @@
+import ConvexMobile
 import Foundation
 import Testing
 @testable import Haven
@@ -107,6 +108,55 @@ struct DirectoryTests {
     }
 }
 
+@Suite("The People screen's title")
+struct PeopleTitleTests {
+    @Test("a first name gets a simple apostrophe-s")
+    func possessive() {
+        #expect(PeopleTitle.title(firstName: "Tony") == "Tony's Haven")
+    }
+
+    // The brief is a simple possessive, not a grammatically clever one: a name
+    // already ending in "s" still gets "'s", not a bare apostrophe.
+    @Test("a name ending in s still gets 's, not a bare apostrophe")
+    func noSmartTrailingS() {
+        #expect(PeopleTitle.title(firstName: "Chris") == "Chris's Haven")
+    }
+
+    @Test("no name loaded yet reads Your Haven, never a bare apostrophe")
+    func fallsBackWithoutAName() {
+        #expect(PeopleTitle.title(firstName: nil) == "Your Haven")
+    }
+
+    // A name that came back empty or all whitespace is not a name to build a
+    // possessive out of -- "'s Haven" with nothing in front of it would read
+    // as broken rather than as a fallback.
+    @Test("an empty or blank name falls back the same way nil does")
+    func emptyNameFallsBack() {
+        #expect(PeopleTitle.title(firstName: "") == "Your Haven")
+        #expect(PeopleTitle.title(firstName: "   ") == "Your Haven")
+    }
+
+    @Test("only the first word of a full name is used")
+    func firstWordOfAFullName() {
+        #expect(PeopleTitle.title(firstName: PeopleTitle.firstName(of: "Tony Nguyen")) == "Tony's Haven")
+    }
+
+    @Test("a single-word name is its own first name")
+    func singleWordName() {
+        #expect(PeopleTitle.firstName(of: "Ada") == "Ada")
+    }
+
+    @Test("surrounding whitespace on a full name does not leak into the title")
+    func trimsBeforeSplitting() {
+        #expect(PeopleTitle.firstName(of: "  Maya Chen  ") == "Maya")
+    }
+
+    @Test("no name to read from has no first name")
+    func noNameNoFirstName() {
+        #expect(PeopleTitle.firstName(of: nil) == nil)
+    }
+}
+
 @MainActor
 @Suite("Paging the directory")
 struct DirectoryPagingTests {
@@ -115,28 +165,6 @@ struct DirectoryPagingTests {
             page: names.enumerated().map { DirectoryPerson(_id: "p\($0.offset)", name: $0.element) },
             isDone: isDone
         )
-    }
-
-    // The count was a floor that never resolved: somebody with three hundred
-    // people saw "People 50+" forever, because only fifty were ever asked for.
-    @Test("the count says it is a floor only while there is more to come")
-    func countIsAFloorUntilItIsNot() {
-        let more = DirectoryModel(preview: .ready(page(["Ada", "Mai"], isDone: false)))
-        #expect(more.count == 2)
-        #expect(more.countIsPartial)
-
-        let all = DirectoryModel(preview: .ready(page(["Ada", "Mai"], isDone: true)))
-        #expect(all.count == 2)
-        #expect(!all.countIsPartial)
-    }
-
-    // Nobody and could-not-read are different facts, and only one of them is
-    // "nobody". Unchanged by paging, and worth keeping that way.
-    @Test("a directory that could not be read has no count at all")
-    func noCountWithoutAnAnswer() {
-        #expect(DirectoryModel(preview: .loading).count == nil)
-        #expect(DirectoryModel(preview: .unreachable).count == nil)
-        #expect(!DirectoryModel(preview: .unreachable).countIsPartial)
     }
 
     // The window is what grows. A last page that asked for more would re-read
@@ -175,6 +203,29 @@ struct DirectoryPagingTests {
         #expect(afterOne > before)
         #expect(model.window == afterOne)
         #expect(model.isLoadingMore)
+    }
+
+    // ConvexEncodable wraps a FixedWidthInteger as {"$integer": base64}, and
+    // paginationOptsValidator on the server is v.number() -- a float64 that
+    // rejects that wrapper outright. Both listPeople reads have to travel
+    // their numItems as a plain JSON number or the backend refuses the whole
+    // paginationOpts object before the query ever runs.
+    @Test("numItems in paginationOpts is a plain number, not a Convex Int64")
+    func paginationNumbersAreNotInt64() throws {
+        let directoryOpts: [String: ConvexEncodable?] = [
+            "numItems": DirectoryModel(preview: .loading).window,
+            "cursor": nil,
+        ]
+        let mirrorOpts: [String: ConvexEncodable?] = [
+            "numItems": CaptureSync.mirrorSize,
+            "cursor": nil,
+        ]
+
+        let directoryEncoded = try directoryOpts.convexEncode()
+        let mirrorEncoded = try mirrorOpts.convexEncode()
+
+        #expect(!directoryEncoded.contains("$integer"), "\(directoryEncoded)")
+        #expect(!mirrorEncoded.contains("$integer"), "\(mirrorEncoded)")
     }
 }
 

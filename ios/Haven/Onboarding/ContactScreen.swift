@@ -1,13 +1,12 @@
-import ClerkKit
 import SwiftUI
 
 /// Onboarding question 3. Skippable, and the one most worth answering: a card
 /// nobody can act on is a card that does nothing.
 ///
-/// Every connectable row starts the same way, by authorizing. What comes back
-/// differs per platform, so the flow degrades in steps and each step only
-/// appears after the one above it falls short. No row ever advertises a paste
-/// field, and no row ever dead-ends.
+/// Every connectable row starts the same way, by authorizing through
+/// Composio. What comes back differs per platform, so the flow degrades in
+/// steps and each step only appears after the one above it falls short. No
+/// row ever advertises a paste field, and no row ever dead-ends.
 struct ContactScreen: View {
     @ObservedObject var model: OnboardingModel
 
@@ -16,6 +15,15 @@ struct ContactScreen: View {
     @State private var entry: ContactEntry?
     @State private var entryText = ""
     @State private var connectFailure: String?
+    /// The browser page for whichever connection is in flight. Non-nil is
+    /// what drives the sheet; set back to nil both when the person taps
+    /// Safari's own Done and when polling settles on its own. `cancelPoll`
+    /// runs from `onDismiss` either way -- a manual dismiss has to stop the
+    /// loop and free `connecting` right away, not up to a poll's own bound
+    /// later, and a settled poll has already cleared both itself, so the
+    /// second call is a no-op rather than a second ending racing the first.
+    @State private var browserURL: URL?
+    @State private var pollTask: Task<SocialConnectOutcome, Never>?
 
     var body: some View {
         HavenScreen(
@@ -45,6 +53,9 @@ struct ContactScreen: View {
                 )
             }
         )
+        .sheet(isPresented: browserPresented, onDismiss: cancelPoll) {
+            if let browserURL { SafariPage(url: browserURL) }
+        }
     }
 
     // MARK: - Rows
@@ -73,7 +84,10 @@ struct ContactScreen: View {
         let value = chosen?.platform == platform.id ? chosen?.value : nil
         return HavenRow(
             title: platform.title,
-            detail: value.map { platform.handlePrefix + $0 },
+            // The account-type note, while the row is still empty; the
+            // handle, once it is not. Never both -- the note explains a limit
+            // that no longer matters once the row shows what it connected.
+            detail: value.map { platform.handlePrefix + $0 } ?? platform.subtitle,
             accessibilityText: spoken(platform, value),
             action: { choose(platform) }
         ) {
@@ -89,7 +103,11 @@ struct ContactScreen: View {
 
     private func spoken(_ platform: ContactPlatform, _ value: String?) -> String {
         if connecting == platform.id { return "\(platform.title), connecting" }
-        guard let value else { return "\(platform.title), \(platform.call)" }
+        guard let value else {
+            return [platform.title, platform.subtitle, platform.call]
+                .compactMap { $0 }
+                .joined(separator: ", ")
+        }
         return "\(platform.title), \(platform.handlePrefix)\(value), primary"
     }
 
@@ -150,56 +168,130 @@ struct ContactScreen: View {
             chosen = nil
             entryText = ""
             entry = panel
-        case .authorize(let provider, _, _):
-            Task { await connect(platform, provider: provider) }
+        case .authorize:
+            Task { await connect(platform) }
         }
     }
 
-    private func connect(_ platform: ContactPlatform, provider: OAuthProvider) async {
+    private var browserPresented: Binding<Bool> {
+        Binding(
+            get: { browserURL != nil },
+            set: { presented in if !presented { browserURL = nil } }
+        )
+    }
+
+    /// Stops a poll in progress and frees the row it was holding, the moment
+    /// the browser closes -- by hand or on its own. A no-op once a poll has
+    /// already settled and cleared `pollTask` itself: `onDismiss` fires for
+    /// both endings, and only the first one still has anything to cancel.
+    private func cancelPoll() {
+        guard pollTask != nil else { return }
+        pollTask?.cancel()
+        pollTask = nil
+        connecting = nil
+    }
+
+    private func connect(_ platform: ContactPlatform) async {
         chosen = nil
         entry = nil
         connecting = platform.id
-        defer { connecting = nil }
-        do {
-            finish(platform, try await ContactConnector.connect(provider))
-        } catch ContactConnectError.cancelled {
-            // Nothing to report: backing out of the provider's page is a choice.
-        } catch {
-            // Not a dead end. A platform that will not tell us who you are there
-            // is a reason to ask you instead, and it is the same panel the
-            // no-handle case opens.
-            connectFailure = "\(platform.title) did not connect. Fill it in here instead."
-            degrade(platform, to: model.card?.name ?? "you")
+        defer {
+            // A newer attempt may already own the row: `cancelPoll` cancels
+            // `pollTask` but cannot make `ContactConnector.poll` return
+            // early, since it has no cancellation handler of its own, so
+            // this `connect` can still be suspended, stale, well after a
+            // second tap started its own attempt and reset `connecting`
+            // itself. `pollTask` is the shared signal for "something is
+            // still legitimately polling" -- nil means nothing is, which is
+            // the only time this attempt's own ending is the one that gets
+            // to clear the row. Comparing against `platform` instead would
+            // not catch the same platform being retried after a cancel,
+            // which looks identical from here.
+            if pollTask == nil { connecting = nil }
+        }
+
+        switch await ContactConnector.initiate(platform.id) {
+        case .already(let handle):
+            // Composio's own dedupe short-circuits here with no browser trip,
+            // and no fresh tool call either -- there is a proven handle but
+            // no photo URL to go with it this time.
+            finish(platform, handle: handle, photoUrl: nil)
+        case .redirect(let url, let connectedAccountId):
+            await connectThroughBrowser(platform, url: url, connectedAccountId: connectedAccountId)
+        case .unsupportedAccount:
+            failToConnect(platform, reason: platform.unsupportedReason)
+        case .failed:
+            failToConnect(platform, reason: nil)
         }
     }
 
-    private func finish(_ platform: ContactPlatform, _ account: ConnectedAccount) {
-        guard case .authorize(_, let provesItsHandle, _) = platform.method else { return }
+    /// Opens the browser, polls while it is up, and closes it again once
+    /// polling settles -- on a proven handle, a rejection, a failure, or the
+    /// person tapping Safari's own Done, which cancels `pollTask` through
+    /// `onDismiss` before this ever sees an outcome.
+    private func connectThroughBrowser(
+        _ platform: ContactPlatform,
+        url: URL,
+        connectedAccountId: String
+    ) async {
+        // Belt and suspenders alongside `cancelPoll`: nothing should still be
+        // running here, but a leftover task quietly finishing later and
+        // calling `finish` for a row nobody is looking at anymore is worse
+        // than a redundant cancel of something already gone.
+        pollTask?.cancel()
+        browserURL = url
+        let task = Task { await ContactConnector.poll(platform: platform.id, connectedAccountId: connectedAccountId) }
+        pollTask = task
+        let outcome = await task.value
+        // A newer attempt may have already taken over `pollTask` (and, with
+        // it, `connecting` and `browserURL`) while this one was still
+        // suspended waiting out `ContactConnector.poll`'s own internal
+        // deadline: `cancelPoll` marks a task cancelled but polling has no
+        // cancellation handler, so cancelling does not make it return early.
+        // `Task` is Equatable by identity, so this is exact: only the
+        // attempt that still owns `pollTask` may write the trailing state or
+        // act on its outcome. A stale one finishing late is a no-op, not a
+        // clobber of whatever the current attempt is doing.
+        guard pollTask == task else { return }
+        pollTask = nil
+        browserURL = nil
 
-        // Every successful authorization returns an avatar, and until now it
-        // was carried this far and dropped. Handed over rather than imported
-        // here: it should land with the contact answer, not during the editing
-        // of it.
-        model.rememberAvatar(account.imageUrl)
+        switch outcome {
+        case .connected(let handle, let photoUrl):
+            finish(platform, handle: handle, photoUrl: photoUrl)
+        case .unsupportedAccount:
+            failToConnect(platform, reason: platform.unsupportedReason)
+        case .failed:
+            failToConnect(platform, reason: nil)
+        case .cancelled:
+            break // Backing out of the browser page is a choice, not a failure.
+        }
+    }
 
-        // Whether a username in the payload IS the handle is a fact about the
-        // platform, not about whether one happened to arrive. LinkedIn's
-        // payload can carry a username that is not the profile address, and
-        // taking it would store an unproven handle as verified and skip the
-        // panel that exists to check it.
-        if provesItsHandle, let username = account.username, !username.isEmpty {
-            chosen = ChosenContact(platform: platform.id, value: username, verified: true)
-            entry = nil
+    /// Every connected outcome now hands back a handle Composio's tool
+    /// proved -- LinkedIn's vanityName is as real as X's or Instagram's
+    /// username -- so there is nothing left to confirm the way LinkedIn's
+    /// Clerk payload once needed. The photo is handed to the model rather
+    /// than imported here: it should arrive with the contact answer once
+    /// Continue is pressed, not during a panel and a correction that may
+    /// follow this same tap.
+    private func finish(_ platform: ContactPlatform, handle: String, photoUrl: String?) {
+        guard !handle.isEmpty else {
+            failToConnect(platform, reason: nil)
             return
         }
-        degrade(platform, to: account.fullName.isEmpty ? (model.card?.name ?? "you") : account.fullName)
+        model.rememberAvatar(photoUrl)
+        chosen = ChosenContact(platform: platform.id, value: handle, verified: true)
+        entry = nil
     }
 
-    /// Opens the platform's panel, prefilled with whatever a first guess can be
-    /// made from. The one landing for both a payload without a handle and an
-    /// authorization that never got there.
-    private func degrade(_ platform: ContactPlatform, to name: String) {
-        guard case .authorize(_, _, let fallback) = platform.method else { return }
+    /// Opens the platform's fallback panel, prefilled with whatever a first
+    /// guess can be made from. The one landing for a declined authorization,
+    /// a failed one, and an account Composio's tool cannot read.
+    private func failToConnect(_ platform: ContactPlatform, reason: String?) {
+        guard case .authorize(let fallback) = platform.method else { return }
+        connectFailure = reason ?? "\(platform.title) did not connect. Fill it in here instead."
+        let name = model.card?.name ?? "you"
         let panel = fallback(name)
         entryText = panel.guess(from: name)
         entry = panel
@@ -216,14 +308,12 @@ struct ContactScreen: View {
 
 /// How a row gets its value.
 private enum ContactMethod {
-    /// Authorize.
-    ///
-    /// `provesItsHandle` says whether a username in the payload may be trusted
-    /// as the handle. `fallback` is where the row lands when no trusted handle
-    /// comes back, and every connectable row has one: a platform that will not
-    /// tell us who you are there is a reason to ask, never a dead end. It is
-    /// given the person's name, which is all a first guess has to work with.
-    case authorize(OAuthProvider, provesItsHandle: Bool, fallback: (String) -> ContactEntry)
+    /// Authorize through Composio. `fallback` is where the row lands when the
+    /// authorization is declined, fails, or proves an account Composio's tool
+    /// cannot read -- every connectable row has one: a platform that will not
+    /// connect is a reason to ask, never a dead end. It is given the person's
+    /// name, which is all a first guess has to work with.
+    case authorize(fallback: (String) -> ContactEntry)
     /// Supplied by hand, because there is nothing to authorize against.
     case typed(ContactEntry)
 }
@@ -239,36 +329,38 @@ private struct ContactPlatform {
     /// than a fragment. The panel's live preview uses the fuller
     /// `ContactEntry.addressPrefix` instead.
     let handlePrefix: String
+    /// A quiet line under the row while it is still empty, for a platform
+    /// whose connection has a limit worth knowing before tapping rather than
+    /// after. Nil everywhere but Instagram.
+    var subtitle: String?
+    /// What `connectFailure` says when this platform's own authorization
+    /// fails in a way worth naming specifically, rather than the generic
+    /// "did not connect." Nil everywhere but Instagram.
+    var unsupportedReason: String?
 
     static let x = ContactPlatform(
         id: .x, title: "X", call: "Connect",
-        // X sends the username with the token, so the value is proven. That
-        // read sits behind paid API tiers, so the day it stops arriving the row
-        // degrades to a paste rather than dead-ending.
-        method: .authorize(.x, provesItsHandle: true, fallback: { _ in .enterX }),
+        method: .authorize(fallback: { _ in .enterX }),
         handlePrefix: "@"
     )
-    // The OIDC provider, not the legacy one: Clerk's `oauth_linkedin` is
-    // retired and only `oauth_linkedin_oidc` is issued to new instances.
+    // The OIDC provider naming lived here when this went through Clerk; now
+    // every connectable platform goes through the same Composio actions, and
+    // there is no per-platform provider to name.
     static let linkedin = ContactPlatform(
         id: .linkedin, title: "LinkedIn", call: "Connect",
-        // LinkedIn proves the person and never sends the profile address, so a
-        // username in its payload is not the handle and is never taken for one.
-        method: .authorize(
-            .linkedinOidc,
-            provesItsHandle: false,
-            fallback: { .confirmLinkedIn(connectedAs: $0) }
-        ),
+        method: .authorize(fallback: { _ in .confirmLinkedIn }),
         handlePrefix: "linkedin.com/in/"
     )
-    // Typed rather than authorized, because there is nothing to authorize
-    // against: Instagram's personal-account API shut down in December 2024 and
-    // the replacement covers Creator and Business accounts only, so Clerk
-    // offers no Instagram connection at all. Attempting one first would fail
-    // for everybody and land here anyway, one wasted round trip later.
+    // Composio's INSTAGRAM_GET_USER_INFO only reads creator and business
+    // accounts -- a personal account authorizes fine and then fails to prove
+    // a handle, which is what `unsupportedReason` and `subtitle` both name,
+    // one before the tap and one after.
     static let instagram = ContactPlatform(
-        id: .instagram, title: "Instagram", call: "Add",
-        method: .typed(.enterInstagram), handlePrefix: "@"
+        id: .instagram, title: "Instagram", call: "Connect",
+        method: .authorize(fallback: { _ in .enterInstagram }),
+        handlePrefix: "@",
+        subtitle: "Works with creator and business accounts",
+        unsupportedReason: "Instagram only connects creator and business accounts. Fill it in here instead."
     )
     static let phone = ContactPlatform(
         id: .phone, title: "Phone", call: "Add",
@@ -278,8 +370,8 @@ private struct ContactPlatform {
     /// The rows that authorize, and the rows that do not. The split is the
     /// question's two groups, and it is a fact about the platforms rather than a
     /// layout choice.
-    static let connectable = [x, linkedin]
-    static let typeable = [instagram, phone]
+    static let connectable = [x, linkedin, instagram]
+    static let typeable = [phone]
 }
 
 /// What the chosen platform still needs from the person.
@@ -287,7 +379,7 @@ private struct ContactPlatform {
 /// One at a time: two open panels would be two questions, and this screen asks
 /// one.
 private enum ContactEntry: Hashable {
-    case confirmLinkedIn(connectedAs: String)
+    case confirmLinkedIn
     case enterX
     case enterInstagram
     case typePhone
@@ -318,8 +410,8 @@ private enum ContactEntry: Hashable {
     }
 
     /// What the field starts with. Only LinkedIn has anything to guess from: a
-    /// slug built out of the name it just proved, which the panel exists to have
-    /// corrected. Wrong is fine; empty is worse.
+    /// slug built out of the name already on the card, which the panel exists to
+    /// have corrected. Wrong is fine; empty is worse.
     func guess(from name: String) -> String {
         switch self {
         case .confirmLinkedIn: return ContactValue.linkedInSlug(from: name)
@@ -336,10 +428,11 @@ private enum ContactEntry: Hashable {
     /// one-word answer into homework.
     var note: String? {
         switch self {
-        case .confirmLinkedIn(let name):
+        case .confirmLinkedIn:
             // The one field that arrives pre-filled with a guess, so it is the
-            // one that has to ask for a look.
-            return "Connected as \(name). We guessed your address -- check it."
+            // one that has to ask for a look. `connectFailure` already says the
+            // connection did not go through; this only explains the guess.
+            return "We guessed your address from your name -- check it."
         case .enterX, .enterInstagram, .typePhone:
             return nil
         }

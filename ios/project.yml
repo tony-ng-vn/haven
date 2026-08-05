@@ -19,6 +19,12 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     GENERATE_INFOPLIST_FILE: "YES"
     SWIFT_VERSION: "5.0"
+    # The owner's free personal team, pinned here because xcodegen rewrites
+    # the project and a team chosen by hand in Xcode is wiped on every
+    # regenerate. A personal team signs simulator and device dev builds; the
+    # App Store submission will need the paid program and a real team id in
+    # this same line.
+    DEVELOPMENT_TEAM: WYMJ4KK3T2
     # iPhone only. Unset, Xcode fills this in as "1,2" and the build tells the
     # App Store it is an iPad app too -- which Haven has never been. There is no
     # size-class handling anywhere in ios/Haven, so every screen would be a phone
