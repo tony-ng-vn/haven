@@ -649,6 +649,18 @@ export const deleteMyAccount = mutation({
       await ctx.db.delete("profiles", profile._id);
     }
     await purgeOwnedRows(ctx, userId);
+    // Scheduled, not awaited: this mutation cannot reach the network, and
+    // Composio has no idea a Convex account was just deleted -- left alone,
+    // a connected account keeps its OAuth tokens alive there under this
+    // userId forever. See deleteConnectedAccountsForUser's own comment for
+    // why every failure it can hit is caught rather than surfaced: the
+    // account is gone the moment this mutation returns, regardless of
+    // whether Composio ever answers.
+    await ctx.scheduler.runAfter(
+      0,
+      internal.composio.deleteConnectedAccountsForUser,
+      { userId },
+    );
     return null;
   },
 });

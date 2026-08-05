@@ -10,8 +10,11 @@
 
 import type * as authz from "../authz.js";
 import type * as captures from "../captures.js";
+import type * as composio from "../composio.js";
+import type * as connections from "../connections.js";
 import type * as crons from "../crons.js";
 import type * as emailClient from "../emailClient.js";
+import type * as fieldCaps from "../fieldCaps.js";
 import type * as handleKeys from "../handleKeys.js";
 import type * as handleNames from "../handleNames.js";
 import type * as http from "../http.js";
@@ -39,8 +42,11 @@ import type {
 declare const fullApi: ApiFromModules<{
   authz: typeof authz;
   captures: typeof captures;
+  composio: typeof composio;
+  connections: typeof connections;
   crons: typeof crons;
   emailClient: typeof emailClient;
+  fieldCaps: typeof fieldCaps;
   handleKeys: typeof handleKeys;
   handleNames: typeof handleNames;
   http: typeof http;

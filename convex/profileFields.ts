@@ -14,8 +14,9 @@ export const platformValidator = v.union(
 );
 
 // `verified` means the handle VALUE itself was proven, not merely that an
-// OAuth round trip happened: X hands back the username, so it is verified,
-// while LinkedIn only proves the person and leaves the slug hand-confirmed.
+// OAuth round trip happened. Composio's connected profile tools prove this
+// for LinkedIn, Instagram and X (see composio.ts); a typed-in handle is the
+// only kind that is ever stored unverified.
 export const handleValidator = v.object({
   platform: platformValidator,
   value: v.string(),
