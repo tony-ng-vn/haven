@@ -5,12 +5,12 @@ import { describe, expect, test } from "vitest";
 // What the web is for, encoded so it cannot drift back.
 //
 // iOS is the primary Haven client. The web is the front door and the viewing
-// surface: the Haven landing and sign-in, the Sky and iOS product pages
-// (which carries the waitlist signup), your network as a sky, search, adding
-// somebody by typing their name, the public card a stranger opens, and the
-// legal and support pages. Ways of MEETING people -- exchanging contact in
-// person, proximity radar -- are things you do with a phone in your hand, and
-// they live in the iPhone app.
+// surface: the Haven landing (Landing2Page, at the bare root) and sign-in,
+// the Sky download page and the iOS waitlist page it links out to, your
+// network as a sky, search, adding somebody by typing their name, the public
+// card a stranger opens, and the legal and support pages. Ways of MEETING
+// people -- exchanging contact in person, proximity radar -- are things you
+// do with a phone in your hand, and they live in the iPhone app.
 //
 // This is a scope test, not a style test. It fails when a feature that belongs
 // on the phone grows a web UI again, which is how the two clients quietly
@@ -96,8 +96,9 @@ describe("the web stays a front door and a viewer", () => {
     // App.tsx too, not merely present on disk.
     const app = readFileSync(join("src", "App.tsx"), "utf8");
     for (const surface of [
-      "SkyPage", // Your Sky for Mac, the download landing
-      "IosPage", // Haven for iPhone -- also the front door, at root
+      "Landing2Page", // the front door, at the bare root, signed out
+      "SkyPage", // Your Sky for Mac, the download page at /sky
+      "IosPage", // Haven for iPhone, the waitlist at /waitlist
       "SearchAdd", // your network as a sky, search, add by name
       "PersonDetail", // one person's page
       "CardPage", // the public card a stranger opens

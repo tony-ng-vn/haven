@@ -152,11 +152,17 @@ describe("the content security policy", () => {
   });
 });
 
-// demo-sky.html is a given file (see PolishedLandingPage.tsx / SkyDemoEmbed.tsx): a
-// single self-contained page with its own inline <script> and <style> and no
-// external requests at all. The site's general policy blocks inline script
-// execution and framing outright, so it needs its own narrower rule rather
-// than an exception carved into the policy every other page relies on.
+// demo-sky.html is a given file, not generated here: a single self-contained
+// page with its own inline <script> and <style> and no external requests at
+// all. It is no longer linked from anywhere in this app -- its one consumer,
+// the landing hero component that embedded it, was deleted once the owner
+// picked Landing2Page.tsx as the front door instead (see resolveView in
+// lib.ts) -- but the file and this CSP carve-out stay: deleting deploy config
+// like the vercel.json rule below is a separate call the lead makes, not one
+// this cleanup pass makes on its own. The site's general policy blocks
+// inline script execution and framing outright, so this file needs its own
+// narrower rule rather than an exception carved into the policy every other
+// page relies on.
 describe("the demo-sky.html policy", () => {
   const entry = vercel.headers.find((h) => h.source === "/demo-sky.html");
 

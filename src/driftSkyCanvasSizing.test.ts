@@ -26,25 +26,25 @@ import { describe, expect, test } from "vitest";
 
 const css = readFileSync("src/index.css", "utf8");
 
-// Every class known to host a <DriftSky>. See App.tsx (SignIn -> .wl-sky),
-// SkyPage.tsx / IosPage.tsx (-> .card-sky), and PolishedLandingPage.tsx
-// (-> .landing-sky, the sole surviving host of that class since the earlier
-// landing component it was reused from was deleted). Landing2Page.tsx also
-// hosts one (-> .landing2-sky), but it is NOT in this array: unlike these
-// three, its width is deliberately not 100% (see its own describe block
-// below, and its comment in index.css) --
-// the box itself is sized to confine DriftSky's wander path to the navy
-// zone, not just a full-width canvas hidden behind a mask, so it cannot
-// share the 100%/100% check every other host class gets. A new FULL-WIDTH
-// host class still belongs in this array in the same edit that creates it --
-// the whole point of this file is that the bug does not get to wait for
-// someone to notice a broken preview.
-const DRIFTSKY_HOST_CLASSES = [".wl-sky", ".card-sky", ".landing-sky"] as const;
+// Every class known to host a <DriftSky>. See App.tsx (SignIn -> .wl-sky) and
+// SkyPage.tsx / IosPage.tsx (-> .card-sky). Landing2Page.tsx also hosts one
+// (-> .landing2-sky), but it is NOT in this array: unlike these two, its
+// width is deliberately not 100% (see its own describe block below, and its
+// comment in index.css) -- the box itself is sized to confine DriftSky's
+// wander path to the navy zone, not just a full-width canvas hidden behind a
+// mask, so it cannot share the 100%/100% check every other host class gets.
+// A third full-width host, .landing-sky, used to sit in this array too --
+// deleted along with the landing hero component that rendered it, once the
+// owner picked Landing2Page.tsx as the front door instead (see resolveView in
+// lib.ts). A new FULL-WIDTH host class still belongs in this array in the
+// same edit that creates it -- the whole point of this file is that the bug
+// does not get to wait for someone to notice a broken preview.
+const DRIFTSKY_HOST_CLASSES = [".wl-sky", ".card-sky"] as const;
 
 // The bare rule block for a single top-level class selector, e.g.
-// ".wl-sky { ... }". Assumes (true for all three today) that the selector
-// is not part of a comma-separated compound selector list, and that the
-// first occurrence in the file is the one being asked for.
+// ".wl-sky { ... }". Assumes (true for both today) that the selector is not
+// part of a comma-separated compound selector list, and that the first
+// occurrence in the file is the one being asked for.
 function ruleFor(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
@@ -64,13 +64,6 @@ describe("DriftSky canvas hosts stretch to fill their box", () => {
       expect(rule).toMatch(/height:\s*100%/);
     },
   );
-
-  // The landing page's sky is the one of the three that must be fixed (a
-  // page-wide background layer, not scoped to one section) rather than
-  // absolute -- see PolishedLandingPage.tsx and the comment on .landing-sky.
-  test(".landing-sky is fixed, not scoped to a scrolling ancestor", () => {
-    expect(ruleFor(".landing-sky")).toMatch(/position:\s*fixed/);
-  });
 });
 
 // .landing2-sky's own version of the same guard: the collapse-to-300x150
@@ -104,24 +97,26 @@ describe(".landing2-sky is confined on purpose, not collapsed by accident", () =
   });
 });
 
-// The landing page's content sits on top of its own full-page fixed sky the
-// same explicit way every other public page sits on top of .card-sky: a
-// z-index: 0 background and a z-index: 1 (positioned) foreground on every
-// section, not a negative z-index on the background alone. That second
-// approach (paints behind ordinary static content with no z-index needed on
-// the foreground, per the CSS2.1 painting order) was considered and rejected
-// here: it depends on no ancestor between the canvas and its siblings ever
-// acquiring its own stacking context, which is a fact about the whole page
-// that is easy to invalidate by accident later. Pinned because it is the
-// entire mechanism behind requirement (b) -- the sky showing through behind
-// every section, not just the hero -- rendering cannot verify it in this
-// test environment (happy-dom does not compute real layout/paint order).
-describe("the landing page's content stacks above its fixed sky explicitly", () => {
-  test(".landing-sky paints at z-index: 0, not a negative index", () => {
-    expect(ruleFor(".landing-sky")).toMatch(/z-index:\s*0\b/);
+// The front door's content sits on top of its own hero-scoped sky the same
+// explicit way every other public page sits on top of .card-sky: a z-index: 0
+// background and a z-index: 1 (positioned) foreground, not a negative
+// z-index on the background alone. That second approach (paints behind
+// ordinary static content with no z-index needed on the foreground, per the
+// CSS2.1 painting order) was considered and rejected here: it depends on no
+// ancestor between the canvas and its siblings ever acquiring its own
+// stacking context, which is a fact about the whole page that is easy to
+// invalidate by accident later. Pinned because rendering cannot verify it in
+// this test environment (happy-dom does not compute real layout/paint
+// order). Retargeted from .landing-sky/.landing-hero to .landing2-sky/
+// .landing2-hero once the earlier landing hero those named was deleted (see
+// resolveView in lib.ts) -- the mechanism itself is unchanged, just hosted on
+// Landing2Page.tsx now.
+describe("the front door's content stacks above its own sky explicitly", () => {
+  test(".landing2-sky paints at z-index: 0, not a negative index", () => {
+    expect(ruleFor(".landing2-sky")).toMatch(/z-index:\s*0\b/);
   });
 
-  test.each([".landing-hero", ".landing-section", ".site-footer"])(
+  test.each([".landing2-hero", ".site-footer"])(
     "%s is explicitly positioned above it (position + z-index: 1)",
     (selector) => {
       const rule = ruleFor(selector);

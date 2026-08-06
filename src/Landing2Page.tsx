@@ -3,29 +3,33 @@ import { DriftSky } from "./DriftSky";
 import { TopNav } from "./TopNav";
 import { Footer } from "./Footer";
 
-// inhavens.com/#/landing2, linked from nowhere.
+// inhavens.com/, the front door -- the page a signed-out stranger meets. Its
+// own old hash address, "#/landing2", still works too: it redirects here now
+// (see hashRedirectTarget in lib.ts and the canonicalizing effect in App.tsx)
+// for links still out in the world from when this page was an unlinked
+// second concept, reachable only by typing the url.
 //
-// A second concept for the front door, evaluated alongside the polished
-// landing preview at /landing (the bare root itself now serves the iOS
-// waitlist page instead -- see resolveView in lib.ts): a single-viewport
-// hero built around the owner's own generated art (public/glass-hero.jpg)
-// rather than an approximation of it. The previous version of this page drew
+// Built around the owner's own generated art (public/glass-hero.jpg) rather
+// than an approximation of it: a single-viewport hero, the copy on the flat
+// page navy at left, the art at right. An earlier version of this page drew
 // broken glass, a hidden world, and a hover/tap reveal entirely in CSS and
 // SVG; the owner compared it to the real image and rejected the CSS
 // approximation. This version does not approximate anything -- the image IS
 // the page, fused with the flat page navy behind it by one blend gradient
-// (see .landing2-art in index.css). The navy left also now carries the same
-// drifting, constellation-lit sky as the polished landing (see
-// DriftSky.tsx): the owner wanted this page's own living sky too, not just
-// the art. The canvas rides behind the copy column, sized (not just masked)
-// to the navy zone -- .landing2-sky in index.css explains why the box itself
-// has to be smaller than the hero, not full width with a mask painted over
-// the art.
+// (see .landing2-art in index.css). The navy left also carries the same
+// drifting, constellation-lit sky the site's earlier default landing had
+// (see DriftSky.tsx): the owner wanted this page's own living sky too, not
+// just the art. The canvas rides behind the copy column, sized (not just
+// masked) to the navy zone -- .landing2-sky in index.css explains why the box
+// itself has to be smaller than the hero, not full width with a mask painted
+// over the art.
 //
-// .landing-polished (see index.css) is reused wholesale from the polished
-// landing, not duplicated: Satoshi, the press/hover/focus treatment on the
-// shared .sky-download / .landing-cta-secondary / TopNav classes, and the
-// [data-mounted] entrance mechanism all carry over from it for free.
+// .landing-polished (see index.css) is reused wholesale, not duplicated:
+// Satoshi, the press/hover/focus treatment on the shared .sky-download /
+// .landing-cta-secondary / TopNav classes, and the [data-mounted] entrance
+// mechanism. Written for that earlier default landing (its own component
+// deleted once the owner picked this page as the front door instead -- see
+// resolveView in lib.ts), this page is now that CSS scope's sole home.
 function prefersFinePointer(): boolean {
   return (
     typeof window !== "undefined" &&
@@ -34,23 +38,25 @@ function prefersFinePointer(): boolean {
 }
 
 export function Landing2Page() {
-  // Same ref-written mount flag as PolishedLandingPage.tsx (see its own
-  // comment for why a ref rather than React state): this page has no below-
-  // fold reveal of its own, so a shared hook module would be one export used
-  // by exactly two call sites for three lines of logic each -- not worth the
-  // indirection yet.
+  // Same ref-written mount flag the earlier landing hero used (see this
+  // file's own header comment): a shared hook module would be one export
+  // used by a single call site now that page is gone, so it stays local
+  // rather than being pulled out for no second caller.
   const rootRef = useRef<HTMLDivElement | null>(null);
-  // Same read-once reasoning as PolishedLandingPage's own prefersFinePointer: a
-  // device's pointer type does not change mid-session. This hero's desktop
-  // row layout does not scroll (min-height: 100vh, overflow: hidden), but the
-  // narrow stacked layout does -- interactive still only gates the drag
-  // gesture's touchmove listener, and a coarse pointer (the only kind that
-  // would ever fight that scroll) never gets it, fixed hero or scrolling
-  // column alike.
+  // Read once, not tracked live: a device's pointer type does not change
+  // mid-session. This hero's desktop row layout does not scroll (min-height:
+  // 100vh, overflow: hidden), but the narrow stacked layout does --
+  // interactive still only gates the drag gesture's touchmove listener, and
+  // a coarse pointer (the only kind that would ever fight that scroll) never
+  // gets it, fixed hero or scrolling column alike.
   const [interactive] = useState(prefersFinePointer);
 
   useEffect(() => {
-    document.title = "Haven - Landing 2";
+    // Exactly index.html's own <title>, not a shorter variant: this page IS
+    // the root now, Google renders JS, and the "(Inhavens)" token is the
+    // whole point of the brand-SEO title (see seo.test.ts) -- overwriting it
+    // with a bare "Haven" would silently undo that on the rendered page.
+    document.title = "Haven (Inhavens) - A personal memory layer for your people";
   }, []);
 
   useEffect(() => {
@@ -81,10 +87,10 @@ export function Landing2Page() {
             bring your world together.
           </p>
           <div className="landing-hero-ctas">
-            <a className="sky-download" href="#/sky">
+            <a className="sky-download" href="/sky">
               Sky app, coming soon
             </a>
-            <a className="landing-cta-secondary" href="#/ios">
+            <a className="landing-cta-secondary" href="/waitlist">
               Join the iPhone waitlist
             </a>
           </div>
