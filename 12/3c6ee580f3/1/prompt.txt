@@ -1,0 +1,765 @@
+the ios ui and backend have been done for a while. what i need you to help me is to evaluate the ios system and make sure everything works and clean and optimized and work effectively
+
+/goal confirm everything work in the ios app, and frontend and backend connected, and all the functionalities work from create profile, input source, add contact, search contact, and profile constellation generation. for anything unsure, ask me. use /fusion to execute
+
+---
+
+<task-notification>
+<task-id>a82c902be6f376527</task-id>
+<tool-use-id>toolu_01LLaL3R5D5cM95cpL5wXu3z</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/tasks/a82c902be6f376527.output</output-file>
+<status>failed</status>
+<summary>Agent "Review iOS code quality" failed: Agent stalled: no progress for 600s (stream watchdog did not recover)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed genuinely running (proving the hang). Let's kill it and restore the fix.</result>
+</task-notification>
+
+---
+
+keep going
+
+---
+
+<task-notification>
+<task-id>a82c902be6f376527</task-id>
+<tool-use-id>toolu_016LfZQ6y6i6vxvGTrUrsBPG</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/tasks/a82c902be6f376527.output</output-file>
+<status>completed</status>
+<summary>Agent "Review iOS code quality" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have everything needed. Here is the final report.
+
+## Summary
+
+Worktree: `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/ios-eval-fixes` (branch `ios/eval-fixes`), main checkout untouched. No commits made. All 9 fixes plus changelog/version bump implemented and verified.
+
+### Per-fix status
+
+**1. Pagination Int64 bug** - `ios/Haven/Directory/DirectoryModel.swift:71,80,141`, `ios/Haven/Capture/CaptureSync.swift:125,150`. Changed `pageSize`/`window` and `mirrorSize` from `Int` to `Double` so `ConvexEncodable` encodes them as plain JSON numbers instead of `{"$integer": base64}`. `mirrorSize` widened from `private` to internal so the test can read it (mirrors the `Config`/`ConfigTests` precedent). Test: `DirectoryPagingTests.paginationNumbersAreNotInt64()` in `ios/HavenTests/DirectoryTests.swift:186`. First run (before the `DirectoryModel` fix, with only `mirrorSize` fixed) failed for the right reason: `Expectation failed: ... directoryEncoded -&gt; "{"cursor":null,"numItems":{"$integer":"MgAAAAAAAAA="}}"`. After the `DirectoryModel` fix, passes.
+
+**2. `PersonModel.saveNote()` bounding** - `ios/Haven/Directory/PersonModel.swift:238-262`. Now routes through `Task{}.value(within: .seconds(HavenNetwork.deadline))`, same pattern as `write()`/`disconnect()`/`delete()` in the same file. On timeout, `isSaving` resets and `failure` is set (same message as the old catch path); `draft` is untouched either way. No new test added: `PersonModel`'s network path has no fake-Convex-client seam anywhere in the existing suite (all `PersonModelTests` use `isLive == false` previews, which never reach the network branch), and building one wasn't authorized for this fix. Existing `PersonModelTests` (24 tests) still pass unchanged.
+
+**3. `AskModel.run()` bounding + `AskPanel` exit** - `ios/Haven/Search/AskModel.swift:135-156` bounds the `people:ask` action the same way; timeout lands in `.failed` with the existing copy. `ios/Haven/Search/AskPanel.swift:32-44` adds `GhostButton("Back to search", action: onDismiss)` to the `.thinking` case. No new `AskModelTests` entry: `AskModel` isn't drivable with a fake either (same reason as #2), and the brief explicitly said not to build one just for this. Existing `AskModelTests` (9 tests) still pass unchanged.
+
+**4. `ConvexCaptureSink` bounding** - `ios/Haven/Capture/ConvexCaptureSink.swift:51,53,76,87-93` bounds all three mutations (`captures:generateUploadUrl`, `captures:createCapture`, `people:saveSharedProfile`) via a new private `bounded()` helper; a timeout throws `SinkError.timedOut`, which `CaptureDrain`'s existing per-item `catch` turns into `kept += 1`. **Also added a matching bound inside `CaptureDrain.run()` itself** (`ios/Haven/Capture/CaptureDrain.swift:58-68,123-129`, injectable `deadline` field) as a second layer - this was necessary to write a hung-sink test at all (see deviation note below). Tests: `CaptureDrainTests.hungSendIsKept()` and `.hungSendDoesNotBlockTheRest()` in `ios/HavenTests/CaptureDrainTests.swift:238-278`, using a `FakeSink` whose save takes 200ms before answering (`hangingFor`) and `CaptureDrain(deadline: 0.05)`, wrapped in a test-local `withTestTimeout` safety net (`CaptureDrainTests.swift:54-83`) that cannot itself hang (see below). Verified to fail correctly by temporarily reverting the `bounded()` call for the profile case and re-running: the whole `xcodebuild test` process genuinely hung and had to be killed (~90s+, near-zero CPU growth) - concrete first-run evidence. With the fix restored, both tests pass in ~0.2s each.
+
+**5. Sky-seed change at reveal** - `ios/Haven/Onboarding/OnboardingModel.swift:174-182` adds `RevealSky.seed(username:userId:)` (empty username falls back to `userId`, matching the brief's "never crash, never draw an empty figure" instruction, even though `MyCard.username` isn't actually optional). `ios/Haven/Onboarding/OnboardingFlow.swift:54-66` builds a fresh `Sky` from that seed for `CardRevealScreen` only; `model.sky` (userId-seeded) is untouched and still used by `NameScreen`/`LocationScreen`/`ContactScreen`. Test: `RevealSkySeedTests` (2 tests) in `ios/HavenTests/OnboardingTests.swift:126-143`, following the same pure-static-function pattern `OnboardingStep`/`OnboardingProgress` already use (an `OnboardingModel` instance is never constructed in the test suite - it isn't network-safe to do so, matching what I found when scoping the fix).
+
+**6. `DustLayer` ambient pause** - `ios/Haven/Design/DustLayer.swift:15,29`. Reads `@Environment(\.havenAmbientPaused)` and passes it to `TimelineView(.animation(paused:))`, matching `AnimatedSky`/`CardDriftClock`.
+
+**7. QR code caching** - `ios/Haven/Card/BeaconAddress.swift:24,30,45-62`. Single `static let context = CIContext()` reused across calls; `static var cache: [String: CGImage]` memoizes by encoded text.
+
+**8. `PrimaryLabel` adoption** - `ios/Haven/Capture/PinWalkthrough.swift:34-40,190-192`, `ios/Haven/Directory/LockScreenExplainer.swift:35-41`. All three hand-rolled copies replaced with `PrimaryLabel(title:)`. Verified no leftover unused `HavenFont`/`HavenColor.cream` references in either file.
+
+**9. Off-main-actor disk read** - `ios/Haven/Capture/CaptureDrain.swift:99-110,131-135`. The screenshot `Data(contentsOf:)` read now runs inside `Task.detached(priority: .utility)`, off whatever actor `CaptureDrain.run()` is called from (`CaptureSync` is `@MainActor`). Failure path unchanged (`try?` still yields nil).
+
+### Verification
+
+- Full suite: `xcodebuild test -project Haven.xcodeproj -scheme Haven -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath build` (no `CODE_SIGNING_ALLOWED=NO`) - **309 tests in 61 suites, 0 failures, TEST SUCCEEDED**. Run twice (once before, once after a stale-comment cleanup); both green.
+- `npm test` at worktree root (after `npm ci`, no `node_modules` existed in the fresh worktree) - **47 test files, 737 tests, all passed**. Only `CHANGELOG.md` and `package.json` touched outside `ios/`; nothing in `convex/`/`src/` changed.
+- `git status` in the worktree: exactly 18 files modified (`CHANGELOG.md`, `package.json`, 12 files under `ios/Haven`, 3 under `ios/HavenTests`), 0 untracked files, 0 commits.
+- Chosen version: **0.46.0** (minor bump from 0.45.0, the prior top entry - the reveal-seed change is a visible behavior change). `package.json` and `CHANGELOG.md` both updated; `ios/project.yml` `MARKETING_VERSION` untouched.
+
+### Deviations from the brief, and why
+
+1. **Rewrote the hung-sink test design mid-task**, per your explicit correction. My first attempt used a `FakeSink` that suspended forever on an unresumed `withCheckedThrowingContinuation`. That genuinely hung `xcodebuild test` (confirmed - had to `kill -9` a real, near-idle process after 60-90+ seconds, twice). Root cause, confirmed with three isolated standalone Swift reproductions (`swift` CLI, no simulator): `Task.value(within:)` (`ios/Haven/Onboarding/TaskDeadline.swift`) races an *externally created* `Task` inside a `withTaskGroup`, and `withTaskGroup` does not return until every child it started has actually finished - `group.cancelAll()` cancels the group's own wrapper child (which is merely awaiting `self.value`), but that cancellation never reaches `self` (the original task), and `Task.value` does not poll for the awaiting context's cancellation. So `value(within:)` does not actually bound a task that never completes on its own, contradicting its own doc comment ("the call carries on after this returns"). This is a pre-existing latent gap in shared infrastructure used by every "bounded write" in the app (`MyCardModel`, `PersonModel`, `OnboardingModel`, `ConnectModel`, and now my new call sites) - not introduced by me, not something I fixed (out of scope, and redesigning shared infra used everywhere under time pressure is riskier than the assigned fixes), but worth your attention separately. I fixed my *test* around it: the `FakeSink` now resolves after a short, bounded, finite delay (200ms) rather than never, and the test's own safety net (`withTestTimeout`) uses an unstructured `Task` + polling loop instead of a task group, so it structurally cannot hang regardless of what the code under test does.
+2. **Added a second bounding layer inside `CaptureDrain.run()` itself** (not just `ConvexCaptureSink`), with an injectable `deadline`. This was required to make the hung-sink test possible at all without a fake Convex client - `CaptureDrain` needed its own bound to be testable in isolation from `ConvexCaptureSink`. It's also a legitimate defense-in-depth improvement (protects against *any* future `CaptureSink` implementation that doesn't bound itself), consistent with the brief's own intent.
+3. Fixed one stale doc-comment cross-reference (`CaptureSync.swift:148`, said `PaginationEncodingTests`, actual suite is `DirectoryPagingTests`) discovered during final diff review.
+
+Relevant paths: worktree root `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/ios-eval-fixes`, iOS source under `ios/Haven`, tests under `ios/HavenTests`, changelog at `CHANGELOG.md`, version in `package.json`.</result>
+<usage><subagent_tokens>582612</subagent_tokens><tool_uses>283</tool_uses><duration_ms>1632344</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a82c902be6f376527</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/tasks/a82c902be6f376527.output</output-file>
+<status>completed</status>
+<summary>Agent "Review iOS code quality" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Everything is clean and stable. Here is the final report for these two additional items.
+
+## Report: root-cause fix + QR thread-safety + changelog
+
+### 1. Root-cause fix: `Task.value(within:)`
+
+**File:** `ios/Haven/Onboarding/TaskDeadline.swift` (full rewrite, signature unchanged: `func value(within deadline: Duration) async -&gt; Success?`)
+
+Replaced the `withTaskGroup` race with two unstructured `Task&lt;Void, Never&gt;` racing to resume a single `CheckedContinuation&lt;Success?, Never&gt;`, guarded by a new private `ResumeOnce&lt;Value: Sendable&gt;` actor (`TaskDeadline.swift:49-69`) that takes-and-clears the continuation on first resume so a second resume is a no-op, not a trap. Doc comment rewritten to explain why the task-group shape was broken and what "bounds the wait, not the work" now actually means (the loser is abandoned, not joined). No new dependencies; `NSLock`/`OSAllocatedUnfairLock` weren't needed since actor isolation gives single-resume-ness for free and reads more idiomatically for this codebase (no locks used anywhere else in it).
+
+Validated the candidate against the coordinator's repro shape in the CLI first (`swift` interpreter, no simulator) before touching Xcode: never-completing task returned `nil` after ~207ms against a 200ms deadline; a 20ms task returned its value; a 500ms task against a 100ms deadline returned `nil` after ~104ms. All three matched expectations before any simulator round trip.
+
+**Tests:** `ios/HavenTests/TaskDeadlineTests.swift` (new), `@Suite("Task deadline")`, 3 tests:
+- `neverCompletingTaskReturnsNil()` - the case the whole mechanism exists for.
+- `fastTaskReturnsItsValue()` - returns the value when it arrives well inside the deadline.
+- `lateTaskReturnsNil()` - returns `nil` promptly at the deadline rather than waiting out a task that finishes later.
+
+**First-run evidence (against the OLD implementation, temporarily restored, then reverted back to the fix):**
+```
+Test "a task that never completes still returns nil, in bounded time" failed after 2.007 seconds with 1 issue.
+  Caught error: did not return within the test's own safety timeout
+Test "a task that finishes after the deadline returns nil, not its value" failed after 0.518 seconds with 1 issue.
+  Expectation failed: (elapsed -&gt; 0.503099959 seconds) &lt; (.milliseconds(400) -&gt; 0.4 seconds)
+```
+Both failures are bounded (2.0s and 0.5s respectively, driven by `withTestTimeout`'s own safety net, not a hang), confirming both that the never-completing case genuinely couldn't return and that the late-but-finite case was waiting out the full task duration rather than the deadline - exactly the two symptoms predicted. `fastTaskReturnsItsValue()` passed even against the OLD implementation (that path was never broken). After restoring the fix, all 3 pass (0.204s / 0.021s / 0.101s).
+
+**Shared safety-net helper promoted** to `ios/HavenTests/TestTimeout.swift` (new, internal so both `TaskDeadlineTests.swift` and `CaptureDrainTests.swift` use one copy) rather than `SharedFixtures.swift` - that file's own header states it is "generated, never hand-edited" (a golden-fixture dump for the TypeScript port contract), so a hand-written general-purpose test helper doesn't belong there; a small new file matching that helper's actual purpose seemed cleaner than bending an existing file's stated contract.
+
+**`CaptureDrainTests.swift` tightened** per the last bullet: `FakeSink.hangingFor` now uses `.seconds(3600)` instead of `.milliseconds(200)`, and both hung-sink tests now assert `elapsed &lt; .seconds(1)` (`CaptureDrainTests.swift:228,262`) alongside the existing `kept`/`sent` assertions - a passing result can now only mean `CaptureDrain`'s own 0.05s deadline ended the wait, not the sink resolving on its own. Re-ran against the OLD `TaskDeadline` as an extra check: both failed with the same bounded `"did not return within the test's own safety timeout"` after ~2.0s, confirming they now actually depend on the fix.
+
+### 2. QR cache thread-safety
+
+**File:** `ios/Haven/Card/BeaconAddress.swift:14,20` - marked `enum QRCode` `@MainActor` rather than adding a lock, per your instruction (cheapest honest guarantee; the only caller, `QRCodeView.body` in `CardBack.swift:90`, is already main-actor work as a SwiftUI view body). This surfaced one pre-existing compile break: `ios/HavenTests/BeaconTests.swift` calls `QRCode.image(for:)` synchronously from 5 non-isolated test functions across the suite. Fixed by adding `@MainActor` to the whole `struct BeaconTests` (`BeaconTests.swift:11`), matching the `@MainActor @Suite(...)` pattern already used elsewhere in this test target (e.g. `DirectoryPagingTests`). Full `BeaconTests` suite re-run and green (7/7), including the cache-hit path (`"the same address always makes the same code"`) and cache-miss-per-key path (`"a different address makes a different code"`).
+
+### 3. CHANGELOG
+
+Extended the existing "no longer hangs on a dead connection" bullet in the `v0.46.0` **iOS** entry (`CHANGELOG.md:16`) rather than adding a separate bullet - it reads as one story: the three user-visible hangs, then the shared cause, then that editing your card, answering onboarding questions, and editing a saved person were all exposed to the same latent gap even though nothing had reported it yet. Same version, `0.46.0`, unchanged (`package.json` untouched in this pass since the version was already bumped).
+
+### Final verification
+
+- Full suite: `xcodegen generate` + `xcodebuild test -project Haven.xcodeproj -scheme Haven -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath build` (no `CODE_SIGNING_ALLOWED=NO`) - **312 tests in 62 suites, 0 failures, TEST SUCCEEDED**.
+- `npm test` at worktree root - **47 test files, 737 tests, all passed**.
+- `git status`: 19 modified files + 2 new (`ios/HavenTests/TaskDeadlineTests.swift`, `ios/HavenTests/TestTimeout.swift`), 0 untracked scaffolding, 0 commits. `ios/project.yml` untouched.
+- ASCII check: no non-ASCII characters in any added/changed line across `CHANGELOG.md`, `package.json`, `ios/Haven`, `ios/HavenTests`.
+- No stray `xcodebuild`/`xctest`/`swift-frontend` processes left running.</result>
+<usage><subagent_tokens>666809</subagent_tokens><tool_uses>59</tool_uses><duration_ms>633340</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac545196888d1ec8a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/tasks/ac545196888d1ec8a.output</output-file>
+<status>completed</status>
+<summary>Agent "Build and test iOS app" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed both are gitignored, so my `xcodegen generate` and build did not touch tracked source. All the `M`/`??` files listed are the coordinator's pre-existing "fixes" work in that worktree, untouched by me.
+
+## Follow-up task report (worktree `.worktrees/ios-eval-fixes/ios`, build for live signed-in E2E)
+
+**Build result:** `xcodegen generate` succeeded, then `xcodebuild build -project Haven.xcodeproj -scheme Haven -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath build` -&gt; `** BUILD SUCCEEDED **`. No `CODE_SIGNING_ALLOWED=NO` used; signed with "Sign to Run Locally" as before. Incremental as expected (pre-existing `build/` dir from prior test runs reused). Warnings: 2, both the same benign `Metadata extraction skipped. No AppIntents.framework dependency found.` line seen in the earlier main-checkout build -- nothing new.
+
+**Install/launch confirmation:**
+- `xcrun simctl terminate booted com.inhavens.haven` -&gt; failed with `found nothing to terminate` (exit code 3). Nothing was actually running on this simulator instance at that moment despite the earlier task's PID 93084 having been alive minutes before -- not a blocker, just noting it verbatim per your ask.
+- `xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/Haven.app` -&gt; exit 0.
+- `xcrun simctl launch booted com.inhavens.haven` -&gt; `com.inhavens.haven: 87137`, exit 0.
+
+**Screenshot:** `/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/scratchpad/haven-fixed-boot.png`. Shows the expected welcome screen (signed out): dark starfield with two constellation sketches, "Haven" wordmark, tagline "A place where you are seen, and others are found.", "Continue with Apple" button, "Other ways to sign in", "Privacy Policy" / "Terms of Service" links. Not black, not crashed -- ready for you to drive the live signed-in E2E from here.
+
+**Process-alive check:** `xcrun simctl spawn booted launchctl list | grep haven` -&gt; `87137 0 UIKitApplication:com.inhavens.haven[0164][rb-legacy]` -- still running after the Convex dev connection settles.
+
+**Anomaly (verbatim):**
+```
+xcrun simctl terminate booted com.inhavens.haven
+An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=3):
+Simulator device failed to terminate com.inhavens.haven.
+found nothing to terminate
+Underlying error (domain=NSPOSIXErrorDomain, code=3):
+	The request to terminate "com.inhavens.haven" failed. found nothing to terminate
+	found nothing to terminate
+```
+Did not block install/launch; the new build's install+launch overwrote/replaced cleanly and produced a fresh PID (87137). No other anomalies. Confirmed via `git status --porcelain ios/` in the worktree that I made zero source edits -- the `M`/`??` files present there are the coordinator's pre-existing eval-fixes work, not mine.
+
+**Files:**
+- Build log: `/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/scratchpad/build-fixes-output.log`
+- Screenshot: `/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/scratchpad/haven-fixed-boot.png`
+- App binary: `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/ios-eval-fixes/ios/build/Build/Products/Debug-iphonesimulator/Haven.app`
+
+This closes out the follow-up. My original verification task (main checkout, `ios/`) was already complete and reported in full before this interruption -- 304 passed / 0 failed / 1 skipped, build succeeded, `haven-boot.png` captured. Nothing further pending on either task from my side.</result>
+<usage><subagent_tokens>61491</subagent_tokens><tool_uses>10</tool_uses><duration_ms>77009</duration_ms></usage>
+</task-notification>
+
+---
+
+/fusion right now we have signin button but we don't have signup right? can u check it please
+
+---
+
+<task-notification>
+<task-id>a82c902be6f376527</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/tasks/a82c902be6f376527.output</output-file>
+<status>completed</status>
+<summary>Agent "Review iOS code quality" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Everything is clean, no commits, no stray processes. Here is the final report for this task.
+
+## Report: Welcome screen rework (Sign up / Sign in, Apple removed)
+
+### Files changed (this task)
+
+- **`ios/Haven/Onboarding/WelcomeScreen.swift`** - full rework. Removed `import AuthenticationServices`, `isSigningIn`/`failure`/`failureCount` state, `signInWithApple()`, the `Error.isAppleSignInCancellation` extension, `sensoryFeedback(.error, trigger: failureCount)`, and the now-unused `@Environment(Clerk.self) private var clerk` (nothing else in the file read it once `signInWithApple()` was gone - `AuthView`, presented as a sheet from this hierarchy, still gets `Clerk` from the app-root environment regardless). Replaced the single "Continue with Apple" + "Other ways to sign in" pair with a `PrimaryButton("Sign up")` and `GhostButton("Sign in")`, each setting a new `private enum AuthSheet: Identifiable { case signUp, signIn }` (`WelcomeScreen.swift:100-115`) consumed by one `.sheet(item: $authSheet) { AuthView(mode: sheet.mode) }` (`WelcomeScreen.swift:73-75`) - kept at one sheet modifier (plus `.legalSheet`), matching this file's own prior comment and the `MyCardScreen`/`DirectoryScreen` convention that stacking three sheet-presenting modifiers on one view makes one of them silently stop opening. Arrival timing unchanged (`0.25 / 0.7 / 1.15 / 1.32 / 1.45`) - element count didn't actually drop (still wordmark, tagline, primary button, ghost button, legal links = 5), so no retiming was needed. Previews (default, accessibility XXXL, Reduce Motion) unchanged except that they no longer exercise a dead Apple path.
+- **`ios/Haven/Haven.entitlements`** - removed the `com.apple.developer.applesignin` key and its comment block (`:5-18` in the old file). Fixed a now-dangling reference in the app-groups comment that pointed at "the Sign In with Apple capability above" (no longer above it, or anywhere) to point at the Associated Domains capability instead, which is still genuinely above it and follows the same "needs developer portal registration" pattern.
+- **`ios/Haven/Design/HavenButtons.swift`** - `PrimaryButton.systemImage`'s doc comment (`:7-10`) reworded to describe the capability generically rather than naming Apple as its sole justification (the parameter itself stays - it's a general design-system feature not in the task's removal list, and nothing else currently passes it, but removing it entirely wasn't asked for and would reach into a shared component beyond scope). The accessibility-size preview's example title (`:130`) changed from "Continue with Apple" to "Continue with Google" - same job (a long provider-button title to check wrapping at accessibility text sizes), no longer a stale reference to removed functionality.
+- **`ios/Haven/Info.plist`** - the export-compliance comment (`:47-48`) no longer cites "the SHA256 nonce Sign in with Apple requires" as one of the two encryption uses justifying `ITSAppUsesNonExemptEncryption = False`; now correctly names only HTTPS, which the app currently and actually uses, and remains exempt under category 5 part 2 on its own.
+- **`ios/Haven/PrivacyInfo.xcprivacy`** - the email-collection comment (`:43`) no longer asserts "including an Apple private relay address," since no path in the app currently produces one.
+- **`CHANGELOG.md`** - one new bullet appended to the existing unshipped `v0.46.0` **iOS** section (no version bump; `package.json` untouched this pass, confirmed by diffing it against the prior task's state - identical).
+
+### Button copy chosen
+
+**"Sign up"** (primary) / **"Sign in"** (ghost). Plain, per the brief's own fallback allowance - I didn't find anything in the voice that improves on it. Both are two words with no hyphen at all, so neither can hyphen-wrap at any Dynamic Type size, which was the concrete failure mode the file's own removed comment was guarding against ("Other sign- / in options"). They also read as two distinct, named doors rather than one that quietly branches, which is the whole point of the owner decision.
+
+### Verification
+
+- Full suite: `xcodegen generate` + `xcodebuild test -project Haven.xcodeproj -scheme Haven -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath build` (no `CODE_SIGNING_ALLOWED=NO`) - **312 tests in 62 suites, 0 failures, TEST SUCCEEDED**. Same count as before this task since nothing in `HavenTests` referenced `WelcomeScreen` or Apple sign-in to begin with (confirmed by grep before and after) - a view-only change with previews as the visual check, per repo convention, so no new tests were added.
+- `npm test` at worktree root - **47 test files, 737 tests, all passed**.
+- `git status`: 24 modified files + 2 untracked (`TaskDeadlineTests.swift`, `TestTimeout.swift`, both from the prior task in this same session), 0 commits. No file outside the expected set.
+- ASCII/em-dash check: no non-ASCII characters in any line this task added or changed.
+
+### Apple references found and deliberately left, with reasons
+
+- **`ios/Haven/Config.swift:64-65`** - "the production instance has to exist properly: its own domain, its own Sign in with Apple credentials from the Apple developer portal..." Left as-is: this describes a future setup requirement for the production Clerk instance, and it remains true - guideline 4.8 means Apple sign-in has to return before submission, so those credentials will still be needed then. Nothing here is made false by removing today's Apple button.
+- **Standard Apple platform boilerplate, unrelated to sign-in**, left untouched everywhere it appears in `ios/Haven`, `ios/HavenShare`, `ios/HavenWidget`: the plist `DOCTYPE` header naming Apple's own DTD, `com.apple.developer.associated-domains` and `com.apple.security.application-groups` entitlement keys, `com.apple.share-services` and `com.apple.widgetkit-extension` extension-point identifiers in the two extensions' `Info.plist`, `BeaconAddress.swift`'s "Apple documents `CIContext` creation..." (a citation of Apple's own Core Image docs), and `PrivacyInfo.xcprivacy`'s "Apple's privacy manifest" / "Apple has no category for..." (describing the manifest file format itself and a data-type naming gap). None of these are sign-in related, and several are load-bearing (removing the entitlement or extension-point keys would break the share extension or widget).
+- **`ios/Haven/Onboarding/WelcomeScreen.swift:47-51`** - the new decision-recording comment itself, which names Apple deliberately, as asked.</result>
+<usage><subagent_tokens>728683</subagent_tokens><tool_uses>45</tool_uses><duration_ms>597593</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac545196888d1ec8a</task-id>
+<tool-use-id>toolu_014bhHEtHRYD5dodZkDTeQ39</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/tasks/ac545196888d1ec8a.output</output-file>
+<status>completed</status>
+<summary>Agent "Build and test iOS app" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Alive, PID 96378, exit code 0, matches the PID from launch.
+
+## Follow-up task report (rebuild+reinstall, "two doors" welcome screen rework)
+
+**Build result:** `xcodegen generate` succeeded, `xcodebuild build -project Haven.xcodeproj -scheme Haven -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath build` -&gt; `** BUILD SUCCEEDED **`. No `CODE_SIGNING_ALLOWED=NO`; "Sign to Run Locally" as before. 2 warnings, both the same benign `Metadata extraction skipped. No AppIntents.framework dependency found.` -- nothing new.
+
+**Install/launch:**
+- `xcrun simctl terminate booted com.inhavens.haven` -&gt; `found nothing to terminate` (exit 3), ignored per instructions.
+- `xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/Haven.app` -&gt; exit 0.
+- `xcrun simctl launch booted com.inhavens.haven` -&gt; `com.inhavens.haven: 96378`, exit 0.
+
+**Screenshot:** `/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/scratchpad/haven-two-doors.png`
+
+Confirmed exactly as expected:
+- Primary button: cream/filled pill, label **"Sign up"** (no Apple logo icon, no "Continue with Apple" text).
+- Secondary control below it: plain text link, label **"Sign in"**.
+- No Apple button anywhere on screen.
+- Rest of screen unchanged: starfield background with two constellation sketches, "Haven" wordmark, tagline "A place where you are seen, and others are found.", "Privacy Policy" / "Terms of Service" links at bottom.
+
+**Process-alive check:** `xcrun simctl spawn booted launchctl list | grep haven` -&gt; `96378 0 UIKitApplication:com.inhavens.haven[a76f][rb-legacy]` -- matches launch PID, still running, no crash.
+
+**Anomalies (verbatim):**
+```
+xcrun simctl terminate booted com.inhavens.haven
+An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=3):
+Simulator device failed to terminate com.inhavens.haven.
+found nothing to terminate
+Underlying error (domain=NSPOSIXErrorDomain, code=3):
+	The request to terminate "com.inhavens.haven" failed. found nothing to terminate
+	found nothing to terminate
+```
+Expected/ignored per your instruction. No other anomalies. No source files touched by me (build in `.worktrees/ios-eval-fixes/ios`, gitignored `Haven.xcodeproj`/`build/` only).
+
+**Files:**
+- Build log: `/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/scratchpad/build-two-doors-output.log`
+- Screenshot: `/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/scratchpad/haven-two-doors.png`
+- App binary: `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/ios-eval-fixes/ios/build/Build/Products/Debug-iphonesimulator/Haven.app`
+
+All three tasks in this session (main-checkout full verification, worktree eval-fixes build, and this two-doors rebuild) are now complete and reported.</result>
+<usage><subagent_tokens>71462</subagent_tokens><tool_uses>7</tool_uses><duration_ms>67651</duration_ms></usage>
+</task-notification>
+
+---
+
+1. For linkedln login, right now i have to type in the password for linkedln manually instead of it giving me the option to signin through google or signin with other provider that linkedln offer. why is that? is it because this is local developement? like this [Image #2]
+2. Right now when i conenct with my linkedln, it guesses my linkedln url is tony-nguyen while the actual is https://www.linkedin.com/in/tony-buildd/. so we are not able to programmatically read and know the url after someone connect their linkedln? or do we need to do that at all if we connect linkedln already? maybe we can look into if composio would help? maybe this Read this doc https://connect.composio.dev/api/onboarding/setup and set up Composio in this client. Terminal agents install the Composio CLI (curl -fsSL https://composio.dev/install | bash, then composio login), other clients add the MCP. Once connected, immediately run my first task with a real tool call: get user linkedln or x or instagram profile url Setup is only complete after that tool call has actually executed, so do not stop at installing.
+3. In the UI of open share sheet, add the (x) top right so that it gives user a way to close it. Same with Your code part. any dialog screen should have that
+4. When I am in Haven, i can see haven in the share space part of the iphone. but when i test to go share from linkedln i don't see it [Image #3] and even when i try to go to more to add i don't see it too [Image #4]
+
+/fusion to work on each
+
+---
+
+<task-notification>
+<task-id>ac545196888d1ec8a</task-id>
+<tool-use-id>toolu_01BPhKL3Wc2KF6ZNGyGm6N2P</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/tasks/ac545196888d1ec8a.output</output-file>
+<status>completed</status>
+<summary>Agent "Build and test iOS app" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Diagnosis report: Haven share extension missing from Safari share sheet
+
+### 1. Installed app contains the extension -- confirmed present, plist correctly merged
+
+Container: `xcrun simctl get_app_container booted com.inhavens.haven` -&gt;
+`/Users/minhthiennguyen/Library/Developer/CoreSimulator/Devices/905373FF-AB9F-4A4C-BCD0-36C7B47DB912/data/Containers/Bundle/Application/3F228984-FDB9-4FDE-BEEB-B06FCFD6D72D/Haven.app`
+
+`PlugIns/` listing:
+```
+drwxr-xr-x   7 minhthiennguyen  staff  224 Aug  4 09:57 HavenShare.appex
+drwxr-xr-x   7 minhthiennguyen  staff  224 Aug  4 09:57 HavenTests.xctest
+drwxr-xr-x   7 minhthiennguyen  staff  224 Aug  4 09:57 HavenWidget.appex
+```
+
+`plutil -p PlugIns/HavenShare.appex/Info.plist` -- NSExtension dict verbatim as merged into the built artifact:
+```
+"NSExtension" =&gt; {
+    "NSExtensionAttributes" =&gt; {
+      "NSExtensionActivationRule" =&gt; {
+        "NSExtensionActivationSupportsImageWithMaxCount" =&gt; 1
+        "NSExtensionActivationSupportsWebURLWithMaxCount" =&gt; 1
+      }
+    }
+    "NSExtensionPointIdentifier" =&gt; "com.apple.share-services"
+    "NSExtensionPrincipalClass" =&gt; "HavenShare.ShareViewController"
+  }
+```
+`CFBundleIdentifier` (extension's real bundle id): `com.inhavens.haven.share`
+
+Conclusion: the activation rule DID make it into the merged/compiled Info.plist exactly as authored. Build-merge pipeline is not the fault.
+
+### 2. pluginkit registration -- extension is registered, no explicit election either way
+
+`xcrun simctl spawn booted pluginkit -m -v`, haven lines verbatim:
+```
+     com.inhavens.haven.widget(1.0.0)	FC07E60E-F197-415E-A186-456E144A002E	2026-08-04 16:57:02 +0000	.../Haven.app/PlugIns/HavenWidget.appex
+     com.inhavens.haven.share(1.0.0)	47A2865D-4396-4D65-90C4-6DC4027D60E2	2026-08-04 16:57:02 +0000	.../Haven.app/PlugIns/HavenShare.appex
+```
+Both lines have **no leading `+`/`-`/`!` tag at all** -- just leading whitespace. Per `man pluginkit`, `-m` output "may begin" with a tag; absence of a tag means no explicit user election has been recorded (neither "use" nor "ignore" nor debugger-use). That is the default/neutral state, not a disabled state -- so pluginkit registration itself does not explain the extension being invisible. Confirmed by checking the man page and by comparing against ~466 other plugin lines in the same dump (system extensions also mostly carry no tag).
+
+### 3. project.yml HavenShare INFOPLIST wiring -- correct, matches built artifact
+
+- Project-wide: `settings.base.GENERATE_INFOPLIST_FILE: "YES"` (project.yml line 20), applies to all targets including HavenShare.
+- HavenShare target (project.yml lines 131-171):
+```
+PRODUCT_BUNDLE_IDENTIFIER: com.inhavens.haven.share
+REDACTED: Haven
+INFOPLIST_FILE: HavenShare/Info.plist   # "Carries the NSExtension dict, which has no build-setting form."
+CODE_SIGN_ENTITLEMENTS: HavenShare/HavenShare.entitlements
+```
+`HavenShare/Info.plist` source is the partial plist with the NSExtension dict (NSExtensionPointIdentifier=`com.apple.share-services`, NSExtensionPrincipalClass=`$(PRODUCT_MODULE_NAME).ShareViewController`, and the same activation rule dict seen in step 1). Source and built/merged plist match exactly. This target is correctly configured -- not the root cause.
+
+### 4. Activation rule as built (payload matching, no UI taps performed)
+
+Exact rule from the installed extension's compiled plist:
+```
+NSExtensionActivationSupportsWebURLWithMaxCount = 1
+NSExtensionActivationSupportsImageWithMaxCount  = 1
+```
+No `NSExtensionActivationSupportsText` key present. The source plist's own comment states this is deliberate: "Deliberately not text. Supporting it would put Haven in the sheet for every piece of text anybody shares anywhere... If a dev build shows that one of the three apps vends its profile as text rather than a URL, this is where that gets revisited."
+
+### 5. Contrast case -- the app's own ShareLink, which DOES appear
+
+`Haven/Capture/PinWalkthrough.swift`:
+```swift
+private static let practiceProfile = URL(string: "https://instagram.com/instagram")!
+...
+ShareLink(item: Self.practiceProfile) {
+    PrimaryLabel(title: "Open a share sheet")
+}
+```
+This shares a single `URL` value and nothing else -- one `Transferable` attachment, type `public.url`. That extension item contains exactly one attachment of exactly the type the rule declares, so it trivially satisfies `NSExtensionActivationSupportsWebURLWithMaxCount=1`.
+
+### Root-cause hypothesis, ranked
+
+**Primary hypothesis (best supported by the evidence collected):** Safari's system "Share..." action for a web page does not hand the share sheet a single `public.url` attachment the way `ShareLink(item: URL)` does. It conventionally bundles the URL together with at least one additional `NSItemProvider` attachment in the same extension item -- typically the page title/selection as `public.plain-text`, and often a page thumbnail image as well. A dictionary-form `NSExtensionActivationRule` (the kind Haven uses, built from `NSExtensionActivationSupportsWebURLWithMaxCount`/`...Image...`) compiles to a predicate that requires every attachment in the extension item to match one of the declared type predicates. Since Haven's rule declares URL and image but not text, a Safari page share whose extension item also carries a text attachment fails the predicate for that extension item as a whole -- PluginKit then excludes the extension from the candidate list entirely, which is consistent with it being absent even from the "More" edit list (Reminders, with a broader/looser rule, still qualifies and shows). This matches every fact gathered: the rule is present and byte-for-byte correct in the built artifact (rules out a build/merge bug), the extension is registered with pluginkit (rules out "not installed"/"not discovered"), and the one in-app case that is known to work (`ShareLink(item: URL)`) shares a URL-only payload with no competing attachment type, which is exactly the shape the current rule was built to match.
+
+**Secondary/lower-confidence alternatives, not ruled out but weaker fits:**
+- App Group / entitlement misconfiguration in `HavenShare/HavenShare.entitlements` -- would typically manifest as a crash or empty-queue failure *after* the extension is tapped/launched, not as absence from the share-sheet/More list, so it doesn't fit "not even in More."
+- Stale/duplicate PluginKit database entries from earlier builds -- checked and ruled out; only one current UUID per extension was found in the `-m -v` dump, no duplicates.
+- `NSExtensionPrincipalClass` module-name mismatch (`HavenShare.ShareViewController`) -- would prevent the extension's UI from loading once selected, not prevent it from appearing in the candidate list, so also a weaker fit for this specific symptom.
+
+Not fixed or verified further per instructions (read-only, no rebuild/reinstall, no UI taps -- left for the owner's tap test). If the owner wants to confirm the primary hypothesis empirically without a UI tap, capturing the actual `NSExtensionItem`/attachment UTIs Safari constructs for "Share" on that page (e.g. via a temporary logging share extension with a permissive rule, or Apple's documented `activityViewController(_:itemsForActivityType:)` inspection) would show whether a `public.plain-text` or image attachment rides alongside the URL.</result>
+<usage><subagent_tokens>93112</subagent_tokens><tool_uses>15</tool_uses><duration_ms>170456</duration_ms></usage>
+</task-notification>
+
+---
+
+done the login
+
+---
+
+<task-notification>
+<task-id>a82c902be6f376527</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/tasks/a82c902be6f376527.output</output-file>
+<status>completed</status>
+<summary>Agent "Review iOS code quality" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Everything is verified and clean. Here is the final report.
+
+## Report: shared dismiss affordance for every dialog
+
+### The affordance
+
+**`havenDismissable()`** in **`ios/Haven/Design/HavenDismissButton.swift`** (new file). A `View` extension wrapping a private `ViewModifier` that overlays a top-trailing `Button` - `xmark`, `.footnote.weight(.semibold)`, `HavenColor.faint`, 44x44 tap target via `.frame` + `.contentShape(Rectangle())`, `PressScaleStyle()`, `.accessibilityLabel("Close")` - calling `@Environment(\.dismiss)`. Visually it's the same shape `WidgetPromoCard`'s existing corner dismiss already used (`Directory/WidgetPromoCard.swift:61-72`), factored into one shared component per the brief, using only closed-palette `HavenColor` and the existing `PressScaleStyle`. No `.ignoresSafeArea()` anywhere in it, so it inherits normal safe-area placement regardless of whether the content it's layered over has its own edge-to-edge background (confirmed this is how `HavenScreen`'s own inner content already coexists with its edge-to-edge decorative background). Added to `ios/README.md`'s design-system list (`:150-151`) alongside the other shared controls, and it now appears in the `HavenScreen`/`HavenField`/... enumeration there.
+
+### Applied to (file:line, all inside the view's own body so it can't be forgotten at a call site)
+
+- `ios/Haven/Connect/ConnectScreen.swift:50` - the Connect/scan sheet (`HavenTabs.swift:77`).
+- `ios/Haven/Card/CardFieldEditors.swift:161,257,329,424` - `TextFieldEditor`, `AddressEditor`, `PhotoEditor`, `CityFieldEditor` (all presented by `MyCardScreen.swift:72`; `CityFieldEditor` and `PhotoEditor` are the same types `PersonEditor` reuses).
+- `ios/Haven/Card/HandlesEditor.swift:76,170` - `HandlesEditor` (`MyCardScreen.swift:72`) and its own nested `HandleValueEditor` (`HandlesEditor.swift:76`).
+- `ios/Haven/Directory/PersonEditor.swift:36` - presented by `PersonScreen.swift:45`.
+- `ios/Haven/Directory/PersonFieldEditors.swift:154,244,342` - `PersonTextEditor`, `PersonHandlesEditor` (both via `PersonEditor.swift:36`) and `PersonHandlesEditor`'s own nested `PersonHandleValueEditor` (`PersonFieldEditors.swift:243`).
+- `ios/Haven/Directory/LockScreenExplainer.swift:53` and `ios/Haven/Capture/PinWalkthrough.swift:52` - applied to the whole `NavigationStack`, outside it, at each file's own root `body`, not to the pushed-to screen. Verified this puts the overlay above the stack's own push/pop so it renders unchanged on `WidgetHowTo`/`PinHowTo` too - the modifier never has to touch those inner screens.
+- `ios/Haven/Directory/AddPersonSheet.swift:59` - presented by `DirectoryScreen.swift:74`.
+
+14 distinct sheet-root view types across 8 files, matching a complete inventory verified by grepping every `.sheet(` in `Haven` (9 call sites, all accounted for) and following each one's content down to its nested sheets.
+
+### Exceptions (deliberately not touched, with reason)
+
+- **`AuthView`** (`ios/Haven/Onboarding/WelcomeScreen.swift:72`) - Clerk's own component. Read `AuthView.swift` and `DismissToolbarItem.swift` in the SPM checkout: `isDismissible` defaults to `true`, and when true it renders its own native `ToolbarItem(placement: .topBarTrailing) { DismissButton }` - applied via `.toolbar` on both the root `AuthStartView()` and every `navigationDestination` it pushes, so it's already present on every step of Clerk's internal flow, not just the first. Left untouched, no wrapping.
+- **`SafariPage`/`SFSafariViewController`** (`ios/Haven/Legal/LegalSheet.swift`) - already sets `page.dismissButtonStyle = .done`, a native system Done button. Left untouched.
+- **`MyCardScreen`** ("Your code", the flipped back of the card) - checked and confirmed this is never `.sheet`-presented; it's always a `NavigationStack` push (`HavenTabs.swift:127`, via `peopleRoute`/`.card`), reached by the widget deep link, the "Your card" toolbar button, or the reveal. It already has a native top-left back chevron from that NavigationStack. Out of scope under the task's own "every sheet-presented surface" wording. Flagging this explicitly since the coordinator's inventory line named "Your code" next to the scan sheet - if the owner's complaint really was about this pushed screen specifically (not the scan sheet), that's a different fix (a close control on a navigated screen, not a sheet) that this task didn't cover.
+
+### Verification
+
+- Full suite: `xcodegen generate` + `xcodebuild test -project Haven.xcodeproj -scheme Haven -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath build` (no `CODE_SIGNING_ALLOWED=NO`, no `simctl install/launch/uninstall` run at any point) - **312 tests in 62 suites, 0 failures, TEST SUCCEEDED**.
+- `npm test` at worktree root - **47 test files, 737 tests, all passed**.
+- `git status`: 3 new files (`HavenDismissButton.swift`, plus the prior task's `TaskDeadlineTests.swift`/`TestTimeout.swift`), rest modified, 0 commits.</result>
+<usage><subagent_tokens>825893</subagent_tokens><tool_uses>66</tool_uses><duration_ms>944766</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac545196888d1ec8a</task-id>
+<tool-use-id>toolu_015D1evnDcNAZAPWWyg6oXGo</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/tasks/ac545196888d1ec8a.output</output-file>
+<status>completed</status>
+<summary>Agent "Build and test iOS app" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Alive, PID 56453, matches launch PID, exit code 0.
+
+## Rebuild+reinstall report (sheet-dismiss control build)
+
+**Build result:** `xcodegen generate` succeeded, `xcodebuild build -project Haven.xcodeproj -scheme Haven -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath build` -&gt; `** BUILD SUCCEEDED **`. No `CODE_SIGNING_ALLOWED=NO`; signed "Sign to Run Locally" as always. 2 warnings, both the same benign `Metadata extraction skipped. No AppIntents.framework dependency found.` -- nothing new.
+
+**Simulator/install/launch:**
+- `xcrun simctl list devices` -&gt; iPhone 17 already shows `(Booted)` despite the reboot you mentioned (consistent with a re-boot cycle rather than a shutdown -- screenshot display UUID changed from the prior session's `531E43DF-...` to `7048FE6E-...`, confirming it's a fresh runtime session, not stale state).
+- `xcrun simctl terminate booted com.inhavens.haven` -&gt; `found nothing to terminate` (exit 3), ignored per instructions.
+- `xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/Haven.app` -&gt; exit 0.
+- `xcrun simctl launch booted com.inhavens.haven` -&gt; `com.inhavens.haven: 56453`, exit 0.
+
+**Screenshot:** `/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/scratchpad/haven-dismiss-build.png`
+
+Renders a real screen -- **signed-in state**, not the welcome screen: the "People" tab, header with a "..." menu button (top left) and a QR-scan icon + profile avatar (top right), a "Search everyone" search field, empty-state copy ("No one saved yet. Scan the code on the back of somebody's card to connect."), a cream "Add someone" button, and a bottom pill tab bar with "People" (selected, person-pair icon) and "Search" (magnifier icon). This confirms a session persisted from earlier live testing on this simulator -- consistent with what you flagged as possible ("the user may have signed in"). Not black, not crashed.
+
+**Process-alive check:** `xcrun simctl spawn booted launchctl list | grep haven` -&gt; `56453 0 UIKitApplication:com.inhavens.haven[4fe9][rb-legacy]` -- matches launch PID, still running.
+
+**Anomalies (verbatim):**
+```
+xcrun simctl terminate booted com.inhavens.haven
+An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=3):
+Simulator device failed to terminate com.inhavens.haven.
+found nothing to terminate
+Underlying error (domain=NSPOSIXErrorDomain, code=3):
+	The request to terminate "com.inhavens.haven" failed. found nothing to terminate
+	found nothing to terminate
+```
+Expected/ignored per your instruction. No other anomalies. No source edited by me.
+
+**Files:**
+- Build log: `/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/scratchpad/build-dismiss-output.log`
+- Screenshot: `/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/scratchpad/haven-dismiss-build.png`
+- App binary: `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/ios-eval-fixes/ios/build/Build/Products/Debug-iphonesimulator/Haven.app`
+
+All follow-up tasks addressed. Nothing pending from my side.</result>
+<usage><subagent_tokens>103236</subagent_tokens><tool_uses>7</tool_uses><duration_ms>69708</duration_ms></usage>
+</task-notification>
+
+---
+
+what about composio? are we using composio?
+
+---
+
+hmm if linkedln works better when it comes to linking account and get your linkedln and instagram profile right away, should we look into integrate it? i don't think composio has x link, but we can check. then we can decide if we should use it or not. was thinking to use composio for linkedln and instagram linking, then for x we can use it if it has else we can use the clerk one
+
+---
+
+1. for instagram it only works if your account is a business account btw. we need to let user know about that concern if they choose to share their instagram as their main social. hmm but like because when u go into composio and login with instagram, they would also notify you about that, so do we need to tell them if composio already tell them? from a product persepctive what do u think?
+2. ohh if composio has X too then composio has all, then why don't we just use all linkedln, ig and x through composio while Clerk we can have Google or Apple signin right? hmm what about option to login with phone number does clerk cover that?
+
+let's integrate it with /fusion
+
+---
+
+i add composio api key inside .env.local
+
+---
+
+[Image #5] the share sheet still not have haven app
+
+---
+
+just curious so if we want to make it works for any iphone then we have to manually add each of the iphone version in?
+
+---
+
+<task-notification>
+<task-id>a82c902be6f376527</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/tasks/a82c902be6f376527.output</output-file>
+<status>completed</status>
+<summary>Agent "Review iOS code quality" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Backend and iOS work for Phase 6 (Composio social-handle integration) is complete, verified, and uncommitted in the worktree at `/Users/minhthiennguyen/Desktop/Euno/euno-app/.worktrees/ios-eval-fixes` (branch `ios/eval-fixes`). No commits made.
+
+## Deviation to flag first (not a footnote)
+
+**Avatar import from a connected account is gone, and the brief did not ask for that.** Clerk's `ExternalAccount` carried an avatar URL that `OnboardingModel.rememberAvatar`/`importAvatar` used to pull into Haven's own storage after a successful contact connect. Composio's `initiateSocialConnection`/`completeSocialConnection` responses carry only `{status, handle}` (by design, per the brief's own response shape) - no photo field. Once I stopped calling `rememberAvatar` from the new `ContactScreen`, `pendingAvatar`/`rememberAvatar`/`importAvatar`/the private `download` helper became fully dead code (no other caller), so I deleted all four from `OnboardingModel.swift` rather than leave them silently unreachable. Restoring this needs `convex/composio.ts`'s `resolveAndStoreHandle`/`extractHandle` extended to also read a photo field per platform (LinkedIn's tool likely returns one) and the iOS side wired back up to import it. Documented in `ios/README.md`'s "Not yet built" section. Flagging for the owner in case they want it back before this ships.
+
+## Backend endpoints and shapes used
+
+Verified against `https://backend.composio.dev/api/v3/openapi.json` (fetched live, checked 2026-08-04) after `docs.composio.dev`'s prose pages 404'd on every direct fetch, including the connected-accounts-link page. This is a deviation from the literal instruction to verify against the docs site; the OpenAPI spec is the machine-readable contract the backend actually serves, which I judged more authoritative than a page that wouldn't load, but it's still a deviation worth your awareness.
+
+- `GET /auth_configs?toolkit_slug=&lt;slug&gt;` and `POST /auth_configs` (body `{toolkit:{slug}, auth_config:{type:"use_composio_managed_auth", name}}`) - one-time OAuth app registration per toolkit, cached in a new `composioAuthConfigs` table (`convex/schema.ts`).
+- `GET /connected_accounts?user_ids[]=&amp;toolkit_slugs[]=&amp;statuses[]=ACTIVE` - dedupe check; Composio's own list is the source of truth, not a local mirror.
+- `POST /connected_accounts/link` (body `{auth_config_id, user_id}`) - used instead of the plain `POST /connected_accounts`, because the spec documents the latter as retired for Composio-managed OAuth (400 for new orgs since 2026-05-08, all orgs since 2026-07-03).
+- `GET /connected_accounts/{id}` - status polling. Its `user_id` field is present in the spec but marked deprecated ("we will not be providing userId from this api anymore"); I use it as a best-effort ownership check only, not the sole guard (see below).
+- `POST /tools/execute/{tool_slug}` - `LINKEDIN_GET_MY_INFO` (vanityName), `INSTAGRAM_GET_USER_INFO` (username), `TWITTER_USER_LOOKUP_ME` (username, **not live-proven, inferred from the standard API v2 shape** - worth confirming against a real connection before this ships, the same way LinkedIn and Instagram already were).
+
+## Backend files (`convex/`)
+
+- `schema.ts`: new `composioAuthConfigs` table (`toolkit`, `authConfigId`, indexed `by_toolkit`).
+- `composio.ts` (new): transport (`composioRequest`/`composioJson`, mirrors `openaiClient.ts`'s `requireEnv`), `ensureAuthConfig` (cache -&gt; Composio's own list -&gt; create), `resolveAndStoreHandle`/`storeVerifiedHandle` (merges into `profiles.handles` via the existing `updateMyProfile` mutation, never a second write path), and the two public actions `initiateSocialConnection`/`completeSocialConnection`. Post-advisor-review hardening: `completeSocialConnection` now rejects a `connectedAccountId` whose `toolkit.slug` doesn't match the requested platform, and rejects one whose (deprecated but present) `user_id` doesn't match the caller - without this, someone who observed another user's `connectedAccountId` mid-flow could poll it and have that person's proven handle written onto their own card as "verified." Also fixed `isUnsupportedInstagramAccount` matching the bare substring `"190"` (any Instagram error containing the digits 190 anywhere, e.g. a rate-limit message, was misrouted).
+- `composio.test.ts` (new): 14 tests - initiate happy path, auth-config cache reuse across two users, dedupe short-circuit on an existing ACTIVE connection, an auth config already registered in Composio's own dashboard/list (the branch production is most likely to actually take), completing while INITIATED/ACTIVE, storing a handle twice does not duplicate it, wrong-toolkit and wrong-owner rejection, Instagram `unsupported_account` mapping plus a regression test for the `"190"` false-positive, FAILED/EXPIRED mapping, missing `COMPOSIO_API_KEY`.
+- `profileFields.ts`: updated the `handleValidator` comment, which previously said only X proves its handle and LinkedIn "leaves the address hand-confirmed" - now false.
+- `_generated/api.d.ts`: manually patched to register the `composio` module (no live Convex deployment in this environment to run real codegen; `npx tsc -p convex/tsconfig.json --noEmit` confirms the manual edit is structurally correct).
+
+## iOS files (`ios/`)
+
+- `Haven/Onboarding/ContactConnector.swift` (rewritten): now calls `composio:initiateSocialConnection`/`composio:completeSocialConnection` via the existing `convex.action` pattern instead of Clerk's `createExternalAccount`/`reauthorize`. `poll(platform:connectedAccountId:)` owns its own 120s deadline as a `while` loop with a 2s `Task.sleep` between attempts - **not** wrapped in `Task.value(within:)`, because that helper abandons rather than cancels a task that never finishes (per the Phase 3 fix), so wrapping the whole loop in it would leave it polling in the background forever once the bound hit. Each individual poll call is still bounded the normal way. Cancelling the polling `Task` (browser dismissed by hand) makes `Task.sleep` throw immediately, caught as `.cancelled`. `map(_:)`/`step(_:)` are pure status-string-to-outcome mappers, unit tested. No slug map: Haven's `MyCard.Platform.rawValue` ("linkedin"/"instagram"/"x") is passed straight through, since that's exactly what `composio.ts`'s `platformValidator` expects - the toolkit-slug translation ("x" -&gt; "twitter") lives only in the backend.
+- `Haven/Onboarding/ContactScreen.swift` (rewritten): LinkedIn, Instagram and X all move to the `.authorize` group (phone stays typed); Instagram's row carries a quiet pre-tap line ("Works with creator and business accounts") via the existing `HavenRow.detail` slot, and an `unsupported_account` response routes to the same typed fallback panel with copy naming Instagram's own limit. The LinkedIn "confirm the guessed slug" panel is now reachable only when an authorization fails/is declined - every `connected` outcome (all three platforms) now carries a Composio-proven handle, so there's nothing left to confirm on the happy path. Manages a `browserURL`/`pollTask` pair to present the OAuth redirect in `SafariPage` and poll while it's open; **fixed after an advisor review** - the first pass left `connecting` set (spinner, Continue/Skip disabled) for up to ~12s after a manual browser dismiss because it only cleared state once the (already-cancelled) poll task's `Task.sleep` actually threw, and a second tap during that window could race a new poll against the stale one. `cancelPoll()` now clears `connecting` and cancels immediately from `onDismiss` (idempotent - a no-op once a poll has already settled on its own), and `connectThroughBrowser` cancels any leftover `pollTask` on entry as a second guard.
+- `Haven/Onboarding/OnboardingModel.swift`: removed the now-dead avatar-import machinery (see deviation above).
+- `Haven/Design/SafariPage.swift` (new): extracted from `LegalSheet.swift` (was `private`) so both the legal pages and the Composio browser trip share one Haven-tinted `SFSafariViewController` wrapper instead of two copies.
+- `HavenTests/ContactConnectorTests.swift` (new): 13 tests covering `map`/`step` (redirect/already/unsupported/failed/unknown-status, connected-with-no-handle, pending-keeps-polling), platform raw-value-to-Composio-literal parity for linkedin/instagram/x, and that `.phone` never reaches the network (`initiate(.phone)` returns `.failed` synchronously, no mock needed).
+- **Confirmed, per the brief's explicit ask, and left untouched**: `Haven/Card/HandlesEditor.swift` and `Haven/Directory/PersonFieldEditors.swift` are both typed-only entry (`HandlesEditor`'s own doc comment: "No authorization here: connecting an account is onboarding's job") - neither references `ContactConnector`, confirmed by grep before and after this change.
+- `ios/README.md`: surgical edits to the onboarding section (grouping, the removed "X proves, LinkedIn doesn't" framing, the Instagram-typed-because-no-Clerk-connection paragraph, the `createExternalAccount`/`reauthorize` description, the avatar-import "not yet built" line) and the `havenDismissable()` exceptions line (now names `SafariPage` generally, since it's shared).
+
+## Verification
+
+- `cd ios &amp;&amp; xcodegen generate &amp;&amp; xcodebuild test -project Haven.xcodeproj -scheme Haven -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath build`: **325 tests in 64 suites passed**, 0 failures, no `error:` in the log. No `simctl install/launch/uninstall` run.
+- `npm test` (root): **751 tests in 48 files passed**.
+- `npx tsc -p convex/tsconfig.json --noEmit`: clean, exit 0.
+- `git status`: only the files listed above plus `composio.ts`/`composio.test.ts`/`SafariPage.swift`/`ContactConnectorTests.swift`/`HavenDismissButton.swift`/`TaskDeadlineTests.swift`/`TestTimeout.swift` (the last three are Phase 3/5 artifacts, not this phase's). `ios/build/` (derived data) correctly gitignored, not listed.
+- ASCII check: `grep -P '[em-dash/curly-quote/ellipsis chars]'` across every changed file - no matches.
+- `xcodebuild test -only-testing:HavenTests/&lt;Suite&gt;` silently matched 0 tests during iteration (build succeeded, "Executed 0 tests") - did not debug it, since the full-target run is the actual definition of done and it executed both new suites correctly. Worth knowing for future targeted iteration in this environment: use the full target, not `-only-testing`.
+
+## Bootstrapping steps for you to run once the owner provides the real Composio API key
+
+1. `npx convex env set COMPOSIO_API_KEY &lt;value&gt;` on the deployment (dev and prod separately, same as other secrets in this codebase). That's the only env var `composio.ts` reads (`requireEnv("COMPOSIO_API_KEY")`).
+2. No dashboard step is required: `ensureAuthConfig` self-bootstraps the first time anyone connects each toolkit (list Composio's own auth configs for that toolkit, create one if none exists, cache the id in `composioAuthConfigs`). If the owner *does* create an auth config in the Composio dashboard ahead of time, the list branch picks it up instead of creating a duplicate - now covered by its own test.
+3. Nothing else to configure - Clerk's dashboard and sign-in code are untouched.
+
+## Minor, non-blocking, not fixed
+
+The `already` short-circuit (Composio's own list already had an ACTIVE connection) fills in the row instantly with no browser trip and no copy explaining why - noted, not worth adding UI for on its own.</result>
+<usage><subagent_tokens>253550</subagent_tokens><tool_uses>173</tool_uses><duration_ms>2882678</duration_ms></usage>
+</task-notification>
+
+---
+
+[Image #6] wait i still don't see it maybe the xcode buildl im building is not the right one?
+
+---
+
+<task-notification>
+<task-id>a82c902be6f376527</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/tasks/a82c902be6f376527.output</output-file>
+<status>completed</status>
+<summary>Agent "Review iOS code quality" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Still uncommitted, still on `ios/eval-fixes`, HEAD unchanged. Full verification complete.
+
+## Summary of the avatar-restoration follow-up
+
+**Backend (`convex/composio.ts`, `convex/composio.test.ts`):**
+- Added `extractPhotoUrl(platform, data)`: LinkedIn reads `profilePicture.displayImage` (nested), Instagram reads flat `profile_picture_url`, X reads flat `profile_image_url` (optional, not live-proven).
+- Added `TOOL_ARGUMENTS`, sending `{user_fields: "profile_image_url"}` as the tool-execute `arguments` payload only for X (inferred from Composio's pass-through convention, same caveat as the rest of X's shape).
+- `resolveAndStoreHandle`'s `connected` variant gained `photoUrl?: string`; `completeSocialConnection`'s return validator gained `photoUrl: v.optional(v.string())` on its `connected` case. `initiateSocialConnection`'s `already` case deliberately does **not** gain one (matches the coordinator's exact scoping) — noted as an asymmetry, not fixed further.
+- 5 new tests (19 total in the file, was 14): LinkedIn nested photo, Instagram flat photo, X photo present, X photo absent-and-tolerated, and the `user_fields` argument actually sent. Also fixed a latent bug in 5 pre-existing test stubs that used `toolkit: { slug: "x" }` instead of Composio's real toolkit slug `"twitter"` for X — harmless before (those tests expected `"failed"` either way) but would have masked a real toolkit-mismatch bug once new X-specific assertions needed the guard to actually pass.
+- `npm test`: 756/756 passing. `npx tsc -p convex/tsconfig.json --noEmit`: clean.
+
+**iOS:**
+- `ContactConnector.swift`: `SocialConnectOutcome.connected` and `CompleteResponse` both gained `photoUrl: String?`.
+- `ContactScreen.swift`: `finish(_:handle:photoUrl:)` now calls `model.rememberAvatar(photoUrl)` before setting `chosen`; the `already` path passes `photoUrl: nil` (no fresh tool call in that branch).
+- `OnboardingModel.swift`: reinstated `pendingAvatar`, `rememberAvatar(_:)`, `importAvatar()` (unchanged bounded-network shape, `Task.value(within: .seconds(HavenNetwork.deadline))`), and `download(_:)`, wired back into `saveContact`. Extracted the "don't overwrite a chosen photo" guard into a new pure `AvatarImport.shouldReplace(_:)` (mirrors the existing `RevealSky` pattern) specifically so it's unit-testable without a network.
+- `HavenTests/OnboardingTests.swift`: new `AvatarImportTests` suite (3 tests) — one test initially asserted the wrong expected value for `shouldReplace(nil)` (I expected `true`, the real/original semantics is `false` since `card?.hasPhoto == false` is false when `card` is nil); caught by the full suite run and fixed.
+- `HavenTests/ContactConnectorTests.swift`: updated all `CompleteResponse`/`.connected` call sites for the new `photoUrl` parameter, added a dedicated photo-present test.
+- `ios/README.md`: removed the "not yet built" bullet, added a paragraph in the Onboarding section describing the restored import path and `AvatarImport.shouldReplace`.
+- `CHANGELOG.md`: replaced the "photo import paused" bullet with "A connected account fills in your photo again" under the existing v0.47.0 iOS heading — same version, no bump, per instruction.
+
+**Verification:** `xcodebuild test` (iPhone 17, full suite): **329 tests in 65 suites passed** (was 325/64). `npm test`: **756/756**. `npx tsc -p convex/tsconfig.json --noEmit`: clean. `git status`: only the expected files, no scaffolding, no commits made. ASCII check clean across all changed files.
+
+Files touched this round: `convex/composio.ts`, `convex/composio.test.ts`, `ios/Haven/Onboarding/ContactConnector.swift`, `ios/Haven/Onboarding/ContactScreen.swift`, `ios/Haven/Onboarding/OnboardingModel.swift`, `ios/HavenTests/ContactConnectorTests.swift`, `ios/HavenTests/OnboardingTests.swift`, `ios/README.md`, `CHANGELOG.md`.</result>
+<usage><subagent_tokens>311561</subagent_tokens><tool_uses>57</tool_uses><duration_ms>629771</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a82c902be6f376527</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/tasks/a82c902be6f376527.output</output-file>
+<status>completed</status>
+<summary>Agent "Review iOS code quality" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+The keyboard-overlap bug and the sticky-header bug shared one root cause and were already fixed in a commit sitting on this branch (`fb28ca6`, authored directly by you) by the time I got to reproducing them. I did not write that fix in this session — I found it already in place, then spent my time verifying it is actually correct rather than re-doing the work. Here's the full investigation and verification.
+
+## Root cause (one investigation, as asked)
+
+`AddPersonSheet` was built on `HavenScreen`'s `question:`/`hint:` convenience initializer — the same pinned-header, pinned-actions skeleton `HavenScreen`'s own doc comment describes as deliberate ("header pinned top, interactive content centred in whatever space is left, actions pinned bottom"), built for onboarding, where a single question deliberately owns the top of the screen while one field scrolls beneath it.
+
+`AddPersonSheet` isn't a single-question screen, it's a three-field form (name, handle, note) with a title+hint block above and Save/Cancel below, all rendered through that same skeleton:
+- **Sticky header**: the title/hint lived in `HavenScreen`'s pinned `header:` slot, so it never scrolled with the form — visibly cramped against the first field, and stayed fixed while the form scrolled under it.
+- **Keyboard overlap**: Save/Cancel lived in `HavenScreen`'s pinned `actions:` slot, a sibling of the ScrollView, not part of it. I reproduced this live (see below) — under a specific keyboard-height change while the Name field was focused, the Note field's row grew further down inside the ScrollView while the pinned Save button stayed at its fixed position, and the two collided.
+
+## Where it was fixed, and why there
+
+**Fixed in `AddPersonSheet.swift` only, not in `HavenScreen.swift`.** Per your own framing: pinning is deliberate for the screens `HavenScreen` was built for, so the fix belongs in the one screen using that slot for something it isn't — not as a change to shared behavior every other screen would also inherit. The commit message on `fb28ca6` states exactly this reasoning.
+
+The fix: `header: { EmptyView() }` and `actions: { EmptyView() }` are now passed to `HavenScreen`, and the title/hint (`titleBlock`) plus the fields plus Save/Cancel all live inside `content:` as one `VStack` — title, form, and buttons are now one scrolling column, with `.padding(.top, 28)` marking the two section breaks (title-to-fields, fields-to-buttons) and a `spacing: 6` gap inside `titleBlock` itself (wider than `QuestionHeader`'s default 4, specifically because the hint wraps to two lines here and needs to read as a heading, not a continuation).
+
+## Other screens checked
+
+- **`PersonEditor`, `HandlesEditor`**: not exposed to this bug. Neither has a live text field on its own pinned-header screen at all — tapping a row opens a *separate* single-field child sheet (`PersonTextEditor`, `HandleValueEditor`) for the actual typing. No keyboard is ever up while their own pinned header/actions are on screen.
+- **`TextFieldEditor`/`PersonTextEditor`-style single-field editors** (`CardFieldEditors.swift`, `PersonFieldEditors.swift`): structurally lower-risk — one field, no `hint:`, nothing below the field to grow into the pinned Save button.
+- **Onboarding screens** (`NameScreen`, `LocationScreen`, `ContactScreen`): one focused field at a time by design, and pinning is the documented, intended behavior there.
+- I did not exhaustively live-drive every one of these with a keyboard (diminishing returns given the structural argument above), so this is a reasoned code-level assessment, stated plainly rather than overclaimed.
+
+## Verification
+
+**Live simulator** (iPhone 17 Pro, software keyboard forced on via Simulator's Keyboard menu, tapped through via accessibility-driven clicks since no XCTest UI driver was used):
+- Reproduced the original bug on the pre-fix build: screenshot shows Save drawn directly over "How you met, what you talked about."
+- Rebuilt with the current (already-fixed) code, repeated the identical interaction sequence that triggered the collision: Note field, Save, and Cancel now render cleanly separated, no overlap.
+- Confirmed the header no longer sticks: it scrolls out of view once a lower field is focused, rather than staying pinned.
+- Checked accessibility XXXL (`accessibility-extra-extra-extra-large`) with the keyboard up: hint wraps to four lines, and the gap before "NAME" reads as generous, not touching — same worst case you flagged.
+
+**Previews**: `AddPersonSheet.swift` already carries "Add someone", "Add someone, accessibility XXXL", and "Add someone, Reduce Motion" previews, which build and reflect the new structure.
+
+**Full suite**: `xcodegen generate &amp;&amp; xcodebuild test -project Haven.xcodeproj -scheme Haven -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath build` (no `CODE_SIGNING_ALLOWED=NO`) → **355 tests in 70 suites passed**, unchanged count (no new tests — this class of bug, like springs and haptics elsewhere in this codebase, is judged by hand on a device, not by assertion).
+
+**ASCII**: checked the commit's diff directly — clean.
+
+## CHANGELOG
+
+Skipped, per your instruction: this is a layout regression in work that hasn't shipped yet (v0.47.0 is still unreleased), not a fix to something users have seen — "a pure layout regression fix in an unshipped version does not need its own line."
+
+## State
+
+`git status` is clean — nothing uncommitted. I made no new code changes this round; the fix was already on disk and committed as `fb28ca6` when I started, and everything above is verification of that existing commit.</result>
+<usage><subagent_tokens>718719</subagent_tokens><tool_uses>375</tool_uses><duration_ms>1525104</duration_ms></usage>
+</task-notification>
+
+---
+
+ok i guess we can metge now right?
+
+---
+
+<task-notification>
+<task-id>baf2wcvqo</task-id>
+<tool-use-id>toolu_01UdcSG8tFuQCNRGgE63tJNh</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/2f6bdbef-31ab-42f7-a4b3-5be3c7afbb2d/tasks/baf2wcvqo.output</output-file>
+<status>killed</status>
+<summary>Background command "Wait for main branch CI to complete" was stopped</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>baf2wcvqo</task-id>
+<tool-use-id>toolu_01UdcSG8tFuQCNRGgE63tJNh</tool-use-id>
+<status>stopped</status>
+<summary>No completion record was found for this background shell command from the previous session. It may have been stopped (via the UI, Monitor timeout, or agent teardown — these leave no transcript marker), or it may have been running when the previous Claude Code process exited. Check the output file for partial results before assuming it completed.</summary>
+</task-notification>
+
+---
+
+once we merge can u make sure u cleanup the worktree, the branch as well as the main locally sync with cloud?
+
+---
+
+can u check if its needed?
+
+---
+
+but why main locall stil this much behind tho spaces                  │ sky      product-dev     Friendy     fuzzy     bug_fix     fuzzy_ui     7       +
+                         │On branch main                                                                                                                                                                                                                                                                                                                                                                                                    ▕
+ · Desktop               │Your branch is up to date with 'origin/main'.                                                                                                                                                                                                                                                                                                                                                                     ▕
+ ● haven                 │                                                                                                                                                                                                                                                                                                                                                                                                                  ▕
+   main                  │Changes not staged for commit:                                                                                                                                                                                                                                                                                                                                                                                    ▕
+                         │  (use "git add <file>..." to update what will be committed)                                                                                                                                                                                                                                                                                                                                                      ▕
+                         │  (use "git restore <file>..." to discard changes in working directory)                                                                                                                                                                                                                                                                                                                                           ▕
+                         │        modified:   .env.local.example                                                                                                                                                                                                                                                                                                                                                                            ▕
+                         │        modified:   convex/captures.test.ts                                                                                                                                                                                                                                                                                                                                                                       ▕
+                         │        modified:   convex/captures.ts                                                                                                                                                                                                                                                                                                                                                                            ▕
+                         │        modified:   convex/composio.test.ts                                                                                                                                                                                                                                                                                                                                                                       ▕
+                         │        modified:   convex/composio.ts                                                                                                                                                                                                                                                                                                                                                                            ▕
+                         │        modified:   convex/handleKeys.test.ts                                                                                                                                                                                                                                                                                                                                                                     ▕
+                         │        modified:   convex/handleKeys.ts                                                                                                                                                                                                                                                                                                                                                                          ▕
+                         │        modified:   convex/memories.test.ts                                                                                                                                                                                                                                                                                                                                                                       ▕
+                         │        modified:   convex/people.test.ts                                                                                                                                                                                                                                                                                                                                                                         ▕
+                         │        modified:   convex/people.ts                                                                                                                                                                                                                                                                                                                                                                              ▕
+                         │        modified:   convex/peopleFields.ts                                                                                                                                                                                                                                                                                                                                                                        ▕
+                         │        modified:   convex/profileFields.ts                                                                                                                                                                                                                                                                                                                                                                       ▕
+                         │        modified:   convex/profiles.test.ts                                                                                                                                                                                                                                                                                                                                                                       ▕
+                         │        modified:   convex/profiles.ts                                                                                                                                                                                                                                                                                                                                                                            ▕
+                         │        modified:   convex/schema.ts                                                                                                                                                                                                                                                                                                                                                                              ▕
+                         │        modified:   convex/sharedNotes.test.ts                                                                                                                                                                                                                                                                                                                                                                    ▕
+                         │        modified:   graph/JOURNAL.md                                                                                                                                                                                                                                                                                                                                                                              ▕
+                         │        modified:   graph/PLAN.md                                                                                                                                                                                                                                                                                                                                                                                 ▕
+                         │        modified:   ios/Haven/Capture/ConvexCaptureSink.swift                                                                                                                                                                                                                                                                                                                                                     ▕
+                         │        modified:   ios/Haven/Directory/AddPersonDraft.swift                                                                                                                                                                                                                                                                                                                                                      ▕
+                         │        modified:   ios/Haven/Directory/AddPersonSheet.swift                                                                                                                                                                                                                                                                                                                                                      ▕
+                         │        modified:   ios/Haven/Directory/DirectoryScreen.swift                                                                                                                                                                                                                                                                                                                                                     ▕
+                         │        modified:   ios/Haven/Info.plist                                                                                                                                                                                                                                                                                                                                                                          ▕
+                         │        modified:   ios/Haven/Onboarding/CityCompleter.swift                                                                                                                                                                                                                                                                                                                                                      ▕
+                         │        modified:   ios/Haven/Onboarding/ContactValue.swift                                                                                                                                                                                                                                                                                                                                                       ▕
+                         │        modified:   ios/Haven/Search/SearchScreen.swift                                                                                                                                                                                                                                                                                                                                                           ▐
+                         │        modified:   ios/Haven/Shared/CaptureQueue.swift                                                                                                                                                                                                                                                                                                                                                           ▐
+                         │        modified:   ios/Haven/Shared/DirectoryMirror.swift                                                                                                                                                                                                                                                                                                                                                        ▐
+                         │        modified:   ios/Haven/Shared/ShareSheetModel.swift                                                                                                                                                                                                                                                                                                                                                        ▐
+                         │        modified:   ios/HavenShare/Info.plist                                                                                                                                                                                                                                                                                                                                                                     ▐
+ new                 menu│        modified:   ios/HavenShare/ShareInput.swift                                                                                                                                                                                                                                                                                                                                                               ▐
+─────────────────────────│        modified:   ios/HavenShare/ShareSheet.swift                                                                                                                                                                                                                                                                                                                                                               ▐
+ agents           grouped│        modified:   ios/HavenTests/AddPersonDraftTests.swift                                                                                                                                                                                                                                                                                                                                                      ▐
+                         │        modified:   ios/HavenTests/ContactValueTests.swift                                                                                                                                                                                                                                                                                                                                                        ▐
+ ○ haven · sky           │        modified:   ios/HavenTests/ShareSheetModelTests.swift                                                                                                                                                                                                                                                                                                                                                     ▐
+   claude                │        modified:   ios/project.yml                                                                                                                                                                                                                                                                                                                                                                               ▐
+ ○ haven · product-dev   │        modified:   package-lock.json                                                                                                                                                                                                                                                                                                                                                                             ▐
+   claude                │        modified:   package.json                                                                                                                                                                                                                                                                                                                                                                                  ▐
+ ○ haven · Friendy       │        modified:   public/downloads/YourSky.zip                                                                                                                                                                                                                                                                                                                                                                  ▐
+   claude                │        modified:   skills-lock.json                                                                                                                                                                                                                                                                                                                                                                              ▐
+ ○ haven · fuzzy         │        modified:   src/SearchAdd.test.tsx                                                                                                                                                                                                                                                                                                                                                                        ▐
+   claude                │        modified:   src/SearchAdd.tsx                                                                                                                                                                                                                                                                                                                                                                             ▐
+ ● haven · bug_fix       │        modified:   src/reach.test.ts                                                                                                                                                                                                                                                                                                                                                                             ▐
+   claude                │        modified:   src/reach.ts                                                                                                                                                                                                                                                                                                                                                                                  ▐
+ ○ haven · fuzzy_ui      │                                                                                                                                                                                                                                                                                                                                                                                                                  ▐
+   claude                │Untracked files:                                                                                                                                                                                                                                                                                                                                                                                                  ▐
+                         │  (use "git add <file>..." to include in what will be committed)                                                                                                                                                                                                                                                                                                                                                  ▐
+                         │        .claude/skills/polygres-cli/                                                                                                                                                                                                                                                                                                                                                                              ▐
+                         │        .claude/skills/polygres-retrieval-design/                                                                                                                                                                                                                                                                                                                                                                 ▐
+                         │        .claude/skills/polygres-sdk/                                                                                                                                                                                                                                                                                                                                                                              ▐
+                         │        .claude/skills/polygres-troubleshooting/                                                                                                                                                                                                                                                                                                                                                                  ▐
+                         │        docs/2026-07-30-imessage-connection-graph-research.md                                                                                                                                                                                                                                                                                                                                                     ▐
+                         │        docs/2026-07-31-polygres-network-design.md                                                                                                                                                                                                                                                                                                                                                                ▐
+                         │        docs/loop/                                                                                                                                                                                                                                                                                                                                                                                                ▐
+                         │        finc-demo/                                                                                                                                                                                                                                                                                                                                                                                                ▐
+                         │        ios/Haven/Contacts/                                                                                                                                                                                                                                                                                                                                                                                       ▐
+                         │        ios/Haven/Shared/NameSuggestion.swift                                                                                                                                                                                                                                                                                                                                                                     ▐
+                         │        ios/Haven/Shared/VCardContact.swift                                                                                                                                                                                                                                                                                                                                                                       ▐
+                         │        ios/HavenTests/ContactChangeStateTests.swift                                                                                                                                                                                                                                                                                                                                                              ▐
+                         │        ios/HavenTests/ContactImportMatchingTests.swift                                                                                                                                                                                                                                                                                                                                                           ▐
+                         │        ios/HavenTests/NameSuggestionTests.swift                                                                                                                                                                                                                                                                                                                                                                  ▐
+                         │        ios/HavenTests/PreviewGallerySnapshotTests.swift                                                                                                                                                                                                                                                                                                                                                          ▐
+                         │        ios/HavenTests/VCardContactTests.swift                                                                                                                                                                                                                                                                                                                                                                    ▐
+                         │        people.md                                                                                                                                                                                                                                                                                                                                                                                                 ▐
+                         │                                                                                                                                                                                                                                                                                                                                                                                                                  ▐
+                         │no changes added to commit (use "git add" and/or "git commit -a")                                                                                                                                                                                                                                                                                                                                                 ▐
+                         │                                                                                                                                                                                                                                                                                                                                                                                                                  ▐
+                        «│ ~/Desktop/Euno/euno-app | on main !44 ?17                                                                                                                                                                                                                                                                                                                                     ok | system node | at 04:28:34 PM  ▐
