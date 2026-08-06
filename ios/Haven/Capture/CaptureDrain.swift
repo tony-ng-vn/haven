@@ -29,52 +29,11 @@ protocol CaptureSink: Sendable {
     func saveManual(_ manual: QueuedCapture.Manual) async throws -> SharedProfileOutcome
 }
 
-/// Whether a `saveSharedProfile` outcome should be resubmitted once, with
-/// `attachToPersonId` cleared.
-///
-/// Only "conflict" ever needs it, and only when the capture actually asked to
-/// attach to somebody: that is the one conflict a resubmit can fix, because
-/// the refusal came from the caller's own attach guess losing to handle
-/// identity (see `saveSharedProfile` in convex/people.ts), and stripping the
-/// guess lets handle identity route the note to the true owner instead --
-/// the pre-conflict-era behavior, and it loses nothing.
-///
-/// A capture with no attach guess at all can still come back "conflict" --
-/// its handle's stored value already belongs to somebody else, from
-/// `mergeHandleIntoOwner`'s "refused" branch -- but nothing about a plain
-/// resubmit would change that answer, so this never retries it. `run()`
-/// treats that the same as a resubmit that conflicts a second time: a final
-/// conflict, kept rather than sent.
-enum ConflictRetry {
-    static func shouldRetry(_ outcome: SharedProfileOutcome, hadAttachToPersonId: Bool) -> Bool {
-        hadAttachToPersonId && outcome.status == "conflict"
-    }
-}
-
-extension QueuedCapture.Profile {
-    /// The same capture with `attachToPersonId` cleared, for `ConflictRetry`'s
-    /// one resubmit.
-    fileprivate var strippingAttach: Self {
-        Self(link: link, profileUrl: profileUrl, name: name, note: note, attachToPersonId: nil)
-    }
-}
-
-extension QueuedCapture.Manual {
-    /// The same capture with `attachToPersonId` cleared, for `ConflictRetry`'s
-    /// one resubmit.
-    fileprivate var strippingAttach: Self {
-        Self(
-            name: name, platform: platform, handleValue: handleValue, profileUrl: profileUrl,
-            note: note, attachToPersonId: nil, source: source, platformId: platformId
-        )
-    }
-}
-
 /// What one pass of the drain did.
 struct DrainResult: Equatable, Sendable {
     var sent = 0
     /// Could not be sent this time, still waiting -- no network, or a final
-    /// conflict (see `ConflictRetry`) that landed nowhere. Either way the
+    /// conflict that landed nowhere. Either way the
     /// queue item is the one copy of what was written, and it stays.
     var kept = 0
     /// Could never be sent, so keeping it would mean retrying forever.
@@ -153,24 +112,20 @@ struct CaptureDrain {
             case .profile(let profile):
                 await process(
                     captureId: capture.id,
-                    hadAttachToPersonId: profile.attachToPersonId != nil,
                     displayName: profile.name,
                     platform: profile.link.platform.rawValue,
                     into: &result,
                     remove: { try? queue.remove(capture) },
-                    send: { try await bounded { try await sink.saveProfile(profile) } },
-                    resend: { try await bounded { try await sink.saveProfile(profile.strippingAttach) } }
+                    send: { try await bounded { try await sink.saveProfile(profile) } }
                 )
             case .manual(let manual):
                 await process(
                     captureId: capture.id,
-                    hadAttachToPersonId: manual.attachToPersonId != nil,
                     displayName: manual.name,
                     platform: manual.platform,
                     into: &result,
                     remove: { try? queue.remove(capture) },
-                    send: { try await bounded { try await sink.saveManual(manual) } },
-                    resend: { try await bounded { try await sink.saveManual(manual.strippingAttach) } }
+                    send: { try await bounded { try await sink.saveManual(manual) } }
                 )
             case .screenshot(let screenshot):
                 let url = queue.imageURL(named: screenshot.fileName)
@@ -197,42 +152,29 @@ struct CaptureDrain {
         return result
     }
 
-    /// Sends one shared-profile or manual capture, resubmitting once on a
-    /// retryable conflict, and folds whatever comes back into `result`.
+    /// Sends one shared-profile or manual capture and folds the answer into
+    /// `result`.
     ///
     /// Shared by both `.profile` and `.manual`: the payloads differ, but what
-    /// happens to their answer -- retry once, then land, keep, or report --
-    /// does not, and Y1's fix needed both branches to treat a final conflict
-    /// identically, which is what made keeping only one copy of this worth
-    /// doing.
+    /// happens to their answer -- land, keep, or report -- does not. A
+    /// conflict is never retried after removing `attachToPersonId`: that id is
+    /// the person's explicit choice, and stripping it can silently route the
+    /// note to somebody else.
     private func process(
         captureId: UUID,
-        hadAttachToPersonId: Bool,
         displayName: String,
         platform: String,
         into result: inout DrainResult,
         remove: () -> Void,
-        send: () async throws -> SharedProfileOutcome,
-        resend: () async throws -> SharedProfileOutcome
+        send: () async throws -> SharedProfileOutcome
     ) async {
         do {
-            var outcome = try await send()
-            if ConflictRetry.shouldRetry(outcome, hadAttachToPersonId: hadAttachToPersonId) {
-                // Exactly one resubmit -- whatever this answers is final,
-                // even a second "conflict". No retry loop.
-                outcome = try await resend()
-            }
+            let outcome = try await send()
             if outcome.status == "conflict" {
-                // Nothing was written on this branch, whether that is the
-                // original answer (no attach guess to strip and retry with)
-                // or the resubmit's own answer (retried once, still no).
-                // The one copy of what was written is this queue item, so
-                // it is kept -- the same retained-for-retry treatment a
-                // network failure gets below -- not sent. A later pass
-                // retries this same capture again, which will replay this
-                // exact conflict until something about it actually changes
-                // -- Z1: that replay must not notify a second time, so the
-                // person learns once, not on every future launch.
+                // Nothing was written. The queue item is the one copy of the
+                // note, so it is kept rather than rerouted or discarded. A
+                // later pass retries the same intact choice; Z1 ensures that
+                // replay does not notify again until something changes.
                 result.kept += 1
                 if !conflictMarks.hasNotified(captureId) {
                     conflictMarks.markNotified(captureId)

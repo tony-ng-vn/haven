@@ -15,13 +15,12 @@ private final class FakeSink: CaptureSink, @unchecked Sendable {
     /// Handles whose save answers `handleDropped: true` -- the account could
     /// not fit under the 8-handle cap on the person it landed on.
     var handleDropping: Set<String> = []
-    /// Handles whose first save answers "conflict" -- every call after the
-    /// first, for that same handle, answers "created" instead. Models the
-    /// server routing a resubmitted (attach-stripped) capture to the true
-    /// owner.
+    /// Handles whose first save answers "conflict" -- every later drain pass
+    /// answers "created" instead. Models the underlying identity disagreement
+    /// being resolved without changing the queued capture's attach choice.
     var conflictingOnce: Set<String> = []
     /// Handles whose every save answers "conflict", proving the drain never
-    /// resubmits more than once no matter how the retry itself comes back.
+    /// reroutes the capture by changing its attach choice.
     var alwaysConflicting: Set<String> = []
     private var callCounts: [String: Int] = [:]
     /// Handles whose save takes far longer than this test could ever wait out
@@ -381,12 +380,11 @@ struct CaptureDrainTests {
         #expect(result == DrainResult())
     }
 
-    // The caller's "same person?" guess lost to handle identity, and the
-    // server wrote nothing on that branch -- stripping the attach and
-    // resubmitting lets handle identity route the note to the true owner
-    // instead, which is what saves the note rather than losing it silently.
-    @Test("a conflicted profile is resubmitted once without the attach, and counted as sent")
-    func conflictedProfileResubmits() async throws {
+    // The caller explicitly chose who this capture belongs to. If the server
+    // says the handle belongs to somebody else, changing that choice in the
+    // background would put the note on the wrong person.
+    @Test("a conflicted profile preserves the attach choice and stays queued")
+    func conflictedProfileStaysQueued() async throws {
         let (queue, root) = makeQueue()
         defer { try? FileManager.default.removeItem(at: root) }
         try queue.enqueue(profile("mai.makes", at: 100, attachToPersonId: "wrong-person"))
@@ -395,17 +393,15 @@ struct CaptureDrainTests {
 
         let result = await CaptureDrain(queue: queue, sink: sink).run()
 
-        #expect(sink.profiles.count == 2)
+        #expect(sink.profiles.count == 1)
         #expect(sink.profiles[0].attachToPersonId == "wrong-person")
-        // The resubmit is the same capture with only the attach cleared.
-        #expect(sink.profiles[1].attachToPersonId == nil)
-        #expect(sink.profiles[1].link.handle == "mai.makes")
-        #expect(result.sent == 1)
-        #expect(queue.pending().isEmpty)
+        #expect(result.sent == 0)
+        #expect(result.kept == 1)
+        #expect(queue.pending().count == 1)
     }
 
-    @Test("a conflicted manual add is resubmitted once without the attach")
-    func conflictedManualResubmits() async throws {
+    @Test("a conflicted manual add preserves the attach choice and stays queued")
+    func conflictedManualStaysQueued() async throws {
         let (queue, root) = makeQueue()
         defer { try? FileManager.default.removeItem(at: root) }
         try queue.enqueue(manual("mai_makes", at: 100, attachToPersonId: "wrong-person"))
@@ -414,11 +410,11 @@ struct CaptureDrainTests {
 
         let result = await CaptureDrain(queue: queue, sink: sink).run()
 
-        #expect(sink.manuals.count == 2)
+        #expect(sink.manuals.count == 1)
         #expect(sink.manuals[0].attachToPersonId == "wrong-person")
-        #expect(sink.manuals[1].attachToPersonId == nil)
-        #expect(result.sent == 1)
-        #expect(queue.pending().isEmpty)
+        #expect(result.sent == 0)
+        #expect(result.kept == 1)
+        #expect(queue.pending().count == 1)
     }
 
     // A capture that never asked to attach cannot conflict on the server
@@ -438,14 +434,10 @@ struct CaptureDrainTests {
         #expect(result.sent == 1)
     }
 
-    // The resubmit is exactly one attempt, not a loop: if the server somehow
-    // conflicts again, that second answer is final. Nothing was ever written
-    // for this capture -- the note itself is still only on this device --
-    // so the queue item is the one copy of it, kept for the next pass the
-    // same way a network failure is, not counted sent, and never retried a
-    // third time.
-    @Test("a second conflict on the resubmit is final, and the capture is kept, not sent")
-    func secondConflictIsFinal() async throws {
+    // A conflict is final for this pass. The queue item is the one copy of the
+    // note, so it stays on the device instead of being rerouted or discarded.
+    @Test("a conflict with an attach choice is final for this pass")
+    func conflictWithAttachIsFinal() async throws {
         let (queue, root) = makeQueue()
         defer { try? FileManager.default.removeItem(at: root) }
         try queue.enqueue(profile("mai.makes", at: 100, attachToPersonId: "wrong-person"))
@@ -454,20 +446,14 @@ struct CaptureDrainTests {
 
         let result = await CaptureDrain(queue: queue, sink: sink).run()
 
-        // Exactly two calls -- the original and the one resubmit -- never a
-        // third.
-        #expect(sink.profiles.count == 2)
+        #expect(sink.profiles.count == 1)
         #expect(result.sent == 0)
         #expect(result.kept == 1)
         #expect(queue.pending().count == 1)
     }
 
-    // The other way a final conflict can happen: the handle's stored value
-    // already belongs to somebody else (`mergeHandleIntoOwner`'s "refused"
-    // branch in convex/people.ts), which has nothing to do with an attach
-    // guess and so is never retried at all -- see ConflictRetryTests. Same
-    // ending as the resubmit case: nothing landed, so the capture is kept,
-    // not sent.
+    // A handle's stored value can also conflict without an attach choice.
+    // Nothing landed, so the capture is kept, not sent.
     @Test("a conflict on a capture that never had an attach guess is also kept, not sent")
     func conflictWithNoAttachIsKept() async throws {
         let (queue, root) = makeQueue()
@@ -478,8 +464,7 @@ struct CaptureDrainTests {
 
         let result = await CaptureDrain(queue: queue, sink: sink).run()
 
-        // No attach guess means no retry -- ConflictRetry.shouldRetry never
-        // fires, so the server is asked exactly once.
+        // The server is asked exactly once.
         #expect(sink.profiles.count == 1)
         #expect(result.sent == 0)
         #expect(result.kept == 1)
@@ -658,8 +643,8 @@ struct HandleDroppedTests {
 // own reason and copy, since "your handles are full" would be wrong here.
 @Suite("A final conflict is reported like a dropped handle, with its own reason")
 struct FinalConflictNoticeTests {
-    @Test("a conflict that survives the resubmit reports the true owner as a conflict, not a drop")
-    func resubmitConflictReportsEvent() async throws {
+    @Test("a conflict reports the true owner as a conflict, not a drop")
+    func conflictReportsEvent() async throws {
         let (queue, root) = makeQueue()
         defer { try? FileManager.default.removeItem(at: root) }
         try queue.enqueue(profile("mai.makes", at: 100, attachToPersonId: "wrong-person"))
@@ -705,9 +690,8 @@ struct SharedProfileOutcomeTests {
     // optional in `saveSharedProfile`'s return validator -- so there is no
     // "response from before this field existed" to be lenient about, unlike
     // `Person.Handle`'s provenance fields, which really do predate some rows.
-    // The `= false` default exists only so a test can build one with three
-    // arguments (see `ConflictRetryTests.outcome`), not to make a missing key
-    // decode successfully.
+    // The `= false` default keeps the memberwise initializer useful in tests;
+    // it does not make a missing JSON key decode successfully.
     @Test("handleDropped decodes true when the server sends it")
     func decodesTrue() throws {
         let json = """
@@ -724,35 +708,5 @@ struct SharedProfileOutcomeTests {
             """
         let outcome = try JSONDecoder().decode(SharedProfileOutcome.self, from: Data(json.utf8))
         #expect(!outcome.handleDropped)
-    }
-}
-
-@Suite("Whether a conflicted save should be resubmitted")
-struct ConflictRetryTests {
-    private func outcome(status: String) -> SharedProfileOutcome {
-        SharedProfileOutcome(status: status, personId: "p1", noteTruncated: false)
-    }
-
-    @Test("a conflict with an attach on the capture is retried")
-    func retries() {
-        #expect(ConflictRetry.shouldRetry(outcome(status: "conflict"), hadAttachToPersonId: true))
-    }
-
-    @Test("a conflict with no attach on the capture is never retried")
-    func noAttachNoRetry() {
-        // The server can also answer "conflict" with no attach guess in play
-        // at all -- the handle's stored value already belongs to somebody
-        // else (see convex/people.ts's mergeHandleIntoOwner "refused"
-        // branch) -- and a plain resubmit would only ask the same question
-        // again and get the same answer, so this never retries it either.
-        #expect(!ConflictRetry.shouldRetry(outcome(status: "conflict"), hadAttachToPersonId: false))
-    }
-
-    @Test("any non-conflict status is never retried, attach or not")
-    func nonConflictNeverRetries() {
-        for status in ["created", "already", "attached"] {
-            #expect(!ConflictRetry.shouldRetry(outcome(status: status), hadAttachToPersonId: true))
-            #expect(!ConflictRetry.shouldRetry(outcome(status: status), hadAttachToPersonId: false))
-        }
     }
 }
