@@ -17,6 +17,14 @@ enum ShareSubject: Equatable, Sendable {
     /// An image already copied into the App Group container. The extension
     /// never uploads it; the app's drain does.
     case screenshot(fileName: String)
+    /// A contact shared from Apple's Contacts app (or a .vcf from Files):
+    /// the name on the card, plus the one handle it saves against. Reuses
+    /// `people:saveSharedProfile` through the `.manual` capture the way a
+    /// hand-typed WhatsApp or Telegram add already does -- a phone or an
+    /// email is not one of the three platforms `ProfileLink` names, but the
+    /// mutation was always keyed on a free-form platform string, not on
+    /// `SharedPlatform`.
+    case contact(name: String, platform: String, handleValue: String)
 
     /// Reads a shared URL, or nil when it is not one person's profile.
     ///
@@ -65,6 +73,28 @@ enum ShareSubject: Equatable, Sendable {
         return nil
     }
 
+    /// Reads a shared Contacts card, or nil when it names nobody, or names
+    /// somebody with neither a phone nor an email to save them under.
+    ///
+    /// `saveSharedProfile` dedups on a handle; a name with no way to reach
+    /// them can never drain, so it is not a subject any more than an
+    /// unrecognized URL is.
+    ///
+    /// Phone wins over email when a card carries both: it is the stronger
+    /// key, less likely to be entered two different ways by two different
+    /// apps than an email address is -- `VCardContact` owns the extraction,
+    /// this owns deciding which of what it found is worth keying on.
+    init?(vCard data: Data) {
+        guard let parsed = VCardContact.parse(data) else { return nil }
+        if let phone = parsed.phone {
+            self = .contact(name: parsed.name, platform: "phone", handleValue: phone)
+        } else if let email = parsed.email {
+            self = .contact(name: parsed.name, platform: "email", handleValue: email)
+        } else {
+            return nil
+        }
+    }
+
     /// The profile URL without the share sheet's tracking noise (`?s=`,
     /// `?igsh=`, the four `utm_*`), so re-sharing one person twice does not
     /// file two different URLs against them.
@@ -106,8 +136,14 @@ struct ShareSheetModel {
     /// keys on exactly this pair. Then the sheet is not asking who this is, it
     /// is showing who it already is.
     var alreadyKnown: MirrorPerson? {
-        guard case .profile(let link, _) = subject else { return nil }
-        return mirror?.person(holding: link)
+        switch subject {
+        case .profile(let link, _):
+            return mirror?.person(holding: link)
+        case .contact(_, let platform, let handleValue):
+            return mirror?.person(holding: platform, value: handleValue)
+        case .screenshot:
+            return nil
+        }
     }
 
     /// What the name field starts with.
@@ -116,7 +152,10 @@ struct ShareSheetModel {
     /// worth confirming; Instagram and X hand over a handle, and a field
     /// prefilled with a handle looks like a name without being one -- a fast
     /// tap-through would save a person named after their account. The handle
-    /// goes in `identityLine` instead, where it is true.
+    /// goes in `identityLine` instead, where it is true. A contact card is
+    /// the one subject that carries an actual name rather than a guess or a
+    /// handle, and it fills the field for the same reason `alreadyKnown`
+    /// does below: editable, never automated past the point of a glance.
     ///
     /// Re-examined in wave G4 and left exactly as PR 129 shipped it. The case
     /// for prefilling is that most people's Instagram handle is close to their
@@ -127,22 +166,33 @@ struct ShareSheetModel {
     /// careless one.
     var namePrefill: String {
         if let known = alreadyKnown { return known.name }
-        guard case .profile(let link, _) = subject, link.platform == .linkedin else {
+        switch subject {
+        case .profile(let link, _) where link.platform == .linkedin:
+            return ProfileURL.nameGuess(fromSlug: link.handle)
+        case .contact(let name, _, _):
+            return name
+        default:
             return ""
         }
-        return ProfileURL.nameGuess(fromSlug: link.handle)
     }
 
     /// The line under the name field: the account, which is the part that is
     /// known rather than guessed.
     ///
     /// A LinkedIn slug is not a handle anyone recognizes, so it reads as the
-    /// URL it is.
+    /// URL it is. A contact card's handle is a phone or an email; either
+    /// already reads as itself.
     var identityLine: String? {
-        guard case .profile(let link, _) = subject else { return nil }
-        switch link.platform {
-        case .linkedin: return "linkedin.com/in/\(link.handle)"
-        case .instagram, .x: return "@\(link.handle) on \(link.platform.displayName)"
+        switch subject {
+        case .profile(let link, _):
+            switch link.platform {
+            case .linkedin: return "linkedin.com/in/\(link.handle)"
+            case .instagram, .x: return "@\(link.handle) on \(link.platform.displayName)"
+            }
+        case .contact(_, _, let handleValue):
+            return handleValue
+        case .screenshot:
+            return nil
         }
     }
 
@@ -152,9 +202,35 @@ struct ShareSheetModel {
     /// and Haven never decides two people are one. Nobody is suggested when
     /// the account is already on file -- offering to attach somebody to
     /// themselves is noise.
+    ///
+    /// A LinkedIn share folds the name through the same close-match machinery
+    /// `AddPersonSheet` uses (`NameSuggestion`, see Brief 3) -- a re-shared
+    /// profile with a new slug is exactly the "typed a name that is already
+    /// in the directory" case, just typed by whoever re-shared it rather than
+    /// by the user, and it is the one platform Haven cannot reopen on a
+    /// rename (`PersonReach.openURL`), so catching the same person under a
+    /// changed slug is worth a fuzzy match. A contact card keeps the exact
+    /// fold: a card's name is the one Apple has on file, not somebody's guess
+    /// at a slug, and widening it to fuzzy would offer strangers who merely
+    /// sound alike.
     var nameMatches: [MirrorPerson] {
         guard alreadyKnown == nil, !namePrefill.isEmpty else { return [] }
-        return mirror?.people(named: namePrefill) ?? []
+        guard let mirror else { return [] }
+        if isLinkRefreshOffer {
+            return mirror.nameSuggestions(for: namePrefill).map(\.person)
+        }
+        return mirror.people(named: namePrefill)
+    }
+
+    /// Whether the "same person?" offer above is a LinkedIn link refresh.
+    ///
+    /// It reads differently from the generic offer -- not "is this the same
+    /// person", but "this looks like a new link for somebody already saved" --
+    /// because a LinkedIn slug is the one profile URL that changes on its own
+    /// when somebody renames.
+    var isLinkRefreshOffer: Bool {
+        if case .profile(let link, _) = subject { return link.platform == .linkedin }
+        return false
     }
 
     /// The rest of the directory, for when the guess found nobody.
@@ -204,6 +280,21 @@ struct ShareSheetModel {
         case .screenshot(let fileName):
             payload = .screenshot(
                 QueuedCapture.Screenshot(fileName: fileName, note: note)
+            )
+        case .contact(_, let platform, let handleValue):
+            // Reuses `.manual`, the same payload a hand-typed WhatsApp or
+            // Telegram add already queues: one platform, one handle, no web
+            // profile to point back at.
+            payload = .manual(
+                QueuedCapture.Manual(
+                    name: name,
+                    platform: platform,
+                    handleValue: handleValue,
+                    profileUrl: "",
+                    note: note,
+                    attachToPersonId: attachTo?.id,
+                    source: "imported"
+                )
             )
         }
         return QueuedCapture(id: id, capturedAt: capturedAt, payload: payload)

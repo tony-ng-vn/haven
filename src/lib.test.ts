@@ -6,6 +6,7 @@ import {
   CAPTURE_QUEUE_CAP,
   composeAtlasField,
   canSaveManualName,
+  captureWasSaved,
   composeHeadline,
   composeName,
   decideSwipe,
@@ -526,6 +527,21 @@ describe("triageCountLabel", () => {
     expect(triageCountLabel(CAPTURE_QUEUE_CAP)).toBe(
       `${CAPTURE_QUEUE_CAP}+ to review`,
     );
+  });
+});
+
+describe("captureWasSaved", () => {
+  // A refused merge (identity brief, R5) writes nothing and leaves the
+  // capture in triage -- the one accept outcome that must not tick the
+  // saved count up or let the card fly off as though it landed.
+  test("a conflict outcome did not save", () => {
+    expect(captureWasSaved({ status: "conflict" })).toBe(false);
+  });
+
+  test("created, attached and already all count as saved", () => {
+    expect(captureWasSaved({ status: "created" })).toBe(true);
+    expect(captureWasSaved({ status: "attached" })).toBe(true);
+    expect(captureWasSaved({ status: "already" })).toBe(true);
   });
 });
 

@@ -1,11 +1,43 @@
 /// <reference types="vite/client" />
-import { convexTest, type TestConvex } from "convex-test";
+import {
+  convexTest,
+  type TestConvex,
+  type TestConvexForDataModel,
+} from "convex-test";
 import { afterEach, expect, test, vi } from "vitest";
+import type { DataModelFromSchemaDefinition, FunctionArgs } from "convex/server";
 import { api } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import { handleValueKey } from "./handleKeys";
 
 const modules = import.meta.glob("./**/*.ts");
+
+// addPerson now returns a creation outcome, not a bare id (identity brief,
+// task 2). Every call in this file exists only to seed a person for some
+// other feature under test, so this unwraps the common case and throws
+// loudly on a surprise collision instead of silently attaching to the
+// wrong person.
+async function addPersonId(
+  as: TestConvexForDataModel<DataModelFromSchemaDefinition<typeof schema>>,
+  args: FunctionArgs<typeof api.people.addPersonWithOutcome>,
+): Promise<Id<"people">> {
+  const result = await as.mutation(api.people.addPersonWithOutcome, args);
+  if (result.status !== "created") {
+    throw new Error(`addPersonId: expected created, got ${result.status}`);
+  }
+  return result.personId;
+}
+
+// Strips provenance (source, platformId, addedAt) so tests about handle
+// mechanics can keep asserting on platform and value alone. Tests about
+// provenance itself compare the full shape directly instead of going
+// through this.
+function displayOnly(
+  handles: Array<{ platform: string; value: string }> | undefined,
+): Array<{ platform: string; value: string }> | undefined {
+  return handles?.map(({ platform, value }) => ({ platform, value }));
+}
 
 // Only the tests that drain the scheduler touch timers or the network, so
 // both are opt-in per test and restored here rather than set up globally.
@@ -256,6 +288,18 @@ test("updateMyProfile stores an accent-insensitive city key for Phase 3 filterin
 
   expect(saved.city).toMatchObject({ name: "Đà Nẵng" });
   expect((await storedProfile(t, me.userId))?.city?.normalized).toBe("da nang");
+});
+
+test("updateMyProfile rejects a phone handle with no digit at all", async () => {
+  const t = convexTest(schema, modules);
+  const me = asNewUser(t);
+  await me.as.mutation(api.profiles.updateMyProfile, { name: "Maya Chen" });
+
+  await expect(
+    me.as.mutation(api.profiles.updateMyProfile, {
+      handles: [{ platform: "phone", value: "unknown", verified: false }],
+    }),
+  ).rejects.toThrow("A phone number needs at least one digit");
 });
 
 test("updateMyProfile allows one handle per platform only", async () => {
@@ -530,7 +574,7 @@ test("deleteMyAccount removes the caller's profile and everything they own", asy
     photoStorageId,
     handles: [{ platform: "x", value: "mayachen", verified: true }],
   });
-  await me.as.mutation(api.people.addPerson, {
+  await me.as.mutation(api.people.addPersonWithOutcome, {
     name: "Ada Lovelace",
     contactHandles: [{ platform: "x", value: "ada" }],
     context: "Met at a conference.",
@@ -584,7 +628,7 @@ test("deleteMyAccount leaves other people's rows alone", async () => {
   await other.as.mutation(api.profiles.updateMyProfile, {
     name: "Ada Lovelace",
   });
-  await other.as.mutation(api.people.addPerson, {
+  await other.as.mutation(api.people.addPersonWithOutcome, {
     name: "Maya Chen",
     contactHandles: [{ platform: "x", value: "mayachen" }],
     context: "Met through Haven.",
@@ -1359,9 +1403,9 @@ test("deleting a connected contact takes the edge and its shared note", async ()
 test("deleting an account takes that account's own memories with it", async () => {
   const t = convexTest(schema, modules);
   const alice = asNewUser(t);
-  const personId = await alice.as.mutation(api.people.addPerson, {
+  const personId = await addPersonId(alice.as, {
     name: "Ada Lovelace",
-    contactHandles: [{ platform: "phone", value: "unlisted" }],
+    contactHandles: [{ platform: "phone", value: "unlisted1" }],
     context: "met at the compiler meetup",
   });
   expect(
@@ -1567,9 +1611,9 @@ test("the person payload says a contact is a live connection", async () => {
 test("a contact the owner saved themselves is not a connection", async () => {
   const t = convexTest(schema, modules);
   const alice = asNewUser(t);
-  const personId = await alice.as.mutation(api.people.addPerson, {
+  const personId = await addPersonId(alice.as, {
     name: "Ada Lovelace",
-    contactHandles: [{ platform: "phone", value: "unlisted" }],
+    contactHandles: [{ platform: "phone", value: "unlisted1" }],
     context: "met at the compiler meetup",
   });
 
@@ -1671,7 +1715,7 @@ test("the owner's own handle for a connection wins over the peer's card", async 
   // Their card is theirs, but a handle the owner typed is their layer, and
   // the overlay puts the owner's layer on top.
   const person = await alice.as.query(api.people.getPerson, { id: personId });
-  expect(person?.contactHandles).toEqual([
+  expect(displayOnly(person?.contactHandles)).toEqual([
     { platform: "instagram", value: "bob.the.second" },
   ]);
 });
@@ -1762,9 +1806,9 @@ test("a disconnected pair can connect again", async () => {
 test("disconnect says so when there was no connection to end", async () => {
   const t = convexTest(schema, modules);
   const alice = asNewUser(t);
-  const personId = await alice.as.mutation(api.people.addPerson, {
+  const personId = await addPersonId(alice.as, {
     name: "Ada Lovelace",
-    contactHandles: [{ platform: "phone", value: "unlisted" }],
+    contactHandles: [{ platform: "phone", value: "unlisted1" }],
     context: "met at the compiler meetup",
   });
 

@@ -9,6 +9,8 @@
 // person's platforms are free-form on purpose: your own card offers four, and
 // somebody you wrote down can carry any handle you wanted to record.
 
+import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
+
 type Known = {
   label: string;
   /// The addresses this platform serves a profile from. The first is the one
@@ -91,6 +93,55 @@ export function reachPlaceholder(platform: string): string {
     : "Paste a link or type the handle";
 }
 
+// LinkedIn frees a custom URL slug back into its pool six months after the
+// account holding it either changes it or the account closes -- so a saved
+// linkedin handle old enough to have crossed that window might, by now,
+// belong to someone else or nobody at all. Approximate (30-day months, not
+// calendar ones): the product question this answers is "is it worth a
+// second look", not a precise anniversary.
+const LINKEDIN_STALE_WINDOW_MS = 1000 * 60 * 60 * 24 * 30 * 6;
+
+/// Whether a saved handle is old enough on LinkedIn specifically to be worth
+/// a second look. Any other platform, or a handle with no addedAt at all
+/// (saved before that field existed), reads as not-stale rather than
+/// guessing -- a false "still the right link?" on a handle nobody can date is
+/// worse than staying quiet.
+export function isLinkedInHandleStale(
+  platform: string,
+  addedAt: number | undefined,
+  now: number = Date.now(),
+): boolean {
+  if (normalize(platform) !== "linkedin" || addedAt === undefined) return false;
+  return now - addedAt > LINKEDIN_STALE_WINDOW_MS;
+}
+
+/// The browser's own region evidence: undefined for a bare locale like "en"
+/// with no country subtag, same as having no evidence at all. Never widened
+/// with Intl's likely-subtag guessing -- an assumed region is exactly the
+/// guess convex/handleKeys.ts refuses to make server-side, so the client
+/// should not manufacture one either.
+function browserRegion(): string | undefined {
+  if (typeof navigator === "undefined") return undefined;
+  try {
+    return new Intl.Locale(navigator.language).region;
+  } catch {
+    return undefined;
+  }
+}
+
+/// Folds a phone/whatsapp entry to E.164 when it parses as a valid number,
+/// given a region to fall back on for a number typed without its own country
+/// code. Exported (region as an explicit param, not read from the browser
+/// inside) so a test can pin "US" without mocking navigator. Unparseable or
+/// invalid input is returned unchanged -- the caller stores it as typed.
+export function normalizePhoneEntry(raw: string, region?: string): string {
+  const parsed = parsePhoneNumberFromString(
+    raw,
+    region as CountryCode | undefined,
+  );
+  return parsed !== undefined && parsed.isValid() ? parsed.number : raw;
+}
+
 /// `[0-9]` as JavaScript means it, which is what the iOS side spells
 /// `isASCIIDigit` so a number is read the same on both.
 function digitsOnly(value: string): string {
@@ -129,10 +180,28 @@ function escapeForPath(value: string): string {
 /// Null is an ordinary answer. A handle on a platform Haven has never heard of
 /// is a real way to reach somebody and the row still shows it; it just does not
 /// promise a tap it cannot keep.
-export function reachUrl(platform: string, value: string): string | null {
+///
+/// platformId is optional and, today, only changes anything for x/twitter: an
+/// X username can be changed by its owner but the numeric id behind it never
+/// is, and X's own docs recommend linking by id for exactly that reason
+/// (https://developer.x.com/en/docs/x-ids). A caller that has one on the
+/// handle (Composio proved it -- see convex/composio.ts's extractPlatformId)
+/// gets a link that survives a rename the username-based address below
+/// cannot; a caller with no id, or on any other platform, gets the same
+/// fallback this always returned.
+export function reachUrl(
+  platform: string,
+  value: string,
+  platformId?: string,
+): string | null {
   const trimmed = value.trim();
   const entry = known(platform);
   if (trimmed === "" || entry === undefined) return null;
+
+  const folded = normalize(platform);
+  if ((folded === "x" || folded === "twitter") && platformId !== undefined && platformId !== "") {
+    return `https://x.com/intent/user?user_id=${encodeURIComponent(platformId)}`;
+  }
 
   const [address] = entry.addresses;
   if (address !== undefined) {
@@ -182,16 +251,27 @@ export function reachUrl(platform: string, value: string): string | null {
 /// every unreadable paste for one platform would collapse onto the SAME key and
 /// two unrelated people would collide in personHandles.
 ///
-/// A number is kept as typed. iOS folds one to E.164 with libphonenumber, which
-/// takes that whole library to do honestly. Reading a number back is handled in
-/// reachUrl, but the two platforms do still disagree on the stored string, so a
-/// person saved on both makes two keys rather than one. That is a real gap and
-/// closing it needs a phone library here, not a regex.
+/// A number is folded to E.164 with libphonenumber-js the same way iOS folds
+/// one with PhoneNumberKit, using the browser's own locale as the region a
+/// number typed without a country code defaults to -- the web has that
+/// evidence, unlike the server, which refuses to guess one (see
+/// convex/handleKeys.ts). A number that does not parse as valid is kept as
+/// typed rather than guessed at.
 export function reachValue(platform: string, raw: string): string | null {
   const trimmed = raw.trim();
   if (trimmed === "") return null;
+  if (isPhoneNumber(platform)) {
+    // A value with no digit at all ("call me", a typo) is not a number
+    // Haven can fold -- handleValueKey's phone fold falls back to a plain
+    // lowercase string for exactly this case (convex/handleKeys.ts), which
+    // two different unreadable pastes could otherwise collide on. Refused
+    // here rather than stored: the same gate the server enforces, on the
+    // client, before the value is ever saved.
+    if (digitsOnly(trimmed) === "") return null;
+    return normalizePhoneEntry(trimmed, browserRegion());
+  }
   const entry = known(platform);
-  if (entry === undefined || isPhoneNumber(platform)) return trimmed;
+  if (entry === undefined) return trimmed;
 
   // Whether this reads as a web address at all. A handle cannot hold a colon or
   // a slash, and a bare host is an address somebody stopped typing.

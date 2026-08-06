@@ -31,7 +31,7 @@ struct ShareSheet: View {
                 DeadEnd(
                     title: "Not a profile",
                     detail:
-                        "Share somebody's profile from Instagram, LinkedIn or X, or share a screenshot of one.",
+                        "Share somebody's profile from Instagram, LinkedIn or X, share a screenshot of one, or share their contact card.",
                     onCancel: onCancel
                 )
             case .unavailable:
@@ -158,7 +158,10 @@ private struct ShareForm: View {
             searchField
         } else if !model.nameMatches.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Same person?")
+                // A LinkedIn slug that folds to somebody already saved reads
+                // as a link refresh, not a "who is this" question -- the
+                // person is not new, only their link changed.
+                Text(model.isLinkRefreshOffer ? "Same person? Update their link" : "Same person?")
                     .havenGroupLabel()
                 // Offered, never applied: a name is not a unique key, and two
                 // people really can share one.

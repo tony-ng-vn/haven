@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useQuery, useMutation, useAction, useConvex } from "convex/react";
 import {
   useEffect,
   useMemo,
@@ -20,6 +20,7 @@ import {
   reachPlaceholder,
   reachValue,
 } from "./reach";
+import { nameSuggestions } from "./nameSuggestion";
 
 type SemanticResults = FunctionReturnType<typeof api.people.semanticSearch>;
 
@@ -90,6 +91,33 @@ function ClearIcon() {
   );
 }
 
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="m5 13 4 4L19 7"
+        stroke="currentColor"
+        strokeWidth="2.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// What tells two same-named people apart in the "Same person?" list: up to
+// two of their saved handles, the same disambiguator
+// AddPersonSheet.swift's own suggestion row shows on iOS.
+function disambiguator(handles: PersonSnapshot["contactHandles"]): string | null {
+  if (handles === undefined || handles.length === 0) return null;
+  const shown = handles
+    .slice(0, 2)
+    .map((handle) =>
+      isPhoneNumber(handle.platform) ? handle.value : `@${handle.value}`,
+    );
+  return shown.join(" \u00b7 ");
+}
+
 // Track the live viewport so the spiral layout and dust field fill the whole
 // screen and reflow on resize (the sky is full-bleed, not inside .app-main).
 function useViewport() {
@@ -129,7 +157,21 @@ export function SearchAdd({
   // The live name search drives which clusters stay lit. Two subscriptions to
   // the same function; when the query is empty they dedupe to one.
   const nameMatches = useQuery(api.people.searchPeople, { query });
-  const addPerson = useMutation(api.people.addPerson);
+  // The "Same person?" suggester's own candidate pool -- deliberately NOT
+  // nameMatches. Convex's own text search index does not typo-match ("Meya"
+  // never surfaces "Maya" no matter what SearchAdd feeds it), so the
+  // client-side edit-distance suggester (nameSuggestion.ts) needs a broad,
+  // query-independent pool to run its own matching over. listPersonNames is
+  // that pool: every one of the caller's people, not the 20-capped recent
+  // list or a server-search-scoped one.
+  const suggestionPool = useQuery(api.people.listPersonNames, {});
+  const convex = useConvex();
+  // addPersonWithOutcome, not addPerson: the web needs to know which of
+  // created/attached/already/conflict happened (to open the right person,
+  // or refuse silently on a conflict) -- addPerson itself reverted to a bare
+  // Id<"people"> so old open tabs from before this outcome shape existed
+  // keep working (identity brief, task 5, S4).
+  const addPerson = useMutation(api.people.addPersonWithOutcome);
   const semanticSearch = useAction(api.people.semanticSearch);
   const [adding, setAdding] = useState(false);
   // Manual add needs identity and a story (backend-required), so the one-tap
@@ -142,6 +184,18 @@ export function SearchAdd({
   const [addHandle, setAddHandle] = useState("");
   const [addNote, setAddNote] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
+  // Set when a save landed but the person's handle array was already full
+  // (identity brief, R6): the note is safely saved, but silently navigating
+  // to them would hide the one thing the handle was for -- so this holds
+  // the form open with a notice instead of the usual auto-open.
+  const [handleDroppedNotice, setHandleDroppedNotice] = useState<{
+    person: PersonSnapshot;
+    platform: string;
+  } | null>(null);
+  // Who the typed name might already be, picked from the "Same person?"
+  // suggestions. Arms addPerson's attachToPersonId; unset, the save creates
+  // as it always did.
+  const [attachTo, setAttachTo] = useState<Id<"people"> | null>(null);
   const [semantic, setSemantic] = useState<SemanticResults>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const platformRef = useRef<HTMLSelectElement | null>(null);
@@ -253,6 +307,19 @@ export function SearchAdd({
   // No exact name match -> offer to add the typed name as a new star.
   const showAdd = searchLoaded && trimmed !== "" && !hasExact;
 
+  // "Same person?" while typing a name: run over listPersonNames's own pool
+  // (every one of the caller's people), not nameMatches -- Convex's search
+  // index does not typo-match, so a name close enough to count as "the same
+  // person, mistyped" still has to be findable even when the sky's own
+  // recent/search list never surfaced it for this exact query (S7).
+  // hasExact's plain string compare and this fold can disagree (an accent or
+  // the D-stroke folds identically but is not byte-equal), so an "exact"
+  // kind can still turn up here even when showAdd is true.
+  const suggestions = useMemo(
+    () => nameSuggestions(trimmed, suggestionPool ?? [], (p) => p.name),
+    [trimmed, suggestionPool],
+  );
+
   const isEmpty = fieldLoaded && list.length === 0;
   const atCap = fieldLoaded && list.length >= RESULT_LIMIT;
   // The expanded form owns the screen while it is open. Everything else that
@@ -283,6 +350,10 @@ export function SearchAdd({
     setAddHandle("");
     setAddNote("");
     setAddError(null);
+    setHandleDroppedNotice(null);
+    // A pick made against the previous name must not silently arm an attach
+    // for whatever gets typed next.
+    setAttachTo(null);
   }, [trimmed]);
 
   // The trigger somebody just pressed is the element the form replaces, so
@@ -316,17 +387,57 @@ export function SearchAdd({
     }
     setAdding(true);
     setAddError(null);
+    setHandleDroppedNotice(null);
     try {
-      const id = await addPerson({
+      const result = await addPerson({
         name: trimmed,
         contactHandles: [{ platform: addPlatform, value: handle }],
         context: note,
+        attachToPersonId: attachTo ?? undefined,
       });
-      onOpen({ _id: id, name: trimmed, _creationTime: Date.now() });
+      // Nothing was written; the form stays open rather than guess. Two
+      // different shapes of the same refusal: with nobody picked, two
+      // submitted handles named two different owners (unreachable from this
+      // form today -- it only ever submits one handle -- but addPerson's
+      // contract allows it); with somebody picked, this handle is provably
+      // somebody else's, not who "Same person?" was answered for.
+      if (result.status === "conflict") {
+        setAddError(
+          attachTo !== null
+            ? "That handle already belongs to someone else. Clear the pick above, or open them directly to add this note."
+            : "That handle already belongs to two different people. Open one of them to add this note.",
+        );
+        return;
+      }
+      // created: the typed name is the person's name. attached/already: the
+      // handle already belonged to someone, so the typed name is very likely
+      // wrong -- fetched here rather than shown wrong for the instant before
+      // PersonDetail's own getPerson resolves and overwrites it.
+      const name =
+        result.status === "created"
+          ? trimmed
+          : ((await convex.query(api.people.getPerson, { id: result.personId }))
+              ?.name ?? trimmed);
+      const person: PersonSnapshot = {
+        _id: result.personId,
+        name,
+        _creationTime: Date.now(),
+      };
+      // handleDropped only ever means anything on attached/already ("created"
+      // starts from one handle, which always fits) -- the save landed and
+      // the note is safe, but silently opening them would hide the one part
+      // that did not make it on. Hold the form open with a notice instead of
+      // the usual auto-navigate; "View them" still gets there on request.
+      if (result.status !== "created" && result.handleDropped) {
+        setHandleDroppedNotice({ person, platform: addPlatform });
+        return;
+      }
+      onOpen(person);
       setAddOpen(false);
       setAddPlatform(REACH_PLATFORMS[0]);
       setAddHandle("");
       setAddNote("");
+      setAttachTo(null);
     } catch (error) {
       setAddError(
         error instanceof Error ? error.message : "Could not save this person",
@@ -416,6 +527,39 @@ export function SearchAdd({
           )}
         </div>
 
+        {/* "Same person?" -- live while the name is typed, from before the
+            form even opens through to submitting it, so a pick made early
+            still holds once the handle and note are filled in. */}
+        {showAdd && suggestions.length > 0 && (
+          <div className="atlas-suggest">
+            <p className="atlas-suggest-label">Same person?</p>
+            <ul className="atlas-suggest-list">
+              {suggestions.map(({ item }) => {
+                const picked = attachTo === item._id;
+                const disambig = disambiguator(item.contactHandles);
+                return (
+                  <li key={item._id}>
+                    <button
+                      type="button"
+                      className={`atlas-suggest-row${picked ? " is-picked" : ""}`}
+                      aria-pressed={picked}
+                      onClick={() => setAttachTo(picked ? null : item._id)}
+                    >
+                      <span className="atlas-suggest-name">{item.name}</span>
+                      {disambig !== null && (
+                        <span className="atlas-suggest-disambiguator">
+                          {disambig}
+                        </span>
+                      )}
+                      {picked && <CheckIcon />}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
         {showAdd && !addOpen && (
           <button type="submit" className="atlas-add">
             {`Add "${trimmed}" to your sky`}
@@ -476,6 +620,18 @@ export function SearchAdd({
             {addError !== null && (
               <p className="atlas-add-error" role="alert">
                 {addError}
+              </p>
+            )}
+            {handleDroppedNotice !== null && (
+              <p className="atlas-add-notice" role="status">
+                {`Note saved to ${handleDroppedNotice.person.name}. Their handles are full, so the ${reachLabel(handleDroppedNotice.platform)} handle was not added.`}{" "}
+                <button
+                  type="button"
+                  className="atlas-add-notice-link"
+                  onClick={() => onOpen(handleDroppedNotice.person)}
+                >
+                  View them
+                </button>
               </p>
             )}
             <button

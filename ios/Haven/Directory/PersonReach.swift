@@ -53,6 +53,14 @@ enum PersonReach {
         Known(rawValue: platform.trimmedLikeJS.lowercased())
     }
 
+    /// Whether this platform string is LinkedIn. `PersonScreen` uses this to
+    /// decide whether a handle is old enough to flag (`HandleStaleness`) --
+    /// the only reason this one case needs to leave `Known`, which otherwise
+    /// stays private.
+    static func isLinkedIn(_ platform: String) -> Bool {
+        known(platform) == .linkedin
+    }
+
     /// The platforms the handle editor offers.
     ///
     /// Longer than the four your own card offers, and that asymmetry is the
@@ -104,7 +112,14 @@ enum PersonReach {
     /// Nil is an ordinary answer. A handle on a platform Haven has never heard
     /// of is a real way to reach somebody and the row still shows it; it just
     /// does not promise a tap it cannot keep.
-    static func url(platform: String, value: String) -> URL? {
+    ///
+    /// `platformId` only changes anything for X: a link built from it survives
+    /// a handle rename, which one built from the handle alone does not -- this
+    /// is the address format X's own developer docs recommend for exactly that
+    /// reason. Instagram's app-vs-web choice for a resolved id lives one level
+    /// up, in `openURL` below, because it depends on `canOpenURL`, which only
+    /// UIKit can answer; the web fallback here is unchanged either way.
+    static func url(platform: String, value: String, platformId: String? = nil) -> URL? {
         let value = value.trimmedLikeJS
         guard !value.isEmpty, let known = known(platform) else { return nil }
         switch known {
@@ -120,13 +135,54 @@ enum PersonReach {
             let digits = value.filter(\.isASCIIDigit)
             guard !digits.isEmpty else { return nil }
             return URL(string: "https://wa.me/\(digits)")
-        case .instagram, .x, .twitter, .linkedin, .telegram:
+        case .x, .twitter:
+            if let platformId, !platformId.trimmedLikeJS.isEmpty {
+                return URL(string: "https://x.com/intent/user?user_id=\(platformId.trimmedLikeJS)")
+            }
+            guard let prefix = known.addressPrefix,
+                let escaped = value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+            else { return nil }
+            return URL(string: "https://\(prefix)\(escaped)")
+        case .instagram, .linkedin, .telegram:
             guard let prefix = known.addressPrefix else { return nil }
             guard let escaped = value.addingPercentEncoding(
                 withAllowedCharacters: .urlPathAllowed
             ) else { return nil }
             return URL(string: "https://\(prefix)\(escaped)")
         }
+    }
+
+    /// Instagram's own app deep link for a resolved numeric id, or nil
+    /// without one. Reachable only when the app is installed, which
+    /// `openURL` below checks via `canOpenURL` -- `LSApplicationQueriesSchemes`
+    /// in Info.plist is what lets that answer honestly rather than always
+    /// saying no.
+    static func instagramAppURL(platformId: String) -> URL? {
+        let trimmed = platformId.trimmedLikeJS
+        guard !trimmed.isEmpty else { return nil }
+        return URL(string: "instagram://user?id=\(trimmed)")
+    }
+
+    /// Which URL a tap on this handle should actually open: Instagram's app
+    /// deep link when there is a resolved id and the app can open it, `url`'s
+    /// answer otherwise.
+    ///
+    /// `canOpenAppURL` is a parameter rather than this function calling
+    /// `UIApplication` itself, so the decision -- app link chosen only when
+    /// both a platformId exists and the app answers yes -- is what a test
+    /// pins, not whether Instagram happens to be installed on whatever ran it.
+    static func openURL(
+        platform: String,
+        value: String,
+        platformId: String? = nil,
+        canOpenAppURL: (URL) -> Bool
+    ) -> URL? {
+        if known(platform) == .instagram, let platformId,
+            let appURL = instagramAppURL(platformId: platformId), canOpenAppURL(appURL)
+        {
+            return appURL
+        }
+        return url(platform: platform, value: value, platformId: platformId)
     }
 
     /// How the handle reads on screen: the address it points at, or the value

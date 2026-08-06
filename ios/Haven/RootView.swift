@@ -51,17 +51,17 @@ struct RootView: View {
                 // has just shared somebody to Haven. The extension writes
                 // offline and never talks to Convex, so this is the only thing
                 // that ever moves a capture into the directory.
-                .task { await captures.run() }
+                .task { await captures.run(userId: userId) }
                 .onChange(of: scenePhase) { _, phase in
                     guard phase == .active else { return }
-                    Task { await captures.run() }
+                    Task { await captures.run(userId: userId) }
                 }
                 // A capture made inside the app has nothing to come back
                 // from, so it asks for the same pass here rather than waiting
                 // for a foreground that already happened.
                 .environment(
                     \.requestCaptureDrain,
-                    CaptureDrainRequest(run: { await captures.run() })
+                    CaptureDrainRequest(run: { await captures.run(userId: userId) })
                 )
         } else {
             loading

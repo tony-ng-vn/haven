@@ -142,8 +142,8 @@ struct ContactValueTests {
     // address with an accent in it is not the one LinkedIn issued.
     @Test("the LinkedIn guess folds accents away")
     func linkedInGuessFoldsAccents() {
-        #expect(ContactValue.linkedInSlug(from: "Nguyễn Minh Thiện") == "nguyen-minh-thien")
-        #expect(ContactValue.linkedInSlug(from: "Zoë Müller") == "zoe-muller")
+        #expect(ContactValue.linkedInSlug(from: "Nguy\u{1ec5}n Minh Thi\u{1ec7}n") == "nguyen-minh-thien")
+        #expect(ContactValue.linkedInSlug(from: "Zo\u{eb} M\u{fc}ller") == "zoe-muller")
     }
 
     // Stored in the one form that means the same thing everywhere, because a
@@ -159,5 +159,15 @@ struct ContactValueTests {
         #expect(ContactValue.phoneNumber(from: "") == nil)
         #expect(ContactValue.phoneNumber(from: "12") == nil)
         #expect(ContactValue.phoneNumber(from: "not a number") == nil)
+    }
+
+    // The drain-time counterpart: a shared card's phone gets one more chance
+    // to fold onto the E.164 form a hand-typed add already writes, but a
+    // capture must never lose the number for failing to parse.
+    @Test("a phone normalizes to E.164 when it can, and passes through when it cannot")
+    func normalizedOrRawPhone() {
+        #expect(ContactValue.normalizedOrRaw(phone: "+84 90 123 4567") == "+84901234567")
+        #expect(ContactValue.normalizedOrRaw(phone: "not a number") == "not a number")
+        #expect(ContactValue.normalizedOrRaw(phone: "") == "")
     }
 }

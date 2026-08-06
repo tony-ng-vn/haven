@@ -1,10 +1,16 @@
 /// <reference types="vite/client" />
-import { convexTest } from "convex-test";
+import { convexTest, type TestConvexForDataModel } from "convex-test";
 import { expect, test } from "vitest";
+import type {
+  DataModelFromSchemaDefinition,
+  FunctionArgs,
+} from "convex/server";
 import { api } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
+type TestDataModel = DataModelFromSchemaDefinition<typeof schema>;
 
 let nextSubject = 0;
 function asNewUser(t: ReturnType<typeof convexTest>) {
@@ -14,10 +20,25 @@ function asNewUser(t: ReturnType<typeof convexTest>) {
   return { userId, as: t.withIdentity({ subject, issuer }) };
 }
 
+// addPerson now returns a creation outcome, not a bare id (identity brief,
+// task 2). Every call in this file exists only to seed one of a pair's own
+// people, so this unwraps the common case and throws loudly on a surprise
+// collision instead of silently attaching to the wrong person.
+async function addPersonId(
+  as: TestConvexForDataModel<TestDataModel>,
+  args: FunctionArgs<typeof api.people.addPersonWithOutcome>,
+): Promise<Id<"people">> {
+  const result = await as.mutation(api.people.addPersonWithOutcome, args);
+  if (result.status !== "created") {
+    throw new Error(`addPersonId: expected created, got ${result.status}`);
+  }
+  return result.personId;
+}
+
 // addPerson requires a handle and a note; these tests care about neither, so
 // they spread this minimal valid payload first.
 const manualAdd = {
-  contactHandles: [{ platform: "phone", value: "unlisted" }],
+  contactHandles: [{ platform: "phone", value: "unlisted1" }],
   context: "met before this test",
 };
 
@@ -25,12 +46,12 @@ test("connected users share one pair-scoped note", async () => {
   const t = convexTest(schema, modules);
   const ada = asNewUser(t);
   const ben = asNewUser(t);
-  const adaPersonId = await ada.as.mutation(api.people.addPerson, {
+  const adaPersonId = await addPersonId(ada.as, {
     ...manualAdd,
     name: "Ben",
     context: "Private reminder",
   });
-  const benPersonId = await ben.as.mutation(api.people.addPerson, {
+  const benPersonId = await addPersonId(ben.as, {
     ...manualAdd,
     name: "Ada",
     context: "Ben's private reminder",
@@ -74,12 +95,12 @@ test("shared notes do not change either user's private context", async () => {
   const t = convexTest(schema, modules);
   const ada = asNewUser(t);
   const ben = asNewUser(t);
-  const adaPersonId = await ada.as.mutation(api.people.addPerson, {
+  const adaPersonId = await addPersonId(ada.as, {
     ...manualAdd,
     name: "Ben",
     context: "Private to Ada",
   });
-  const benPersonId = await ben.as.mutation(api.people.addPerson, {
+  const benPersonId = await addPersonId(ben.as, {
     ...manualAdd,
     name: "Ada",
     context: "Private to Ben",
@@ -110,7 +131,7 @@ test("shared notes do not change either user's private context", async () => {
 test("unconnected people cannot read or write shared notes", async () => {
   const t = convexTest(schema, modules);
   const ada = asNewUser(t);
-  const adaPersonId = await ada.as.mutation(api.people.addPerson, {
+  const adaPersonId = await addPersonId(ada.as, {
     ...manualAdd,
     name: "Ben",
   });
@@ -130,7 +151,7 @@ test("shared note writes reject another user's person row", async () => {
   const t = convexTest(schema, modules);
   const ada = asNewUser(t);
   const ben = asNewUser(t);
-  const benPersonId = await ben.as.mutation(api.people.addPerson, {
+  const benPersonId = await addPersonId(ben.as, {
     ...manualAdd,
     name: "Ada",
   });
@@ -147,11 +168,11 @@ test("shared note updates are length-capped", async () => {
   const t = convexTest(schema, modules);
   const ada = asNewUser(t);
   const ben = asNewUser(t);
-  const adaPersonId = await ada.as.mutation(api.people.addPerson, {
+  const adaPersonId = await addPersonId(ada.as, {
     ...manualAdd,
     name: "Ben",
   });
-  const benPersonId = await ben.as.mutation(api.people.addPerson, {
+  const benPersonId = await addPersonId(ben.as, {
     ...manualAdd,
     name: "Ada",
   });

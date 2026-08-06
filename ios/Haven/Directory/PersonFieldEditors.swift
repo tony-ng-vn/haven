@@ -176,11 +176,16 @@ struct PersonTextEditor: View {
 struct PersonHandlesEditor: View {
     let handles: [Person.Handle]
     let preferred: String?
-    let save: ([Person.Handle], String?) async -> Void
+    let save: ([Person.Handle], String?) async -> HandleEditOutcome
 
     @Environment(\.dismiss) private var dismiss
     @State private var adding: AddingPlatform?
     @State private var working = false
+    /// Set when the server refused the last save because the handle already,
+    /// provably, belongs to somebody else. Shown rather than folded into a
+    /// generic failure: the form is still correct, only that one account is
+    /// not free to take, and the message says whose it already is.
+    @State private var conflict: String?
 
     /// The offerable platforms with no handle yet. One per platform, the rule
     /// the server enforces, because `preferredPlatform` points at a platform
@@ -197,6 +202,11 @@ struct PersonHandlesEditor: View {
             contentAlignment: .top
         ) {
             VStack(alignment: .leading, spacing: 0) {
+                if let conflict {
+                    Text(conflict)
+                        .havenSecondary(HavenColor.ember)
+                        .padding(.bottom, 12)
+                }
                 ForEach(handles) { handle in
                     HavenRow(
                         title: PersonReach.display(platform: handle.platform, value: handle.value),
@@ -283,16 +293,26 @@ struct PersonHandlesEditor: View {
 
     private func add(_ platform: String, value: String) async {
         let entry = Person.Handle(platform: platform, value: value)
+        working = true
+        conflict = nil
         // The first one added is the one Haven leads with, because a person
         // with a way to reach them and no primary would lead with nothing.
-        await save(handles + [entry], preferred ?? platform)
+        let outcome = await save(handles + [entry], preferred ?? platform)
+        working = false
+        if case .handleTaken(let name) = outcome {
+            conflict = "That handle is saved on \(name)."
+        }
     }
 
     private func commit(_ next: [Person.Handle], preferred nextPreferred: String?) {
         working = true
+        conflict = nil
         Task {
-            await save(next, nextPreferred)
+            let outcome = await save(next, nextPreferred)
             working = false
+            if case .handleTaken(let name) = outcome {
+                conflict = "That handle is saved on \(name)."
+            }
         }
     }
 }
@@ -354,8 +374,23 @@ private struct PersonHandleValueEditor: View {
 
 extension Person.Handle {
     /// What `editPerson` is sent for one handle.
+    ///
+    /// `contactHandles` is rewritten wholesale on every edit -- reordering,
+    /// removing a different handle, or picking a new primary all resend
+    /// every handle still on the person, not just the one that changed. A
+    /// handle this round-trips unchanged must arrive back exactly as it was
+    /// decoded, or an edit that touches nothing about it would silently wipe
+    /// its platformId, source and addedAt. A handle actually added or
+    /// retyped (`PersonHandlesEditor.add`) starts with none of these, which
+    /// is correct on its own terms: a changed value names a different
+    /// account, and inheriting the old one's metadata would be wrong, not
+    /// merely careless.
     var convexArgument: [String: ConvexEncodable?] {
-        ["platform": platform, "value": value]
+        var args: [String: ConvexEncodable?] = ["platform": platform, "value": value]
+        if let platformId { args["platformId"] = platformId }
+        if let source { args["source"] = source }
+        if let addedAt { args["addedAt"] = addedAt }
+        return args
     }
 }
 
@@ -392,21 +427,21 @@ private let previewHandles = [
 }
 
 #Preview("Ways to reach them") {
-    PersonHandlesEditor(handles: previewHandles, preferred: "phone") { _, _ in }
+    PersonHandlesEditor(handles: previewHandles, preferred: "phone") { _, _ in .saved }
 }
 
 // Nobody saved yet, which is what an add-someone flow leaves behind before the
 // first handle is typed.
 #Preview("Ways to reach them, none yet") {
-    PersonHandlesEditor(handles: [], preferred: nil) { _, _ in }
+    PersonHandlesEditor(handles: [], preferred: nil) { _, _ in .saved }
 }
 
 #Preview("Ways to reach them, accessibility XXXL") {
-    PersonHandlesEditor(handles: previewHandles, preferred: "phone") { _, _ in }
+    PersonHandlesEditor(handles: previewHandles, preferred: "phone") { _, _ in .saved }
         .environment(\.dynamicTypeSize, .accessibility3)
 }
 
 #Preview("Ways to reach them, Reduce Motion") {
-    PersonHandlesEditor(handles: previewHandles, preferred: "phone") { _, _ in }
+    PersonHandlesEditor(handles: previewHandles, preferred: "phone") { _, _ in .saved }
         .havenReduceMotion()
 }

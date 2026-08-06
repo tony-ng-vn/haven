@@ -25,8 +25,9 @@ import {
   internalQuery,
 } from "./_generated/server";
 import { v } from "convex/values";
-import { api, internal } from "./_generated/api";
+import { api, components, internal } from "./_generated/api";
 import { requireUser } from "./authz";
+import { RateLimiter } from "@convex-dev/rate-limiter";
 
 const BASE_URL = "https://backend.composio.dev/api/v3";
 const MINUTE_MS = 60_000;
@@ -64,6 +65,13 @@ const PROFILE_TOOL: Record<SocialPlatform, string> = {
   instagram: "INSTAGRAM_GET_USER_INFO",
   x: "TWITTER_USER_LOOKUP_ME",
 };
+
+// X's own docs recommend linking by numeric id rather than username, because
+// the username can change and the id cannot -- this is the tool that turns
+// one of a person's saved x usernames back into that permanent id, so a link
+// built from it survives a rename the same way the "who am I" tool's own id
+// already does for the caller's own card.
+const TWITTER_LOOKUP_BY_USERNAME_TOOL = "TWITTER_USER_LOOKUP_BY_USERNAME";
 
 // Extra arguments a platform's profile tool needs to hand back its photo.
 // LinkedIn and Instagram include theirs by default; X's underlying API v2
@@ -287,6 +295,42 @@ function extractHandle(
   return null;
 }
 
+// The platform's own stable id for the account, per the same live-proven
+// shapes -- unlike the handle above, this survives a username rename, which
+// is the whole reason identity's dedup (people.ts's findHandleOwner) prefers
+// it. LinkedIn returns it as a plain "id"; Instagram's Graph API names it
+// "user_id" on some callers and "id" on others, so both are tried; X nests
+// it the same defensive way extractHandle nests username. Absent everywhere
+// this returns null -- a profile tool that changes shape must not fail the
+// connection over an id nothing here strictly needs yet.
+function extractPlatformId(
+  platform: SocialPlatform,
+  data: Record<string, unknown>,
+): string | null {
+  const read = (key: string): string | null => {
+    const value = data[key];
+    return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+  };
+  if (platform === "linkedin") {
+    return read("id");
+  }
+  if (platform === "instagram") {
+    return read("user_id") ?? read("id");
+  }
+  const direct = read("id");
+  if (direct !== null) {
+    return direct;
+  }
+  const nested = data["data"];
+  if (nested !== null && typeof nested === "object") {
+    const nestedId = (nested as Record<string, unknown>)["id"];
+    if (typeof nestedId === "string" && nestedId.trim() !== "") {
+      return nestedId.trim();
+    }
+  }
+  return null;
+}
+
 // The one field on each platform's profile tool that is a photo, per the
 // same live-proven shapes: LinkedIn nests it under profilePicture, Instagram
 // has it flat. Optional everywhere -- a profile with no photo, or a platform
@@ -359,7 +403,8 @@ async function resolveAndStoreHandle(
     return { status: "failed" };
   }
 
-  await storeVerifiedHandle(ctx, platform, handle);
+  const platformId = extractPlatformId(platform, result.data);
+  await storeVerifiedHandle(ctx, platform, handle, platformId);
   const photoUrl = extractPhotoUrl(platform, result.data);
   return { status: "connected", handle, photoUrl: photoUrl ?? undefined };
 }
@@ -374,12 +419,18 @@ async function storeVerifiedHandle(
   ctx: ActionCtx,
   platform: SocialPlatform,
   handle: string,
+  platformId: string | null,
 ): Promise<void> {
   const card = await ctx.runQuery(api.profiles.getMyCard, {});
   const existingHandles = card?.handles ?? [];
   const nextHandles = [
     ...existingHandles.filter((existing) => existing.platform !== platform),
-    { platform, value: handle, verified: true },
+    {
+      platform,
+      value: handle,
+      verified: true,
+      ...(platformId !== null ? { platformId } : {}),
+    },
   ];
   await ctx.runMutation(api.profiles.updateMyProfile, {
     handles: nextHandles,
@@ -526,6 +577,210 @@ export const completeSocialConnection = action({
       args.connectedAccountId,
       userId,
     );
+  },
+});
+
+const DAY_MS = 24 * 60 * MINUTE_MS;
+
+// A review of this flow flagged 14.4k X-lookup calls/day as a plausible
+// wallet risk absent any daily bound -- each call is a Composio tool
+// execution, metered like every other call this file makes. Shared by BOTH
+// X-lookup actions below (one rate-limit bucket, not one each): alternating
+// between resolveXPlatformId and resolveXUsername must not double the
+// effective daily budget just because it crosses two action names.
+const X_LOOKUP_DAILY_CAP = 50;
+
+// Per-key quotas belong to @convex-dev/rate-limiter, not a hand-rolled
+// window scan (guidelines.md's component section: a scan admits races under
+// concurrency and loses quota when a mutation fails) -- these two names are
+// the ONLY quotas migrated to it. Every pre-existing convex/rateLimit.ts
+// call site (people.ts, captures.ts, profiles.ts) is left exactly as it
+// was; that hand-rolled helper predates this component and is not part of
+// this migration -- see its own comment for why it stays for now.
+//
+// Fixed window, not token bucket: the product doctrine here (and
+// convex/rateLimit.ts's own former comment on this exact pair) is "N per
+// period, reset at the boundary," which is what fixed window models --
+// token bucket's continuous refill is a different shape of allowance this
+// pair was never meant to have.
+// start: 0 pins every window to epoch-aligned boundaries (midnight UTC for
+// the day cap, the top of the minute for the minute caps) rather than the
+// component's own default -- a RANDOM offset drawn once per key on first
+// use. Left random, a window can roll over mid-burst at a point no caller
+// can predict or reason about; worse, it makes the exact "51st call must
+// still refuse" scenario this pair exists for occasionally (~2% of runs,
+// confirmed while migrating this) let one extra call through if the random
+// draw happened to land inside the test's advanced time. Deterministic
+// epoch alignment is both the fix and, on its own, better product
+// behavior: "resets at midnight UTC" is explainable; "resets whenever your
+// first call happened to land" is not.
+const xLookupLimiter = new RateLimiter(components.rateLimiter, {
+  resolveXPlatformIdMinute: { kind: "fixed window", rate: 10, period: MINUTE_MS, start: 0 },
+  resolveXUsernameMinute: { kind: "fixed window", rate: 10, period: MINUTE_MS, start: 0 },
+  // One name shared by both call sites below is the whole point: alternating
+  // between resolveXPlatformId and resolveXUsername draws on the same
+  // per-user bucket rather than doubling the effective daily budget.
+  xLookupDay: { kind: "fixed window", rate: X_LOOKUP_DAILY_CAP, period: DAY_MS, start: 0 },
+});
+
+// The minute+day cap pair both X-lookup actions enforce before spending a
+// metered Composio call: a tight per-action minute cap (each action fires
+// from a different user gesture, so each gets its own bucket) plus one
+// shared daily budget across both (X_LOOKUP_DAILY_CAP, the xLookupDay name
+// above). limit() rather than check(): a rejected call must not silently
+// let the Composio spend through, so a call that returns not-ok never
+// reaches resolveXId. Message kept identical to convex/rateLimit.ts's own
+// wording -- swapping the implementation underneath is not a moment to
+// change what the caller sees; a ConvexError built from the component's own
+// throws:true would carry a different shape than every other rate limit in
+// this file surfaces.
+async function enforceXLookupCaps(
+  ctx: ActionCtx,
+  userId: string,
+  minuteLimitName: "resolveXPlatformIdMinute" | "resolveXUsernameMinute",
+): Promise<void> {
+  const minute = await xLookupLimiter.limit(ctx, minuteLimitName, { key: userId });
+  if (!minute.ok) {
+    throw new Error("Too many requests -- please wait a moment");
+  }
+  const day = await xLookupLimiter.limit(ctx, "xLookupDay", { key: userId });
+  if (!day.ok) {
+    throw new Error("Too many requests -- please wait a moment");
+  }
+}
+
+const resolveXReturns = v.union(
+  v.object({ status: v.literal("resolved"), platformId: v.string() }),
+  v.object({ status: v.literal("unavailable") }),
+  v.object({ status: v.literal("failed") }),
+);
+
+// The list+execute+extract flow both X-lookup actions share: given the
+// caller's own ACTIVE twitter connection, resolves one username to its
+// permanent id. Total by construction -- every branch, including a
+// malformed 200 Composio itself might hand back (a missing or null `items`,
+// a null `data`), still resolves to one of the three contracted statuses
+// rather than letting an exception escape past either action's own return
+// promise.
+async function resolveXId(
+  userId: string,
+  username: string,
+): Promise<
+  { status: "resolved"; platformId: string } | { status: "unavailable" } | { status: "failed" }
+> {
+  try {
+    // The exact list call initiateSocialConnection already uses to find the
+    // caller's one connection to a toolkit.
+    const owned = await composioJson<ConnectedAccountListResponse>(
+      `/connected_accounts?user_ids[]=${encodeURIComponent(userId)}&toolkit_slugs[]=${TOOLKIT_SLUG.x}&statuses[]=ACTIVE`,
+    );
+    // A well-formed empty list ("nobody connected X") and a malformed
+    // response (no items key at all, items: null -- Composio itself
+    // misbehaving) are different outcomes, not the same "no match": the
+    // first is the ordinary case for most users and answers unavailable;
+    // the second means something upstream broke and answers failed.
+    // Array.isArray is the one check that is true for an actual array and
+    // false for everything else a 200 could still hand back.
+    if (!Array.isArray(owned?.items)) {
+      return { status: "failed" };
+    }
+    const match = owned.items.find((item) => item.toolkit.slug === TOOLKIT_SLUG.x);
+    if (match === undefined) {
+      // No connected X account is the ordinary case for most users -- this
+      // never asks anyone to connect just to resolve an id.
+      return { status: "unavailable" };
+    }
+
+    const result = await composioJson<ToolExecuteResponse>(
+      `/tools/execute/${TWITTER_LOOKUP_BY_USERNAME_TOOL}`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          connected_account_id: match.id,
+          user_id: userId,
+          arguments: { username },
+        }),
+      },
+    );
+    if (!result?.successful) {
+      return { status: "failed" };
+    }
+    const platformId = extractPlatformId("x", result.data ?? {});
+    if (platformId === null) {
+      return { status: "failed" };
+    }
+    return { status: "resolved", platformId };
+  } catch {
+    return { status: "failed" };
+  }
+}
+
+// Looks up one saved x username's permanent id and staples it onto a
+// SPECIFIC person's handle, so a link built from it (src/reach.ts) survives
+// the person renaming their account. Fire-and-forget from both clients
+// right after a save: it must never be on the critical path for the save
+// itself to succeed, which is why every failure here -- no connection, an
+// authz mismatch, Composio erroring, even the trailing write failing --
+// resolves rather than throws.
+export const resolveXPlatformId = action({
+  args: { personId: v.id("people"), username: v.string() },
+  returns: resolveXReturns,
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    // Fired once per save, from both clients, not polled -- the same tight
+    // per-minute cap initiateSocialConnection uses for a comparably rare,
+    // user-driven call, plus the shared daily cap both X-lookup actions draw
+    // from (see X_LOOKUP_DAILY_CAP).
+    await enforceXLookupCaps(ctx, userId, "resolveXPlatformIdMinute");
+
+    // Ownership proven before any metered Composio call: a person id is not
+    // a secret the caller minted, and without this check any signed-in user
+    // could spend this rate-limited lookup probing an id that is not theirs.
+    const person = await ctx.runQuery(internal.people.getPersonInternal, {
+      id: args.personId,
+    });
+    if (person === null || person.userId !== userId) {
+      return { status: "failed" as const };
+    }
+
+    const resolved = await resolveXId(userId, args.username);
+    if (resolved.status !== "resolved") {
+      return resolved;
+    }
+    try {
+      await ctx.runMutation(internal.people.patchXPlatformId, {
+        personId: args.personId,
+        username: args.username,
+        platformId: resolved.platformId,
+      });
+    } catch {
+      // The resolution itself succeeded -- Composio genuinely proved this
+      // id -- but the write failed for a reason unrelated to that (a
+      // transient db error). Still answers with one of the three contracted
+      // statuses rather than throwing past this action's own promise.
+      return { status: "failed" as const };
+    }
+    return resolved;
+  },
+});
+
+// The pre-save half of the X-rename fix: resolveXPlatformId alone only ever
+// runs AFTER a person already exists, so the platformId-first dedup in
+// findHandleOwner never gets a chance to see the id at the moment a save
+// first creates or attaches to somebody -- exactly how the same X account,
+// renamed, could mint a duplicate person. Identical connection/ownership-free
+// flow to resolveXPlatformId, minus the personId: there is no person to
+// authz yet, only requireUser and the rate limits. iOS calls this BEFORE a
+// save and passes the platformId into saveSharedProfile, so the id-first
+// lookup fires on the very first write instead of a second one after the
+// fact.
+export const resolveXUsername = action({
+  args: { username: v.string() },
+  returns: resolveXReturns,
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    await enforceXLookupCaps(ctx, userId, "resolveXUsernameMinute");
+    return await resolveXId(userId, args.username);
   },
 });
 

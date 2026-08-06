@@ -26,18 +26,19 @@
 
 			  Web URLs, because a shared profile is one; images, so importing a
 			  screenshot works before the photo library has ever been asked
-			  for; and text, because LinkedIn's own app is one of the three
+			  for; text, because LinkedIn's own app is one of the three
 			  this exists for and proved, on device, on 2026-08-04, that it
 			  shares a profile as a plain-text message with the link inside
 			  it, not as a URL attachment -- the exact case an earlier version
-			  of this comment named and set aside rather than guessed at. The
-			  accepted cost: Haven now appears in the sheet for any text
-			  share, LinkedIn profile or not. ShareInput.swift is where that
-			  cost is paid down -- a text share that does not contain a
-			  recognizable profile link lands back on the same
-			  cannot-read state a broken URL already did, so the sheet
-			  appearing is not the same as the sheet ever saving something
-			  wrong.
+			  of this comment named and set aside rather than guessed at; and
+			  vCards, because the Contacts app's own "Share Contact" hands over
+			  nothing else. The accepted cost: Haven now appears in the sheet
+			  for any text share, LinkedIn profile or not. ShareInput.swift is
+			  where that cost is paid down -- a text share that does not
+			  contain a recognizable profile link, or a vCard that names nobody
+			  worth saving, lands back on the same cannot-read state a broken
+			  URL already did, so the sheet appearing is not the same as the
+			  sheet ever saving something wrong.
 
 			  A predicate string, not the dictionary form
 			  (NSExtensionActivationSupportsWebURLWithMaxCount /
@@ -52,17 +53,22 @@
 			  whatever else rode along -- which is what the dictionary form
 			  cannot express.
 
-			  Each attachment is checked against public.url, public.image and
-			  public.plain-text, every one of them with an added "and it is
-			  not a local file" -- public.url because public.file-url
-			  conforms to it, so a Files-app share of a document would
-			  otherwise pass as a web URL; public.image and public.plain-text
-			  for the same reason applied to a Files-app share of an image or
-			  text file, keeping "images" scoped to what Photos hands over
-			  (image data, no file URL) and "text" scoped to what an app's own
-			  share sheet composes (a message, no file URL) rather than either
-			  to anything sitting on disk. That is the predicate form of "not
-			  arbitrary file shares" above.
+			  public.url, public.image and public.plain-text each carry an
+			  added "and it is not a local file" -- public.url because
+			  public.file-url conforms to it, so a Files-app share of a
+			  document would otherwise pass as a web URL; public.image and
+			  public.plain-text for the same reason applied to a Files-app
+			  share of an image or text file, keeping "images" scoped to what
+			  Photos hands over (image data, no file URL) and "text" scoped to
+			  what an app's own share sheet composes (a message, no file URL)
+			  rather than either to anything sitting on disk. That is the
+			  predicate form of "not arbitrary file shares" above.
+
+			  public.vcard carries no such exclusion: a .vcf shared from Files
+			  is still, contents and all, an actual vCard rather than a
+			  document that merely happens to conform to one of the other
+			  three UTIs by accident of format, so there is no mislabeling risk
+			  to guard against the way there is for a URL, an image or text.
 
 			  Verified against Apple's real App Extension Programming Guide
 			  (archived; the current developer.apple.com page dropped the
@@ -88,6 +94,8 @@
 					(ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.image" AND NOT (ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url"))
 					OR
 					(ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.plain-text" AND NOT (ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url"))
+					OR
+					(ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.vcard")
 				).@count >= 1
 			).@count >= 1</string>
 		</dict>

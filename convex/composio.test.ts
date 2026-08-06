@@ -3,11 +3,18 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
+import rateLimiterTest from "@convex-dev/rate-limiter/test";
 
 const modules = import.meta.glob("./**/*.ts");
 
 function newHarness() {
-  return convexTest(schema, modules);
+  const t = convexTest(schema, modules);
+  // The X-lookup caps (composio.ts's xLookupLimiter) run through the
+  // rate-limiter component now, not the hand-rolled rateLimits table --
+  // convex-test needs the component registered before anything that calls
+  // it can run.
+  rateLimiterTest.register(t);
+  return t;
 }
 type Harness = ReturnType<typeof newHarness>;
 
@@ -412,6 +419,161 @@ test("completing an ACTIVE connection stores the proven handle as verified", asy
   expect(card?.primaryPlatform).toBe("x");
 });
 
+// A platform's own stable id, alongside the handle, so identity's dedup
+// (people.ts's findHandleOwner) can still find the account after a rename.
+// LinkedIn's shape is proven live: a flat "id" beside vanityName.
+test("LinkedIn's platform id is read from its flat id field", async () => {
+  const t = newHarness();
+  const { userId, as } = await asNewUser(t);
+  await seedProfile(t, userId, { username: "tony" });
+  stubComposio({
+    getConnectedAccount: () => ({
+      id: "ca_test",
+      status: "ACTIVE",
+      toolkit: { slug: "linkedin" },
+    }),
+    executeTool: () => ({
+      data: { vanityName: "tony-buildd", id: "urn:li:person:abc123" },
+      error: null,
+      successful: true,
+    }),
+  });
+
+  await as.action(api.composio.completeSocialConnection, {
+    platform: "linkedin",
+    connectedAccountId: "ca_test",
+  });
+
+  const card = await as.query(api.profiles.getMyCard, {});
+  expect(card?.handles).toEqual([
+    {
+      platform: "linkedin",
+      value: "tony-buildd",
+      verified: true,
+      platformId: "urn:li:person:abc123",
+    },
+  ]);
+});
+
+// Instagram's Graph API names its stable id "user_id" on some callers and
+// "id" on others -- both are tried, user_id first.
+test("Instagram's platform id prefers user_id over id when both are present", async () => {
+  const t = newHarness();
+  const { userId, as } = await asNewUser(t);
+  await seedProfile(t, userId, { username: "tony" });
+  stubComposio({
+    getConnectedAccount: () => ({
+      id: "ca_test",
+      status: "ACTIVE",
+      toolkit: { slug: "instagram" },
+    }),
+    executeTool: () => ({
+      data: { username: "t_n1706", user_id: "ig_user_1", id: "ig_id_1" },
+      error: null,
+      successful: true,
+    }),
+  });
+
+  await as.action(api.composio.completeSocialConnection, {
+    platform: "instagram",
+    connectedAccountId: "ca_test",
+  });
+
+  const card = await as.query(api.profiles.getMyCard, {});
+  expect(card?.handles).toEqual([
+    { platform: "instagram", value: "t_n1706", verified: true, platformId: "ig_user_1" },
+  ]);
+});
+
+test("Instagram's platform id falls back to id when user_id is absent", async () => {
+  const t = newHarness();
+  const { userId, as } = await asNewUser(t);
+  await seedProfile(t, userId, { username: "tony" });
+  stubComposio({
+    getConnectedAccount: () => ({
+      id: "ca_test",
+      status: "ACTIVE",
+      toolkit: { slug: "instagram" },
+    }),
+    executeTool: () => ({
+      data: { username: "t_n1706", id: "ig_id_only" },
+      error: null,
+      successful: true,
+    }),
+  });
+
+  await as.action(api.composio.completeSocialConnection, {
+    platform: "instagram",
+    connectedAccountId: "ca_test",
+  });
+
+  const card = await as.query(api.profiles.getMyCard, {});
+  expect(card?.handles).toEqual([
+    { platform: "instagram", value: "t_n1706", verified: true, platformId: "ig_id_only" },
+  ]);
+});
+
+// X's id is nested the same defensive way its username is (extractHandle's
+// own comment): both a flat "id" and a nested "data.id" are checked.
+test("X's platform id is read the same defensive way its username is", async () => {
+  const t = newHarness();
+  const { userId, as } = await asNewUser(t);
+  await seedProfile(t, userId, { username: "tony" });
+  stubComposio({
+    getConnectedAccount: () => ({
+      id: "ca_test",
+      status: "ACTIVE",
+      toolkit: { slug: "twitter" }, // Composio's slug for X
+    }),
+    executeTool: () => ({
+      data: { username: "tonybuildd", id: "x_id_1" },
+      error: null,
+      successful: true,
+    }),
+  });
+
+  await as.action(api.composio.completeSocialConnection, {
+    platform: "x",
+    connectedAccountId: "ca_test",
+  });
+
+  const card = await as.query(api.profiles.getMyCard, {});
+  expect(card?.handles).toEqual([
+    { platform: "x", value: "tonybuildd", verified: true, platformId: "x_id_1" },
+  ]);
+});
+
+// A profile tool shape with no id anywhere must not fail the connection
+// over it -- the handle is still proven and stored, just without a
+// platformId, the same "absent is tolerated" doctrine extractPhotoUrl uses.
+test("a profile tool with no id anywhere stores the handle without a platformId", async () => {
+  const t = newHarness();
+  const { userId, as } = await asNewUser(t);
+  await seedProfile(t, userId, { username: "tony" });
+  stubComposio({
+    getConnectedAccount: () => ({
+      id: "ca_test",
+      status: "ACTIVE",
+      toolkit: { slug: "twitter" }, // Composio's slug for X
+    }),
+    executeTool: () => ({
+      data: { username: "tonybuildd" },
+      error: null,
+      successful: true,
+    }),
+  });
+
+  await as.action(api.composio.completeSocialConnection, {
+    platform: "x",
+    connectedAccountId: "ca_test",
+  });
+
+  const card = await as.query(api.profiles.getMyCard, {});
+  expect(card?.handles).toEqual([
+    { platform: "x", value: "tonybuildd", verified: true },
+  ]);
+});
+
 test("Instagram's photo comes from its own flat profile_picture_url field", async () => {
   const t = newHarness();
   const { userId, as } = await asNewUser(t);
@@ -685,6 +847,333 @@ test("a missing COMPOSIO_API_KEY throws a clear, actionable error", async () => 
   await expect(
     as.action(api.composio.initiateSocialConnection, { platform: "linkedin" }),
   ).rejects.toThrow(/COMPOSIO_API_KEY/);
+});
+
+// ------------------------------------------------------ resolveXPlatformId
+
+test("resolveXPlatformId resolves the caller's connected account and writes the id onto the person's x handle", async () => {
+  const t = newHarness();
+  const { userId, as } = await asNewUser(t);
+  const person = await as.mutation(api.people.addPersonWithOutcome, {
+    name: "Tony Nguyen",
+    contactHandles: [{ platform: "x", value: "tonybuildd" }],
+    context: "met at the demo day",
+  });
+  if (person.status !== "created") throw new Error("unreachable");
+
+  const calls = stubComposio({
+    listConnectedAccounts: () => ({
+      items: [{ id: "ca_test", status: "ACTIVE", toolkit: { slug: "twitter" } }],
+    }),
+    executeTool: () => ({ data: { id: "x_id_1" }, error: null, successful: true }),
+  });
+
+  const result = await as.action(api.composio.resolveXPlatformId, {
+    personId: person.personId,
+    username: "tonybuildd",
+  });
+
+  expect(result).toEqual({ status: "resolved", platformId: "x_id_1" });
+  const saved = await as.query(api.people.getPerson, { id: person.personId });
+  expect(saved?.contactHandles).toEqual([
+    expect.objectContaining({
+      platform: "x",
+      value: "tonybuildd",
+      platformId: "x_id_1",
+    }),
+  ]);
+  const executed = calls.find((call) =>
+    call.url.includes("/tools/execute/TWITTER_USER_LOOKUP_BY_USERNAME"),
+  );
+  expect(executed?.body).toMatchObject({
+    connected_account_id: "ca_test",
+    user_id: userId,
+    arguments: { username: "tonybuildd" },
+  });
+});
+
+test("resolveXPlatformId reports unavailable when the caller has no connected X account", async () => {
+  const t = newHarness();
+  const { as } = await asNewUser(t);
+  const person = await as.mutation(api.people.addPersonWithOutcome, {
+    name: "Tony Nguyen",
+    contactHandles: [{ platform: "x", value: "tonybuildd" }],
+    context: "met at the demo day",
+  });
+  if (person.status !== "created") throw new Error("unreachable");
+
+  // The ordinary case for most users -- graceful, not an error.
+  stubComposio({ listConnectedAccounts: () => ({ items: [] }) });
+
+  const result = await as.action(api.composio.resolveXPlatformId, {
+    personId: person.personId,
+    username: "tonybuildd",
+  });
+
+  expect(result).toEqual({ status: "unavailable" });
+  const saved = await as.query(api.people.getPerson, { id: person.personId });
+  expect(saved?.contactHandles?.[0]).not.toHaveProperty("platformId");
+});
+
+test("resolveXPlatformId reports failed, never throws, when Composio's lookup fails", async () => {
+  const t = newHarness();
+  const { as } = await asNewUser(t);
+  const person = await as.mutation(api.people.addPersonWithOutcome, {
+    name: "Tony Nguyen",
+    contactHandles: [{ platform: "x", value: "tonybuildd" }],
+    context: "met at the demo day",
+  });
+  if (person.status !== "created") throw new Error("unreachable");
+
+  stubComposio({
+    listConnectedAccounts: () => ({
+      items: [{ id: "ca_test", status: "ACTIVE", toolkit: { slug: "twitter" } }],
+    }),
+    executeTool: () => ({
+      data: {},
+      error: "rate limited",
+      successful: false,
+    }),
+  });
+
+  const result = await as.action(api.composio.resolveXPlatformId, {
+    personId: person.personId,
+    username: "tonybuildd",
+  });
+
+  expect(result).toEqual({ status: "failed" });
+});
+
+test("resolveXPlatformId refuses a person that does not belong to the caller, before spending any Composio call", async () => {
+  const t = newHarness();
+  const owner = await asNewUser(t);
+  const guesser = await asNewUser(t);
+  const person = await owner.as.mutation(api.people.addPersonWithOutcome, {
+    name: "Tony Nguyen",
+    contactHandles: [{ platform: "x", value: "tonybuildd" }],
+    context: "met at the demo day",
+  });
+  if (person.status !== "created") throw new Error("unreachable");
+
+  const calls = stubComposio({});
+
+  const result = await guesser.as.action(api.composio.resolveXPlatformId, {
+    personId: person.personId,
+    username: "tonybuildd",
+  });
+
+  expect(result).toEqual({ status: "failed" });
+  // Ownership is checked before any metered call is made, or a guessed
+  // person id would still cost the real owner's rate-limit budget.
+  expect(calls).toHaveLength(0);
+});
+
+test("resolveXPlatformId resolves the id but refuses to patch a handle the username no longer matches", async () => {
+  const t = newHarness();
+  const { as } = await asNewUser(t);
+  // The card has since been renamed away from what the caller's stale
+  // username argument still says.
+  const person = await as.mutation(api.people.addPersonWithOutcome, {
+    name: "Tony Nguyen",
+    contactHandles: [{ platform: "x", value: "newhandle" }],
+    context: "met at the demo day",
+  });
+  if (person.status !== "created") throw new Error("unreachable");
+
+  stubComposio({
+    listConnectedAccounts: () => ({
+      items: [{ id: "ca_test", status: "ACTIVE", toolkit: { slug: "twitter" } }],
+    }),
+    executeTool: () => ({ data: { id: "x_id_1" }, error: null, successful: true }),
+  });
+
+  const result = await as.action(api.composio.resolveXPlatformId, {
+    personId: person.personId,
+    username: "oldhandle",
+  });
+
+  // The lookup itself still succeeds -- Composio genuinely resolved this
+  // username to an id -- but the write is refused because it would staple a
+  // stale username's id onto the handle that has since been renamed.
+  expect(result).toEqual({ status: "resolved", platformId: "x_id_1" });
+  const saved = await as.query(api.people.getPerson, { id: person.personId });
+  expect(saved?.contactHandles?.[0]).not.toHaveProperty("platformId");
+});
+
+// S9: a malformed 200 (Composio itself misbehaving, not erroring) must not
+// throw past the outcome contract -- resolveXPlatformId promises exactly
+// three statuses, never an unhandled exception.
+test("resolveXPlatformId reports failed rather than throwing on a malformed connected-accounts response", async () => {
+  const t = newHarness();
+  const { as } = await asNewUser(t);
+  const person = await as.mutation(api.people.addPersonWithOutcome, {
+    name: "Tony Nguyen",
+    contactHandles: [{ platform: "x", value: "tonybuildd" }],
+    context: "met at the demo day",
+  });
+  if (person.status !== "created") throw new Error("unreachable");
+
+  // No "items" key at all -- a shape composioJson happily parses as JSON,
+  // so it never throws inside the fetch stub or composioJson itself; only
+  // code that assumes `.items` exists ever finds out.
+  stubComposio({ listConnectedAccounts: () => ({}) });
+
+  const result = await as.action(api.composio.resolveXPlatformId, {
+    personId: person.personId,
+    username: "tonybuildd",
+  });
+
+  expect(result).toEqual({ status: "failed" });
+});
+
+test("resolveXPlatformId reports failed rather than throwing on a null tool result", async () => {
+  const t = newHarness();
+  const { as } = await asNewUser(t);
+  const person = await as.mutation(api.people.addPersonWithOutcome, {
+    name: "Tony Nguyen",
+    contactHandles: [{ platform: "x", value: "tonybuildd" }],
+    context: "met at the demo day",
+  });
+  if (person.status !== "created") throw new Error("unreachable");
+
+  stubComposio({
+    listConnectedAccounts: () => ({
+      items: [{ id: "ca_test", status: "ACTIVE", toolkit: { slug: "twitter" } }],
+    }),
+    // successful: true but data is null -- a shape extractPlatformId has to
+    // survive without a caller-visible throw.
+    executeTool: () => ({ data: null, error: null, successful: true }),
+  });
+
+  const result = await as.action(api.composio.resolveXPlatformId, {
+    personId: person.personId,
+    username: "tonybuildd",
+  });
+
+  expect(result).toEqual({ status: "failed" });
+});
+
+// ------------------------------------------------------ resolveXUsername
+
+test("resolveXUsername resolves an id with no personId to authz -- identical flow, minus the person", async () => {
+  const t = newHarness();
+  const { userId, as } = await asNewUser(t);
+
+  const calls = stubComposio({
+    listConnectedAccounts: () => ({
+      items: [{ id: "ca_test", status: "ACTIVE", toolkit: { slug: "twitter" } }],
+    }),
+    executeTool: () => ({ data: { id: "x_id_1" }, error: null, successful: true }),
+  });
+
+  const result = await as.action(api.composio.resolveXUsername, {
+    username: "tonybuildd",
+  });
+
+  expect(result).toEqual({ status: "resolved", platformId: "x_id_1" });
+  const executed = calls.find((call) =>
+    call.url.includes("/tools/execute/TWITTER_USER_LOOKUP_BY_USERNAME"),
+  );
+  expect(executed?.body).toMatchObject({
+    connected_account_id: "ca_test",
+    user_id: userId,
+    arguments: { username: "tonybuildd" },
+  });
+});
+
+test("resolveXUsername reports unavailable when the caller has no connected X account", async () => {
+  const t = newHarness();
+  const { as } = await asNewUser(t);
+  stubComposio({ listConnectedAccounts: () => ({ items: [] }) });
+
+  const result = await as.action(api.composio.resolveXUsername, {
+    username: "tonybuildd",
+  });
+
+  expect(result).toEqual({ status: "unavailable" });
+});
+
+test("resolveXUsername reports failed, never throws, when Composio's lookup fails", async () => {
+  const t = newHarness();
+  const { as } = await asNewUser(t);
+  stubComposio({
+    listConnectedAccounts: () => ({
+      items: [{ id: "ca_test", status: "ACTIVE", toolkit: { slug: "twitter" } }],
+    }),
+    executeTool: () => ({ data: {}, error: "rate limited", successful: false }),
+  });
+
+  const result = await as.action(api.composio.resolveXUsername, {
+    username: "tonybuildd",
+  });
+
+  expect(result).toEqual({ status: "failed" });
+});
+
+test("resolveXUsername reports failed rather than throwing on a malformed connected-accounts response", async () => {
+  const t = newHarness();
+  const { as } = await asNewUser(t);
+  stubComposio({ listConnectedAccounts: () => ({ items: null }) });
+
+  const result = await as.action(api.composio.resolveXUsername, {
+    username: "tonybuildd",
+  });
+
+  expect(result).toEqual({ status: "failed" });
+});
+
+// The review's own wallet-risk number (14.4k calls/day): a shared daily cap
+// across BOTH X-lookup actions, on top of each one's own per-minute cap, so
+// alternating between them cannot double the effective daily budget.
+test("resolveXPlatformId and resolveXUsername share one daily cap", async () => {
+  const t = newHarness();
+  const { as } = await asNewUser(t);
+  const person = await as.mutation(api.people.addPersonWithOutcome, {
+    name: "Tony Nguyen",
+    contactHandles: [{ platform: "x", value: "tonybuildd" }],
+    context: "met at the demo day",
+  });
+  if (person.status !== "created") throw new Error("unreachable");
+  stubComposio({
+    listConnectedAccounts: () => ({
+      items: [{ id: "ca_test", status: "ACTIVE", toolkit: { slug: "twitter" } }],
+    }),
+    executeTool: () => ({ data: { id: "x_id_1" }, error: null, successful: true }),
+  });
+
+  const DAILY_CAP = 50;
+  vi.useFakeTimers();
+  // W4: xLookupDay is epoch-aligned (composio.ts's start: 0), so its
+  // boundary falls at every UTC midnight. Left at whatever real instant the
+  // test happened to start, a run within ~25 minutes of midnight would
+  // cross that boundary mid-loop, hand the bucket a fresh day's capacity,
+  // and let the 51st call through instead of refusing it -- pinned well
+  // clear of any midnight so the ~25 minutes advanced below can never
+  // cross one.
+  vi.setSystemTime(new Date("2026-01-01T00:05:00.000Z"));
+  try {
+    // Split across both actions rather than calling one 50 times: a
+    // per-action cap would let this pass with room to spare, and only a
+    // truly shared bucket refuses on the 51st call regardless of which
+    // action it was. Advanced past a minute between pairs so each action's
+    // OWN 10/minute cap never trips first and masks what this test is
+    // actually proving -- the calls still land the same calendar day, so
+    // the daily bucket itself never resets.
+    for (let i = 0; i < DAILY_CAP / 2; i++) {
+      await as.action(api.composio.resolveXPlatformId, {
+        personId: person.personId,
+        username: "tonybuildd",
+      });
+      await as.action(api.composio.resolveXUsername, { username: "tonybuildd" });
+      vi.advanceTimersByTime(61_000);
+    }
+
+    await expect(
+      as.action(api.composio.resolveXUsername, { username: "tonybuildd" }),
+    ).rejects.toThrow(/Too many requests/);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 // -------------------------------------------------- deleteMyAccount cleanup

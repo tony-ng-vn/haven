@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// Screen 5 of `../../phase1-build-plan.md`: home, and an empty shell in Phase 1.
@@ -23,9 +24,25 @@ struct DirectoryScreen: View {
     @State private var sheet: DirectorySheet?
     @State private var promoDismissed: Bool
     @State private var sharePromoDismissed: Bool
+    /// Checks, on appear and every foreground, whether one contact is worth
+    /// quietly suggesting. Its own instance keyed by `userId`, the same
+    /// account-scoping `WidgetPromoDismissal` and `SharePromoDismissal` use.
+    @StateObject private var contactSuggestion: ContactSuggestionModel
+    /// The oldest capture `CaptureDrain` could not fully save, still unread
+    /// -- checked on the same launch/foreground cadence the contact
+    /// suggestion is, and also updated the moment `HandleDropState` changes:
+    /// see `.onReceive` below. `CaptureSync.run(userId:)` is what records
+    /// one, and it can run mid-session (a foreground-driven drain kicked off
+    /// by AddPersonSheet or SearchScreen), which the poll alone would not
+    /// see until the next foreground.
+    @State private var droppedHandle: HandleDropState.Event?
     /// Sending what was just written is the app's job, not this screen's; it
     /// only asks. See `CaptureDrainRequest`.
     @Environment(\.requestCaptureDrain) private var requestCaptureDrain
+    /// Coming back from another app is exactly the moment somebody might
+    /// have just saved a new contact there -- the same reason `RootView`
+    /// re-runs `CaptureSync` on this transition.
+    @Environment(\.scenePhase) private var scenePhase
 
     init(
         userId: String,
@@ -44,6 +61,7 @@ struct DirectoryScreen: View {
         _sharePromoDismissed = State(
             initialValue: SharePromoDismissal.isDismissed(userId: userId)
         )
+        _contactSuggestion = StateObject(wrappedValue: ContactSuggestionModel(userId: userId))
     }
 
     /// A loaded screen that never opens a socket, for previews.
@@ -65,6 +83,7 @@ struct DirectoryScreen: View {
         _sharePromoDismissed = State(
             initialValue: SharePromoDismissal.isDismissed(userId: userId)
         )
+        _contactSuggestion = StateObject(wrappedValue: ContactSuggestionModel(userId: userId))
     }
 
     var body: some View {
@@ -97,6 +116,79 @@ struct DirectoryScreen: View {
                 )
             }
         }
+        .task {
+            await contactSuggestion.checkForSuggestion()
+            checkForDroppedHandle()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await contactSuggestion.checkForSuggestion() }
+            checkForDroppedHandle()
+        }
+        // A drain that runs while this screen is already on screen --
+        // AddPersonSheet and SearchScreen both ask for one on save -- would
+        // otherwise only reach this screen on the next foreground. Filtered
+        // to this account: `record`/`dismiss` post for whichever userId
+        // scoped the `HandleDropState` that changed, and a drain that ran
+        // for a different signed-in account on this device is not this
+        // screen's news.
+        .onReceive(NotificationCenter.default.publisher(for: HandleDropState.didChangeNotification)) { note in
+            guard note.object as? String == userId else { return }
+            checkForDroppedHandle()
+        }
+    }
+
+    private func checkForDroppedHandle() {
+        droppedHandle = HandleDropState(userId: userId).pending
+    }
+
+    /// Y1's conflict and the pre-existing handle-cap drop are different
+    /// problems -- one is a save that landed missing one account, the other
+    /// is a save that landed nowhere at all -- and get their own copy rather
+    /// than one message stretched to fit both.
+    private func droppedHandleTitle(_ event: HandleDropState.Event) -> String {
+        switch event.reason {
+        case .handleFull:
+            return "Could not add the \(PersonReach.label(event.platform)) handle for \(event.personName)."
+        case .conflict:
+            return "Could not save \(event.personName)."
+        }
+    }
+
+    private func droppedHandleDetail(_ event: HandleDropState.Event) -> String {
+        switch event.reason {
+        case .handleFull:
+            return "Their handles are full."
+        case .conflict:
+            return "Their handle belongs to someone else in your Haven."
+        }
+    }
+
+    /// The card's own action: go see the person the notice is about, and
+    /// take it down, the same way accepting the contact suggestion dismisses
+    /// it too. For a dropped handle that is the person it landed on; for a
+    /// conflict it is the person who already, provably, owns the handle.
+    private func openPersonForDroppedHandle() {
+        guard let droppedHandle else { return }
+        openPerson(droppedHandle.personId)
+        dismissDroppedHandle()
+    }
+
+    /// Dismissing advances `HandleDropState`'s own queue, so this reads
+    /// `pending` again immediately afterward rather than just clearing to
+    /// nil -- whatever was queued behind the one just seen shows right away
+    /// instead of waiting for the next poll or notification round-trip.
+    private func dismissDroppedHandle() {
+        let state = HandleDropState(userId: userId)
+        state.dismiss()
+        droppedHandle = state.pending
+    }
+
+    /// Queues the suggested contact and, once it has actually landed, asks
+    /// for the same drain a manual save or a contact import already does.
+    private func acceptContactSuggestion() {
+        guard contactSuggestion.accept() else { return }
+        onPersonAdded()
     }
 
     /// The capture is on disk; this is what turns it into a row.
@@ -169,6 +261,31 @@ struct DirectoryScreen: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
+            // Ahead of even the contact suggestion: this is an actual save
+            // that only partly (or not at all) landed, not a standing
+            // feature or a "you might want this" guess.
+            if let droppedHandle {
+                PromoCard(
+                    title: droppedHandleTitle(droppedHandle),
+                    detail: droppedHandleDetail(droppedHandle),
+                    action: "View",
+                    open: openPersonForDroppedHandle,
+                    dismiss: dismissDroppedHandle
+                )
+            }
+            // Ahead of the evergreen promos: this one is about a specific
+            // person, not a standing feature, and it goes stale -- someone
+            // who has already decided is a worse thing to bury than a
+            // suggestion that always applies.
+            if let suggestion = contactSuggestion.suggestion {
+                PromoCard(
+                    title: "You added \(suggestion.name).",
+                    detail: "Add them to Haven?",
+                    action: "Add",
+                    open: acceptContactSuggestion,
+                    dismiss: { contactSuggestion.dismiss() }
+                )
+            }
             // The share sheet first, and only while the directory is empty.
             // It is the one suggestion that makes the rest of the app work --
             // Haven starts buried behind More, where nobody finds it -- and

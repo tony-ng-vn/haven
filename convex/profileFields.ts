@@ -17,10 +17,16 @@ export const platformValidator = v.union(
 // OAuth round trip happened. Composio's connected profile tools prove this
 // for LinkedIn, Instagram and X (see composio.ts); a typed-in handle is the
 // only kind that is ever stored unverified.
+//
+// platformId is the platform's own stable id for the account (composio.ts
+// writes it alongside verified: true), optional and unbackfilled like every
+// other provenance field added after the fact -- a card claimed before this
+// field existed just lacks it.
 export const handleValidator = v.object({
   platform: platformValidator,
   value: v.string(),
   verified: v.boolean(),
+  platformId: v.optional(v.string()),
 });
 
 // The platforms whose handle is safe to render on the public web card.

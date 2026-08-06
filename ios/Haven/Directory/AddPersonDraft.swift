@@ -129,16 +129,6 @@ struct AddPersonDraft: Equatable {
         return mirror?.person(holding: platform.rawValue, value: handle)
     }
 
-    /// Who else is stored under this name.
-    ///
-    /// Offered, never applied: a name is not a unique key and two people really
-    /// can share one. Nobody is offered once the account itself is on file,
-    /// because the server has already decided who this is.
-    func nameMatches(in mirror: DirectoryMirror?) -> [MirrorPerson] {
-        guard alreadyKnown(in: mirror) == nil else { return [] }
-        return mirror?.people(named: name) ?? []
-    }
-
     /// The capture to queue, or nil when there is not one worth queueing.
     ///
     /// Nil rather than a capture missing a field: the server refuses those, so
@@ -162,7 +152,8 @@ struct AddPersonDraft: Equatable {
                     handleValue: handle,
                     profileUrl: platform.profileUrl(for: handle),
                     note: note,
-                    attachToPersonId: attachTo?.id
+                    attachToPersonId: attachTo?.id,
+                    source: "typed"
                 )
             )
         )

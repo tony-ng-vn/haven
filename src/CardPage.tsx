@@ -91,6 +91,10 @@ export function CardPage({ handle }: { handle: string }) {
               // phone member, so this cannot fire today; it is what keeps that
               // promise if the list ever grows one.
               if (isPhoneNumber(entry.platform)) return null;
+              // No platformId to pass: publicHandleValidator (profiles.ts)
+              // deliberately keeps the public card's shape narrow, and this
+              // id is not on it. reachUrl falls back to the username address,
+              // same as it always has for this page.
               const href = reachUrl(entry.platform, entry.value);
               // A platform this page has no address for is dropped, not printed
               // as a string a stranger would have to retype: every handle on a

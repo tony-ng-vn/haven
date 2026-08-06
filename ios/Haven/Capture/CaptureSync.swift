@@ -76,7 +76,14 @@ final class CaptureSync: ObservableObject {
     /// The mirror is refreshed even when the queue was empty, because it is
     /// what the *next* share reads to offer "add to an existing person", and
     /// it goes stale on its own as the directory changes elsewhere.
-    func run() async {
+    ///
+    /// `userId` scopes `HandleDropState` the same way it scopes
+    /// `ContactChangeState`: two accounts on one device must never see each
+    /// other's dropped-handle notice. Taken here rather than at `init`,
+    /// because this type is constructed once, eagerly, in `RootView`, before
+    /// Clerk has resolved who is signed in -- every real call site already
+    /// has it in hand by the time it calls this.
+    func run(userId: String) async {
         // Re-entrant calls are the normal case, not a bug: a launch and a
         // foreground can land together. The second one would replay captures
         // the first has not deleted yet, and the server would answer "already"
@@ -85,8 +92,25 @@ final class CaptureSync: ObservableObject {
         isRunning = true
         defer { isRunning = false }
 
+        let handleDrops = HandleDropState(userId: userId)
+        // Z1: CaptureDrain's own struct-level default for this is scoped to
+        // a throwaway random id -- exactly wrong here, where a conflict
+        // notice must be suppressed on the *next* run(userId:) call, not
+        // just within this one. This is the one line that makes the
+        // suppression real rather than only passing in CaptureDrainTests.
+        let conflictMarks = ConflictNoticeMarks(userId: userId)
         for queue in queues {
-            _ = await CaptureDrain(queue: queue, sink: sink).run()
+            let result = await CaptureDrain(queue: queue, sink: sink, conflictMarks: conflictMarks).run()
+            // Recorded in the order they happened -- HandleDropState now
+            // queues rather than overwrites, so a handle-cap drop and a
+            // final conflict landing in the same pass both reach whoever is
+            // watching, oldest first, instead of the second silently
+            // erasing the first. record(_:) itself posts the notification
+            // that lets an already-open DirectoryScreen pick this up without
+            // waiting for its own next foreground.
+            for event in result.notices {
+                handleDrops.record(event)
+            }
         }
         await refreshMirror()
     }

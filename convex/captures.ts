@@ -13,10 +13,24 @@ import { extractProfile } from "./openaiClient";
 import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
 import { normalizeName, personSearchText } from "./nameSearch";
-import { contactHandleValidator } from "./peopleFields";
-import { handleDisplayValue, handleIndexKeys } from "./handleKeys";
+import { contactHandleValidator, HandleSource } from "./peopleFields";
+import {
+  handleDisplayValue,
+  handleIndexKeys,
+  hasPhoneDigit,
+  isPhoneNumberPlatform,
+} from "./handleKeys";
 import { requireImageBlob } from "./imageBlobs";
 import { syncMemories } from "./memories";
+import {
+  appendContext,
+  ContactHandleInput,
+  deletePersonHandles,
+  findHandleOwner,
+  insertPersonHandles,
+  mergeHandleIntoOwner,
+  withAddedAt,
+} from "./people";
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -30,38 +44,201 @@ const extractedValidator = v.object({
   bio: v.optional(v.string()),
 });
 
-type ContactHandle = { platform: string; value: string };
-
 // The one place both accept paths fold a platform and a handle into the
 // shape people.contactHandles stores: display value on the row, index keys on
 // personHandles, folded by the shared seam so a screenshot and a share of the
-// same account can never land on two people.
+// same account can never land on two people. extra carries provenance the
+// caller already knows (acceptCapture always says "imported"; a caller-typed
+// platformId passes through) -- foldContactHandle folds the value, it does
+// not decide where the handle came from.
 function foldContactHandle(
   platform: string,
   handle: string,
-): ContactHandle | undefined {
+  extra?: { source?: HandleSource; platformId?: string },
+): ContactHandleInput | undefined {
   const folded = handleIndexKeys({ platform, value: handle });
   if (folded.platform === "" || folded.valueKey === "") {
     return undefined;
   }
-  return { platform: folded.platform, value: handleDisplayValue(handle) };
+  return {
+    platform: folded.platform,
+    value: handleDisplayValue(handle),
+    source: extra?.source,
+    platformId: extra?.platformId,
+  };
 }
 
-// The identity index, written in the same transaction as the array it
-// mirrors. Called only where the person was just inserted, so there is
-// nothing to reconcile: the person owns exactly this one handle.
-async function insertCaptureHandle(
+// What an attach can add to an owner that a straight create would have
+// stored directly -- headline, bio, link and the screenshot this capture
+// proves. Fill-if-empty, never overwrite: the owner's own words about
+// themselves (or a previous capture's) win over whatever a new, unrelated
+// screenshot happened to say.
+type FillIfEmpty = {
+  headline?: string;
+  bio?: string;
+  link?: string;
+  screenshotId?: Id<"_storage">;
+};
+
+function fillEmptyFields(
+  owner: Doc<"people">,
+  fill: FillIfEmpty,
+): Partial<Doc<"people">> {
+  const fields: Partial<Doc<"people">> = {};
+  if (fill.headline !== undefined && (owner.headline ?? "") === "") {
+    fields.headline = fill.headline;
+  }
+  if (fill.bio !== undefined && (owner.bio ?? "") === "") {
+    fields.bio = fill.bio;
+  }
+  if (fill.link !== undefined && (owner.link ?? "") === "") {
+    fields.link = fill.link;
+  }
+  // An owner who already has a screenshot keeps it -- this capture's own
+  // blob legitimately orphans here, and sweepOrphanedUploads reclaims it
+  // the same way it reclaims any other blob nothing ends up pointing at.
+  if (fill.screenshotId !== undefined && owner.screenshotId === undefined) {
+    fields.screenshotId = fill.screenshotId;
+  }
+  return fields;
+}
+
+// Attaches this capture's handle to whoever already owns it instead of
+// making them a second person for the same account -- the gap flagged
+// against captures.ts in the identity brief: addPerson, editPerson and
+// saveSharedProfile all check ownership before writing, and this pipeline
+// was the one write path left that did not. Returns null when nobody owns
+// the handle yet, which is the caller's signal to fall through and create.
+// Deletes the capture row on a match, the same as every create path does,
+// so a merged capture cannot be replayed.
+//
+// A refused merge returns "conflict" rather than null: the id says this
+// capture is `owner`, but the value it carries already, provably, belongs to
+// somebody else. null used to be the answer here too, and the caller could
+// not tell "nobody owns this yet, safe to create" apart from "somebody
+// disputes this" -- which minted a third person carrying owner's id and the
+// conflicting value, double-indexing the value's real owner. The capture row
+// is left alone on this branch (not deleted): a human can resolve it later,
+// and a retry never redrains into the same corruption.
+async function tryAttachToOwner(
   ctx: MutationCtx,
   userId: string,
-  personId: Id<"people">,
-  handle: ContactHandle,
-): Promise<void> {
-  await ctx.db.insert("personHandles", {
+  captureId: Id<"captures">,
+  contactHandle: ContactHandleInput | undefined,
+  context: string | undefined,
+  fillIfEmpty: FillIfEmpty,
+): Promise<
+  | {
+      status: "attached" | "already";
+      personId: Id<"people">;
+      noteTruncated: boolean;
+      handleDropped: boolean;
+    }
+  | { status: "conflict"; personId: Id<"people"> }
+  | null
+> {
+  if (contactHandle === undefined) {
+    return null;
+  }
+  const keys = handleIndexKeys(contactHandle);
+  const owner = await findHandleOwner(
+    ctx,
     userId,
-    personId,
-    ...handleIndexKeys(handle),
-  });
+    keys.platform,
+    keys.valueKey,
+    contactHandle.platformId,
+  );
+  if (owner === null) {
+    return null;
+  }
+  const merged = await mergeHandleIntoOwner(
+    ctx,
+    userId,
+    owner,
+    owner.contactHandles ?? [],
+    contactHandle,
+  );
+  if (merged.status === "refused") {
+    // The id says this is `owner`; the value this capture carries already
+    // belongs to somebody else. Nobody is present to resolve that (this
+    // pipeline runs from a screenshot or a queued replay), so this refuses
+    // -- same shape as saveSharedProfile's own conflict outcome -- rather
+    // than guess who is right by creating a third person or overwriting
+    // either side's handle.
+    return { status: "conflict", personId: owner._id };
+  }
+  const fields: Partial<Doc<"people">> = fillEmptyFields(owner, fillIfEmpty);
+  const { context: nextContext, noteTruncated } = appendContext(
+    owner.context,
+    context,
+  );
+  if (nextContext !== owner.context) {
+    fields.context = nextContext;
+  }
+  if (merged.changed) {
+    fields.contactHandles = merged.handles;
+  }
+  if (Object.keys(fields).length > 0) {
+    const now = Date.now();
+    await ctx.db.patch("people", owner._id, {
+      ...fields,
+      searchText: personSearchText({ ...owner, ...fields }),
+      updatedAt: now,
+    });
+    if (merged.changed) {
+      await deletePersonHandles(ctx, owner._id);
+      await insertPersonHandles(ctx, userId, owner._id, merged.handles);
+    }
+    await syncMemories(ctx, {
+      userId,
+      personId: owner._id,
+      context: fields.context,
+      createdAt: now,
+    });
+    await ctx.scheduler.runAfter(0, internal.people.embed, {
+      personId: owner._id,
+    });
+  }
+  await ctx.db.delete("captures", captureId);
+  return {
+    status: Object.keys(fields).length > 0 ? "attached" : "already",
+    personId: owner._id,
+    noteTruncated,
+    handleDropped: merged.handleDropped,
+  };
 }
+
+// noteTruncated mirrors addPerson's attach outcome; a straight create can
+// never truncate a note captures.ts never validates the length of. handleDropped
+// on "created" is narrower than the attach paths' meaning of the same field
+// (there it is the 8-handle cap; here it can only be acceptCapture's own
+// digitless-phone drop, since a create's array holds at most one handle) --
+// same field name because both answer the same client-facing question: was
+// there a handle this save could not keep.
+const captureAcceptReturns = v.union(
+  v.object({
+    status: v.literal("created"),
+    personId: v.id("people"),
+    handleDropped: v.boolean(),
+  }),
+  v.object({
+    status: v.literal("attached"),
+    personId: v.id("people"),
+    noteTruncated: v.boolean(),
+    handleDropped: v.boolean(),
+  }),
+  v.object({
+    status: v.literal("already"),
+    personId: v.id("people"),
+    noteTruncated: v.boolean(),
+    handleDropped: v.boolean(),
+  }),
+  // Nothing is written on this branch (see tryAttachToOwner above): personId
+  // names who the id says this capture is, not the value's actual owner --
+  // the same "id-matched owner" convention saveSharedProfile's own conflict
+  // outcome uses. The capture stays in triage for a human to resolve.
+  v.object({ status: v.literal("conflict"), personId: v.id("people") }),
+);
 
 export const generateUploadUrl = mutation({
   args: {},
@@ -224,7 +401,7 @@ export const acceptCapture = mutation({
     link: v.optional(v.string()),
     context: v.optional(v.string()),
   },
-  returns: v.id("people"),
+  returns: captureAcceptReturns,
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     const capture = await ctx.db.get("captures", args.captureId);
@@ -236,16 +413,52 @@ export const acceptCapture = mutation({
     }
     // Lenient on purpose, unlike acceptManualCapture below: the model answers
     // with nobody present, and a screenshot showing no handle is honestly a
-    // name-only person rather than a failed capture.
+    // name-only person rather than a failed capture. Always "imported": OCR
+    // read this off a screenshot, nobody typed or proved it.
+    //
+    // A digitless phone/whatsapp read ("unknown", an OCR miss) is dropped
+    // rather than folded: nobody is present to fix it, so this can only
+    // refuse the identity-critical contactHandles/personHandles write, not
+    // throw. The raw text still lands on the legacy platform/handle scalars
+    // below, same as any other extraction the fold below cannot use.
+    const handleDropped =
+      capture.extracted.handle !== undefined &&
+      isPhoneNumberPlatform(capture.extracted.platform) &&
+      !hasPhoneDigit(capture.extracted.handle);
     const contactHandle =
-      capture.extracted.handle === undefined
+      capture.extracted.handle === undefined || handleDropped
         ? undefined
-        : foldContactHandle(
-            capture.extracted.platform,
-            capture.extracted.handle,
-          );
+        : foldContactHandle(capture.extracted.platform, capture.extracted.handle, {
+            source: "imported",
+          });
+
+    const attached = await tryAttachToOwner(
+      ctx,
+      userId,
+      args.captureId,
+      contactHandle,
+      args.context,
+      {
+        headline: capture.extracted.headline,
+        bio: capture.extracted.bio,
+        link: args.link,
+        screenshotId: capture.screenshotId,
+      },
+    );
+    if (attached !== null) {
+      return attached;
+    }
+
     const contactHandles =
-      contactHandle === undefined ? undefined : [contactHandle];
+      contactHandle === undefined ? undefined : [withAddedAt([], contactHandle)];
+    // X2a: a dropped handle is dropped everywhere, not just from
+    // contactHandles/personHandles -- the legacy platform/handle scalars
+    // are exactly what backfillLegacyHandles (people.ts) later reads to
+    // fold into that same index. Writing the digitless value there anyway
+    // would let that maintenance path recreate the collision this gate
+    // exists to prevent, through a different write entirely.
+    const legacyPlatform = handleDropped ? undefined : capture.extracted.platform;
+    const legacyHandle = handleDropped ? undefined : capture.extracted.handle;
     const now = Date.now();
     const personId = await ctx.db.insert("people", {
       userId,
@@ -257,23 +470,23 @@ export const acceptCapture = mutation({
         name: capture.extracted.name,
         headline: capture.extracted.headline,
         bio: capture.extracted.bio,
-        handle: capture.extracted.handle,
+        handle: legacyHandle,
         contactHandles,
         context: args.context,
       }),
       link: args.link,
       context: args.context,
       updatedAt: now,
-      platform: capture.extracted.platform,
-      handle: capture.extracted.handle,
+      platform: legacyPlatform,
+      handle: legacyHandle,
       headline: capture.extracted.headline,
       bio: capture.extracted.bio,
       contactHandles,
       // The screenshot stays with the person as a visual memory anchor.
       screenshotId: capture.screenshotId,
     });
-    if (contactHandle !== undefined) {
-      await insertCaptureHandle(ctx, userId, personId, contactHandle);
+    if (contactHandles !== undefined) {
+      await insertPersonHandles(ctx, userId, personId, contactHandles);
     }
     await syncMemories(ctx, {
       userId,
@@ -283,7 +496,7 @@ export const acceptCapture = mutation({
     });
     await ctx.db.delete("captures", args.captureId);
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
-    return personId;
+    return { status: "created" as const, personId, handleDropped };
   },
 });
 
@@ -304,7 +517,7 @@ export const acceptManualCapture = mutation({
     // handle to type, which is a name-only person.
     contactHandle: v.optional(contactHandleValidator),
   },
-  returns: v.id("people"),
+  returns: captureAcceptReturns,
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     // Naming schedules a paid embedding, so guard the burst like the other
@@ -325,7 +538,7 @@ export const acceptManualCapture = mutation({
     // Strict where acceptCapture is lenient: the human is at the keyboard, so
     // a blank half of a typed handle is a client bug worth surfacing rather
     // than input to silently drop. Same wording as the other handle paths.
-    let contactHandle: ContactHandle | undefined;
+    let contactHandle: ContactHandleInput | undefined;
     if (args.contactHandle !== undefined) {
       if (args.contactHandle.platform.trim() === "") {
         throw new Error("A platform cannot be blank");
@@ -333,13 +546,45 @@ export const acceptManualCapture = mutation({
       if (handleDisplayValue(args.contactHandle.value) === "") {
         throw new Error("A handle cannot be blank");
       }
+      // Same refusal as people.ts's validateContactHandles, for the same
+      // reason: a digitless phone/whatsapp value folds to a plain lowercase
+      // string, and two different unreadable entries could otherwise
+      // collide. The human is present here, so this throws instead of the
+      // silent drop acceptCapture's OCR path uses below.
+      if (
+        isPhoneNumberPlatform(args.contactHandle.platform) &&
+        !hasPhoneDigit(args.contactHandle.value)
+      ) {
+        throw new Error("A phone number needs at least one digit");
+      }
+      // A human is typing this at triage, not a form asking for identity
+      // (addPerson/editPerson) -- but it is still hand-entered, so "typed"
+      // is the same default those default to when the caller sends nothing.
       contactHandle = foldContactHandle(
         args.contactHandle.platform,
         args.contactHandle.value,
+        {
+          source: args.contactHandle.source ?? "typed",
+          platformId: args.contactHandle.platformId,
+        },
       );
     }
+
+    const attached = await tryAttachToOwner(
+      ctx,
+      userId,
+      args.captureId,
+      contactHandle,
+      args.context,
+      // No bio field on this form -- a human at triage is not asked for one.
+      { headline: args.headline, link: args.link, screenshotId: capture.screenshotId },
+    );
+    if (attached !== null) {
+      return attached;
+    }
+
     const contactHandles =
-      contactHandle === undefined ? undefined : [contactHandle];
+      contactHandle === undefined ? undefined : [withAddedAt([], contactHandle)];
     const now = Date.now();
     const personId = await ctx.db.insert("people", {
       userId,
@@ -360,8 +605,8 @@ export const acceptManualCapture = mutation({
       screenshotId: capture.screenshotId,
       updatedAt: now,
     });
-    if (contactHandle !== undefined) {
-      await insertCaptureHandle(ctx, userId, personId, contactHandle);
+    if (contactHandles !== undefined) {
+      await insertPersonHandles(ctx, userId, personId, contactHandles);
     }
     await syncMemories(ctx, {
       userId,
@@ -371,7 +616,10 @@ export const acceptManualCapture = mutation({
     });
     await ctx.db.delete("captures", args.captureId);
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
-    return personId;
+    // Never true here: a digitless phone/whatsapp value throws above rather
+    // than reaching this insert (the human is present to fix it), unlike
+    // acceptCapture's own lenient drop.
+    return { status: "created" as const, personId, handleDropped: false };
   },
 });
 

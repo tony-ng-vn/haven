@@ -1,11 +1,16 @@
 /// <reference types="vite/client" />
-import { convexTest } from "convex-test";
+import { convexTest, type TestConvexForDataModel } from "convex-test";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type {
+  DataModelFromSchemaDefinition,
+  FunctionArgs,
+} from "convex/server";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
+type TestDataModel = DataModelFromSchemaDefinition<typeof schema>;
 
 // Mint a fake Clerk identity and return an authenticated test context bound
 // to it. requireUser() keys ownership on tokenIdentifier ("issuer|subject"),
@@ -16,6 +21,45 @@ function asNewUser(t: ReturnType<typeof convexTest>) {
   const issuer = "https://test.clerk.accounts.dev";
   const userId = `${issuer}|${subject}`;
   return { userId, as: t.withIdentity({ subject, issuer }) };
+}
+
+// Both accept mutations now return a creation outcome, not a bare id
+// (identity brief, task 3: captures routes through the same owner check
+// addPerson does). Most tests here exist to exercise something else and
+// expect a fresh person, so this unwraps that common case and throws loudly
+// if a fixture unexpectedly collides with an existing handle instead.
+async function acceptCaptureId(
+  as: TestConvexForDataModel<TestDataModel>,
+  args: FunctionArgs<typeof api.captures.acceptCapture>,
+): Promise<Id<"people">> {
+  const result = await as.mutation(api.captures.acceptCapture, args);
+  if (result.status !== "created") {
+    throw new Error(`acceptCaptureId: expected created, got ${result.status}`);
+  }
+  return result.personId;
+}
+
+// Strips provenance (source, platformId, addedAt) so tests about handle
+// mechanics can keep asserting on platform and value alone. Tests about
+// provenance itself compare the full shape directly instead of going
+// through this.
+function displayOnly(
+  handles: Array<{ platform: string; value: string }> | undefined,
+): Array<{ platform: string; value: string }> | undefined {
+  return handles?.map(({ platform, value }) => ({ platform, value }));
+}
+
+async function acceptManualCaptureId(
+  as: TestConvexForDataModel<TestDataModel>,
+  args: FunctionArgs<typeof api.captures.acceptManualCapture>,
+): Promise<Id<"people">> {
+  const result = await as.mutation(api.captures.acceptManualCapture, args);
+  if (result.status !== "created") {
+    throw new Error(
+      `acceptManualCaptureId: expected created, got ${result.status}`,
+    );
+  }
+  return result.personId;
 }
 
 // convex-test's storage mock never records contentType from the Blob it was
@@ -201,7 +245,7 @@ test("acceptCapture creates an owned person and consumes the capture", async () 
   });
   await t.finishAllScheduledFunctions(vi.runAllTimers);
 
-  const personId = await as.mutation(api.captures.acceptCapture, {
+  const personId = await acceptCaptureId(as, {
     captureId,
     link: "https://x.com/ada_l",
     context: "Met at the meetup.",
@@ -230,6 +274,91 @@ test("acceptCapture creates an owned person and consumes the capture", async () 
   expect(hits.map((p) => p.name)).toEqual(["Ada Lovelace"]);
 });
 
+// Lenient where acceptManualCapture is strict: nobody is present to fix an
+// OCR miss, so a phone/whatsapp value with no digit at all is dropped rather
+// than thrown -- the person still lands, just without a handle the fold
+// could otherwise collide two strangers on (handleKeys.ts's hasPhoneDigit).
+//
+// X2a: the drop has to be total, not just contactHandles/personHandles.
+// person.platform/person.handle are the legacy scalars backfillLegacyHandles
+// (people.ts) reads to fold INTO the identity index later -- writing the
+// dropped value there anyway would let a future run of that migration
+// recreate the exact collision this gate exists to prevent, through a
+// completely different code path.
+test("acceptCapture drops a digitless extracted phone value and flags handleDropped", async () => {
+  stubOpenAI({ extraction: { ...EXTRACTION, platform: "phone", handle: "unknown" } });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const result = await as.mutation(api.captures.acceptCapture, { captureId });
+  expect(result.status).toBe("created");
+  if (result.status !== "created") throw new Error("unreachable");
+  expect(result.handleDropped).toBe(true);
+
+  const person = await t.run((ctx) => ctx.db.get("people", result.personId));
+  expect(person?.contactHandles).toBeUndefined();
+  expect(person?.platform).toBeUndefined();
+  expect(person?.handle).toBeUndefined();
+  expect(await handleRows(t)).toEqual([]);
+});
+
+// The reviewer's exact scenario (identity brief, R1): a legacy row written
+// before this gate existed still has a digitless phone value indexed under
+// its lowercase fold ("unknown"). A second stranger's own unreadable OCR
+// read ("Unknown", same fold) must not attach to that legacy row just
+// because the two happen to collide on the same fallback key -- the drop
+// above is what keeps a NEW digitless read from ever reaching that lookup
+// at all.
+test("a legacy person's digitless phone value does not attach a new capture's own digitless read", async () => {
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  const alice = await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "Alice",
+      normalizedName: "alice",
+      contactHandles: [{ platform: "phone", value: "unknown" }],
+      updatedAt: Date.now(),
+    }),
+  );
+  await t.run((ctx) =>
+    ctx.db.insert("personHandles", {
+      userId,
+      personId: alice,
+      platform: "phone",
+      valueKey: "unknown",
+    }),
+  );
+
+  stubOpenAI({ extraction: { ...EXTRACTION, platform: "phone", handle: "Unknown" } });
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const result = await as.mutation(api.captures.acceptCapture, { captureId });
+  expect(result.status).toBe("created");
+  if (result.status !== "created") throw new Error("unreachable");
+  expect(result.handleDropped).toBe(true);
+  // Bob, not Alice.
+  expect(result.personId).not.toBe(alice);
+
+  const bob = await t.run((ctx) => ctx.db.get("people", result.personId));
+  expect(bob?.contactHandles).toBeUndefined();
+  // Bob's own legacy scalars stay clear too (X2a) -- otherwise a future
+  // backfillLegacyHandles run over Bob's row could still fold "Unknown"
+  // into the index and recreate this exact collision through that path.
+  expect(bob?.platform).toBeUndefined();
+  expect(bob?.handle).toBeUndefined();
+  // Alice's own row is untouched, and still the only one "unknown" indexes.
+  const rows = await t.run((ctx) => ctx.db.query("personHandles").collect());
+  expect(rows).toEqual([expect.objectContaining({ personId: alice, valueKey: "unknown" })]);
+});
+
 test("acceptCapture keeps the extracted bio and makes it searchable", async () => {
   stubOpenAI({ extraction: EXTRACTION });
   const t = convexTest(schema, modules);
@@ -239,7 +368,7 @@ test("acceptCapture keeps the extracted bio and makes it searchable", async () =
   });
   await t.finishAllScheduledFunctions(vi.runAllTimers);
 
-  const personId = await as.mutation(api.captures.acceptCapture, { captureId });
+  const personId = await acceptCaptureId(as, { captureId });
   await t.finishAllScheduledFunctions(vi.runAllTimers);
 
   // The bio is the richest text the extraction paid for -- what the person
@@ -374,7 +503,9 @@ test("updatePerson refreshes the embedding from the new context", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
 
-  const personId = await as.mutation(api.people.addPerson, { name: "Maya", contactHandles: [{ platform: "phone", value: "unlisted" }], context: "met before this test" });
+  const added = await as.mutation(api.people.addPersonWithOutcome, { name: "Maya", contactHandles: [{ platform: "phone", value: "unlisted1" }], context: "met before this test" });
+  if (added.status !== "created") throw new Error("unreachable");
+  const personId = added.personId;
   await as.mutation(api.people.updatePerson, {
     id: personId,
     context: "Runs the observatory",
@@ -732,7 +863,7 @@ test("acceptManualCapture names a failed capture and consumes it", async () => {
     (await t.run((ctx) => ctx.db.get("captures", captureId)))?.status,
   ).toBe("failed");
 
-  const personId = await as.mutation(api.captures.acceptManualCapture, {
+  const personId = await acceptManualCaptureId(as, {
     captureId,
     name: "Ada Lovelace",
     headline: "Convex -- MIT",
@@ -763,7 +894,7 @@ test("acceptManualCapture trims the surrounding whitespace of the name", async (
   });
   await t.finishAllScheduledFunctions(vi.runAllTimers);
 
-  const personId = await as.mutation(api.captures.acceptManualCapture, {
+  const personId = await acceptManualCaptureId(as, {
     captureId,
     name: "  Ada Lovelace  ",
   });
@@ -817,7 +948,7 @@ test("acceptManualCapture names a still-pending capture and survives the late ex
   });
   // A stuck extraction must never block a human: name it while still pending.
 
-  const personId = await as.mutation(api.captures.acceptManualCapture, {
+  const personId = await acceptManualCaptureId(as, {
     captureId,
     name: "Grace Hopper",
   });
@@ -1063,10 +1194,10 @@ test("sweepOrphanedUploads never deletes a blob referenced by a person photo", a
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);
   const photoId = await seedScreenshot(t);
-  await as.mutation(api.people.addPerson, {
+  await as.mutation(api.people.addPersonWithOutcome, {
     name: "Ada Lovelace",
     photoStorageId: photoId,
-    contactHandles: [{ platform: "phone", value: "unlisted" }],
+    contactHandles: [{ platform: "phone", value: "unlisted1" }],
     context: "met before this test",
   });
 
@@ -1162,12 +1293,12 @@ test("acceptCapture indexes the extracted handle so a later share finds the same
   });
   await t.finishAllScheduledFunctions(vi.runAllTimers);
 
-  const personId = await as.mutation(api.captures.acceptCapture, { captureId });
+  const personId = await acceptCaptureId(as, { captureId });
 
   const person = await t.run((ctx) => ctx.db.get("people", personId));
   // The display array keeps the legacy scalars company; neither replaces
   // the other while the legacy pair is still read by the embed text.
-  expect(person?.contactHandles).toEqual([{ platform: "x", value: "ada_l" }]);
+  expect(displayOnly(person?.contactHandles)).toEqual([{ platform: "x", value: "ada_l" }]);
   expect(person?.platform).toBe("x");
   expect(await handleRows(t)).toMatchObject([
     { userId, personId, platform: "x", valueKey: "ada_l" },
@@ -1183,6 +1314,7 @@ test("acceptCapture indexes the extracted handle so a later share finds the same
     status: "already",
     personId,
     noteTruncated: false,
+    handleDropped: false,
   });
 });
 
@@ -1197,10 +1329,10 @@ test("an extracted handle folds to one identity however the model cased it", asy
   });
   await t.finishAllScheduledFunctions(vi.runAllTimers);
 
-  const personId = await as.mutation(api.captures.acceptCapture, { captureId });
+  const personId = await acceptCaptureId(as, { captureId });
 
   const person = await t.run((ctx) => ctx.db.get("people", personId));
-  expect(person?.contactHandles).toEqual([{ platform: "x", value: "Ada_L" }]);
+  expect(displayOnly(person?.contactHandles)).toEqual([{ platform: "x", value: "Ada_L" }]);
   expect(await handleRows(t)).toMatchObject([
     { platform: "x", valueKey: "ada_l" },
   ]);
@@ -1213,6 +1345,326 @@ test("an extracted handle folds to one identity however the model cased it", asy
   expect(shared.personId).toBe(personId);
 });
 
+// ------------------------------------------------------------ provenance
+
+test("acceptCapture stores the extracted handle with source imported", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const personId = await acceptCaptureId(as, { captureId });
+  const person = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(person?.contactHandles?.[0].source).toBe("imported");
+  expect(person?.contactHandles?.[0].addedAt).toEqual(expect.any(Number));
+});
+
+test("acceptManualCapture defaults an unstated handle source to typed", async () => {
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const personId = await acceptManualCaptureId(as, {
+    captureId,
+    name: "Mai Tran",
+    contactHandle: { platform: "instagram", value: "mai.makes" },
+  });
+  const person = await t.run((ctx) => ctx.db.get("people", personId));
+  expect(person?.contactHandles?.[0].source).toBe("typed");
+});
+
+// The gap this closes: insertCaptureHandle and foldContactHandle used to
+// write a personHandles row with no ownership check at all, so a second
+// screenshot of an account already saved made a second person for it.
+test("acceptCapture attaches to an existing owner instead of making a second person", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  const owner = await as.mutation(api.people.addPersonWithOutcome, {
+    name: "Ada Lovelace",
+    context: "met at the compiler talk",
+    contactHandles: [{ platform: "x", value: "ada_l" }],
+  });
+  if (owner.status !== "created") throw new Error("unreachable");
+
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const result = await as.mutation(api.captures.acceptCapture, {
+    captureId,
+    context: "screenshotted her profile too",
+  });
+  expect(result.status).toBe("attached");
+  if (result.status !== "attached" && result.status !== "already") {
+    throw new Error("unreachable");
+  }
+  expect(result.personId).toBe(owner.personId);
+
+  const people = await t.run((ctx) =>
+    ctx.db
+      .query("people")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect(),
+  );
+  expect(people).toHaveLength(1);
+  const person = await t.run((ctx) => ctx.db.get("people", owner.personId));
+  expect(person?.context).toBe(
+    "met at the compiler talk\nscreenshotted her profile too",
+  );
+  // The capture is consumed on attach exactly like it is on create.
+  expect(await t.run((ctx) => ctx.db.get("captures", captureId))).toBeNull();
+});
+
+// The attach path used to copy only the note and the handle: headline, bio,
+// link and the screenshot this capture proves all got silently dropped, and
+// the new blob orphaned with nothing pointing at it. Fixed to fill each
+// EMPTY field on the owner from what this capture extracted.
+test("acceptCapture fills the owner's empty headline, bio and screenshot from the capture", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const owner = await as.mutation(api.people.addPersonWithOutcome, {
+    name: "Ada Lovelace",
+    context: "met at the compiler talk",
+    contactHandles: [{ platform: "x", value: "ada_l" }],
+  });
+  if (owner.status !== "created") throw new Error("unreachable");
+  const before = await t.run((ctx) => ctx.db.get("people", owner.personId));
+  expect(before?.headline).toBeUndefined();
+  expect(before?.bio).toBeUndefined();
+  expect(before?.screenshotId).toBeUndefined();
+
+  const screenshotId = await seedScreenshot(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId,
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  await as.mutation(api.captures.acceptCapture, {
+    captureId,
+    context: "screenshotted her profile too",
+  });
+
+  const after = await t.run((ctx) => ctx.db.get("people", owner.personId));
+  expect(after?.headline).toBe(EXTRACTION.headline);
+  expect(after?.bio).toBe(EXTRACTION.bio);
+  expect(after?.screenshotId).toBe(screenshotId);
+});
+
+test("acceptCapture never overwrites what the owner already has -- the new screenshot just orphans", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const owner = await as.mutation(api.people.addPersonWithOutcome, {
+    name: "Ada Lovelace",
+    context: "met at the compiler talk",
+    contactHandles: [{ platform: "x", value: "ada_l" }],
+  });
+  if (owner.status !== "created") throw new Error("unreachable");
+  const ownerScreenshot = await seedScreenshot(t);
+  await t.run((ctx) =>
+    ctx.db.patch("people", owner.personId, {
+      headline: "Already knew this",
+      bio: "Already knew this too",
+      screenshotId: ownerScreenshot,
+    }),
+  );
+
+  const newScreenshotId = await seedScreenshot(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: newScreenshotId,
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  await as.mutation(api.captures.acceptCapture, {
+    captureId,
+    context: "screenshotted her profile too",
+  });
+
+  // Nothing the owner already had for themselves was overwritten -- the new
+  // screenshot legitimately orphans rather than displacing the one already
+  // anchoring this person's memory.
+  const after = await t.run((ctx) => ctx.db.get("people", owner.personId));
+  expect(after?.headline).toBe("Already knew this");
+  expect(after?.bio).toBe("Already knew this too");
+  expect(after?.screenshotId).toBe(ownerScreenshot);
+});
+
+test("acceptManualCapture fills the owner's empty headline and link, never overwrites what is already there", async () => {
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const withNothing = await as.mutation(api.people.addPersonWithOutcome, {
+    name: "Mai Tran",
+    context: "gave me her card",
+    contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+  });
+  if (withNothing.status !== "created") throw new Error("unreachable");
+
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  await as.mutation(api.captures.acceptManualCapture, {
+    captureId,
+    name: "Mai (misspelled)",
+    context: "screenshotted the same profile again",
+    headline: "Ceramicist",
+    link: "https://mai.example",
+    contactHandle: { platform: "instagram", value: "mai.makes" },
+  });
+
+  const filled = await t.run((ctx) => ctx.db.get("people", withNothing.personId));
+  expect(filled?.headline).toBe("Ceramicist");
+  expect(filled?.link).toBe("https://mai.example");
+
+  // A second person who already has both: neither field moves.
+  const withBoth = await as.mutation(api.people.addPersonWithOutcome, {
+    name: "Binh Le",
+    context: "met at the ceramics market",
+    contactHandles: [{ platform: "instagram", value: "binh.le" }],
+  });
+  if (withBoth.status !== "created") throw new Error("unreachable");
+  await t.run((ctx) =>
+    ctx.db.patch("people", withBoth.personId, {
+      headline: "Already a potter",
+      link: "https://binh.example",
+    }),
+  );
+  const secondCaptureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  await as.mutation(api.captures.acceptManualCapture, {
+    captureId: secondCaptureId,
+    name: "Binh (misspelled)",
+    context: "screenshotted again",
+    headline: "A different headline",
+    link: "https://someone-elses-link.example",
+    contactHandle: { platform: "instagram", value: "binh.le" },
+  });
+  const untouched = await t.run((ctx) => ctx.db.get("people", withBoth.personId));
+  expect(untouched?.headline).toBe("Already a potter");
+  expect(untouched?.link).toBe("https://binh.example");
+});
+
+test("acceptManualCapture attaches to an existing owner instead of making a second person", async () => {
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  const owner = await as.mutation(api.people.addPersonWithOutcome, {
+    name: "Mai Tran",
+    context: "gave me her card",
+    contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+  });
+  if (owner.status !== "created") throw new Error("unreachable");
+
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const result = await as.mutation(api.captures.acceptManualCapture, {
+    captureId,
+    name: "Mai (misspelled)",
+    context: "screenshotted the same profile again",
+    contactHandle: { platform: "instagram", value: "mai.makes" },
+  });
+  expect(result.status).toBe("attached");
+  if (result.status !== "attached" && result.status !== "already") {
+    throw new Error("unreachable");
+  }
+  expect(result.personId).toBe(owner.personId);
+
+  const people = await t.run((ctx) =>
+    ctx.db
+      .query("people")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect(),
+  );
+  expect(people).toHaveLength(1);
+  expect(people[0].name).toBe("Mai Tran");
+});
+
+// S3: an id-preferred merge whose new value already belongs to somebody
+// else refuses rather than double-indexing that value. Unlike an attended
+// save, nobody is present here to resolve the refusal, so this falls
+// through to create instead of stranding the capture -- the same doctrine
+// saveSharedProfile's heldDifferently already follows.
+// Was "falls through to create" -- that used to mint a THIRD person carrying
+// A's id and B's username, double-indexing B's valueKey. The id says this
+// capture is A; the value it carries already, provably, belongs to B. Nobody
+// is present to resolve that, so this refuses instead of guessing: nothing
+// written, capture stays in triage for a human to sort out later.
+test("acceptManualCapture refuses rather than minting a corrupt third identity when an id-preferred merge would collide with someone else's handle", async () => {
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const b = await as.mutation(api.people.addPersonWithOutcome, {
+    name: "New Person",
+    context: "met at the market",
+    contactHandles: [{ platform: "x", value: "newhandle" }],
+  });
+  if (b.status !== "created") throw new Error("unreachable");
+  const a = await as.mutation(api.people.addPersonWithOutcome, {
+    name: "Ada Lovelace",
+    context: "met at the compiler talk",
+    contactHandles: [
+      { platform: "x", value: "oldhandle", platformId: "x-id-1" },
+    ],
+  });
+  if (a.status !== "created") throw new Error("unreachable");
+
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const result = await as.mutation(api.captures.acceptManualCapture, {
+    captureId,
+    name: "Ada (new handle)",
+    context: "screenshotted her renamed profile",
+    contactHandle: { platform: "x", value: "newhandle", platformId: "x-id-1" },
+  });
+
+  // personId names the id-matched owner (A) -- the person the capture claims
+  // to be -- not the value's actual owner (B), the same "who does the id say
+  // this is" convention saveSharedProfile's own conflict outcome uses.
+  expect(result).toEqual({ status: "conflict", personId: a.personId });
+
+  // The capture is still in triage, not deleted -- a human can resolve it,
+  // and a retry never redrains into the same corruption.
+  expect(await t.run((ctx) => ctx.db.get("captures", captureId))).not.toBeNull();
+
+  // Neither existing person touched, and no third person minted.
+  const aAfter = await t.run((ctx) => ctx.db.get("people", a.personId));
+  expect(aAfter?.contactHandles).toEqual([
+    expect.objectContaining({ platform: "x", value: "oldhandle" }),
+  ]);
+  const bAfter = await t.run((ctx) => ctx.db.get("people", b.personId));
+  expect(bAfter?.contactHandles).toEqual([
+    expect.objectContaining({ platform: "x", value: "newhandle" }),
+  ]);
+  expect(await t.run((ctx) => ctx.db.query("people").collect())).toHaveLength(2);
+});
+
+// acceptCapture's own fold never learns a platformId -- the extracted
+// validator (schema.ts) has no such field, since vision extraction cannot
+// read a numeric platform id off a screenshot -- so the id-preferred
+// rename-collision this fixes can only be reached through acceptManualCapture
+// today (a human can type an id-carrying handle at triage). tryAttachToOwner
+// is still the shared seam both mutations call, so the fix defends
+// acceptCapture too the moment any caller starts passing one through.
+
 test("a capture with no visible handle stays name-only", async () => {
   // Honest, not a bug: a screenshot that shows no handle names a person and
   // nothing more. An invented index row would be a fabricated identity.
@@ -1224,7 +1676,7 @@ test("a capture with no visible handle stays name-only", async () => {
   });
   await t.finishAllScheduledFunctions(vi.runAllTimers);
 
-  const personId = await as.mutation(api.captures.acceptCapture, { captureId });
+  const personId = await acceptCaptureId(as, { captureId });
 
   const person = await t.run((ctx) => ctx.db.get("people", personId));
   expect(person?.contactHandles).toBeUndefined();
@@ -1240,14 +1692,14 @@ test("acceptManualCapture indexes a typed handle in the same transaction", async
   });
   await t.finishAllScheduledFunctions(vi.runAllTimers);
 
-  const personId = await as.mutation(api.captures.acceptManualCapture, {
+  const personId = await acceptManualCaptureId(as, {
     captureId,
     name: "Mai Tran",
     contactHandle: { platform: " Instagram ", value: "@Mai.Makes" },
   });
 
   const person = await t.run((ctx) => ctx.db.get("people", personId));
-  expect(person?.contactHandles).toEqual([
+  expect(displayOnly(person?.contactHandles)).toEqual([
     { platform: "instagram", value: "Mai.Makes" },
   ]);
   expect(await handleRows(t)).toMatchObject([
@@ -1273,7 +1725,7 @@ test("a manually named capture without a handle stays name-only", async () => {
   });
   await t.finishAllScheduledFunctions(vi.runAllTimers);
 
-  const personId = await as.mutation(api.captures.acceptManualCapture, {
+  const personId = await acceptManualCaptureId(as, {
     captureId,
     name: "Mai Tran",
   });
@@ -1308,6 +1760,27 @@ test("acceptManualCapture refuses a blank typed handle", async () => {
       contactHandle: { platform: "  ", value: "mai.makes" },
     }),
   ).rejects.toThrow("A platform cannot be blank");
+});
+
+// Strict where acceptCapture is lenient (see below): a human is typing this
+// in, so a phone/whatsapp value with no digit at all is a client bug worth
+// surfacing rather than something to silently drop.
+test("acceptManualCapture refuses a typed phone value with no digit at all", async () => {
+  stubOpenAI({ failExtraction: true });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  await expect(
+    as.mutation(api.captures.acceptManualCapture, {
+      captureId,
+      name: "Alice",
+      contactHandle: { platform: "phone", value: "unknown" },
+    }),
+  ).rejects.toThrow("A phone number needs at least one digit");
 });
 
 test("sweepOrphanedUploads resets its watermark after an exhausted pass", async () => {

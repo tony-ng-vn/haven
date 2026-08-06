@@ -132,16 +132,30 @@ export default defineSchema({
   // from the array itself. Every write that touches contactHandles maintains
   // these rows in the same transaction, or the two drift -- see people.ts.
   // valueKey is the handle trimmed, stripped of leading "@", and lowercased.
+  // platformId, optional and unbackfilled, mirrors contactHandleValidator's
+  // field of the same name: a platform's stable id for the account, which
+  // findHandleOwner in people.ts prefers over valueKey because it survives a
+  // username rename that valueKey cannot.
   personHandles: defineTable({
     userId: v.string(),
     personId: v.id("people"),
     platform: v.string(),
     valueKey: v.string(),
+    platformId: v.optional(v.string()),
   })
     .index("by_user_and_platform_and_valueKey", [
       "userId",
       "platform",
       "valueKey",
+    ])
+    // Ships unstaged deliberately: personHandles is still small pre-launch,
+    // so a normal (non-staged) index build finishes fast enough not to
+    // matter -- staging is a cost worth paying once this table's growth
+    // makes an unstaged build a real blocking-write risk, not before.
+    .index("by_user_and_platform_and_platformId", [
+      "userId",
+      "platform",
+      "platformId",
     ])
     .index("by_person", ["personId"]),
   // A future mutual-link flow should create one row only after both Haven users

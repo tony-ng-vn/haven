@@ -85,6 +85,22 @@ enum ContactValue {
         partialFormatter.formatPartial(raw)
     }
 
+    /// E.164 when the raw value parses as a real number, unchanged otherwise.
+    ///
+    /// The counterpart to `phoneNumber(from:)` for a value that already has to
+    /// be saved either way: a card shared from Contacts carries a phone
+    /// exactly as it was typed into that person's card, with no chance to
+    /// correct it the way the contact question gets one, and dropping an
+    /// unparseable number here would mean losing the one thing the share was
+    /// for. `ConvexCaptureSink` calls this at drain time, the one place in the
+    /// pipeline that has both PhoneNumberKit and the raw value from a queued
+    /// capture -- so a second share of the same card folds onto the same
+    /// handle a hand-typed add already writes through `phoneNumber(from:)`,
+    /// not a second person for a formatting difference.
+    static func normalizedOrRaw(phone raw: String) -> String {
+        phoneNumber(from: raw) ?? raw
+    }
+
     /// Everything up to the first separator, with any of the platform's
     /// addresses in front of it and any leading `@` removed.
     ///
