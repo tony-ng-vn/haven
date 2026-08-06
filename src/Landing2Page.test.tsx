@@ -2,13 +2,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 
-// Same stubbing pattern as LandingPage.test.tsx / PolishedLandingPage.test.tsx:
-// this page's own job is the hero composition, not DriftSky's own animation
-// loop (driftSkyCanvasSizing.test.ts already pins the canvas's sizing).
-// TopNav itself is NOT stubbed here (see the existing "hosts the nav and the
-// footer" test below) -- it is trivial, already covered by its own dedicated
-// test, and rendering it for real is what lets this file assert the icon prop
-// actually reaches real markup.
+// This page's own job is the hero composition, not DriftSky's own animation
+// loop (driftSkyCanvasSizing.test.ts already pins the canvas's sizing), so
+// DriftSky is the only thing stubbed here. TopNav itself is NOT stubbed (see
+// the existing "hosts the nav and the footer" test below) -- it is trivial,
+// already covered by its own dedicated test, and rendering it for real is
+// what lets this file assert the icon prop actually reaches real markup.
 const driftSky = vi.hoisted(() => ({
   props: null as Record<string, unknown> | null,
   mounts: 0,
@@ -37,7 +36,11 @@ describe("Landing2Page", () => {
 
   test("titles the tab", () => {
     render(<Landing2Page />);
-    expect(document.title).toBe("Haven - Landing 2");
+    // The front door must render the same title index.html ships statically:
+    // the "(Inhavens)" token is load-bearing for brand search (seo.test.ts).
+    expect(document.title).toBe(
+      "Haven (Inhavens) - A personal memory layer for your people",
+    );
   });
 
   // The <br/> that breaks the headline after "Your people" splits it across
@@ -67,25 +70,27 @@ describe("Landing2Page", () => {
     expect(screen.getByText("Free, runs on your Mac.")).toBeTruthy();
   });
 
-  // Same CTA copy and hrefs as the polished landing's hero, and the same
-  // button classes -- see index.css's own comment on why: press/hover/focus
-  // behavior is meant to match exactly, via the shared .landing-polished
-  // scope this page's root also carries.
+  // Real pathnames, not the old hash routes: this is the front door now, and
+  // its own two buttons point straight at /sky and /waitlist rather than at
+  // "#/sky"/"#/ios" -- see hashRedirectTarget in lib.ts for how the old
+  // hashes still reach the same pages. Same button classes as before: press/
+  // hover/focus behavior is meant to match exactly, via the shared
+  // .landing-polished scope this page's root also carries.
   test("the hero carries both CTAs: Sky primary, iOS secondary", () => {
     render(<Landing2Page />);
     const sky = screen.getByText("Sky app, coming soon").closest("a");
     const ios = screen.getByText("Join the iPhone waitlist").closest("a");
-    expect(sky?.getAttribute("href")).toBe("#/sky");
+    expect(sky?.getAttribute("href")).toBe("/sky");
     expect(sky?.className).toContain("sky-download");
-    expect(ios?.getAttribute("href")).toBe("#/ios");
+    expect(ios?.getAttribute("href")).toBe("/waitlist");
     expect(ios?.className).toContain("landing-cta-secondary");
   });
 
   test("hosts the nav and the footer rather than duplicating their logic", () => {
     render(<Landing2Page />);
-    // TopNav and Footer are not stubbed here (unlike PolishedLandingPage.test.tsx):
-    // both are trivial and already covered by their own dedicated tests, so
-    // rendering them for real is simpler than adding two more module mocks.
+    // TopNav and Footer are not stubbed here: both are trivial and already
+    // covered by their own dedicated tests, so rendering them for real is
+    // simpler than adding two more module mocks.
     expect(screen.getByText("Haven", { selector: ".top-nav-brand" })).toBeTruthy();
     expect(screen.getByText("Privacy", { selector: ".site-footer-links a" })).toBeTruthy();
   });

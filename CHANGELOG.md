@@ -6,6 +6,20 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.51.0
+
+2026-08-06
+
+**Web**
+
+- inhavens.com now opens on the glass-artwork landing -- the one that was previewed at landing2 -- instead of the waitlist page.
+- The iPhone waitlist has its own address now, inhavens.com/waitlist: the landing's "Join the iPhone waitlist" button goes there, and old #/ios and #/join links redirect there too.
+- The Your Sky download page has its own address now, inhavens.com/sky: the landing's other button goes there, and old #/sky links redirect there too.
+- Every other old page address, including the retired /landing preview, now lands on the front door instead of a broken or orphaned page.
+- The waitlist page no longer carries the "Building your own map already? Try Your Sky for Mac" footnote -- it asks one thing now, joining the list.
+
+---
+
 ## v0.50.0
 
 2026-08-06

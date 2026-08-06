@@ -5,22 +5,22 @@ import { Footer } from "./Footer";
 import { WaitlistForm } from "./WaitlistForm";
 import { WAITLIST_COPY } from "./waitlistCopy";
 
-// inhavens.com/, and inhavens.com/#/ios.
+// inhavens.com/waitlist.
 //
 // Haven for iPhone is the primary client -- mvp-design.md owns the product
 // vision -- and it is still in development, so this page's job is to
-// introduce it honestly and carry the waitlist signup. It is also the bare
-// root's front door again (see resolveView in lib.ts): the owner tried a
-// landing hero there instead for a while, then asked for the waitlist back,
-// so the two landing designs live on at their own urls (/landing,
-// #/landing2) rather than being deleted, and this is what a stranger with no
-// link at all actually meets. WAITLIST_COPY (eyebrow, headline, tagline) is
-// the pitch this page carries; WaitlistForm is the ask itself, extracted so
-// this page reuses it rather than duplicating the join logic.
+// introduce it honestly and carry the waitlist signup. It used to be the
+// bare root's own front door; that moved to Landing2Page.tsx (see
+// resolveView in lib.ts), whose "Join the iPhone waitlist" button now points
+// here instead. WAITLIST_COPY (eyebrow, headline, tagline) is the pitch this
+// page carries; WaitlistForm is the ask itself, extracted so this page reuses
+// it rather than duplicating the join logic.
 //
-// Public and unauthenticated, like the sky download page: reachable at the
-// root, "#/ios", and the older alias "#/join" alike, for anyone with any of
-// those links.
+// Public and unauthenticated, like the sky download page. The old hash
+// addresses this page used to answer to -- "#/ios" and the older alias
+// "#/join" -- still work for anyone with either link: they redirect here now
+// (see hashRedirectTarget in lib.ts and the canonicalizing effect in
+// App.tsx) rather than resolving a second copy of this page in place.
 const COMING = [
   {
     title: "One profile",

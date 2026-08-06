@@ -2171,23 +2171,6 @@ feedback-widget.feedback-fab {
   color: #ff6b60;
 }
 
-/* Quiet enough to never compete with the join form -- a footnote, not a
-   second call to action. */
-.wl-sky-link {
-  display: inline-block;
-  margin-top: 10px;
-  font-size: 12px;
-  color: rgba(242, 239, 233, 0.45);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-decoration-color: rgba(242, 239, 233, 0.25);
-}
-
-.wl-sky-link:hover,
-.wl-sky-link:focus-visible {
-  color: rgba(242, 239, 233, 0.7);
-}
-
 /* Success state */
 .wl-check {
   display: inline-flex;
@@ -2280,8 +2263,8 @@ feedback-widget.feedback-fab {
   /* <canvas> is a replaced element: inset: 0 alone does not stretch it to
      fill the containing block the way it would a <div> -- width/height stay
      at the canvas's intrinsic 300x150 CSS px without these two lines. Same
-     fix as .wl-sky below; see .landing-sky for the bug this caused when it
-     was missing. */
+     fix as .wl-sky below; see driftSkyCanvasSizing.test.ts's own header
+     comment for the shipped bug this guards against. */
   width: 100%;
   height: 100%;
   z-index: 0;
@@ -2489,7 +2472,6 @@ a.card-handle:focus-visible {
 .sky-title,
 .ios-title,
 .top-nav-brand,
-.landing-hero-title,
 .landing2-hero-title {
   font-family: var(--font-serif);
 }
@@ -2573,7 +2555,7 @@ a.card-handle:focus-visible {
   color: rgba(242, 239, 233, 0.5);
 }
 
-/* Your Sky download page (inhavens.com/#/sky) --------------------------
+/* Your Sky download page (inhavens.com/sky) --------------------------
 
    Reading, not a hero form -- a left-aligned column with its own hero block
    at the top for the download CTA, and its own step/privacy sections below.
@@ -2582,7 +2564,7 @@ a.card-handle:focus-visible {
    measure, sized for body copy at 16px/1.65 line-height): comfortable for
    a phone, but adrift in empty space on a real desktop window, where this
    is a features/download page, not a dense article. clamp() widens it on
-   wide viewports the same way .landing-hero-title etc. scale elsewhere in
+   wide viewports the same way .landing2-hero-title etc. scale elsewhere in
    this file: the 34rem floor holds unchanged up to roughly tablet width (30vw
    stays below it until ~1015px), so mobile and narrow windows are untouched,
    then it grows through the 1280px desktop floor this codebase already
@@ -2622,7 +2604,7 @@ a.card-handle:focus-visible {
 
 .sky-title {
   /* Flat 34px before -- this page is a feature/download page, not a
-     marketing hero, so the clamp stays far short of .landing-hero-title's
+     marketing hero, so the clamp stays far short of .landing2-hero-title's
      own scale: additive vw+px (not pure vw, unlike the landing titles)
      because a pure-vw formula tuned to reach ~40px by desktop width would
      undershoot 34px at mobile, shrinking the title there. The 34px floor
@@ -2768,95 +2750,13 @@ a.card-handle:focus-visible {
 }
 
 /* ---------------------------------------------------------------------------
-   Landing hero (inhavens.com/landing, signed out) -- PolishedLandingPage.tsx
-
-   Not the front door anymore -- the bare root now serves the iOS waitlist
-   page instead (see resolveView in lib.ts) -- but still a full page in its
-   own right, reachable for comparison against Landing2Page's own concept: a
-   full-viewport hero that puts the product's own world on screen, then two
-   full-width sections (not cards) introducing each product, and a quiet
-   footer. Ordinary document flow, unlike .card-page: the hero is the one
-   fixed-height box (one viewport tall, position: relative), and the rest of
-   the page scrolls past it.
+   Shared hero buttons -- written for an earlier full-page landing hero
+   component (.landing-sky, .landing-hero, .landing-hero-title/-sub and its
+   own two full-width sections), deleted once the owner picked Landing2Page.tsx
+   as the front door instead (see resolveView in lib.ts). What is left below
+   is what Landing2Page's own hero still reuses:
+   the CTA row and its two buttons, and the quiet note underneath.
    ------------------------------------------------------------------------ */
-/* A fixed, page-wide background layer, not scoped to the hero: the sky
-   continues behind every section as the page scrolls, the way the old
-   full-bleed waitlist page did for its one screen. One canvas for the whole
-   page (see PolishedLandingPage.tsx), not one per section -- a second canvas
-   would double the animation cost for no visible gain when the first already
-   covers the viewport. z-index: -1 rather than a stacking context on .landing
-   keeps this simple: it paints behind ordinary in-flow content by the normal
-   stacking rules, with nothing else needing a z-index to sit above it.
-
-   Full presence, not the .card-sky 0.55 dim -- the sky is the subject here,
-   not a backdrop behind reading copy.
-
-   width/height: 100% is load-bearing, not decoration -- see .card-sky's
-   comment. Without it this is the bug that shipped: a canvas stuck at its
-   intrinsic 300x150 CSS px, pinned to the top-left, wander and the lens both
-   compressed into that same tiny box. */
-.landing-sky {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 0;
-}
-
-/* z-index: 1 on every section below is not decoration -- it is what keeps
-   the page's readable content above the fixed z-index: 0 canvas, the exact
-   same explicit background/foreground pairing .card-sky uses with
-   .card-content, .legal-page, .sky-page and .ios-page. A negative z-index on
-   the canvas instead (paints behind ordinary static content without any
-   z-index needed on the foreground) was considered and deliberately not
-   used: it depends on no ancestor between the canvas and its siblings ever
-   acquiring its own stacking context (a transform, an opacity, a filter),
-   which is a fact about the whole page that is easy to invalidate by
-   accident later. Explicit z-index on both sides has no such hidden
-   dependency. */
-.landing-hero {
-  position: relative;
-  z-index: 1;
-  min-height: 100vh;
-  min-height: 100dvh;
-}
-
-.landing-hero-content {
-  position: relative;
-  z-index: 1;
-  min-height: 100%;
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  /* Lower-third, not centered: the open sky above is where the constellation
-     gesture has room to breathe. */
-  justify-content: flex-end;
-  text-align: center;
-  gap: 16px;
-  padding: 96px 24px clamp(56px, 11vh, 128px);
-}
-
-.landing-hero-title {
-  margin: 0;
-  max-width: 18ch;
-  font-size: clamp(40px, 8vw, 84px);
-  font-weight: 500;
-  line-height: 1.05;
-  letter-spacing: -0.02em;
-  color: #fff;
-  text-shadow: 0 2px 28px rgba(0, 0, 0, 0.55);
-}
-
-.landing-hero-sub {
-  margin: 0;
-  max-width: 40ch;
-  font-size: clamp(16px, 2vw, 19px);
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.85);
-  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.4);
-}
-
 .landing-hero-ctas {
   display: flex;
   flex-wrap: wrap;
@@ -2877,7 +2777,7 @@ a.card-handle:focus-visible {
    renders solo outside this row -- the Sky page's own bottom repeat button --
    and still depends on those values there. Unscoped to .landing-hero-ctas
    itself rather than any one page, so every caller that composes the two
-   buttons in this row (/landing, landing2, and Sky's hero) gets it. */
+   buttons in this row (landing2 and Sky's hero) gets it. */
 .landing-hero-ctas .sky-download {
   align-self: auto;
   margin-top: 0;
@@ -2984,100 +2884,23 @@ a.card-handle:focus-visible {
   color: rgba(242, 239, 233, 0.4);
 }
 
-/* Below the fold: generous full-width sections, not cards. No background of
-   their own, deliberately -- .landing-sky is fixed behind the whole page (see
-   above), so leaving these transparent is what keeps the sky continuous as
-   the page scrolls instead of hitting flat dark past the hero. The text
-   shadow is the same legibility insurance the hero titles carry, now that
-   body copy sits directly over the same full-presence field. */
-.landing-section {
-  position: relative;
-  z-index: 1;
-  max-width: 40rem;
-  margin: 0 auto;
-  padding: 88px 24px;
-  text-align: left;
-}
-
-.landing-section-title {
-  margin: 0 0 10px;
-  font-size: 15px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--accent-text);
-  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.45);
-}
-
-.landing-section-body {
-  margin: 0 0 28px;
-  max-width: 46ch;
-  font-size: 18px;
-  line-height: 1.6;
-  color: rgba(242, 239, 233, 0.85);
-  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.45);
-}
-
-.landing-footer a:hover,
-.landing-footer a:focus-visible {
-  color: var(--text);
-}
-
-/* The live sample-sky embed in the Your Sky section: a dark framed teaser
-   that swaps for an iframe on click (heyclicky-video style), or on a narrow
-   screen is a direct link that opens the demo in its own tab -- a pan-zoom
-   canvas has little room in a small inline frame and would fight the page's
-   own scroll. */
-.demo-embed {
-  margin-bottom: 28px;
-}
-
-.demo-panel {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  aspect-ratio: 16 / 10;
-  padding: 0;
-  border-radius: var(--radius-lg);
-  background: rgba(0, 0, 0, 0.32);
-  border: 1px solid rgba(242, 239, 233, 0.14);
-  color: inherit;
-  font: inherit;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.demo-frame {
-  width: 100%;
-  aspect-ratio: 16 / 10;
-  border-radius: var(--radius-lg);
-  border: 1px solid rgba(242, 239, 233, 0.14);
-}
-
-.demo-caption {
-  margin: 10px 0 0;
-  font-size: 13px;
-  color: rgba(242, 239, 233, 0.5);
-}
-
 /* ---------------------------------------------------------------------------
-   Polished landing (inhavens.com/landing) -- PolishedLandingPage.tsx
+   Shared landing motion scope -- .landing-polished, used by Landing2Page.tsx
 
    Every selector below is scoped under .landing-polished, the class the root
-   element carries alongside the plain .landing base it reuses -- .landing-sky,
-   .landing-hero and the rest of that system were written for an earlier
-   landing component, deleted once the owner moved the root to the iOS
-   waitlist page; PolishedLandingPage.tsx is their sole surviving host now, at
-   inhavens.com/landing. Reused pieces (TopNav, Footer, SkyDemoEmbed,
-   .sky-download, .landing-cta-secondary, .landing-hero-title, ...) keep their
-   base rules completely untouched above -- this section only adds to them,
-   under this one extra ancestor class.
+   element carries alongside its own layout class (.landing2, for
+   Landing2Page's own hero). Written for an earlier full-page landing hero
+   component, deleted once the owner picked Landing2Page.tsx as the front
+   door instead -- see resolveView in lib.ts; Landing2Page.tsx is this
+   scope's sole surviving host now, at inhavens.com/. Reused pieces
+   (TopNav, Footer, .sky-download, .landing-cta-secondary, .landing2-hero-
+   title, ...) keep their base rules completely untouched above -- this
+   section only adds to them, under this one extra ancestor class.
    ------------------------------------------------------------------------ */
 
 /* Satoshi for everything except the serif headline: set once, here, and
    inherited by every descendant that does not declare its own font-family --
-   which is every one of them except .landing-hero-title and .top-nav-brand
+   which is every one of them except .landing2-hero-title and .top-nav-brand
    (THE RULE's public-page editorial exception, unchanged, see the grouped
    serif selector above). Buttons pick this up too, via the base `button {
    font: inherit }` reset. */
@@ -3110,15 +2933,13 @@ a.card-handle:focus-visible {
 @media (prefers-reduced-motion: no-preference) {
   .landing-polished .sky-download,
   .landing-polished .landing-cta-secondary,
-  .landing-polished .top-nav-brand,
-  .landing-polished .demo-panel {
+  .landing-polished .top-nav-brand {
     transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
   }
 
   .landing-polished .sky-download:active,
   .landing-polished .landing-cta-secondary:active,
-  .landing-polished .top-nav-brand:active,
-  .landing-polished .demo-panel:active {
+  .landing-polished .top-nav-brand:active {
     transform: scale(0.97);
   }
 }
@@ -3178,31 +2999,26 @@ a.card-handle:focus-visible {
   }
 }
 
-/* Hero entrance: h1, subline, CTA row, and the quiet note rise and fade in
-   once, staggered 70ms apart in that reading order. Driven by a
-   [data-mounted] attribute PolishedLandingPage.tsx writes on the root one
-   tick after first paint (see its own comment for why a ref, not
-   @starting-style -- nothing else in this codebase uses that yet). The rest
-   state (opacity: 0, translateY(12px)) is unconditional, so a visitor whose
-   JS is slow or absent still sees the content -- just without the entrance,
-   which is exactly the CSS-only fallback semantics [data-mounted] gives for
-   free. */
-.landing-polished .landing-hero-title,
-.landing-polished .landing-hero-sub,
+/* Hero entrance: CTA row and the quiet note rise and fade in once. Driven by
+   a [data-mounted] attribute Landing2Page.tsx writes on the root one tick
+   after first paint (see its own comment for why a ref, not @starting-style
+   -- nothing else in this codebase uses that yet). The rest state (opacity:
+   0, translateY(12px)) is unconditional, so a visitor whose JS is slow or
+   absent still sees the content -- just without the entrance, which is
+   exactly the CSS-only fallback semantics [data-mounted] gives for free.
+   This used to stagger four elements 70ms apart in reading order (h1,
+   subline, CTA row, note) for the earlier landing hero this scope was
+   written for; that page is gone, but the delays below (140ms, 210ms) are
+   left as they were rather than renumbered to 0ms/70ms -- Landing2Page's own
+   .landing2-hero-title/-sub entrance further down already fills the first
+   two steps of that same stagger at 0ms/70ms, so this group picks up exactly
+   where it left off. */
 .landing-polished .landing-hero-ctas,
 .landing-polished .landing-hero-note {
   opacity: 0;
   transform: translateY(12px);
   transition: opacity 550ms cubic-bezier(0.23, 1, 0.32, 1),
     transform 550ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.landing-polished[data-mounted] .landing-hero-title {
-  transition-delay: 0ms;
-}
-
-.landing-polished[data-mounted] .landing-hero-sub {
-  transition-delay: 70ms;
 }
 
 .landing-polished[data-mounted] .landing-hero-ctas {
@@ -3213,55 +3029,22 @@ a.card-handle:focus-visible {
   transition-delay: 210ms;
 }
 
-.landing-polished[data-mounted] .landing-hero-title,
-.landing-polished[data-mounted] .landing-hero-sub,
 .landing-polished[data-mounted] .landing-hero-ctas,
 .landing-polished[data-mounted] .landing-hero-note {
   opacity: 1;
   transform: translateY(0);
 }
 
-/* Below-fold reveal: each .landing-section gets one gentle rise-and-fade the
-   first time it is observed intersecting (PolishedLandingPage.tsx's
-   useRevealOnScroll, once semantics -- the observer disconnects itself after
-   the first hit). No parallax, no re-triggering on scroll back up. */
-.landing-polished .landing-section {
-  opacity: 0;
-  transform: translateY(10px);
-  transition: opacity 400ms cubic-bezier(0.23, 1, 0.32, 1),
-    transform 400ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.landing-polished .landing-section.landing-polished-in-view {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-/* This scope's own contrast bar: 4.5:1 against --night. The base 0.5 alpha
-   the default landing uses measures 4.76:1 there but only 4.20:1 against
-   --dusk -- the bottom of the same fixed body gradient this text can sit in
-   front of depending on scroll position, since .landing-section has no
-   background of its own (see the default landing's own comment on why:
-   .landing-sky and the body gradient show through every section). 0.65
-   clears both (7.30:1 / 6.03:1). Only the polished landing renders
-   SkyDemoEmbed today (landing2's hero has no demo panel), but the fix lives
-   under the shared scope like everything else here rather than a page-
-   specific one, since it would apply the same way if that ever changed. */
-.landing-polished .demo-caption {
-  color: rgba(242, 239, 233, 0.65);
-}
-
-/* Reduced motion: entrances and reveals become opacity-only crossfades;
+/* Reduced motion: the entrance above becomes an opacity-only crossfade;
    nothing translates. The press-scale rule above is already gated out
    entirely by its own @media block, and the hover lift is cancelled by its
-   own block just above -- this one covers the two transform-driven entrance
-   groups. */
+   own block just above -- this one covers the transform-driven entrance
+   group. Landing2's own two elements (.landing2-hero-title/-sub,
+   .landing2-art) get the same treatment in their own reduced-motion block
+   further down. */
 @media (prefers-reduced-motion: reduce) {
-  .landing-polished .landing-hero-title,
-  .landing-polished .landing-hero-sub,
   .landing-polished .landing-hero-ctas,
-  .landing-polished .landing-hero-note,
-  .landing-polished .landing-section {
+  .landing-polished .landing-hero-note {
     transform: none;
     transition-property: opacity;
     transition-duration: 200ms;
@@ -3269,7 +3052,7 @@ a.card-handle:focus-visible {
 }
 
 /* ---------------------------------------------------------------------------
-   Haven for iPhone (inhavens.com/#/ios)
+   Haven for iPhone (inhavens.com/waitlist)
 
    The iOS product landing: introduces the phone app and carries the waitlist
    signup (see WaitlistForm.tsx). Shares the sky page's column and hero shape
@@ -3361,7 +3144,7 @@ a.card-handle:focus-visible {
 }
 
 /* ---------------------------------------------------------------------------
-   Landing page 2 (inhavens.com/#/landing2), unlinked -- Landing2Page.tsx
+   Landing page 2 (inhavens.com/, the front door) -- Landing2Page.tsx
 
    Rebuilt around the owner's own generated art (public/glass-hero.jpg): the
    previous version approximated broken glass and a hidden world entirely in
@@ -3371,17 +3154,18 @@ a.card-handle:focus-visible {
    navy at left, the artwork at right, fused with one blend gradient where
    they meet. The navy left also carries its own DriftSky, .landing2-sky
    below -- scoped to this one section rather than fixed to the whole page
-   like .landing-sky above, and sized (not just masked) to the navy zone so
-   the stars, and the wandering constellation's whole travel path, never sit
-   on top of the image (see .landing2-sky's own comment for why the box
-   itself, not only the mask, is what keeps the figure on screen).
+   the way the earlier, now-deleted landing hero's own sky used to be, and
+   sized (not just masked) to the navy zone so the stars, and the wandering
+   constellation's whole travel path, never sit on top of the image (see
+   .landing2-sky's own comment for why the box itself, not only the mask, is
+   what keeps the figure on screen).
 
-   .landing-polished is reused wholesale from the polished landing (see that
-   section above): Satoshi, the press/hover/focus treatment on the shared
-   .sky-download / .landing-cta-secondary / TopNav classes, and the
-   [data-mounted] entrance mechanism all apply here for free, which is why
-   this page's own rules below only add the new layout and the two
-   image-specific entrance/reveal pieces.
+   .landing-polished is reused wholesale from that earlier landing (see the
+   shared motion scope's own section above): Satoshi, the press/hover/focus
+   treatment on the shared .sky-download / .landing-cta-secondary / TopNav
+   classes, and the [data-mounted] entrance mechanism all apply here for
+   free, which is why this page's own rules below only add the new layout and
+   the two image-specific entrance/reveal pieces.
    ------------------------------------------------------------------------ */
 .landing2 {
   position: relative;
@@ -3410,9 +3194,10 @@ a.card-handle:focus-visible {
 }
 
 /* The hero's own DriftSky, scoped to .landing2-hero (position: relative,
-   overflow: hidden above) rather than the full-page .landing-sky used
-   elsewhere -- this page's own sky lives behind one section, not the whole
-   route. Same canvas-sizing gotcha as every other host class (see
+   overflow: hidden above) rather than fixed to the whole page the way the
+   earlier, now-deleted landing hero's own full-page sky used to be -- this
+   page's own sky lives behind one section, not the whole route. Same
+   canvas-sizing gotcha as every other host class (see
    driftSkyCanvasSizing.test.ts, extended to pin this one too): a <canvas> is
    a replaced element, so inset: 0 alone collapses it to its 300x150
    intrinsic size -- explicit width/height are load-bearing, not decoration.

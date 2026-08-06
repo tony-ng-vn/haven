@@ -281,7 +281,7 @@ export default defineSchema({
     watermark: v.number(),
   }).index("by_key", ["key"]),
 
-  // Public waitlist signups from the /#/join landing. No auth: these are
+  // Public waitlist signups from the /waitlist page. No auth: these are
   // strangers, not users. Email is stored normalized (trimmed + lowercased)
   // so by_email gives an exact dedupe lookup. `source` records which
   // responsive layout they joined from. _creationTime is the signup time.

@@ -8,8 +8,8 @@ import { WAITLIST_COPY } from "./waitlistCopy";
 // The join capture itself: a name field, an email field that folds in once the
 // name is engaged, and the three honest end states (joined / already / error).
 // Extracted from what used to be the whole waitlist page, so the iOS product
-// page (IosPage.tsx, "#/ios") can carry it without duplicating the logic --
-// the page around it owns the pitch (eyebrow, headline, tagline), this owns
+// page (IosPage.tsx, at /waitlist) can carry it without duplicating the logic
+// -- the page around it owns the pitch (eyebrow, headline, tagline), this owns
 // only the ask.
 //
 // "already" is a first-class outcome, not an error: the person is on the list,
@@ -171,12 +171,6 @@ export function WaitlistForm() {
       ) : (
         <p className="wl-fine">{WAITLIST_COPY.fine} - inhavens.com</p>
       )}
-      {/* One quiet way to the Mac companion app, not driven by
-          WAITLIST_COPY: it is a separate product's link, not a second
-          voice for the waitlist itself. */}
-      <a className="wl-sky-link" href="#/sky">
-        Building your own map already? Try Your Sky for Mac.
-      </a>
     </>
   );
 }

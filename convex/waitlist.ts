@@ -15,7 +15,7 @@ export const MAX_JOINS_PER_MINUTE = 40;
 const RATE_WINDOW_MS = 60_000;
 const RATE_SENTINEL = "public:waitlist";
 
-// Public, unauthenticated join for the /#/join waitlist. Rate-limits first so
+// Public, unauthenticated join for the /waitlist page. Rate-limits first so
 // every attempt (valid or not) counts against the flood cap, then validates
 // and normalizes server-side (never trust the client's check), then dedupes on
 // the normalized email so a second submit is idempotent rather than a

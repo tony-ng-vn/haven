@@ -39,6 +39,10 @@ const RESERVED = new Set<string>([
   "join",
   "waitlist",
   "landing",
+  // Your Sky's own download page, at inhavens.com/sky -- same shadowing risk
+  // as "landing" and "waitlist" just above: a card claimed here would make
+  // that page permanently unreachable.
+  "sky",
   "home",
   "search",
   "people",

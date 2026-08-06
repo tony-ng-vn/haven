@@ -105,35 +105,46 @@ export function isValidEmail(raw: string): boolean {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
 }
 
-// The public waitlist lives at "#/join" (a trailing slash is tolerated). Kept
-// separate from isClerkFlowHash so this route reads as a public page, not an
-// auth callback to hand to Clerk.
+// The waitlist's old hash address, "#/join" (a trailing slash tolerated) --
+// it lives at the pathname /waitlist now (see isWaitlistPath below). Kept
+// only so hashRedirectTarget can recognize a link still out in the world and
+// send it there with a real redirect, rather than resolving it a second time.
 export function isJoinHash(hash: string): boolean {
   return /^#\/join\/?$/.test(hash);
 }
 
-// The download landing for Your Sky lives at "#/sky" (a trailing slash is
-// tolerated), same tolerance as isJoinHash. Public and unauthenticated, so it
-// gets the same carve-out ahead of the generic Clerk-flow check below.
+// Your Sky's old hash address, "#/sky" (a trailing slash tolerated), same
+// shape as isJoinHash -- it lives at the pathname /sky now (see isSkyPath
+// below). Same redirect-only purpose as isJoinHash.
 export function isSkyHash(hash: string): boolean {
   return /^#\/sky\/?$/.test(hash);
 }
 
-// The iOS product landing -- which carries the waitlist signup -- lives at
-// "#/ios" (a trailing slash tolerated), same shape as isSkyHash. Public and
-// unauthenticated, so it gets the same carve-out ahead of the generic
-// Clerk-flow check below.
+// The iOS waitlist's old hash address, "#/ios" (a trailing slash tolerated),
+// same shape as isSkyHash -- it lives at the pathname /waitlist now, the same
+// destination "#/join" redirects to. Same redirect-only purpose as isJoinHash.
 export function isIosHash(hash: string): boolean {
   return /^#\/ios\/?$/.test(hash);
 }
 
-// An unlinked, experimental second landing concept lives at "#/landing2" (a
-// trailing slash tolerated), same shape as isSkyHash/isIosHash. Nothing on
-// the site links to it -- reached only by typing the url -- so it needs the
-// same carve-out ahead of the generic Clerk-flow check below, or it would
-// read as an OAuth callback and bounce to sign-in.
+// Landing2's old hash address, "#/landing2" (a trailing slash tolerated),
+// same shape as isSkyHash/isIosHash -- the page it named is the bare root's
+// own front door now (see resolveView below). Same redirect-only purpose as
+// isJoinHash.
 export function isLanding2Hash(hash: string): boolean {
   return /^#\/landing2\/?$/.test(hash);
+}
+
+// Where a legacy hash link should be sent, or null when the hash needs no
+// redirect (including "" and every Clerk OAuth/verification callback hash,
+// which this must never touch). Pure so App.tsx's canonicalizing effect --
+// which actually calls location.replace -- and this file's own tests can
+// agree on the mapping without either one driving the browser.
+export function hashRedirectTarget(hash: string): string | null {
+  if (isSkyHash(hash)) return "/sky";
+  if (isIosHash(hash) || isJoinHash(hash)) return "/waitlist";
+  if (isLanding2Hash(hash)) return "/";
+  return null;
 }
 
 // "June 2026" -- the quiet memory anchor under a person's name.
@@ -487,29 +498,35 @@ export function bootMode(input: {
   return "landing";
 }
 
-// The single source of truth for which top-level screen App renders. The
-// signed-out default at the bare root is "ios" -- the iPhone waitlist page,
-// the same page "#/ios" and its older alias "#/join" already resolve to. The
-// owner asked for this back after trying the newer landing hero as the front
-// door: "the root should still be the waitlist page we have right now". The
-// two landing hero designs are still reachable, deliberately not deleted --
-// the polished one at "/landing" and the second concept at "#/landing2" --
-// just no longer the thing a stranger meets first. Existing users still
-// reach sign-in: Clerk OAuth/verification callbacks and the explicit
-// "#/sign-in" route mount it, and a returning visitor with a live session
-// resolves straight to Home (via the splash) without ever seeing the
-// waitlist.
+// The single source of truth for which top-level screen App renders.
+// Landing2 -- the glass-artwork hero with the constellation sky -- is the
+// front door now: the signed-out default at the bare root, per the owner's
+// directive to make it one. Its own two buttons point at the site's other
+// two product pages, each moved off a hash and onto its own pathname:
+// "/waitlist" (still called "ios"/IosPage.tsx in the source -- see its own
+// header comment for why) and "/sky". Both used to live at "#/ios" (with the
+// older alias "#/join") and "#/sky"; those hashes, plus Landing2's own old
+// "#/landing2" address, still work -- see hashRedirectTarget and the
+// canonicalizing effect in App.tsx that calls it on every load and
+// hashchange -- but now as a real redirect onto the new address rather than
+// a second way to reach the same view. The polished landing preview that
+// used to live at "/landing" is gone along with the component that rendered
+// it; the word stays reserved in handleNames so no card can ever claim it,
+// and the path simply falls through every check below to this same front
+// door. Existing users still reach sign-in: Clerk OAuth/verification
+// callbacks and the explicit "#/sign-in" route mount it, and a returning
+// visitor with a live session resolves straight to Home (via the splash)
+// without ever seeing the front door.
 export type View =
   | "home"
   | "signin"
   | "splash"
-  | "landing-polished"
+  | "landing2"
   | "card"
   | "legal"
   | "support"
   | "sky"
-  | "ios"
-  | "landing2";
+  | "waitlist";
 
 /// The one path segment a url names, lowercased, or null when it names none or
 /// more than one.
@@ -559,16 +576,20 @@ export function legalDocFromPath(pathname: string): LegalDoc | null {
   return name === "privacy" || name === "terms" ? name : null;
 }
 
-/// Whether a path names the polished landing preview at inhavens.com/landing.
+/// Whether a path names the Your Sky download page at inhavens.com/sky.
 ///
-/// Kept standalone rather than folded into SitePage: that type's whole job is
-/// "which page does LegalPage/SupportPage answer for", and widening it here
-/// would blur that. Same trailing-slash and casing tolerance as
-/// sitePageFromPath, via the same topLevelSegment helper -- and "landing" is
-/// held back in handleNames the same way privacy/terms/support are, so no
-/// card can ever shadow it.
-export function isPolishedLandingPath(pathname: string): boolean {
-  return topLevelSegment(pathname) === "landing";
+/// Same trailing-slash and casing tolerance as sitePageFromPath, via the same
+/// topLevelSegment helper -- and "sky" is held back in handleNames the same
+/// way privacy/terms/support are, so no card can ever shadow it.
+export function isSkyPath(pathname: string): boolean {
+  return topLevelSegment(pathname) === "sky";
+}
+
+/// Whether a path names the iPhone waitlist at inhavens.com/waitlist.
+///
+/// Same shape as isSkyPath -- "waitlist" is held back in handleNames too.
+export function isWaitlistPath(pathname: string): boolean {
+  return topLevelSegment(pathname) === "waitlist";
 }
 
 export function resolveView(input: {
@@ -587,10 +608,14 @@ export function resolveView(input: {
   const sitePage = sitePageFromPath(input.pathname ?? "/");
   if (sitePage === "support") return "support";
   if (sitePage !== null) return "legal";
-  // The polished landing preview, same precedence as the site pages just
-  // above and for the same reason: it has to be reachable by anyone with the
-  // link, signed in or out, before the auth checks below ever run.
-  if (isPolishedLandingPath(input.pathname ?? "/")) return "landing-polished";
+  // The two product pages Landing2's own buttons point at, same precedence as
+  // the site pages just above and for the same reason: whoever has the link
+  // (an App Store reviewer, a Mac download waiting to happen) has to reach it
+  // whether or not they happen to be signed in, before the auth checks below
+  // ever run -- checked before the generic card path just below, same as the
+  // site pages and the old /landing preview used to be.
+  if (isWaitlistPath(input.pathname ?? "/")) return "waitlist";
+  if (isSkyPath(input.pathname ?? "/")) return "sky";
   // Then cards, before the auth checks and deliberately so. The person this
   // page exists for is a stranger who just scanned a code, and they arrive
   // signed out: leaving it until after would sit them on a splash while Clerk
@@ -601,21 +626,18 @@ export function resolveView(input: {
   // Checked after the auth test, so somebody already signed in who lands on
   // /signin gets their people rather than a form asking them to do it again.
   if (isAuthPath(input.pathname ?? "/")) return "signin";
-  // The Your Sky download page, public like "#/join" -- checked before the
-  // generic Clerk-flow test below, which would otherwise treat "#/sky" as an
-  // OAuth callback and route it to sign-in.
-  if (isSkyHash(input.hash)) return "sky";
-  // The iOS product page, public for the same reason -- and "#/join" is kept
-  // as an alias into it, since it is where the waitlist signup lives now.
-  if (isIosHash(input.hash) || isJoinHash(input.hash)) return "ios";
-  // An unlinked second landing concept the owner is evaluating -- public and
-  // unauthenticated like sky/ios above, reached only by typing the url.
-  if (isLanding2Hash(input.hash)) return "landing2";
+  // A legacy hash ("#/sky", "#/ios", "#/join", "#/landing2") is already on its
+  // way out via the canonicalizing redirect in App.tsx -- checked here, ahead
+  // of the generic Clerk-flow test below, so it reads as the front door for
+  // the one frame before that redirect lands rather than as an OAuth
+  // callback, which would otherwise flash Clerk's sign-in card at a visitor
+  // who followed an old, perfectly good link.
+  if (hashRedirectTarget(input.hash) !== null) return "landing2";
   if (isClerkFlowHash(input.hash)) return "signin";
   if (input.isLoading && bootMode(input) === "splash") return "splash";
   // The bare root, and anything else that fell through every check above --
-  // the iOS waitlist page, same as "#/ios" and "#/join".
-  return "ios";
+  // Landing2, the front door.
+  return "landing2";
 }
 
 // The triage card's drag gesture: scroll-style momentum projection for
