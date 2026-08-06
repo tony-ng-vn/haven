@@ -38,6 +38,25 @@ describe("the sky download page", () => {
     expect(hrefs).toContain("/downloads/YourSky.zip");
   });
 
+  // The secondary CTA mirrors the two-button row already shipped on the
+  // landing pages (see Landing2Page.test.tsx's own version of this test):
+  // it must sit beside "Download for Mac" in the same shared row, not just
+  // exist somewhere on the page.
+  test("pairs a secondary iPhone waitlist CTA with the download button", () => {
+    const { container } = render(<SkyPage />);
+    const row = container.querySelector(".landing-hero-ctas");
+    expect(row).toBeTruthy();
+    const rowLinks = Array.from(row!.querySelectorAll("a")).map((a) => [
+      a.textContent,
+      a.getAttribute("href"),
+    ]);
+    expect(rowLinks).toContainEqual([
+      "Download for Mac",
+      "/downloads/YourSky.zip",
+    ]);
+    expect(rowLinks).toContainEqual(["Join the iPhone waitlist", "#/ios"]);
+  });
+
   test("is honest that the build is not notarized and names the workaround", () => {
     render(<SkyPage />);
     const body = document.body.textContent ?? "";
@@ -64,6 +83,18 @@ describe("the sky download page", () => {
     const body = document.body.textContent ?? "";
     expect(body).toMatch(/ollama/i);
     expect(body).toMatch(/on your mac/i);
+  });
+
+  // TopNav's links cluster is redundant here: the two hero CTAs above
+  // already cover both destinations it would otherwise offer (see TopNav's
+  // own `links` prop comment). The wordmark stays as the way back out.
+  test("does not repeat TopNav's links cluster, since its own two CTAs cover it", () => {
+    const { container } = render(<SkyPage />);
+    expect(container.querySelector(".top-nav-links")).toBeNull();
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) =>
+      a.getAttribute("href"),
+    );
+    expect(hrefs).not.toContain("#/sign-in");
   });
 
   test("links back to the front door", () => {

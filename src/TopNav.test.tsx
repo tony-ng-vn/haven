@@ -21,6 +21,25 @@ describe("the shared top nav", () => {
     expect(links).toContainEqual(["Sign in", "#/sign-in"]);
   });
 
+  // The links cluster is opt-in-out via `links` (see the component's own
+  // comment): this is the root-invariant guard -- every caller that renders
+  // <TopNav /> with no props, which includes the root landing that must stay
+  // byte-identical to main, still gets the full links nav by default.
+  test("renders the links cluster by default", () => {
+    const { container } = render(<TopNav />);
+    expect(container.querySelector(".top-nav-links")).toBeTruthy();
+  });
+
+  test("links={false} hides the links cluster, keeping the wordmark", () => {
+    const { container } = render(<TopNav links={false} />);
+    expect(container.querySelector(".top-nav-links")).toBeNull();
+    const links = Array.from(container.querySelectorAll("a")).map((a) => [
+      a.textContent,
+      a.getAttribute("href"),
+    ]);
+    expect(links).toEqual([["Haven", "/"]]);
+  });
+
   // The icon is opt-in (see the component's own comment on the `icon` prop):
   // this is the root-invariant guard -- every caller that renders <TopNav />
   // with no props, which includes the root landing that must stay

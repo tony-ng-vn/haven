@@ -2575,14 +2575,24 @@ a.card-handle:focus-visible {
 
 /* Your Sky download page (inhavens.com/#/sky) --------------------------
 
-   Shares the legal page's column measure -- this is reading, not a hero form
-   -- but keeps its own hero block at the top for the download CTA, and its
-   own step/privacy sections below.
-   ------------------------------------------------------------------------ */
+   Reading, not a hero form -- a left-aligned column with its own hero block
+   at the top for the download CTA, and its own step/privacy sections below.
+
+   The column's max-width used to sit flat at 34rem (the legal pages' own
+   measure, sized for body copy at 16px/1.65 line-height): comfortable for
+   a phone, but adrift in empty space on a real desktop window, where this
+   is a features/download page, not a dense article. clamp() widens it on
+   wide viewports the same way .landing-hero-title etc. scale elsewhere in
+   this file: the 34rem floor holds unchanged up to roughly tablet width (30vw
+   stays below it until ~1015px), so mobile and narrow windows are untouched,
+   then it grows through the 1280px desktop floor this codebase already
+   treats as its breakpoint (see .landing2-hero-title's own comment) up to a
+   50rem ceiling that only engages past ~1870px, so text never runs edge to
+   edge on an ultra-wide monitor either. */
 .sky-page {
   position: relative;
   z-index: 1;
-  max-width: 34rem;
+  max-width: clamp(34rem, 30vw + 15rem, 50rem);
   margin: 0 auto;
   /* Extra top padding clears the absolutely positioned .top-nav overlaid on
      .card-page above it (see TopNav). */
@@ -2595,7 +2605,11 @@ a.card-handle:focus-visible {
   margin-top: 28px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  /* Same clamp shape as .sky-page's own max-width: floor holds through
+     mobile/tablet (unchanged from the old flat 10px), grows to a beat that
+     reads as intentional once the column has real desktop width to breathe
+     into, caps at 18px so the stack never feels loose. */
+  gap: clamp(10px, 1vw + 1px, 18px);
 }
 
 .sky-eyebrow {
@@ -2607,7 +2621,14 @@ a.card-handle:focus-visible {
 }
 
 .sky-title {
-  font-size: 34px;
+  /* Flat 34px before -- this page is a feature/download page, not a
+     marketing hero, so the clamp stays far short of .landing-hero-title's
+     own scale: additive vw+px (not pure vw, unlike the landing titles)
+     because a pure-vw formula tuned to reach ~40px by desktop width would
+     undershoot 34px at mobile, shrinking the title there. The 34px floor
+     keeps mobile byte-for-byte where it already was; growth only starts
+     past roughly tablet width. */
+  font-size: clamp(34px, 1.2vw + 22px, 42px);
   font-weight: 500;
   line-height: 1.18;
   margin: 4px 0 2px;
@@ -2616,7 +2637,9 @@ a.card-handle:focus-visible {
 
 .sky-tagline {
   margin: 0 0 6px;
-  font-size: 17px;
+  /* Same reasoning as .sky-title just above: floor matches the old flat
+     17px so mobile is unchanged, modest growth on desktop. */
+  font-size: clamp(17px, 0.6vw + 11px, 20px);
   line-height: 1.55;
   color: rgba(242, 239, 233, 0.85);
 }
@@ -2643,8 +2666,38 @@ a.card-handle:focus-visible {
   background: color-mix(in srgb, var(--accent-fill) 90%, #000);
 }
 
+/* .sky-download's own align-self/margin-top above exist for its old
+   context: the single child directly in .sky-hero's flex column, where
+   align-self:flex-start meant "hug the left edge" (the column's cross axis)
+   and margin-top:8px added one extra beat of space before the button on top
+   of .sky-hero's own gap. Now it shares .landing-hero-ctas with the iPhone
+   waitlist button, and that row already does both jobs: justify-content
+   below handles horizontal alignment for both buttons together, and the
+   row's own margin-top:8px (added to .sky-hero's gap, same as before)
+   reproduces the original spacing above the row. Left in place,
+   .sky-download's own values would add a second, smaller top-align inside
+   the row -- doubling the gap and pulling it out of vertical line with the
+   secondary button, which centers on the row's default align-items. */
+.sky-hero .landing-hero-ctas .sky-download {
+  align-self: auto;
+  margin-top: 0;
+}
+
+/* The shared CTA row centers its own children by default (see
+   .landing-hero-ctas above), for the centered heroes on root/landing/
+   landing2. .sky-hero is a left-aligned column, so the row's own content
+   should be too -- the same scoping .landing2 .landing-hero-ctas already
+   uses for the identical problem, kept scoped here rather than edited on
+   the shared rule for the same reason: every other caller stays centered. */
+.sky-hero .landing-hero-ctas {
+  justify-content: flex-start;
+}
+
 .sky-download-repeat {
-  margin-top: 40px;
+  /* Same clamp shape as .sky-steps/.sky-privacy below: this button closes
+     the page the same way those sections open, so it grows with them
+     rather than staying flat once the column is wider. */
+  margin-top: clamp(40px, 3vw + 8px, 64px);
 }
 
 .sky-install-note {
@@ -2652,12 +2705,20 @@ a.card-handle:focus-visible {
   font-size: 13px;
   line-height: 1.6;
   color: rgba(242, 239, 233, 0.55);
+  /* Deliberately narrower than the page's own widened column: this is dense
+     small print, not the page's main copy, and a 30rem measure keeps it
+     readable rather than stretching legal text edge to edge with the rest
+     of the hero. */
   max-width: 30rem;
 }
 
 .sky-steps,
 .sky-privacy {
-  margin-top: 48px;
+  /* Flat 48px before, tight even at the old phone-width column. Same clamp
+     shape as .sky-page's own max-width and .sky-hero's own gap: floor holds
+     through mobile/tablet, opens up to a real section break once the column
+     has desktop width to spend it in. */
+  margin-top: clamp(48px, 4vw + 13px, 80px);
 }
 
 .sky-steps h2,
@@ -2706,8 +2767,15 @@ a.card-handle:focus-visible {
   color: var(--text);
 }
 
+/* max-width in ch, not left to the widened .sky-page column: unlike the
+   hero copy above, this is small-print prose, and .sky-page's own max-width
+   now grows well past a comfortable line length for it (up to ~99ch at the
+   50rem cap) -- capping the measure in ch keeps it tracking the font instead
+   of stretching with the column, the same reasoning .sky-install-note's own
+   max-width: 30rem already applies just below this. */
 .sky-step-body {
   margin: 0;
+  max-width: 66ch;
   font-size: 15px;
   line-height: 1.55;
   color: rgba(242, 239, 233, 0.72);
@@ -2720,6 +2788,7 @@ a.card-handle:focus-visible {
 
 .sky-privacy li {
   margin-bottom: 10px;
+  max-width: 66ch;
   font-size: 15px;
   line-height: 1.55;
   color: rgba(242, 239, 233, 0.78);

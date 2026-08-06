@@ -50,7 +50,7 @@ export function SkyPage() {
   return (
     <div className="card-page">
       <DriftSky className="card-sky" />
-      <TopNav />
+      <TopNav links={false} />
       <main className="sky-page">
         <div className="sky-hero">
           <span className="sky-eyebrow">Your Sky, for Mac</span>
@@ -60,9 +60,14 @@ export function SkyPage() {
             and draws the people you actually talk to as a 3D map you can
             explore.
           </p>
-          <a className="sky-download" href={DOWNLOAD_HREF}>
-            Download for Mac
-          </a>
+          <div className="landing-hero-ctas">
+            <a className="sky-download" href={DOWNLOAD_HREF}>
+              Download for Mac
+            </a>
+            <a className="landing-cta-secondary" href="#/ios">
+              Join the iPhone waitlist
+            </a>
+          </div>
           <p className="sky-install-note">
             This build is not notarized yet -- macOS will warn on first open.
             Go to <strong>System Settings &gt; Privacy &amp; Security</strong>{" "}

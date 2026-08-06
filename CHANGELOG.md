@@ -6,6 +6,18 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.50.0
+
+2026-08-06
+
+**Web**
+
+- The Sky download page no longer feels squeezed into a narrow phone-width column on a computer screen -- it now uses the space a real desktop page has, with a wider reading column and more generous spacing the wider the window gets.
+- Visitors to that page can now also join the iPhone waitlist right from the hero, next to Download for Mac, instead of only being able to download for Mac.
+- That page's top navigation no longer repeats links to itself -- its own two buttons already cover both destinations, so only the Haven wordmark remains as the way back out.
+
+---
+
 ## v0.49.0
 
 2026-08-05
