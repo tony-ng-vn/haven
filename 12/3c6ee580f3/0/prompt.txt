@@ -1,0 +1,139 @@
+# Files mentioned by the user:
+
+## You are reviewing an uncommitted, unreviewed feature branch in a Swift + TypeSc…: /Users/minhthiennguyen/.codex/attachments/34b5f483-b759-4699-a875-329fe143fefa/pasted-text.txt
+
+The attached pasted text file(s) contain the user's request. Read and act on that content.
+
+## My request for Codex:
+
+---
+
+What the review found and what happened to it
+
+All 6 P1s fixed. The deepest one was the X rename flow: the original design resolved the stable ID after saving, so the ID-first dedup could never fire and a renamed account still minted a twin. The fix inverts the sequencing - the ID resolves before the save, same as Instagram - which is a design correction, not a patch. The other P1s: handle edits now carry identity metadata forward server-side (protecting every client, not just fixed ones), renames can no longer land on a username someone else owns, old web tabs get the bare-ID contract back (the new outcome shape lives on a new mutation name), digitless "phone numbers" like "unknown" can no longer glue strangers together, and attaching a screenshot capture no longer throws away the headline, bio, link, and image.
+
+8 of 10 P2s fixed, including the denied-permission picker (it was re-fetching from a store the user had denied - it now uses the contact the picker itself hands over, which is the whole point of that Apple API), the web typo suggester (its candidate pool came from Convex text search, which never returns typo matches - it now runs over your full directory via a lightweight names query), and idempotent note appends, which close every replay path at once.
+
+2 deferred, with reasons: the cross-region phone split is the deliberate price of never guessing a country code (a wrong merge is worse than a duplicate - your repo's own doctrine), and the vCard test log noise is cosmetic.
+
+Verification
+
+- Web/server: 882 tests, both typechecks clean. Full runs on this machine currently show one flaky failure - but it's the pre-existing timer-abort in the embed/fan-out tests that were quarantined for exactly this reason back in PR #94, it passes deterministically in isolation, and your machine is at load 15 right now from something outside this session. Not a branch regression; the evidence is in the run history above.
+- iOS: 486 tests, zero failures.
+- Bonus infra fix: the claude-md plugin created a worktree under .claude/worktrees/ that vitest's glob was picking up, silently doubling the suite - now excluded.
+
+★ Insight ─────────────────────────────────────
+The most transferable lesson from this batch: the reviewer's three worst findings were all sequence bugs (save then edit; save then rename then re-share) that per-path tests can't see. The fix batch added exactly those sequence tests - the rename flow without a pre-seeded ID being the key one, since the old test injected the ID into both saves and accidentally tested around the bug.
+─────────────────────────────────────────────────
+
+The branch is ready. If you want a second review pass over the fixes themselves, the same master prompt works (the reviewer will find HEAD unchanged and the fixes in the working tree). Otherwise, say the word and I'll commit and open the PR.
+
+---
+
+can u review the fix please?
+
+---
+
+Round 2 is complete. All six correctness defects and all three standards items are fixed, and this time every fix is verified at the call-site level, not by report.
+
+What round 2 fixed
+
+- The unwired fix (defect 1) - the serious one. The digitless-phone gate existed only as a helper with a unit test; nothing called it. It's now wired into all five places the original spec named: server validation (covering addPerson, editPerson, saveSharedProfile), profile handles, both capture paths, and the web client. The proof is the reviewer's own scenario as a regression test - the sidekick reverted the fix with git stash, watched the test fail with Bob merged into Alice, restored it, and watched it pass.
+- editPerson rename guard - the ID-first lookup now also asks who owns the new username, refusing with handle_taken instead of double-indexing.
+- Equal-value ID enrichment - a re-share that carries a freshly resolved ID now enriches the stored handle, so the full chain (save without ID, re-share with ID, later rename) attaches to the same person end to end. This was the missing link that could still mint twins after a rename.
+- Note replay detection matches whole notes, not substrings - "Acme" no longer counts as a replay of "Met at Acme".
+- Capture conflicts return a real status and keep the capture in triage instead of minting a third corrupt identity; the test that asserted the corruption as expected now asserts the refusal. One honest finding: the refusal branch is structurally unreachable from screenshot captures (the extraction schema has no ID field), which is documented, not papered over.
+- handleDropped is now visible on both surfaces: an inline notice on web with a "View them" action, and a dismissible directory banner on iOS.
+- Standards: patchXPlatformId derives identity server-side (proven that auth propagates through runMutation, with a cross-identity test), the duplicated rate-cap blocks became one helper with the rate-limiter-component migration noted as deferred, and all new test literals are ASCII escapes.
+
+Verification, with the caveats stated plainly
+
+- Web/server: 898 tests; my own run shows 897 passing plus one timer-abort failure in the pre-existing scheduler-heavy tests - your machine has been under external load (10-20 average) all evening, the failing test changes identity between runs, and all three affected files pass 231/231 in isolation. Both typechecks clean. This flake predates the branch (it's the same failure PR #94 quarantined tests for).
+- iOS: 496 tests, zero failures.
+- I grep-verified every claimed production call site in both sidekicks' reports before accepting - the lesson from defect 1 applied.
+- Bonus: prod personHandles has exactly one row (checked directly), so the reviewer's unstaged-index concern is closed with data, not assumption.
+
+The changelog got two new bullets for the user-visible changes (digitless phones refused, full-handles notice). The branch is ready for a third review pass if you want one, or for commit and PR whenever you say - and if you'd like a truly clean full-suite run for the record, it should pass green once whatever is loading your machine finishes.
+
+---
+
+Round 2 is complete. All six correctness defects and all three standards items are fixed, and this time every fix is verified at the call-site level, not by report.
+
+What round 2 fixed
+
+- The unwired fix (defect 1) - the serious one. The digitless-phone gate existed only as a helper with a unit test; nothing called it. It's now wired into all five places the original spec named: server validation (covering addPerson, editPerson, saveSharedProfile), profile handles, both capture paths, and the web client. The proof is the reviewer's own scenario as a regression test - the sidekick reverted the fix with git stash, watched the test fail with Bob merged into Alice, restored it, and watched it pass.
+- editPerson rename guard - the ID-first lookup now also asks who owns the new username, refusing with handle_taken instead of double-indexing.
+- Equal-value ID enrichment - a re-share that carries a freshly resolved ID now enriches the stored handle, so the full chain (save without ID, re-share with ID, later rename) attaches to the same person end to end. This was the missing link that could still mint twins after a rename.
+- Note replay detection matches whole notes, not substrings - "Acme" no longer counts as a replay of "Met at Acme".
+- Capture conflicts return a real status and keep the capture in triage instead of minting a third corrupt identity; the test that asserted the corruption as expected now asserts the refusal. One honest finding: the refusal branch is structurally unreachable from screenshot captures (the extraction schema has no ID field), which is documented, not papered over.
+- handleDropped is now visible on both surfaces: an inline notice on web with a "View them" action, and a dismissible directory banner on iOS.
+- Standards: patchXPlatformId derives identity server-side (proven that auth propagates through runMutation, with a cross-identity test), the duplicated rate-cap blocks became one helper with the rate-limiter-component migration noted as deferred, and all new test literals are ASCII escapes.
+
+Verification, with the caveats stated plainly
+
+- Web/server: 898 tests; my own run shows 897 passing plus one timer-abort failure in the pre-existing scheduler-heavy tests - your machine has been under external load (10-20 average) all evening, the failing test changes identity between runs, and all three affected files pass 231/231 in isolation. Both typechecks clean. This flake predates the branch (it's the same failure PR #94 quarantined tests for).
+- iOS: 496 tests, zero failures.
+- I grep-verified every claimed production call site in both sidekicks' reports before accepting - the lesson from defect 1 applied.
+- Bonus: prod personHandles has exactly one row (checked directly), so the reviewer's unstaged-index concern is closed with data, not assumption.
+
+The changelog got two new bullets for the user-visible changes (digitless phones refused, full-handles notice). The branch is ready for a third review pass if you want one, or for commit and PR whenever you say - and if you'd like a truly clean full-suite run for the record, it should pass green once whatever is loading your machine finishes.
+
+---
+
+Round 3 is complete - all three P1s, the P2, and the standards violation are fixed and verified at the call-site level.
+
+What round 3 fixed
+
+- The username-reassignment merge (worst one): when a stored handle and an incoming share have the same username but different platform IDs, that's the platform telling us the name changed hands - the old owner renamed away and a stranger claimed it. The merge now refuses instead of attaching the new person's note to the old person. This closes the last known path where Haven could confidently put a note on the wrong human.
+- The backfill bypass: digitless phone values were blocked from the handle index but still slipped into the legacy scalar fields, where the maintenance backfill would later index them ungated. Both ends are closed now - dropped handles never reach the scalars, and the backfill applies the same digit gate with a refused count in its report.
+- iOS final-conflict data loss: a capture whose final answer is conflict now stays in the queue (the same retained-for-retry treatment network failures get), is never counted as sent, and surfaces a banner - "their handle belongs to someone else in your Haven" - whose View button opens the person the server proved owns it. The test that had codified the deletion as success now asserts retention.
+- Banner liveness: the notice now appears immediately after an in-app save (the state object posts a notification the screen subscribes to), and multiple drops queue in a small FIFO instead of overwriting each other.
+- The rate-limiter standard, properly: the new X-lookup quotas run on @convex-dev/rate-limiter, which meant mounting this repo's first Convex component. The migration paid for itself immediately - the sidekick caught that the component's default random window origin let a 51st call through about once in 50 runs, traced it in the package source, and pinned start: 0 for deterministic windows. One heads-up: mounting a component round-trips through the dev deployment during codegen, so brilliant-puma-925 already knows about it; prod learns on deploy.
+
+Verification
+
+- Web/server: 901 tests - all green when run sequentially per-file (the sidekick did all 49 under load 170); my full-parallel run shows the usual single timer-abort with your machine still at load 23-92, and both affected files pass 99/99 in isolation. Both typechecks and convex codegen clean.
+- iOS: 503 tests, zero failures, with scoped revert-and-fail proof for every new behavior.
+- Every claimed call site in both reports grep-verified by me.
+
+Three review rounds have now gone from 16 findings to 6 to 5, each round's fixes verified by the next round's reviewer. The branch is ready for a round-4 pass if you want one more, or for commit and PR - and the cleanest final-suite run for the record will come once whatever has been hammering your machine all night finishes.
+
+---
+
+What round 4 closed
+
+- The second backfill got the digit gate (backfillPersonHandles, with a refused count) - so neither maintenance path can recreate the digitless-phone collision live writes now refuse.
+- The differing-ID refusal reached its last two sibling paths: editPerson no longer silently replaces a proven platform ID on an unchanged username, and patchXPlatformId compares against the handle's own prior proof directly (the cross-person lookup couldn't catch this case - the disagreement is with the person's own stored evidence, and the comment now explains exactly that).
+- Retained conflicts notify once. A new per-capture marker means a replayed conflict keeps retrying but records no new banner, dismissals survive across passes, and the marker clears if the capture ever resolves - so a genuinely new failure can still speak up. The sidekick flagged its own weakest evidence unprompted: the test-inert default meant one production line carried the whole feature, and I verified that line (CaptureSync.swift:103) directly.
+- The midnight-UTC test hazard is fixed with proof: the sidekick pinned the clock to 23:50 UTC first, watched the daily window roll over and the 51st call sneak through exactly as the reviewer predicted, then pinned the test to a safe instant and ran it clean five times.
+
+Final state of the branch
+
+- Web/server: 906/906 tests - including two consecutive fully-green parallel runs now that your machine's load storm has passed, which retroactively confirms the earlier flake was environmental, plus a complete sequential per-file run. Both typechecks and codegen clean.
+- iOS: 507 tests, zero failures.
+- Four review rounds: 16 findings, then 6, then 5, then 4, now none. Every fix from every round verified at the call site by me, most with revert-and-fail proof.
+- Changelog v0.48.0 written; the branch mounts the repo's first Convex component (rate limiter), which prod picks up on deploy.
+
+Still needing a real device eventually: the ContactAccessButton grant persistence, the Instagram deep-link branch, and one live X lookup - all degrade safely if they fail.
+
+The branch is ready. Say the word and I'll commit and open the PR - or run one more review round first if you want the reviewer to sign off on round 4's fixes.
+
+---
+
+What round 4 closed
+
+- The second backfill got the digit gate (backfillPersonHandles, with a refused count) - so neither maintenance path can recreate the digitless-phone collision live writes now refuse.
+- The differing-ID refusal reached its last two sibling paths: editPerson no longer silently replaces a proven platform ID on an unchanged username, and patchXPlatformId compares against the handle's own prior proof directly (the cross-person lookup couldn't catch this case - the disagreement is with the person's own stored evidence, and the comment now explains exactly that).
+- Retained conflicts notify once. A new per-capture marker means a replayed conflict keeps retrying but records no new banner, dismissals survive across passes, and the marker clears if the capture ever resolves - so a genuinely new failure can still speak up. The sidekick flagged its own weakest evidence unprompted: the test-inert default meant one production line carried the whole feature, and I verified that line (CaptureSync.swift:103) directly.
+- The midnight-UTC test hazard is fixed with proof: the sidekick pinned the clock to 23:50 UTC first, watched the daily window roll over and the 51st call sneak through exactly as the reviewer predicted, then pinned the test to a safe instant and ran it clean five times.
+
+Final state of the branch
+
+- Web/server: 906/906 tests - including two consecutive fully-green parallel runs now that your machine's load storm has passed, which retroactively confirms the earlier flake was environmental, plus a complete sequential per-file run. Both typechecks and codegen clean.
+- iOS: 507 tests, zero failures.
+- Four review rounds: 16 findings, then 6, then 5, then 4, now none. Every fix from every round verified at the call site by me, most with revert-and-fail proof.
+- Changelog v0.48.0 written; the branch mounts the repo's first Convex component (rate limiter), which prod picks up on deploy.
+
+Still needing a real device eventually: the ContactAccessButton grant persistence, the Instagram deep-link branch, and one live X lookup - all degrade safely if they fail.
+
+The branch is ready. Say the word and I'll commit and open the PR - or run one more review round first if you want the reviewer to sign off on round 4's fixes.
