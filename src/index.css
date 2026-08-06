@@ -2666,16 +2666,6 @@ a.card-handle:focus-visible {
   background: color-mix(in srgb, var(--accent-fill) 90%, #000);
 }
 
-/* The shared CTA row centers its own children by default (see
-   .landing-hero-ctas above), for the centered heroes on root/landing/
-   landing2. .sky-hero is a left-aligned column, so the row's own content
-   should be too -- the same scoping .landing2 .landing-hero-ctas already
-   uses for the identical problem, kept scoped here rather than edited on
-   the shared rule for the same reason: every other caller stays centered. */
-.sky-hero .landing-hero-ctas {
-  justify-content: flex-start;
-}
-
 .sky-download-repeat {
   /* Same clamp shape as .sky-steps/.sky-privacy below: this button closes
      the page the same way those sections open, so it grows with them

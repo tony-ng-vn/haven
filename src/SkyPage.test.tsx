@@ -38,23 +38,21 @@ describe("the sky download page", () => {
     expect(hrefs).toContain("/downloads/YourSky.zip");
   });
 
-  // The secondary CTA mirrors the two-button row already shipped on the
-  // landing pages (see Landing2Page.test.tsx's own version of this test):
-  // it must sit beside "Download for Mac" in the same shared row, not just
-  // exist somewhere on the page.
-  test("pairs a secondary iPhone waitlist CTA with the download button", () => {
+  // The owner stripped the hero's buttons (a two-button row lived here
+  // briefly): the page's one pill button is the closing "Download for Mac"
+  // after the steps and privacy list, with the step-1 text link as the only
+  // other path to the file. No waitlist cross-link on this page anymore.
+  test("keeps a single download button, at the end, and no hero CTA row", () => {
     const { container } = render(<SkyPage />);
-    const row = container.querySelector(".landing-hero-ctas");
-    expect(row).toBeTruthy();
-    const rowLinks = Array.from(row!.querySelectorAll("a")).map((a) => [
-      a.textContent,
+    expect(container.querySelector(".landing-hero-ctas")).toBeNull();
+    const pills = container.querySelectorAll(".sky-download");
+    expect(pills.length).toBe(1);
+    expect(pills[0].classList.contains("sky-download-repeat")).toBe(true);
+    expect(pills[0].getAttribute("href")).toBe("/downloads/YourSky.zip");
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) =>
       a.getAttribute("href"),
-    ]);
-    expect(rowLinks).toContainEqual([
-      "Download for Mac",
-      "/downloads/YourSky.zip",
-    ]);
-    expect(rowLinks).toContainEqual(["Join the iPhone waitlist", "#/ios"]);
+    );
+    expect(hrefs).not.toContain("#/ios");
   });
 
   test("is honest that the build is not notarized and names the workaround", () => {

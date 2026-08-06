@@ -13,7 +13,7 @@ pull requests, which is where it is easiest to read anyway.
 **Web**
 
 - The Sky download page no longer feels squeezed into a narrow phone-width column on a computer screen -- it now uses the space a real desktop page has, with a wider reading column and more generous spacing the wider the window gets.
-- Visitors to that page can now also join the iPhone waitlist right from the hero, next to Download for Mac, instead of only being able to download for Mac.
+- That page now makes its pitch before its ask: the hero carries just the headline and the honest install notes, and the one Download for Mac button sits at the end, after the steps and the privacy promises.
 - The Your Sky / iPhone / Sign in links that used to sit in the top corner of every page are gone everywhere, not just on some pages -- each page's own buttons already point you where you need to go, and the Haven wordmark alone gets you back to the front door.
 - The Haven mascot in that top corner is noticeably bigger now, and it sits truly centered next to the wordmark -- it used to look faintly off-center no matter what, because the mascot artwork itself was trimmed unevenly; that is fixed at the source now, not papered over with CSS.
 - The front door at inhavens.com is the iPhone waitlist again -- the same page the "join the iPhone waitlist" links already pointed at. The landing-page hero that had been living at the root is still there to compare, now at its own /landing address, alongside a second landing concept previewed at landing2 -- neither is what a new visitor meets first anymore.
