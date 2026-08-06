@@ -6,10 +6,18 @@
 // Absolutely positioned so it drops onto any positioning context (the
 // landing hero's `position: relative` box, or the other pages' `position:
 // fixed` .card-page) without needing to know which.
-export function TopNav() {
+//
+// icon defaults to false so every existing caller -- root, /landing, Sky,
+// iOS -- renders this anchor exactly as before; only Landing2Page opts in,
+// to sit the Haven mascot next to the wordmark. The icon+text row layout
+// lives under .landing2 .top-nav-brand in index.css rather than a modifier
+// class here, since Landing2Page is the only caller today and the ancestor
+// selector already guarantees no other page's markup or style can shift.
+export function TopNav({ icon = false }: { icon?: boolean }) {
   return (
     <header className="top-nav">
       <a className="top-nav-brand" href="/">
+        {icon ? <img className="top-nav-icon" src="/icon-192.png" alt="" /> : null}
         Haven
       </a>
       <nav className="top-nav-links" aria-label="Haven">

@@ -3318,8 +3318,12 @@ a.card-handle:focus-visible {
    to the real image. This version does not draw an approximation -- the
    image IS the page. A single-viewport hero: the real copy on the flat page
    navy at left, the artwork at right, fused with one blend gradient where
-   they meet. No DriftSky here at all; the art is the sky (contrast
-   .landing-sky above, still the default landing's own full-page canvas).
+   they meet. The navy left also carries its own DriftSky, .landing2-sky
+   below -- scoped to this one section rather than fixed to the whole page
+   like .landing-sky above, and sized (not just masked) to the navy zone so
+   the stars, and the wandering constellation's whole travel path, never sit
+   on top of the image (see .landing2-sky's own comment for why the box
+   itself, not only the mask, is what keeps the figure on screen).
 
    .landing-polished is reused wholesale on the root (see that section
    above): Satoshi, the press/hover/focus treatment on the shared
@@ -3352,6 +3356,56 @@ a.card-handle:focus-visible {
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
+}
+
+/* The hero's own DriftSky, scoped to .landing2-hero (position: relative,
+   overflow: hidden above) rather than the full-page .landing-sky used
+   elsewhere -- this page's own sky lives behind one section, not the whole
+   route. Same canvas-sizing gotcha as every other host class (see
+   driftSkyCanvasSizing.test.ts, extended to pin this one too): a <canvas> is
+   a replaced element, so inset: 0 alone collapses it to its 300x150
+   intrinsic size -- explicit width/height are load-bearing, not decoration.
+
+   Unlike the other host classes, though, this one is deliberately NOT full
+   width. DriftSky's wander path (wanderPoint in lens.ts) sweeps 10%-90% of
+   the CANVAS's own measured width, wherever that canvas is sized -- a
+   full-width canvas here, masked only where the artwork sits, still handed
+   the wander that whole width to roam, so the figure spent long stretches
+   parked behind the opaque artwork (masked to invisible) rather than over
+   the navy where it could actually be seen. Sizing the box itself to the
+   navy zone is what fixes that: the box IS the confinement mechanism, not
+   the mask. The mask stays, but now only for a soft fade at the canvas's
+   own right fringe -- see its own comment below. */
+.landing2-sky {
+  position: absolute;
+  inset: 0;
+  /* .landing2-art starts at 45% of the viewport (the copy column is flex: 1
+     1 auto against the art's own flex: 0 0 55%); its own blend gradient
+     (.landing2-art::before, 16vw wide) then keeps eating into the image from
+     there, so the artwork's opaque pixels do not actually start until ~61%
+     of the viewport. 55% lands past the seam (45%) but still inside that
+     blend zone, so anything visible at the canvas's own right edge is still
+     sitting on navy-ish blend, never on a visible art pixel -- with room to
+     spare before 61%. This also fixes the wander: 10%-90% of a 55%-wide
+     canvas maps to ~5.5%-49.5% of the viewport, comfortably clear of the
+     artwork at every point in its cycle, not just where the old mask
+     happened to still show it. */
+  width: 55%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  /* A soft fade at the canvas's OWN right fringe, not a hard edge: without
+     this, star density would clip at a straight vertical line at 55% of the
+     viewport instead of tapering off. Stops are percentages of this box's
+     own 55%-wide width -- 70% (~38.5% of the viewport) to 100% (55%, the
+     box's own right edge) -- so density starts tapering a little before the
+     copy column/art seam (45%) and is fully gone by the canvas's own edge,
+     still inside the art's own 16vw blend (45%-61%, see .landing2-art::
+     before) that already hides the seam underneath. -webkit-mask-image is
+     Safari's own prefix; it does not fall back to the unprefixed property
+     on its own. */
+  mask-image: linear-gradient(to right, black 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black 70%, transparent 100%);
 }
 
 .landing2-copy-col {
@@ -3412,6 +3466,27 @@ a.card-handle:focus-visible {
    landing and the polished preview keep their centered version untouched. */
 .landing2 .landing-hero-ctas {
   justify-content: flex-start;
+}
+
+/* The Haven mascot icon, next to the wordmark -- opt-in on TopNav (see its
+   own `icon` prop comment), so only this page's markup includes the <img> at
+   all. The icon+text row layout is scoped under .landing2 rather than added
+   to the shared .top-nav-brand rule directly, for the same reason as
+   .landing-hero-ctas just above: every other caller of TopNav (root,
+   /landing, Sky, iOS) never renders the icon, but a shared rule change would
+   still apply to their .top-nav-brand regardless -- scoping under the one
+   page that actually shows it keeps their layout, not just their DOM,
+   untouched. */
+.landing2 .top-nav-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.top-nav-icon {
+  display: block;
+  width: 24px;
+  height: 24px;
 }
 
 .landing2-art {
@@ -3530,6 +3605,34 @@ a.card-handle:focus-visible {
     min-height: 100dvh;
     flex-direction: column;
     overflow: visible;
+  }
+
+  .landing2-sky {
+    /* Same confinement principle as the row layout's own width: 55% above,
+       applied to the other axis. The hero is a scrolling column here (copy
+       on top, the art block at the bottom, both full width), so the wander
+       needs vertical room over the copy, not horizontal room past a seam --
+       full width, but a height that stops exactly where the art block
+       begins (max(46vh, 260px), matching .landing2-art below exactly) so
+       DriftSky's wander (14%-78% of the canvas's own measured height, see
+       lens.ts's wanderPoint) stays over the copy area instead of roaming
+       into a region masked to invisible over the art. calc() against a
+       percentage height works here the same way it does for any absolutely
+       positioned box whose containing block (.landing2-hero) has a
+       determinate height, even though that height is itself content-driven
+       (min-height: 100vh, not a fixed value) in this breakpoint -- an
+       absolutely positioned descendant's percentage still resolves against
+       it once layout has settled, unlike an ordinary in-flow percentage
+       height. */
+    width: 100%;
+    height: calc(100% - max(46vh, 260px));
+    /* The soft fade moves to the canvas's own bottom fringe, mirroring the
+       row layout's right-fringe fade (same 70%/100% stops, "to bottom"
+       instead of "to right") -- the box's own height already stops before
+       the art block, so this only has to avoid a hard line at that shorter
+       box's own edge, not reach all the way down to the art itself. */
+    mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
   }
 
   .landing2-art {

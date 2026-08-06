@@ -29,16 +29,21 @@ const css = readFileSync("src/index.css", "utf8");
 // Every class known to host a <DriftSky>. See App.tsx (SignIn -> .wl-sky),
 // SkyPage.tsx / IosPage.tsx (-> .card-sky), and LandingPage.tsx /
 // PolishedLandingPage.tsx (both -> .landing-sky, reused rather than
-// duplicated). Landing2Page.tsx no longer hosts one at all: it was rebuilt
-// around a real image (glass-hero.jpg) instead of a drawn sky, so .landing2-
-// sky is gone, not renamed. A new host class belongs in this array in the
-// same edit that creates it -- the whole point of this file is that the bug
-// does not get to wait for someone to notice a broken preview.
+// duplicated). Landing2Page.tsx also hosts one (-> .landing2-sky), but it is
+// NOT in this array: unlike these three, its width is deliberately not
+// 100% (see its own describe block below, and its comment in index.css) --
+// the box itself is sized to confine DriftSky's wander path to the navy
+// zone, not just a full-width canvas hidden behind a mask, so it cannot
+// share the 100%/100% check every other host class gets. A new FULL-WIDTH
+// host class still belongs in this array in the same edit that creates it --
+// the whole point of this file is that the bug does not get to wait for
+// someone to notice a broken preview.
 const DRIFTSKY_HOST_CLASSES = [".wl-sky", ".card-sky", ".landing-sky"] as const;
 
 // The bare rule block for a single top-level class selector, e.g.
 // ".wl-sky { ... }". Assumes (true for all three today) that the selector
-// is not part of a comma-separated compound selector list.
+// is not part of a comma-separated compound selector list, and that the
+// first occurrence in the file is the one being asked for.
 function ruleFor(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
@@ -64,6 +69,37 @@ describe("DriftSky canvas hosts stretch to fill their box", () => {
   // absolute -- see LandingPage.tsx and the comment on .landing-sky.
   test(".landing-sky is fixed, not scoped to a scrolling ancestor", () => {
     expect(ruleFor(".landing-sky")).toMatch(/position:\s*fixed/);
+  });
+});
+
+// .landing2-sky's own version of the same guard: the collapse-to-300x150
+// bug this whole file exists to catch is about EXPLICIT sizing going
+// missing, not specifically about that size being 100%. This page's canvas
+// is deliberately narrower than its hero (see its own comment in index.css:
+// the box confines DriftSky's wander path to the navy zone), so what has to
+// hold here is that both the row-layout rule and its own narrow-layout
+// override still give it an explicit, non-auto width and height -- never
+// left to fall back to the replaced element's intrinsic size.
+describe(".landing2-sky is confined on purpose, not collapsed by accident", () => {
+  test("the row-layout rule: absolute, inset: 0, explicit width and height", () => {
+    const rule = ruleFor(".landing2-sky");
+    expect(rule, ".landing2-sky rule not found in index.css").not.toBe("");
+    expect(rule).toMatch(/position:\s*absolute/);
+    expect(rule).toMatch(/inset:\s*0/);
+    expect(rule).toMatch(/width:\s*55%/);
+    expect(rule).toMatch(/height:\s*100%/);
+  });
+
+  // A second, later rule block for the same selector, inside the narrow
+  // layout's own media query -- ruleFor() only ever returns the FIRST match
+  // in the file (the row-layout rule above), so this one is found the same
+  // way but starting the search after that media query begins.
+  test("the narrow-layout override: still an explicit, non-auto width and height", () => {
+    const narrowSection = css.slice(css.indexOf("@media (max-width: 1279px)"));
+    const rule = narrowSection.match(/\.landing2-sky\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(rule, ".landing2-sky narrow-layout rule not found").not.toBe("");
+    expect(rule).toMatch(/width:\s*100%/);
+    expect(rule).toMatch(/height:\s*calc\(/);
   });
 });
 

@@ -6,6 +6,17 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.49.0
+
+2026-08-05
+
+**Web**
+
+- The landing2 concept page now has the same living night sky as the main landing -- drifting stars and the wandering constellation -- behind its copy on the left, fading away before the artwork begins on the right so the two never overlap.
+- The Haven mascot icon now sits next to the wordmark in landing2's nav.
+
+---
+
 ## v0.48.0
 
 2026-08-05
