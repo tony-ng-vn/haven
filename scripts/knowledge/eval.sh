@@ -9,5 +9,6 @@ set +a
 export HAVEN_KNOWLEDGE_V0_ENABLED=1
 export HAVEN_KNOWLEDGE_WRITE_MODE=primary
 export HAVEN_KNOWLEDGE_SEARCH_MODE=primary
+export HAVEN_EMBEDDING_WAIT_ON_RATE_LIMIT=1
 cd knowledge/eval
 exec ../.venv/bin/python run_eval.py "$@"

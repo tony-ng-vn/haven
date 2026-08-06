@@ -27,23 +27,128 @@ log = logging.getLogger("haven_knowledge.worker")
 
 MAX_ATTEMPTS = 4
 BACKOFF_BASE_SECONDS = 30
+STALE_LOCK_SECONDS = 10 * 60
 
 
 def _worker_id() -> str:
     return f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
 
 
-def claim_next_job(conn: psycopg.Connection, worker_id: str, job_types: list[str]) -> dict[str, Any] | None:
+def reclaim_stale_jobs(
+    conn: psycopg.Connection,
+    *,
+    stale_after_seconds: int = STALE_LOCK_SECONDS,
+    owner_ids: list[uuid.UUID] | None = None,
+) -> int:
+    """Return jobs abandoned by a crashed worker to the durable queue."""
+    with db.transaction(conn) as cur:
+        # Discover candidates without taking an outbox lock. Extraction
+        # completion locks its run before its job, so reclamation must use the
+        # same order to avoid a lock cycle.
+        cur.execute(
+            """
+            select id
+            from haven_knowledge.knowledge_outbox
+            where status = 'running' and locked_at is not null
+              and locked_at <= now() - make_interval(secs => %s)
+              and (%s::uuid[] is null or owner_id = any(%s::uuid[]))
+            """,
+            (stale_after_seconds, owner_ids, owner_ids),
+        )
+        candidate_ids = [row["id"] for row in cur.fetchall()]
+        if not candidate_ids:
+            return 0
+
+        cur.execute(
+            """
+            select r.id
+            from haven_knowledge.extraction_runs r
+            join haven_knowledge.knowledge_outbox o
+              on o.owner_id = r.owner_id
+             and o.source_entry_version_id = r.source_entry_version_id
+            where o.id = any(%s::uuid[]) and o.job_type = 'extract_source'
+              and r.status = 'running'
+            order by r.id
+            for update of r
+            """,
+            (candidate_ids,),
+        )
+        cur.fetchall()
+        cur.execute(
+            """
+            select id, attempt_count
+            from haven_knowledge.knowledge_outbox
+            where id = any(%s::uuid[]) and status = 'running'
+              and locked_at is not null
+              and locked_at <= now() - make_interval(secs => %s)
+              and (%s::uuid[] is null or owner_id = any(%s::uuid[]))
+            order by id
+            for update
+            """,
+            (candidate_ids, stale_after_seconds, owner_ids, owner_ids),
+        )
+        stale_jobs = cur.fetchall()
+        stale_job_ids = [row["id"] for row in stale_jobs]
+        if not stale_job_ids:
+            return 0
+
+        # Extraction status is user-visible. Close any run abandoned with the
+        # stale lease before making the durable job available for a new try.
+        cur.execute(
+            """
+            update haven_knowledge.extraction_runs r
+            set status = 'failed', completed_at = now(),
+                error_code = 'worker_lease_expired',
+                safe_error_message = case
+                    when o.attempt_count >= %s
+                    then 'extraction worker lease expired; retry limit reached'
+                    else 'extraction worker lease expired; job will retry'
+                end
+            from haven_knowledge.knowledge_outbox o
+            where o.id = any(%s::uuid[]) and o.job_type = 'extract_source'
+              and r.owner_id = o.owner_id
+              and r.source_entry_version_id = o.source_entry_version_id
+              and r.status = 'running'
+            """,
+            (MAX_ATTEMPTS, stale_job_ids),
+        )
+        cur.execute(
+            """
+            update haven_knowledge.knowledge_outbox
+            set status = case when attempt_count >= %s then 'dead' else 'pending' end,
+                locked_at = null, locked_by = null,
+                available_at = case when attempt_count >= %s then available_at else now() end,
+                completed_at = case when attempt_count >= %s then now() else null end,
+                last_error_code = case
+                    when attempt_count >= %s then 'stale_lock_retry_limit'
+                    else 'stale_lock_reclaimed'
+                end,
+                updated_at = now()
+            where id = any(%s::uuid[])
+            """,
+            (MAX_ATTEMPTS, MAX_ATTEMPTS, MAX_ATTEMPTS, MAX_ATTEMPTS, stale_job_ids),
+        )
+        return len(stale_job_ids)
+
+
+def claim_next_job(
+    conn: psycopg.Connection,
+    worker_id: str,
+    job_types: list[str],
+    *,
+    owner_ids: list[uuid.UUID] | None = None,
+) -> dict[str, Any] | None:
     with db.transaction(conn) as cur:
         cur.execute(
             """
             select * from haven_knowledge.knowledge_outbox
             where status = 'pending' and available_at <= now() and job_type = any(%s)
+              and (%s::uuid[] is null or owner_id = any(%s::uuid[]))
             order by available_at
             for update skip locked
             limit 1
             """,
-            (job_types,),
+            (job_types, owner_ids, owner_ids),
         )
         job = cur.fetchone()
         if job is None:
@@ -58,6 +163,7 @@ def claim_next_job(conn: psycopg.Connection, worker_id: str, job_types: list[str
             (worker_id, job["id"]),
         )
         job["attempt_count"] = job["attempt_count"] + 1
+        job["locked_by"] = worker_id
         return job
 
 
@@ -76,10 +182,14 @@ def _record_failure(conn: psycopg.Connection, job: dict[str, Any], error_code: s
                 available_at = case when %s::int is null then available_at
                                     else now() + make_interval(secs => %s) end,
                 updated_at = now()
-            where id = %s
+            where id = %s and status = 'running' and locked_by = %s
             """,
-            (status, error_code, delay, delay or 0, job["id"]),
+            (status, error_code, delay, delay or 0, job["id"], job["locked_by"]),
         )
+        updated = cur.rowcount
+    if updated == 0:
+        log.warning("job %s lost its worker lease before failure handling", job["id"])
+        return
     log.warning(
         "job %s (%s) failed with %s; status now %s",
         job["id"], job["job_type"], error_code, status,
@@ -106,11 +216,27 @@ def _process_extract(conn: psycopg.Connection, job: dict[str, Any]) -> None:
         row = cur.fetchone()
     if row is None or row["lifecycle_status"] != "active" or row["current_version_id"] != version_id:
         # Deleted or already-superseded before extraction ran: succeed as no-op.
-        _mark_noop_success(conn, job["id"])
+        _mark_noop_success(conn, job)
         return
 
-    provider = config.extraction_provider()
     with db.transaction(conn) as cur:
+        cur.execute(
+            """
+            select status, locked_by
+            from haven_knowledge.knowledge_outbox
+            where id = %s and owner_id = %s
+            for update
+            """,
+            (job["id"], owner_id),
+        )
+        lease = cur.fetchone()
+        if (
+            lease is None
+            or lease["status"] != "running"
+            or lease["locked_by"] != job["locked_by"]
+        ):
+            return
+        provider = config.extraction_provider()
         cur.execute(
             """
             insert into haven_knowledge.extraction_runs
@@ -158,6 +284,7 @@ def _process_extract(conn: psycopg.Connection, job: dict[str, Any]) -> None:
         primary_name=row["primary_name"],
         extraction=extraction,
         outbox_job_id=job["id"],
+        lease_owner=job["locked_by"],
     )
 
 
@@ -169,14 +296,19 @@ def _process_embed(conn: psycopg.Connection, job: dict[str, Any]) -> None:
         owner_id=job["owner_id"],
         retrieval_item_id=item_id,
         outbox_job_id=job["id"],
+        lease_owner=job["locked_by"],
     )
 
 
-def _mark_noop_success(conn: psycopg.Connection, job_id: uuid.UUID) -> None:
+def _mark_noop_success(conn: psycopg.Connection, job: dict[str, Any]) -> None:
     with db.transaction(conn) as cur:
         cur.execute(
-            "update haven_knowledge.knowledge_outbox set status='succeeded', completed_at=now(), updated_at=now() where id = %s",
-            (job_id,),
+            """
+            update haven_knowledge.knowledge_outbox
+            set status='succeeded', completed_at=now(), updated_at=now()
+            where id = %s and status='running' and locked_by=%s
+            """,
+            (job["id"], job["locked_by"]),
         )
 
 
@@ -186,8 +318,8 @@ HANDLERS = {
     # Relations are graph-registered tables, so projection is a schema-level
     # concern in v0; the job types stay reserved for a future incremental
     # projector and an async supersession path.
-    "project_graph": lambda conn, job: _mark_noop_success(conn, job["id"]),
-    "deactivate_superseded_version": lambda conn, job: _mark_noop_success(conn, job["id"]),
+    "project_graph": _mark_noop_success,
+    "deactivate_superseded_version": _mark_noop_success,
 }
 
 
@@ -211,6 +343,7 @@ def run_worker(
     max_jobs: int | None = None,
     idle_exit: bool = False,
     poll_seconds: float = 2.0,
+    owner_ids: list[uuid.UUID] | None = None,
 ) -> int:
     """Run until stopped (or the queue drains, with idle_exit). Separate
     invocations with different job_types give each stage its own concurrency
@@ -222,7 +355,10 @@ def run_worker(
     conn = db.connect()
     try:
         while max_jobs is None or processed < max_jobs:
-            job = claim_next_job(conn, worker_id, types)
+            reclaimed = reclaim_stale_jobs(conn, owner_ids=owner_ids)
+            if reclaimed:
+                log.warning("reclaimed %s stale outbox job(s)", reclaimed)
+            job = claim_next_job(conn, worker_id, types, owner_ids=owner_ids)
             if job is None:
                 if idle_exit:
                     break

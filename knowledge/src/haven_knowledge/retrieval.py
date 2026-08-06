@@ -142,7 +142,11 @@ def lexical_search(
 
 def vector_search(owner_id: uuid.UUID, query: str, limit: int = 24) -> StrategyResult:
     try:
-        embedding = embed_text(config.embedding_provider(), query)
+        embedding = embed_text(
+            config.embedding_provider(),
+            query,
+            wait_on_rate_limit=config.wait_on_embedding_rate_limit(),
+        )
     except Exception as exc:
         log.warning("query embedding failed (%s)", type(exc).__name__)
         return StrategyResult("vector", [], error="embedding_unavailable")

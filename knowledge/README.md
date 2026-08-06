@@ -17,7 +17,7 @@ Environment (in the repo-root `.env.local`, gitignored; see `.env.local.example`
 - `DATABASE_URL`, `DIRECT_URL`: credentialed Postgres URLs (strip any `?pgbouncer=true`; libpq rejects it).
 - `POLYGRES_RUNTIME_URL`, `POLYGRES_API_KEY`: Runtime API.
 - `EXTRACTION_BASE_URL`, `EXTRACTION_API_KEY`, `EXTRACTION_MODEL`: extraction provider (or a valid `OPENAI_API_KEY`).
-- `VOYAGE_API_KEY`: embeddings (voyage-3.5, 1024 dims); falls back to `OPENAI_API_KEY` (text-embedding-3-small, 1536).
+- `VOYAGE_API_KEY`: embeddings (voyage-3.5, 1024 dims); falls back to `OPENAI_API_KEY` (text-embedding-3-small shortened to 1024).
 - Flags: `HAVEN_KNOWLEDGE_V0_ENABLED=1`, `HAVEN_KNOWLEDGE_WRITE_MODE=primary`, `HAVEN_KNOWLEDGE_SEARCH_MODE=primary` for development; everything defaults to off.
 
 Migrations are applied server-side: `polygres --project pa6ee1830f10557dcc9bfd0c migrations apply --file knowledge/migrations/<file>.sql`.

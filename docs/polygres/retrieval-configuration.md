@@ -23,10 +23,16 @@ One-transposition typos match at the default threshold; heavier corruption misse
 
 `haven_retrieval_embedding` over `haven_knowledge.retrieval_items.embedding`, 1024 dimensions, cosine, hnsw, row id `id`, filters `owner_id`, `lifecycle_status`, `primary_entity_id`, `item_kind`.
 
-Embedding contract (documented change): `voyage-3.5` at 1024 dimensions via the Voyage API, because the repository's OpenAI embedding key was dead at build time and interfaze serves no embeddings endpoint.
-The provider layer falls back to OpenAI `text-embedding-3-small`/1536 if `VOYAGE_API_KEY` is absent but a valid `OPENAI_API_KEY` exists; dimensions and model travel together and are recorded per row (`embedding_model`, `embedding_dimensions`, `embedding_input_hash`).
+Embedding contract (documented change): `voyage-3.5` at 1024 dimensions via the Voyage API.
+The repository's OpenAI embedding key was dead at build time, and interfaze serves no embeddings endpoint.
+The provider layer falls back to OpenAI `text-embedding-3-small` if `VOYAGE_API_KEY` is absent but a valid `OPENAI_API_KEY` exists; it requests 1024 dimensions explicitly so every provider fits the fixed database and Runtime configuration. The model and dimensions are recorded per row (`embedding_model`, `embedding_dimensions`, `embedding_input_hash`).
 The knowledge domain's 1024 is independent of the public mirror's 1536 configs; they are separate configs over separate tables.
 Query embeddings always use the same provider and dimensions as indexed rows; `embed_text` validates dimension and finiteness before anything is written or queried.
+
+Interactive search fails fast when the embedding provider returns a rate limit, so lexical and structured retrieval can still answer without a long pause.
+Workers and the evaluation harness wait through the current Voyage development quota because their work is asynchronous.
+That retry policy is per call and does not coordinate multiple worker processes or honor `Retry-After` yet.
+Before production concurrency, add provider billing or a higher quota and a provider-wide limiter with jitter and server-directed retry timing.
 
 ## Graph
 

@@ -4,7 +4,7 @@ Everything below was executed against the real environment on this date; nothing
 
 ## Versions and identity
 
-- CLI: `polygres 0.1.2` (pipx; docs.evokoa.com confirms 0.1.2 is current).
+- CLI: `polygres 0.2.0` (pipx; verified locally on 2026-08-06 before applying migration 0005).
 - SDK: `polygres-sdk 0.1.0` (Python; the only documented Runtime API contract).
 - Skills: the four `polygres-*` skills in `.claude/skills/` are byte-identical to `github.com/Evokoa/polygres-skills` HEAD (verified by diff).
 - Authenticated as the project owner; organization Robotic Heron.

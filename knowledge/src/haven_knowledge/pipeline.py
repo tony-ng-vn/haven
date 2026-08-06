@@ -92,6 +92,7 @@ def persist_extraction(
     primary_name: str,
     extraction: ValidatedExtraction,
     outbox_job_id: uuid.UUID,
+    lease_owner: str,
 ) -> dict[str, int]:
     """The one atomic write. `entry` is the source_entries row."""
     created = {"mentions": 0, "provisional_entities": 0, "claims": 0, "relations": 0, "items": 0}
@@ -103,7 +104,70 @@ def persist_extraction(
             "select status from haven_knowledge.extraction_runs where id = %s for update",
             (run_id,),
         )
-        if cur.fetchone()["status"] == "succeeded":
+        run = cur.fetchone()
+        if run is None or run["status"] == "succeeded":
+            return created
+
+        cur.execute(
+            """
+            select status, locked_by
+            from haven_knowledge.knowledge_outbox
+            where id = %s and owner_id = %s
+            for update
+            """,
+            (outbox_job_id, owner_id),
+        )
+        lease = cur.fetchone()
+        if (
+            lease is None
+            or lease["status"] != "running"
+            or lease["locked_by"] != lease_owner
+        ):
+            cur.execute(
+                """
+                update haven_knowledge.extraction_runs
+                set status = 'failed', completed_at = now(), error_code = 'lease_lost',
+                    safe_error_message = 'worker lease expired before extraction completed'
+                where id = %s and status = 'running'
+                """,
+                (run_id,),
+            )
+            return created
+
+        # The model call happens outside a transaction. Lock and recheck the
+        # source now so a concurrent revision or deletion cannot finish first
+        # and then have this obsolete result recreate active evidence.
+        cur.execute(
+            """
+            select lifecycle_status, current_version_id
+            from haven_knowledge.source_entries
+            where id = %s and owner_id = %s
+            for update
+            """,
+            (entry["id"], owner_id),
+        )
+        source = cur.fetchone()
+        if (
+            source is None
+            or source["lifecycle_status"] != "active"
+            or source["current_version_id"] != version_id
+        ):
+            cur.execute(
+                """
+                update haven_knowledge.extraction_runs
+                set status = 'succeeded', completed_at = now()
+                where id = %s
+                """,
+                (run_id,),
+            )
+            cur.execute(
+                """
+                update haven_knowledge.knowledge_outbox
+                set status = 'succeeded', completed_at = now(), updated_at = now()
+                where id = %s and status = 'running' and locked_by = %s
+                """,
+                (outbox_job_id, lease_owner),
+            )
             return created
 
         # Primary mention row: the primary person's role in this version.
@@ -270,8 +334,8 @@ def persist_extraction(
             """
             update haven_knowledge.knowledge_outbox
             set status = 'succeeded', completed_at = now(), updated_at = now()
-            where id = %s
+            where id = %s and status = 'running' and locked_by = %s
             """,
-            (outbox_job_id,),
+            (outbox_job_id, lease_owner),
         )
     return created

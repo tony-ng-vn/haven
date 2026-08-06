@@ -99,8 +99,8 @@ def extraction_provider() -> Provider:
 def embedding_provider() -> Provider:
     # Voyage first (documented contract change: the repo's OpenAI embedding
     # key was dead at build time, see docs/adr/knowledge-service-boundary.md),
-    # OpenAI as fallback. Model and dimensions travel together: the vector
-    # config and every stored row must match the provider in use.
+    # OpenAI as fallback. Both providers are normalized to the vector config's
+    # fixed 1024 dimensions, and every stored row records the provider model.
     voyage_key = os.environ.get("VOYAGE_API_KEY", "")
     if voyage_key:
         return Provider(
@@ -118,4 +118,11 @@ def embedding_provider() -> Provider:
 
 
 def embedding_dimensions() -> int:
-    return 1024 if os.environ.get("VOYAGE_API_KEY") else 1536
+    # Migration 0004 and the Polygres Runtime vector config are both fixed at
+    # 1024. OpenAI's text-embedding-3 fallback is explicitly shortened to fit.
+    return 1024
+
+
+def wait_on_embedding_rate_limit() -> bool:
+    """Long waits are for workers and evals, never interactive requests."""
+    return os.environ.get("HAVEN_EMBEDDING_WAIT_ON_RATE_LIMIT", "") == "1"

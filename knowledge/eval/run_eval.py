@@ -52,7 +52,9 @@ def main() -> int:
 
     embeddings_available = True
     try:
-        embed_text(config.embedding_provider(), "credential probe")
+        embed_text(
+            config.embedding_provider(), "credential probe", wait_on_rate_limit=True
+        )
     except Exception:
         embeddings_available = False
 
@@ -113,7 +115,10 @@ def main() -> int:
 
         # ---- drain pipeline (extraction; embeddings if available)
         t0 = time.monotonic()
-        run_worker(job_types=["extract_source"], idle_exit=True)
+        run_worker(
+            job_types=["extract_source"], idle_exit=True,
+            owner_ids=[owner, owner_b],
+        )
         extraction_wall_ms = (time.monotonic() - t0) * 1000
         with conn.cursor() as cur:
             cur.execute(
@@ -132,7 +137,10 @@ def main() -> int:
         }
         if embeddings_available:
             t0 = time.monotonic()
-            run_worker(job_types=["embed_retrieval_item"], idle_exit=True)
+            run_worker(
+                job_types=["embed_retrieval_item"], idle_exit=True,
+                owner_ids=[owner, owner_b],
+            )
             lat["embedding_ms"].append((time.monotonic() - t0) * 1000)
 
         # ---- scenario queries
@@ -146,6 +154,7 @@ def main() -> int:
         modality_ok = True
         negation_ok = True
         temporal_ok = True
+        vector_contributing_queries = 0
 
         for scenario in SCENARIOS:
             for query in scenario["queries"]:
@@ -175,6 +184,11 @@ def main() -> int:
                         quote = out["results"][0]["evidence"]["quote"]
                         evidence_ok += 1 if quote in scenario["sources"][0] else 0
                 else:
+                    if any(
+                        "vector" in r.get("strategies", [])
+                        for r in out.get("results", [])
+                    ):
+                        vector_contributing_queries += 1
                     got = [entity_to_key.get(r["entity_id"]) for r in out.get("results", [])][:5]
                     expected = query["expect"]
                     if expected:
@@ -198,7 +212,11 @@ def main() -> int:
                         person_key = query["expect_negative_not_positive"]
                         for r in out.get("results", []):
                             if entity_to_key.get(r["entity_id"]) == person_key:
-                                claims = [e for e in r["evidence"] if e["kind"] == "direct_claim"]
+                                claims = [
+                                    e for e in r["evidence"]
+                                    if e["kind"] == "direct_claim"
+                                    and "startup introductions" in (e.get("quote") or "").lower()
+                                ]
                                 if any(c.get("polarity") == "positive" for c in claims):
                                     negation_ok = False
                                 # Appearing WITH visible negative polarity is
@@ -268,16 +286,24 @@ def main() -> int:
 
         # ---- fixture 8: revision
         service.revise_source_entry(auth, f8["source_entry_id"], F8_V2)
-        run_worker(job_types=["extract_source"], idle_exit=True)
+        run_worker(
+            job_types=["extract_source"], idle_exit=True,
+            owner_ids=[owner, owner_b],
+        )
         if embeddings_available:
-            run_worker(job_types=["embed_retrieval_item"], idle_exit=True)
+            run_worker(
+                job_types=["embed_retrieval_item"], idle_exit=True,
+                owner_ids=[owner, owner_b],
+            )
         sf = service.search_network(auth, "San Francisco")
         f8_stale = any(
-            entity_to_key.get(r["entity_id"]) == "sarah" for r in sf.get("results", [])
+            "san francisco" in json.dumps(r.get("evidence", [])).lower()
+            for r in sf.get("results", [])
         )
         ny = service.search_network(auth, "New York")
         f8_fresh = any(
-            entity_to_key.get(r["entity_id"]) == "sarah" for r in ny.get("results", [])
+            "new york" in json.dumps(r.get("evidence", [])).lower()
+            for r in ny.get("results", [])
         )
         report["f8_revision"] = {"stale_visible": f8_stale, "new_visible": f8_fresh,
                                 "ok": (not f8_stale) and f8_fresh}
@@ -294,9 +320,18 @@ def main() -> int:
         # ---- fixture 10: tenant isolation
         leakage = 0
         cross = service.search_network(auth, "miniature watercolors")
-        leakage += len(cross.get("results", []))
+        leakage += sum(
+            1 for r in cross.get("results", [])
+            if r.get("entity_id") == str(sarah_b)
+            or F10_SOURCE.lower() in json.dumps(r.get("evidence", [])).lower()
+        )
         cross_b = service.search_network(auth_b, "antique compasses")
-        leakage += len(cross_b.get("results", []))
+        owner_a_entity_ids = {str(entity_id) for entity_id in entities.values()}
+        leakage += sum(
+            1 for r in cross_b.get("results", [])
+            if r.get("entity_id") in owner_a_entity_ids
+            or F9_SOURCE.lower() in json.dumps(r.get("evidence", [])).lower()
+        )
         fast_b = service.search_network(auth_b, "Sarah Chen")
         leakage += sum(1 for r in fast_b.get("results", []) if r["entity_id"] != str(sarah_b))
         report["tenant_leakage_count"] = leakage
@@ -329,6 +364,7 @@ def main() -> int:
             round(evidence_ok / evidence_total, 3) if evidence_total else None
         )
         report["unsupported_assertion_count"] = unsupported_assertions
+        report["vector_contributing_queries"] = vector_contributing_queries
         report["negation_never_positive"] = negation_ok
         report["modality_preserved"] = modality_ok
         report["temporal_preserved"] = temporal_ok
@@ -341,12 +377,36 @@ def main() -> int:
             for name, vals in lat.items()
         }
         report["queries"] = results
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select count(*) as total,
+                       count(*) filter (where embedding_status = 'ready') as ready
+                from haven_knowledge.retrieval_items
+                where owner_id in (%s, %s) and lifecycle_status = 'active'
+                """,
+                (owner, owner_b),
+            )
+            embedding_items = dict(cur.fetchone())
+        report["active_embedding_items"] = embedding_items
         print(json.dumps(report, indent=2))
         healthy = (
-            (report["recall_at_5"] or 0) >= 0.5
+            report["embeddings_available"] is True
+            and embedding_items["ready"] == embedding_items["total"]
+            and embedding_items["total"] > 0
+            and vector_contributing_queries > 0
+            and report["extraction_runs"]["succeeded"] == report["extraction_runs"]["total"]
+            and report["recall_at_5"] == 1.0
+            and (report["mrr"] or 0) >= 0.9
+            and report["evidence_correctness"] == 1.0
             and unsupported_assertions == 0
             and leakage == 0
             and f9_leaks == 0
+            and f3_ok
+            and report["f8_revision"]["ok"]
+            and negation_ok
+            and modality_ok
+            and temporal_ok
         )
         return 0 if healthy else 1
     finally:

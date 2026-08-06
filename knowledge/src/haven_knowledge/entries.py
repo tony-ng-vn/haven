@@ -119,7 +119,20 @@ def create_source_entry(
         if entity["entity_state"] != "canonical":
             raise ValueError("primary person must be a canonical entity")
 
-        if idempotency_key is not None:
+        cur.execute(
+            """
+            insert into haven_knowledge.source_entries
+                (owner_id, scope, primary_entity_id, source_type, client_idempotency_key)
+            values (%s, 'person_anchored', %s, %s, %s)
+            on conflict (owner_id, client_idempotency_key)
+                where client_idempotency_key is not null
+            do nothing
+            returning id
+            """,
+            (owner_id, primary_entity_id, source_type, idempotency_key),
+        )
+        inserted = cur.fetchone()
+        if inserted is None:
             cur.execute(
                 """
                 select id, current_version_id from haven_knowledge.source_entries
@@ -128,25 +141,14 @@ def create_source_entry(
                 (owner_id, idempotency_key),
             )
             existing = cur.fetchone()
-            if existing is not None:
-                return {
-                    "status": "already",
-                    "source_entry_id": str(existing["id"]),
-                    "source_entry_version_id": str(existing["current_version_id"]),
-                    "request_id": request_id,
-                    "raw_searchable": True,
-                }
-
-        cur.execute(
-            """
-            insert into haven_knowledge.source_entries
-                (owner_id, scope, primary_entity_id, source_type, client_idempotency_key)
-            values (%s, 'person_anchored', %s, %s, %s)
-            returning id
-            """,
-            (owner_id, primary_entity_id, source_type, idempotency_key),
-        )
-        entry_id = cur.fetchone()["id"]
+            return {
+                "status": "already",
+                "source_entry_id": str(existing["id"]),
+                "source_entry_version_id": str(existing["current_version_id"]),
+                "request_id": request_id,
+                "raw_searchable": True,
+            }
+        entry_id = inserted["id"]
         cur.execute(
             """
             insert into haven_knowledge.source_entry_versions
@@ -197,6 +199,23 @@ def _deactivate_version_derivations(
     timestamp_col = "superseded_at" if new_status == "superseded" else "deleted_at"
     cur.execute(
         f"""
+        update haven_knowledge.source_entry_versions
+        set lifecycle_status = %s, {timestamp_col} = now()
+        where owner_id = %s and id = %s and lifecycle_status <> %s
+        """,
+        (new_status, owner_id, version_id, new_status),
+    )
+    cur.execute(
+        f"""
+        update haven_knowledge.entity_mentions
+        set lifecycle_status = %s, {timestamp_col} = now()
+        where owner_id = %s and source_entry_version_id = %s
+          and lifecycle_status <> %s
+        """,
+        (new_status, owner_id, version_id, new_status),
+    )
+    cur.execute(
+        f"""
         update haven_knowledge.knowledge_claims
         set lifecycle_status = %s, {timestamp_col} = now()
         where owner_id = %s and source_entry_version_id = %s
@@ -238,6 +257,7 @@ def _sweep_unsupported_provisionals(cur: psycopg.Cursor, owner_id: uuid.UUID) ->
         update haven_knowledge.knowledge_entities e
         set deleted_at = now(), updated_at = now()
         where e.owner_id = %s and e.entity_state = 'provisional' and e.deleted_at is null
+          and e.resolution_status = 'unresolved'
           and not exists (
               select 1 from haven_knowledge.knowledge_claims c
               where c.owner_id = e.owner_id and c.lifecycle_status = 'active'

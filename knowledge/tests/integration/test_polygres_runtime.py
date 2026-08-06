@@ -144,7 +144,7 @@ def test_lexical_sql_fallback_when_runtime_unavailable(seeded, db_conn, monkeypa
     assert len(strategy.ranked_item_ids) == 1
 
 
-def test_vector_roundtrip(seeded, db_conn):
+def test_vector_roundtrip(seeded, db_conn, monkeypatch):
     """Embed the seeded item through the real pipeline, then retrieve it by
     semantic similarity through the Runtime API. Skips (visibly) when the
     embedding credential is missing or invalid; env presence alone proves
@@ -154,11 +154,17 @@ def test_vector_roundtrip(seeded, db_conn):
     from haven_knowledge.worker import run_worker
 
     service, auth, owner, entity_id, marker, result = seeded
+    monkeypatch.setenv("HAVEN_EMBEDDING_WAIT_ON_RATE_LIMIT", "1")
     try:
-        embed_text(kconfig.embedding_provider(), "credential probe")
+        embed_text(
+            kconfig.embedding_provider(), "credential probe", wait_on_rate_limit=True
+        )
     except (EmbeddingFailed, RuntimeError) as exc:
         pytest.skip(f"embedding provider unusable: {exc}")
-    run_worker(job_types=["embed_retrieval_item"], idle_exit=True)
+    run_worker(
+        job_types=["embed_retrieval_item"], idle_exit=True,
+        owner_ids=[owner],
+    )
     with db_conn.cursor() as cur:
         cur.execute(
             "select embedding_status from haven_knowledge.retrieval_items where owner_id=%s and item_kind='raw_source'",
@@ -173,6 +179,42 @@ def test_vector_roundtrip(seeded, db_conn):
         retrieval.reciprocal_rank_fusion([strategy]), limit=5,
     )
     assert any(marker in (h.get("raw_text") or "") for h in hydrated)
+
+
+def test_worker_reclaims_stale_running_job(seeded, db_conn):
+    from haven_knowledge.worker import reclaim_stale_jobs
+
+    owner = seeded[2]
+    with db_conn.transaction():
+        with db_conn.cursor() as cur:
+            cur.execute(
+                """
+                update haven_knowledge.knowledge_outbox
+                set status='running', locked_at=now() - interval '11 minutes',
+                    locked_by='crashed-worker'
+                where owner_id=%s and job_type='embed_retrieval_item'
+                returning id
+                """,
+                (owner,),
+            )
+            job_id = cur.fetchone()["id"]
+
+    assert reclaim_stale_jobs(db_conn, owner_ids=[owner]) == 1
+    with db_conn.cursor() as cur:
+        cur.execute(
+            """
+            select status, locked_at, locked_by, last_error_code
+            from haven_knowledge.knowledge_outbox where id=%s
+            """,
+            (job_id,),
+        )
+        job = cur.fetchone()
+    assert job == {
+        "status": "pending",
+        "locked_at": None,
+        "locked_by": None,
+        "last_error_code": "stale_lock_reclaimed",
+    }
 
 
 def test_graph_data_plane(seeded, db_conn):
