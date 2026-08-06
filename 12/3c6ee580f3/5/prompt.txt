@@ -1,0 +1,27 @@
+Checking skills from source: vercel-labs/skills
+│  GitHub API request limit reached; checking existing gh authentication…
+Checking skills from source: nextlevelbuilder/ui-ux-pro-max-skill
+Checking skills from source: vercel-labs/agent-skills
+Checking skills from source: obra/superpowers
+Checking skills from source: ibelick/ui-skills
+Checking skills from source: higgsfield-ai/skills
+Checking skills from source: mattpocock/skills
+Checking skills from source: emilkowalski/skills
+Checking skills from source: livekit/agent-skills
+Checking skills from source: insforge/agent-skills
+Checking skills from source: diffusionstudio/lottie
+Checking skills from source: warpdotdev/common-skills
+Checking skills from source: felixleezd/cold-message-writer
+Checking skills from source: clerk/skills
+Checking skills from source: jakubkrehel/skills
+Checking skills from source: oso95/scroll-world
+Checking skills from source: heygen-com/hyperframes
+✓ All global skills are up to date. why don't i see /animate from emil skil from github?
+
+---
+
+so i need to run the add every new skill being add?
+
+---
+
+what are all the design skills i have?
