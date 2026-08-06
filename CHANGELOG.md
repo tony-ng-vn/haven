@@ -6,6 +6,17 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.48.0
+
+2026-08-05
+
+**Web**
+
+- A polished preview of the Haven landing now lives at inhavens.com/landing, side by side with the unchanged default: its own custom typeface, and a calmer, more deliberate feel to every button press, hover, and scroll-in -- the default landing at the root is untouched, so this is a fair comparison rather than a replacement.
+- The landing2 concept page now shows the owner's own generated glass artwork directly, in place of the earlier CSS attempt at drawing broken glass -- the real image fused into the page rather than approximated by it.
+
+---
+
 ## v0.47.0
 
 2026-08-04
