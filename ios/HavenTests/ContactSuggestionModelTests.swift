@@ -11,6 +11,7 @@ private final class FakeAddressBook: AddressBookProviding, @unchecked Sendable {
     var status: CNAuthorizationStatus
     var discovery: ContactDiscovery
     private(set) var newlySeenCallCount = 0
+    private(set) var knownIdentifierInputs: [Set<String>?] = []
 
     init(status: CNAuthorizationStatus, discovery: ContactDiscovery) {
         self.status = status
@@ -23,6 +24,7 @@ private final class FakeAddressBook: AddressBookProviding, @unchecked Sendable {
 
     func newlySeenContacts(knownIdentifiers: Set<String>?) async -> ContactDiscovery {
         newlySeenCallCount += 1
+        knownIdentifierInputs.append(knownIdentifiers)
         return discovery
     }
 }
@@ -111,5 +113,31 @@ struct ContactSuggestionModelGateTests {
         #expect(fake.newlySeenCallCount == 1)
         #expect(model.suggestion?.id == "c1")
         #expect(changeState.knownContactIdentifiers == ["c1"])
+    }
+
+    @Test("a failed first read does not poison the next baseline")
+    func failedFirstReadKeepsBaselineUnset() async throws {
+        let (queue, root) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fake = FakeAddressBook(
+            status: .authorized,
+            discovery: ContactDiscovery(added: [], allIdentifiers: nil, historyToken: nil)
+        )
+        let changeState = ContactChangeState(userId: "u1", defaults: freshDefaults())
+        let model = ContactSuggestionModel(
+            userId: "u1", provider: fake, queue: queue, changeState: changeState, mirror: { nil }
+        )
+
+        await model.checkForSuggestion()
+        #expect(changeState.knownContactIdentifiers == nil)
+
+        fake.discovery = ContactDiscovery(added: [], allIdentifiers: ["c1"], historyToken: nil)
+        await model.checkForSuggestion()
+
+        #expect(fake.knownIdentifierInputs.count == 2)
+        #expect(fake.knownIdentifierInputs[0] == nil)
+        #expect(fake.knownIdentifierInputs[1] == nil)
+        #expect(changeState.knownContactIdentifiers == ["c1"])
+        #expect(model.suggestion == nil)
     }
 }

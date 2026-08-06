@@ -59,7 +59,9 @@ final class ContactSuggestionModel: ObservableObject {
         let discovery = await provider.newlySeenContacts(
             knownIdentifiers: changeState.knownContactIdentifiers
         )
-        changeState.recordKnownContactIdentifiers(discovery.allIdentifiers)
+        if let allIdentifiers = discovery.allIdentifiers {
+            changeState.recordKnownContactIdentifiers(allIdentifiers)
+        }
         if let token = discovery.historyToken {
             changeState.historyToken = token
         }

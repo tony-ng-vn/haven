@@ -99,7 +99,7 @@ struct LiveAddressBook: AddressBookProviding {
                 // A read that fails is not a crash and not a suggestion --
                 // the previous baseline stands untouched, and there is
                 // nothing new to report this time.
-                return ContactDiscovery(added: [], allIdentifiers: knownIdentifiers ?? [], historyToken: nil)
+                return ContactDiscovery(added: [], allIdentifiers: nil, historyToken: nil)
             }
             let newIds = ContactIdentifierDiff.added(current: identifiers, knownBefore: knownIdentifiers)
             // Full details for only the ones that are actually new, through

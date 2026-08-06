@@ -9,8 +9,9 @@ struct ContactDiscovery: Equatable, Sendable {
     let added: [AddressBookContact]
     /// Every contact identifier visible at this authorization level, right
     /// now. The new baseline `ContactChangeState` should remember, whether or
-    /// not anything came back in `added`.
-    let allIdentifiers: Set<String>
+    /// not anything came back in `added`. Nil means the read failed and the
+    /// previous baseline must remain untouched.
+    let allIdentifiers: Set<String>?
     /// `CNContactStore.currentHistoryToken` as of this check, or nil when the
     /// read failed. Persisted for its own sake -- see `ContactChangeState`'s
     /// doc comment for why nothing reads it back yet.
@@ -49,4 +50,17 @@ protocol AddressBookProviding: Sendable {
     /// user-facing error state for a background suggestion check, only
     /// "nothing to suggest this time."
     func newlySeenContacts(knownIdentifiers: Set<String>?) async -> ContactDiscovery
+}
+
+/// An address book that cannot read or write anything, for SwiftUI previews.
+/// Keeping it distinct from `LiveAddressBook` prevents a preview host with
+/// Contacts permission from touching the real address book or its baseline.
+struct PreviewAddressBook: AddressBookProviding {
+    func authorizationStatus() -> CNAuthorizationStatus { .notDetermined }
+    func search(matching query: String) async throws -> [AddressBookContact] { [] }
+    func contacts(withIdentifiers identifiers: [String]) async -> [AddressBookContact] { [] }
+
+    func newlySeenContacts(knownIdentifiers: Set<String>?) async -> ContactDiscovery {
+        ContactDiscovery(added: [], allIdentifiers: nil, historyToken: nil)
+    }
 }
