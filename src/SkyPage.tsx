@@ -3,7 +3,7 @@ import { DriftSky } from "./DriftSky";
 import { TopNav } from "./TopNav";
 import { Footer } from "./Footer";
 
-// inhavens.com/#/sky.
+// inhavens.com/sky.
 //
 // Your Sky is a separate Mac app, not a screen inside the web product: it
 // reads a person's own iMessage history and Contacts locally and draws the
@@ -11,9 +11,13 @@ import { Footer } from "./Footer";
 // honestly -- download, authorize, map -- and to say exactly what does and
 // does not leave the machine, because the thing this app touches (who you
 // talk to, how often) is more sensitive than anything else Haven asks for.
+// Landing2Page's own "Sky app, coming soon" button points here.
 //
-// Public and unauthenticated, like the waitlist: reachable at "#/sky" for
-// anyone with the link, signed in or out is irrelevant to a Mac download.
+// Public and unauthenticated, like the waitlist: signed in or out is
+// irrelevant to a Mac download. The old hash address, "#/sky", still works
+// for anyone with that link -- it redirects here now (see hashRedirectTarget
+// in lib.ts and the canonicalizing effect in App.tsx) rather than resolving a
+// second copy of this page in place.
 const DOWNLOAD_HREF = "/downloads/YourSky.zip";
 
 const STEPS = [
@@ -60,9 +64,10 @@ export function SkyPage() {
             and draws the people you actually talk to as a 3D map you can
             explore.
           </p>
-          <a className="sky-download" href={DOWNLOAD_HREF}>
-            Download for Mac
-          </a>
+          {/* No hero buttons, on the owner's direction: the page's one
+              download action lives at the bottom, after the steps and the
+              privacy list have made their case. The step-1 "Download" text
+              link above it stays as the in-flow shortcut. */}
           <p className="sky-install-note">
             This build is not notarized yet -- macOS will warn on first open.
             Go to <strong>System Settings &gt; Privacy &amp; Security</strong>{" "}

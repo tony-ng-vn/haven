@@ -12,6 +12,7 @@ import {
   decideSwipe,
   deriveProfileUrl,
   formatMonthYear,
+  hashRedirectTarget,
   isAdminEmail,
   isAuthPath,
   isClerkFlowHash,
@@ -19,7 +20,9 @@ import {
   isJoinHash,
   isLanding2Hash,
   isSkyHash,
+  isSkyPath,
   isValidEmail,
+  isWaitlistPath,
   legalDocFromPath,
   sitePageFromPath,
   DEFAULT_ADMIN_EMAILS,
@@ -41,17 +44,14 @@ describe("resolveView", () => {
     hasSessionHint: false,
   };
 
-  test("a signed-in visitor always gets home, whatever the hash", () => {
+  test("a signed-in visitor at the bare root gets home", () => {
     expect(resolveView({ ...base, isAuthenticated: true })).toBe("home");
-    expect(
-      resolveView({ ...base, isAuthenticated: true, hash: "#/join" }),
-    ).toBe("home");
   });
 
-  test("the signed-out default is the Haven landing page", () => {
-    expect(resolveView(base)).toBe("landing");
-    // A first-time visitor paints the landing immediately, before Clerk loads.
-    expect(resolveView({ ...base, isLoading: true })).toBe("landing");
+  test("the signed-out default is Landing2, the front door", () => {
+    expect(resolveView(base)).toBe("landing2");
+    // A first-time visitor paints the front door immediately, before Clerk loads.
+    expect(resolveView({ ...base, isLoading: true })).toBe("landing2");
   });
 
   test("Clerk callbacks and the explicit sign-in route mount sign-in", () => {
@@ -72,46 +72,65 @@ describe("resolveView", () => {
     expect(
       resolveView({ ...base, isLoading: true, hasSessionHint: true }),
     ).toBe("splash");
-    // Once resolved signed-out, they fall through to the landing.
-    expect(resolveView({ ...base, hasSessionHint: true })).toBe("landing");
+    // Once resolved signed-out, they fall through to the front door.
+    expect(resolveView({ ...base, hasSessionHint: true })).toBe("landing2");
   });
 
-  test("the '#/join' route is never treated as a Clerk flow, and stays a way to join", () => {
-    // #/join matches the generic Clerk-flow shape but must stay public; it is
-    // an alias into the iOS waitlist page now that the signup lives there.
-    expect(resolveView({ ...base, hash: "#/join" })).toBe("ios");
+  // Every one of these old hash routes matches the generic Clerk-flow shape
+  // (isClerkFlowHash) too, but hashRedirectTarget's own carve-out in
+  // resolveView wins first -- they must read as the front door, not as an
+  // OAuth callback, for the one frame before App.tsx's redirect effect
+  // actually navigates them off the hash and onto the new pathname.
+  test("old hash routes fall through to the front door, never to sign-in", () => {
+    for (const hash of ["#/sky", "#/ios", "#/join", "#/landing2"]) {
+      expect(resolveView({ ...base, hash })).toBe("landing2");
+    }
   });
 
-  test("the sky download route is public, with or without a trailing slash", () => {
-    expect(resolveView({ ...base, hash: "#/sky" })).toBe("sky");
-    expect(resolveView({ ...base, hash: "#/sky/" })).toBe("sky");
+  test("a signed-in visitor on an old hash route still gets home", () => {
+    for (const hash of ["#/sky", "#/ios", "#/join", "#/landing2"]) {
+      expect(
+        resolveView({ ...base, isAuthenticated: true, hash }),
+      ).toBe("home");
+    }
   });
+});
 
-  test("a signed-in visitor on the sky route still gets home", () => {
+describe("resolveView with the sky and waitlist paths", () => {
+  const base = {
+    isAuthenticated: false,
+    isLoading: false,
+    hash: "",
+    hasSessionHint: false,
+  };
+
+  // Landing2's own two buttons point here now (see Landing2Page.tsx); same
+  // precedence as the site pages and the old /landing preview used to have,
+  // and for the same reason: whoever has the link has to reach it whether or
+  // not they happen to be signed in.
+  test("both product pages win over every auth state", () => {
+    expect(resolveView({ ...base, pathname: "/sky" })).toBe("sky");
     expect(
-      resolveView({ ...base, isAuthenticated: true, hash: "#/sky" }),
-    ).toBe("home");
-  });
-
-  test("the iOS waitlist route is public, with or without a trailing slash", () => {
-    expect(resolveView({ ...base, hash: "#/ios" })).toBe("ios");
-    expect(resolveView({ ...base, hash: "#/ios/" })).toBe("ios");
-  });
-
-  test("a signed-in visitor on the ios route still gets home", () => {
+      resolveView({ ...base, pathname: "/sky", isAuthenticated: true }),
+    ).toBe("sky");
+    expect(resolveView({ ...base, pathname: "/waitlist" })).toBe("waitlist");
     expect(
-      resolveView({ ...base, isAuthenticated: true, hash: "#/ios" }),
-    ).toBe("home");
+      resolveView({ ...base, pathname: "/waitlist", isAuthenticated: true }),
+    ).toBe("waitlist");
   });
 
-  test("the landing2 route is public, with or without a trailing slash", () => {
-    expect(resolveView({ ...base, hash: "#/landing2" })).toBe("landing2");
-    expect(resolveView({ ...base, hash: "#/landing2/" })).toBe("landing2");
+  test("no one can claim either path as a handle", () => {
+    expect(handleFromPath("/sky")).toBeNull();
+    expect(handleFromPath("/waitlist")).toBeNull();
   });
 
-  test("a signed-in visitor on the landing2 route still gets home", () => {
+  // The retired /landing preview is not a distinct view anymore -- the word
+  // stays reserved (see handleNames.test.ts), so the path just falls through
+  // every check in resolveView to the same default as any other unknown path.
+  test("the retired /landing path falls through to the default front door", () => {
+    expect(resolveView({ ...base, pathname: "/landing" })).toBe("landing2");
     expect(
-      resolveView({ ...base, isAuthenticated: true, hash: "#/landing2" }),
+      resolveView({ ...base, pathname: "/landing", isAuthenticated: true }),
     ).toBe("home");
   });
 });
@@ -186,7 +205,7 @@ describe("isValidEmail", () => {
 });
 
 describe("isJoinHash", () => {
-  test("matches the waitlist route with or without a trailing slash", () => {
+  test("matches the waitlist's old hash address with or without a trailing slash", () => {
     expect(isJoinHash("#/join")).toBe(true);
     expect(isJoinHash("#/join/")).toBe(true);
   });
@@ -200,7 +219,7 @@ describe("isJoinHash", () => {
 });
 
 describe("isSkyHash", () => {
-  test("matches the download route with or without a trailing slash", () => {
+  test("matches Sky's old hash address with or without a trailing slash", () => {
     expect(isSkyHash("#/sky")).toBe(true);
     expect(isSkyHash("#/sky/")).toBe(true);
   });
@@ -214,7 +233,7 @@ describe("isSkyHash", () => {
 });
 
 describe("isIosHash", () => {
-  test("matches the iOS waitlist route with or without a trailing slash", () => {
+  test("matches the waitlist's other old hash address with or without a trailing slash", () => {
     expect(isIosHash("#/ios")).toBe(true);
     expect(isIosHash("#/ios/")).toBe(true);
   });
@@ -228,7 +247,7 @@ describe("isIosHash", () => {
 });
 
 describe("isLanding2Hash", () => {
-  test("matches the unlinked landing2 route with or without a trailing slash", () => {
+  test("matches Landing2's old hash address with or without a trailing slash", () => {
     expect(isLanding2Hash("#/landing2")).toBe(true);
     expect(isLanding2Hash("#/landing2/")).toBe(true);
   });
@@ -238,6 +257,62 @@ describe("isLanding2Hash", () => {
     expect(isLanding2Hash("#/")).toBe(false);
     expect(isLanding2Hash("#/sso-callback")).toBe(false);
     expect(isLanding2Hash("#/landing2extra")).toBe(false);
+  });
+});
+
+describe("hashRedirectTarget", () => {
+  test("sends each old hash to its new pathname", () => {
+    expect(hashRedirectTarget("#/sky")).toBe("/sky");
+    expect(hashRedirectTarget("#/sky/")).toBe("/sky");
+    expect(hashRedirectTarget("#/ios")).toBe("/waitlist");
+    expect(hashRedirectTarget("#/join")).toBe("/waitlist");
+    expect(hashRedirectTarget("#/landing2")).toBe("/");
+  });
+
+  // The one thing this function must never touch: a legacy hash getting
+  // caught here would drop a person mid-OAuth-handshake onto the front door
+  // instead of finishing their sign-in.
+  test("leaves everything else alone, including every Clerk flow hash", () => {
+    expect(hashRedirectTarget("")).toBeNull();
+    expect(hashRedirectTarget("#/sign-in")).toBeNull();
+    expect(hashRedirectTarget("#/sso-callback")).toBeNull();
+    expect(hashRedirectTarget("#/verify")).toBeNull();
+    expect(hashRedirectTarget("#/maya")).toBeNull();
+  });
+});
+
+describe("isSkyPath", () => {
+  test("names the Sky download page", () => {
+    expect(isSkyPath("/sky")).toBe(true);
+  });
+
+  test("forgives a trailing slash and any casing", () => {
+    expect(isSkyPath("/sky/")).toBe(true);
+    expect(isSkyPath("/Sky")).toBe(true);
+  });
+
+  test("only the top level, and nothing else", () => {
+    expect(isSkyPath("/")).toBe(false);
+    expect(isSkyPath("/sky/extra")).toBe(false);
+    expect(isSkyPath("/maya")).toBe(false);
+    expect(isSkyPath("/skyward")).toBe(false);
+  });
+});
+
+describe("isWaitlistPath", () => {
+  test("names the iPhone waitlist", () => {
+    expect(isWaitlistPath("/waitlist")).toBe(true);
+  });
+
+  test("forgives a trailing slash and any casing", () => {
+    expect(isWaitlistPath("/waitlist/")).toBe(true);
+    expect(isWaitlistPath("/Waitlist")).toBe(true);
+  });
+
+  test("only the top level, and nothing else", () => {
+    expect(isWaitlistPath("/")).toBe(false);
+    expect(isWaitlistPath("/waitlist/extra")).toBe(false);
+    expect(isWaitlistPath("/maya")).toBe(false);
   });
 });
 
@@ -870,7 +945,7 @@ describe("resolveView with a card path", () => {
   });
 
   test("every other path routes exactly as it did before", () => {
-    expect(resolveView({ ...base, pathname: "/" })).toBe("landing");
+    expect(resolveView({ ...base, pathname: "/" })).toBe("landing2");
     // Hyphenated, so it is not a claimable handle and not a card. It used to
     // fall through to the waitlist, which is the bug reported from production:
     // somebody typing the most obvious url was told Haven has no sign-in.
@@ -1050,6 +1125,15 @@ describe("resolveView with a support path", () => {
 
   test("no one can claim it as a handle", () => {
     expect(handleFromPath("/support")).toBeNull();
+  });
+});
+
+// The retired /landing path itself is covered in "resolveView with the sky
+// and waitlist paths" above -- this just confirms the reservation that makes
+// that fallthrough safe still holds (see isReservedHandle in handleNames.ts).
+describe("the retired /landing path stays unclaimable", () => {
+  test("no one can claim it as a handle", () => {
+    expect(handleFromPath("/landing")).toBeNull();
   });
 });
 

@@ -5,18 +5,22 @@ import { Footer } from "./Footer";
 import { WaitlistForm } from "./WaitlistForm";
 import { WAITLIST_COPY } from "./waitlistCopy";
 
-// inhavens.com/#/ios.
+// inhavens.com/waitlist.
 //
 // Haven for iPhone is the primary client -- mvp-design.md owns the product
 // vision -- and it is still in development, so this page's job is to
-// introduce it honestly and carry the waitlist signup that used to sit at the
-// site's root. WAITLIST_COPY (eyebrow, headline, tagline) is the pitch that
-// page always carried; it lives here now because this is where joining
-// happens. WaitlistForm is the ask itself, extracted so this page reuses it
-// rather than duplicating the join logic.
+// introduce it honestly and carry the waitlist signup. It used to be the
+// bare root's own front door; that moved to Landing2Page.tsx (see
+// resolveView in lib.ts), whose "Join the iPhone waitlist" button now points
+// here instead. WAITLIST_COPY (eyebrow, headline, tagline) is the pitch this
+// page carries; WaitlistForm is the ask itself, extracted so this page reuses
+// it rather than duplicating the join logic.
 //
-// Public and unauthenticated, like the sky download page: reachable at
-// "#/ios" (and its older alias "#/join") for anyone with the link.
+// Public and unauthenticated, like the sky download page. The old hash
+// addresses this page used to answer to -- "#/ios" and the older alias
+// "#/join" -- still work for anyone with either link: they redirect here now
+// (see hashRedirectTarget in lib.ts and the canonicalizing effect in
+// App.tsx) rather than resolving a second copy of this page in place.
 const COMING = [
   {
     title: "One profile",

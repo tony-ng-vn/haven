@@ -50,8 +50,8 @@ export function isTouchPointer(pointerType: string): boolean {
 // because it was a fixed overlay with nothing to scroll. A page that scrolls
 // normally cannot, so a coarse-pointer visitor gets the figure and its wander
 // (see wanderPoint) but never the gesture that would fight their scroll --
-// see LandingPage.tsx, which passes lens unconditionally and interactive only
-// for a fine pointer.
+// see Landing2Page.tsx, which passes lens unconditionally and interactive
+// only for a fine pointer.
 export function gestureEnabled(input: {
   lensOn: boolean;
   interactive: boolean;

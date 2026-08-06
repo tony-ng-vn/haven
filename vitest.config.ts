@@ -10,9 +10,16 @@ const exclude = [
   "**/.claude/worktrees/**",
 ];
 
-// The embed-retry files; see the projects comment below for why they cannot
-// share a worker pool with anything else.
-const serial = ["convex/people.test.ts", "convex/memories.test.ts"];
+// The embed-retry files, plus profiles.test.ts, whose fan-out test has the
+// same shape (fake timers + finishAllScheduledFunctions over scheduled embed
+// jobs) and hits the same race -- it was the suite's top flake in CI and
+// locally until it joined this list. See the projects comment below for why
+// these cannot share a worker pool with anything else.
+const serial = [
+  "convex/people.test.ts",
+  "convex/memories.test.ts",
+  "convex/profiles.test.ts",
+];
 
 export default defineConfig({
   test: {
@@ -43,6 +50,14 @@ export default defineConfig({
           pool: "forks",
           poolOptions: { forks: { singleFork: true } },
           sequence: { groupOrder: 1 },
+          // Serialization is not enough on its own: the starved-timer race
+          // lives in convex-test's scheduler, and on the shared self-hosted
+          // Mac (which is also somebody's workday machine) any daytime load
+          // can starve it even with the whole pool to itself. Each test
+          // builds a fresh convexTest world, so a retry is a clean second
+          // roll of the same dice; a real regression still fails every
+          // attempt.
+          retry: 3,
         },
       },
     ],

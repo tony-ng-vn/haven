@@ -7,11 +7,11 @@ import { SearchAdd } from "./SearchAdd";
 import { PersonDetail } from "./PersonDetail";
 import { CaptureTriage } from "./CaptureTriage";
 import { FeedbackWidget } from "./FeedbackWidget";
-import { LandingPage } from "./LandingPage";
 import { DriftSky } from "./DriftSky";
 import {
   isClerkFlowHash,
   handleFromPath,
+  hashRedirectTarget,
   legalDocFromPath,
   resolveView,
   type PersonSnapshot,
@@ -247,14 +247,28 @@ function writeSessionHint(present: boolean): void {
 export default function App() {
   const { isLoading, isAuthenticated } = useConvexAuth();
 
-  // The hash is tracked live so a "Sign in" tap on the waitlist (or the back
-  // button) re-routes in place, without a reload.
+  // The hash is tracked live so navigating between the site's hash routes
+  // (or the back button) re-routes in place, without a reload.
   const [hash, setHash] = useState(() => window.location.hash);
   useEffect(() => {
     const onHashChange = () => setHash(window.location.hash);
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+
+  // Old hash links ("#/sky", "#/ios", "#/join", "#/landing2") still out in
+  // the world -- shared urls, bookmarks -- get canonicalized onto their new
+  // pathname with a real redirect rather than quietly resolving to the same
+  // content at two addresses (bad for both a person's address bar and search
+  // indexing). location.replace is a full navigation, not a SPA transition,
+  // by design: it lets the browser and the URL bar agree with what actually
+  // rendered, the same way a server-side redirect would. resolveView's own
+  // hashRedirectTarget check keeps the one frame before this effect runs from
+  // reading as an OAuth callback instead.
+  useEffect(() => {
+    const target = hashRedirectTarget(hash);
+    if (target !== null) window.location.replace(target);
+  }, [hash]);
 
   // Read once at first paint -- it only steers the frame before Clerk resolves;
   // after that, isAuthenticated drives the choice.
@@ -289,10 +303,11 @@ export default function App() {
   }
   if (view === "support") return <SupportPage />;
   if (view === "sky") return <SkyPage />;
-  if (view === "ios") return <IosPage />;
-  if (view === "landing2") return <Landing2Page />;
+  if (view === "waitlist") return <IosPage />;
   if (view === "home") return <Home />;
   if (view === "signin") return <SignIn />;
   if (view === "splash") return <Splash />;
-  return <LandingPage />;
+  // "landing2" and everything resolveView falls back to (the bare root
+  // included) land here -- Landing2 is the front door.
+  return <Landing2Page />;
 }

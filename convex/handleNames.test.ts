@@ -15,6 +15,22 @@ describe("isReservedHandle", () => {
     }
   });
 
+  // /landing used to be a distinct preview page; it is retired now (see
+  // resolveView in src/lib.ts) and just falls through to the front door. The
+  // word stays reserved anyway: if it were claimable, a signed-up person's
+  // own card would shadow that fallthrough forever -- the same trap
+  // privacy/terms/support are held back against.
+  test("the retired /landing path is still held back", () => {
+    expect(isReservedHandle("landing")).toBe(true);
+  });
+
+  // /sky and /waitlist are Landing2's own two button destinations (see
+  // isSkyPath / isWaitlistPath in src/lib.ts). Same shadowing trap as above.
+  test("the sky and waitlist pages are held back", () => {
+    expect(isReservedHandle("sky")).toBe(true);
+    expect(isReservedHandle("waitlist")).toBe(true);
+  });
+
   test("the brand is held back", () => {
     expect(isReservedHandle("haven")).toBe(true);
     expect(isReservedHandle("inhavens")).toBe(true);

@@ -6,9 +6,9 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
-## v0.48.0
+## v0.52.0
 
-2026-08-05
+2026-08-06
 
 **iOS**
 
@@ -33,6 +33,57 @@ pull requests, which is where it is easiest to read anyway.
 - Every way of saving a person -- typing, sharing, importing a contact, accepting a screenshot -- now checks who already owns a handle first and attaches to them instead of minting a duplicate; when two candidates genuinely conflict, Haven reports it instead of guessing.
 - Handles now remember where they came from (proven by a connected account, typed by hand, imported) and, where a platform offers one, the permanent account id that survives renames -- including the ids LinkedIn, Instagram and X already hand back when you connect your own accounts.
 - A phone entry with no digits at all ("unknown", "call me") is refused instead of stored, because two such entries used to quietly count as the same number and glue strangers together.
+
+---
+
+## v0.51.0
+
+2026-08-06
+
+**Web**
+
+- inhavens.com now opens on the glass-artwork landing -- the one that was previewed at landing2 -- instead of the waitlist page.
+- The iPhone waitlist has its own address now, inhavens.com/waitlist: the landing's "Join the iPhone waitlist" button goes there, and old #/ios and #/join links redirect there too.
+- The Your Sky download page has its own address now, inhavens.com/sky: the landing's other button goes there, and old #/sky links redirect there too.
+- Every other old page address, including the retired /landing preview, now lands on the front door instead of a broken or orphaned page.
+- The waitlist page no longer carries the "Building your own map already? Try Your Sky for Mac" footnote -- it asks one thing now, joining the list.
+
+---
+
+## v0.50.0
+
+2026-08-06
+
+**Web**
+
+- The Sky download page no longer feels squeezed into a narrow phone-width column on a computer screen -- it now uses the space a real desktop page has, with a wider reading column and more generous spacing the wider the window gets.
+- That page now makes its pitch before its ask: the hero carries just the headline and the honest install notes, and the one Download for Mac button sits at the end, after the steps and the privacy promises.
+- The Your Sky / iPhone / Sign in links that used to sit in the top corner of every page are gone everywhere, not just on some pages -- each page's own buttons already point you where you need to go, and the Haven wordmark alone gets you back to the front door.
+- The Haven mascot in that top corner is noticeably bigger now, and it sits truly centered next to the wordmark -- it used to look faintly off-center no matter what, because the mascot artwork itself was trimmed unevenly; that is fixed at the source now, not papered over with CSS.
+- The front door at inhavens.com is the iPhone waitlist again -- the same page the "join the iPhone waitlist" links already pointed at. The landing-page hero that had been living at the root is still there to compare, now at its own /landing address, alongside a second landing concept previewed at landing2 -- neither is what a new visitor meets first anymore.
+- The two hero buttons ("Sky app, coming soon" and "Join the iPhone waitlist") now line up exactly level with each other everywhere they appear together -- they used to sit 4 pixels apart.
+
+---
+
+## v0.49.0
+
+2026-08-05
+
+**Web**
+
+- The landing2 concept page now has the same living night sky as the main landing -- drifting stars and the wandering constellation -- behind its copy on the left, fading away before the artwork begins on the right so the two never overlap.
+- The Haven mascot icon now sits next to the wordmark in landing2's nav.
+
+---
+
+## v0.48.0
+
+2026-08-05
+
+**Web**
+
+- A polished preview of the Haven landing now lives at inhavens.com/landing, side by side with the unchanged default: its own custom typeface, and a calmer, more deliberate feel to every button press, hover, and scroll-in -- the default landing at the root is untouched, so this is a fair comparison rather than a replacement.
+- The landing2 concept page now shows the owner's own generated glass artwork directly, in place of the earlier CSS attempt at drawing broken glass -- the real image fused into the page rather than approximated by it.
 
 ---
 
