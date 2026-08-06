@@ -416,8 +416,12 @@ export function SearchAdd({
       const name =
         result.status === "created"
           ? trimmed
-          : ((await convex.query(api.people.getPerson, { id: result.personId }))
-              ?.name ?? trimmed);
+          : await convex
+              .query(api.people.getPerson, { id: result.personId })
+              .then((person) => person?.name ?? trimmed)
+              // The save already landed. A cosmetic lookup failure must not
+              // report the successful attach as a failed save.
+              .catch(() => trimmed);
       const person: PersonSnapshot = {
         _id: result.personId,
         name,

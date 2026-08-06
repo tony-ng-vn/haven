@@ -4,6 +4,7 @@ import {
   REACH_PLATFORMS,
   isLinkedInHandleStale,
   isPhoneNumber,
+  localePhoneRegion,
   normalizePhoneEntry,
   reachLabel,
   reachPlaceholder,
@@ -249,6 +250,15 @@ describe("normalizePhoneEntry", () => {
 
   test("something that never parses as a number is returned untouched", () => {
     expect(normalizePhoneEntry("call me", "US")).toBe("call me");
+  });
+});
+
+describe("localePhoneRegion", () => {
+  test("accepts only ISO alpha-2 region evidence", () => {
+    expect(localePhoneRegion("en-US")).toBe("US");
+    expect(localePhoneRegion("es-419")).toBeUndefined();
+    expect(localePhoneRegion("en-001")).toBeUndefined();
+    expect(localePhoneRegion("en")).toBeUndefined();
   });
 });
 

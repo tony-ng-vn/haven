@@ -122,8 +122,18 @@ export function isLinkedInHandleStale(
 /// should not manufacture one either.
 function browserRegion(): string | undefined {
   if (typeof navigator === "undefined") return undefined;
+  return localePhoneRegion(navigator.language);
+}
+
+/// Region evidence from one locale, limited to ISO 3166-1 alpha-2 codes.
+/// Numeric UN M.49 regions such as "419" and "001" are not country evidence
+/// and libphonenumber-js cannot use them as a default country.
+export function localePhoneRegion(language: string): string | undefined {
   try {
-    return new Intl.Locale(navigator.language).region;
+    const region = new Intl.Locale(language).region;
+    return region !== undefined && /^[A-Z]{2}$/.test(region)
+      ? region
+      : undefined;
   } catch {
     return undefined;
   }

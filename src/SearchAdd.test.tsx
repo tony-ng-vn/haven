@@ -28,6 +28,9 @@ const saved = vi.hoisted(() => ({ args: null as unknown }));
 const addPersonResult = vi.hoisted(() => ({
   current: { status: "created", personId: "p9" } as unknown,
 }));
+const personQuery = vi.hoisted(() => ({
+  current: async (..._args: unknown[]): Promise<unknown> => null,
+}));
 vi.mock("convex/react", () => ({
   useQuery: (_fn: unknown, args: Record<string, unknown>) =>
     "query" in args ? people.current : suggestionPool.current,
@@ -38,12 +41,17 @@ vi.mock("convex/react", () => ({
   useAction: () => async () => [],
   // Only addPerson's attached/already branch reads from this, to fetch the
   // existing owner's real name; unreached by the created-outcome tests below.
-  useConvex: () => ({ query: async () => null }),
+  useConvex: () => ({
+    query: (...args: unknown[]) => personQuery.current(...args),
+  }),
 }));
 
 const { SearchAdd } = await import("./SearchAdd");
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  personQuery.current = async () => null;
+});
 
 function show(field: { _id: string; name: string }[], query = "Mai") {
   const withCreationTime = field.map((p) => ({
@@ -341,6 +349,55 @@ describe("a save whose handle could not fit under the owner's cap", () => {
       name: "Mai",
       _creationTime: expect.any(Number),
     });
+  });
+});
+
+describe("a save that lands before its cosmetic name lookup", () => {
+  afterEach(() => {
+    addPersonResult.current = { status: "created", personId: "p9" };
+  });
+
+  test("a failed name lookup does not report the successful attach as failed", async () => {
+    people.current = [];
+    saved.args = null;
+    addPersonResult.current = {
+      status: "attached",
+      personId: "p1",
+      noteTruncated: false,
+      handleDropped: false,
+    };
+    personQuery.current = async () => {
+      throw new Error("name lookup failed");
+    };
+    let opened: unknown = null;
+    render(
+      <SearchAdd
+        query="Mai"
+        onQueryChange={() => {}}
+        onOpen={(person) => {
+          opened = person;
+        }}
+        onOpenCapture={() => {}}
+        morphId={null as Id<"people"> | null}
+      />,
+    );
+    openAddForm();
+    fireEvent.change(screen.getByLabelText("Their handle there"), {
+      target: { value: "mai.makes" },
+    });
+    fireEvent.change(screen.getByLabelText("How you met"), {
+      target: { value: "ceramics market" },
+    });
+    fireEvent.click(screen.getByText('Add "Mai" to your sky'));
+
+    await waitFor(() => {
+      expect(opened).toEqual({
+        _id: "p1",
+        name: "Mai",
+        _creationTime: expect.any(Number),
+      });
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
 
