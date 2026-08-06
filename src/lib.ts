@@ -669,6 +669,16 @@ export function triageCountLabel(queueLength: number): string {
   return `${queueLength} to review`;
 }
 
+// Whether an acceptCapture/acceptManualCapture outcome actually landed.
+// "conflict" (identity brief, R5) is the one status that writes nothing --
+// the handle this capture carries already, provably, belongs to somebody
+// else -- so the triage UI must not count it as saved or let the card fly
+// off as though it did; the capture stays in the queue for a human to
+// resolve.
+export function captureWasSaved(outcome: { status: string }): boolean {
+  return outcome.status !== "conflict";
+}
+
 export type SwipeVelocitySample = { t: number; x: number };
 export type SwipeDecision = "save" | "context" | "settle";
 

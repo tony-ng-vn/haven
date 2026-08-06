@@ -3,17 +3,29 @@ import UniformTypeIdentifiers
 
 /// Reads what the share sheet handed over.
 ///
-/// A profile URL wins over a text message, which wins over an image, when an
-/// app offers more than one: an app that shares a profile alongside its
-/// picture is sharing the profile, and a URL attachment is a link Haven does
-/// not have to go find inside a sentence first. An image on its own rides the
-/// existing screenshot pipeline instead.
+/// A vCard wins over everything else: Contacts' own "Share Contact" hands
+/// over nothing but one, and there is no other case where a card competes
+/// with a URL, a message or an image for what the share actually means. Below
+/// that, a profile URL wins over a text message, which wins over an image,
+/// when an app offers more than one: an app that shares a profile alongside
+/// its picture is sharing the profile, and a URL attachment is a link Haven
+/// does not have to go find inside a sentence first. An image on its own
+/// rides the existing screenshot pipeline instead.
 enum ShareInput {
     static func read(
         _ items: [NSExtensionItem],
         storingImagesIn queue: CaptureQueue
     ) async -> ShareSubject? {
         let providers = items.flatMap { $0.attachments ?? [] }
+
+        for provider in providers {
+            guard provider.hasItemConformingToTypeIdentifier(UTType.vCard.identifier) else {
+                continue
+            }
+            if let data = await loadVCardData(provider), let subject = ShareSubject(vCard: data) {
+                return subject
+            }
+        }
 
         for provider in providers {
             guard provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) else {
@@ -59,6 +71,19 @@ enum ShareInput {
         if let url = item as? URL { return url.absoluteString }
         if let string = item as? String { return string }
         return ""
+    }
+
+    /// Bytes for a vCard attachment, however the sender backs it -- data in
+    /// memory from Contacts, or a file on disk from Files. The data form
+    /// rather than `loadItem`'s NSURL: that URL points at a sandboxed temp
+    /// file the system can reclaim once this call returns, the same reason
+    /// `store` below never lets a shared image round-trip through one either.
+    private static func loadVCardData(_ provider: NSItemProvider) async -> Data? {
+        await withCheckedContinuation { continuation in
+            provider.loadDataRepresentation(forTypeIdentifier: UTType.vCard.identifier) { data, _ in
+                continuation.resume(returning: data)
+            }
+        }
     }
 
     /// Copies a shared image into the container.

@@ -5,6 +5,7 @@ import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import {
   canSaveManualName,
+  captureWasSaved,
   composeHeadline,
   composeName,
   decideSwipe,
@@ -217,7 +218,13 @@ export function CaptureTriage() {
   // A failed capture is named by hand (acceptManualCapture); a ready one
   // carries its extracted profile (acceptCapture). One save path, two
   // mutations -- picked here so the leaving/busy machinery stays shared.
-  function acceptForCard(capture: Capture, context?: string): Promise<unknown> {
+  // Both share captureAcceptReturns' shape, so either call resolves to the
+  // same outcome type -- callers branch on .status without knowing which
+  // mutation actually ran.
+  function acceptForCard(
+    capture: Capture,
+    context?: string,
+  ): Promise<FunctionReturnType<typeof api.captures.acceptCapture>> {
     if (capture.status === "failed") {
       return acceptManualCapture({
         captureId: capture._id,
@@ -251,7 +258,13 @@ export function CaptureTriage() {
 
     if (reduceMotion) {
       acceptForCard(capture, context)
-        .then(() => setSavedCount((n) => n + 1))
+        .then((result) => {
+          if (!captureWasSaved(result)) {
+            flashActionError("Already saved to someone else -- nothing changed");
+            return;
+          }
+          setSavedCount((n) => n + 1);
+        })
         .catch(() => flashActionError("Could not save -- try again"))
         .finally(() => setBusy(false));
       return;
@@ -263,7 +276,21 @@ export function CaptureTriage() {
     clearLeavingTimeout();
     setLeaving(capture);
     acceptForCard(capture, context)
-      .then(() => setSavedCount((n) => n + 1))
+      .then((result) => {
+        if (!captureWasSaved(result)) {
+          // A conflict writes nothing server-side -- the capture is still
+          // in triage, so bring the card back rather than let it finish
+          // flying off as though it landed. Same rollback as a failed
+          // mutation below, minus the retry framing: this is not an error
+          // the user can fix by tapping save again.
+          clearLeavingTimeout();
+          setLeaving(null);
+          setDrag({ x: 0, y: 0, dragging: false });
+          flashActionError("Already saved to someone else -- nothing changed");
+          return;
+        }
+        setSavedCount((n) => n + 1);
+      })
       .catch(() => {
         // The mutation didn't land: bring the card back instead of
         // leaving it stuck off-screen. A fling-save parks displacement in

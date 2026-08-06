@@ -76,10 +76,38 @@ struct Person: Decodable, Equatable {
     struct Handle: Decodable, Equatable, Identifiable {
         let platform: String
         let value: String
+        /// The platform's own numeric id, when the server has resolved one --
+        /// Instagram at save time, X shortly after. See
+        /// `PersonReach.openURL` for what having one changes about where a
+        /// tap on this row goes.
+        let platformId: String?
+        /// How this handle was captured -- "typed", "imported", "proven" or
+        /// "guessed". See `handleSourceValidator` in `convex/peopleFields.ts`.
+        let source: String?
+        /// Milliseconds since epoch (`Date.now()` on the server): when this
+        /// handle was first added, or nil for a row saved before this field
+        /// existed. See `HandleStaleness`.
+        let addedAt: Double?
 
         /// One handle per platform is the rule the server enforces, so the
         /// platform identifies the row.
         var id: String { platform }
+
+        // Written out rather than the synthesized memberwise init: a `let`
+        // property with a default value is dropped from that init entirely,
+        // which would make platformId/source/addedAt impossible to pass at
+        // all. The existing preview and test call sites that only ever set
+        // platform/value keep compiling unchanged.
+        init(
+            platform: String, value: String,
+            platformId: String? = nil, source: String? = nil, addedAt: Double? = nil
+        ) {
+            self.platform = platform
+            self.value = value
+            self.platformId = platformId
+            self.source = source
+            self.addedAt = addedAt
+        }
     }
 
     /// The line under the name: what they do, then where they are.
@@ -143,6 +171,47 @@ struct Person: Decodable, Equatable {
 /// What `profiles:disconnect` answers.
 struct DisconnectOutcome: Decodable, Equatable {
     let status: String
+}
+
+/// What `editPerson` answers: the updated person on an ordinary edit, or
+/// "handle_taken" when a `contactHandles` edit named an account that already,
+/// provably, belongs to somebody else on this list.
+///
+/// A person payload carries no `status` key at all, so the check below is
+/// narrow and only ever matches the one other shape this mutation can return.
+enum EditPersonOutcome: Decodable, Equatable {
+    case saved(Person)
+    case handleTaken(personId: String, name: String)
+
+    private enum CodingKeys: String, CodingKey {
+        case status
+    }
+
+    private struct HandleTaken: Decodable, Equatable {
+        let personId: String
+        let name: String
+    }
+
+    init(from decoder: Decoder) throws {
+        if let container = try? decoder.container(keyedBy: CodingKeys.self),
+            let status = try? container.decode(String.self, forKey: .status),
+            status == "handle_taken"
+        {
+            let taken = try HandleTaken(from: decoder)
+            self = .handleTaken(personId: taken.personId, name: taken.name)
+            return
+        }
+        self = .saved(try Person(from: decoder))
+    }
+}
+
+/// What the handles editor does with an `editPerson` result: applied, or
+/// refused with the name of whoever already holds the handle -- shown inline,
+/// with the form left open to try something else.
+enum HandleEditOutcome: Equatable {
+    case saved
+    case handleTaken(name: String)
+    case failed
 }
 
 enum PersonLoad: Equatable {
@@ -284,6 +353,46 @@ final class PersonModel: ObservableObject {
     /// only the second one means "take this away".
     func clear(_ field: String) async {
         await edit([field: nil as String?])
+    }
+
+    /// Saves a full replacement of this person's contact handles, and says
+    /// whether it actually took.
+    ///
+    /// Its own method rather than a call through `edit(_:)`: `editPerson` can
+    /// answer "handle_taken" for this one field alone, and only the handles
+    /// editor -- not the generic failure banner every other field on this
+    /// screen shares -- knows how to say that in a way that leaves the form
+    /// open to try something else, rather than reading as a connection
+    /// problem.
+    func editHandles(_ handles: [Person.Handle], preferred: String?) async -> HandleEditOutcome {
+        guard !isSaving, isLive else { return .failed }
+        isSaving = true
+        failure = nil
+        let arguments: [String: ConvexEncodable?] = [
+            "id": personId,
+            "contactHandles": handles.map { $0.convexArgument } as [ConvexEncodable?],
+            "preferredPlatform": preferred,
+        ]
+        let work = Task { () throws -> EditPersonOutcome in
+            try await convex.mutation("people:editPerson", with: arguments)
+        }
+        let outcome = await work.value(within: .seconds(HavenNetwork.deadline))
+        isSaving = false
+        switch outcome {
+        case .saved(let person):
+            // The subscription brings this too, a moment later. Publishing it
+            // now is what makes the edit feel like it took rather than like
+            // it is being considered.
+            load = .ready(person)
+            return .saved
+        case .handleTaken(_, let name):
+            // Nothing was written -- the row stays exactly as it was, and the
+            // handles editor is what says why.
+            return .handleTaken(name: name)
+        case nil:
+            failure = "That did not save. Check your connection and try again."
+            return .failed
+        }
     }
 
     /// Uploads a photo and attaches it in one go.

@@ -4,6 +4,12 @@ import Foundation
 /// The real drain target: the only part of the capture pipeline that touches
 /// the network, and it lives in the app rather than the extension on purpose.
 struct ConvexCaptureSink: CaptureSink {
+    /// Where Instagram and X's own numeric ids come from. `var` with a
+    /// default rather than `let`: a `let` with a default value is dropped
+    /// from Swift's memberwise init entirely, which would make this
+    /// unoverridable from any call site, tests included.
+    var platformIds: PlatformIdResolving = LivePlatformIdResolving()
+
     func saveProfile(_ profile: QueuedCapture.Profile) async throws -> SharedProfileOutcome {
         try await saveShared(
             platform: profile.link.platform.rawValue,
@@ -11,7 +17,12 @@ struct ConvexCaptureSink: CaptureSink {
             profileUrl: profile.profileUrl,
             name: profile.name,
             note: profile.note,
-            attachToPersonId: profile.attachToPersonId
+            attachToPersonId: profile.attachToPersonId,
+            // A shared profile carries neither: `source` is reserved for the
+            // values only the server or a proven connection ever stamps, and
+            // a fresh platformId is resolved fresh below, at drain time.
+            source: nil,
+            platformId: nil
         )
     }
 
@@ -34,11 +45,18 @@ struct ConvexCaptureSink: CaptureSink {
     func saveManual(_ manual: QueuedCapture.Manual) async throws -> SharedProfileOutcome {
         try await saveShared(
             platform: manual.platform,
-            handleValue: manual.handleValue,
+            // HavenShare queues a card's phone exactly as the card wrote it --
+            // it has no PhoneNumberKit to normalize with. Here is where
+            // PhoneNumberKit exists, so a second share of the same card folds
+            // onto the same handle a hand-typed add already writes.
+            handleValue: manual.platform == "phone"
+                ? ContactValue.normalizedOrRaw(phone: manual.handleValue) : manual.handleValue,
             profileUrl: manual.profileUrl,
             name: manual.name,
             note: manual.note,
-            attachToPersonId: manual.attachToPersonId
+            attachToPersonId: manual.attachToPersonId,
+            source: manual.source,
+            platformId: manual.platformId
         )
     }
 
@@ -61,8 +79,36 @@ struct ConvexCaptureSink: CaptureSink {
         profileUrl: String,
         name: String,
         note: String?,
-        attachToPersonId: String?
+        attachToPersonId: String?,
+        source: String?,
+        platformId: String?
     ) async throws -> SharedProfileOutcome {
+        // Neither id ever rides the queued capture -- the share extension
+        // makes no network calls by design, so this is the first point in
+        // the whole pipeline that could ever fetch one. Best-effort only: a
+        // failed or slow lookup falls straight through to the save, it never
+        // blocks it. This runs for a hand-typed Instagram or X add too, not
+        // only a shared one -- `AddPersonDraft` offers both as manual
+        // platforms, and both end up here.
+        //
+        // Resolved before the save, not after: `saveSharedProfile` looks its
+        // handle up id-first, so a platformId has to be in hand by the time
+        // this call is made for a rename to attach to the person who already
+        // holds the account. An id fetched only after the save (the earlier
+        // shape of this method) is too late to change which person the save
+        // itself just wrote to.
+        var resolvedPlatformId = platformId
+        if resolvedPlatformId == nil {
+            switch platform {
+            case "instagram":
+                resolvedPlatformId = await platformIds.instagramId(forHandle: handleValue)
+            case "x":
+                resolvedPlatformId = await platformIds.xId(forUsername: handleValue)
+            default:
+                break
+            }
+        }
+
         var args: [String: ConvexEncodable?] = [
             "platform": platform,
             "handleValue": handleValue,
@@ -73,7 +119,12 @@ struct ConvexCaptureSink: CaptureSink {
         // and an explicit null is a different thing to Convex.
         if let note { args["note"] = note }
         if let attachToPersonId { args["attachToPersonId"] = attachToPersonId }
-        return try await bounded { try await convex.mutation("people:saveSharedProfile", with: args) }
+        if let source { args["source"] = source }
+        if let resolvedPlatformId { args["platformId"] = resolvedPlatformId }
+
+        return try await bounded {
+            try await convex.mutation("people:saveSharedProfile", with: args)
+        }
     }
 
     /// Bounds one mutation the way every write elsewhere in the app is

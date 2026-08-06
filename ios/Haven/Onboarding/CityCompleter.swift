@@ -30,14 +30,12 @@ final class CityCompleter: NSObject, ObservableObject, MKLocalSearchCompleterDel
         // Places, not businesses. Without this a search for a city comes back
         // full of the coffee shops inside it.
         completer.resultTypes = .address
-        if #available(iOS 18.0, *) {
-            // Cities, and only cities. Without it "San Francisco" also offers
-            // San Francisco County, San Francisco Bay and a postal code, none
-            // of which is an answer to "where are you based". Counties are
-            // subAdministrativeArea and bays are not address components at all,
-            // so including locality alone drops both.
-            completer.addressFilter = MKAddressFilter(including: [.locality])
-        }
+        // Cities, and only cities. Without it "San Francisco" also offers
+        // San Francisco County, San Francisco Bay and a postal code, none of
+        // which is an answer to "where are you based". Counties are
+        // subAdministrativeArea and bays are not address components at all,
+        // so including locality alone drops both.
+        completer.addressFilter = MKAddressFilter(including: [.locality])
     }
 
     func search(_ text: String) {
@@ -62,10 +60,8 @@ final class CityCompleter: NSObject, ObservableObject, MKLocalSearchCompleterDel
     ///
     /// Nil means "this is not a city": either the lookup failed, or the place
     /// has no locality, which is what a county, a bay or a landmark looks like
-    /// from here. That second case is the only thing standing between the
-    /// screen's promise and an iOS 17 device, where `addressFilter` does not
-    /// exist and the digit check lets those through. Falling back to
-    /// `placemark.name` would have quietly stored them as cities.
+    /// from here. Falling back to `placemark.name` would have quietly stored
+    /// those as cities.
     func resolve(_ suggestion: CitySuggestion) async -> CityInput? {
         let request = MKLocalSearch.Request(completion: suggestion.completion)
         guard let placemark = try? await MKLocalSearch(request: request).start()
@@ -85,7 +81,6 @@ final class CityCompleter: NSObject, ObservableObject, MKLocalSearchCompleterDel
         // break the list's identity besides.
         var seen: Set<String> = []
         suggestions = completer.results
-            .filter(Self.looksLikeAPlace)
             .compactMap { result in
                 let id = "\(result.title)|\(result.subtitle)"
                 guard seen.insert(id).inserted else { return nil }
@@ -105,16 +100,5 @@ final class CityCompleter: NSObject, ObservableObject, MKLocalSearchCompleterDel
         // a city and continue, which is the escape hatch this screen needs
         // anyway for places MapKit does not know.
         suggestions = []
-    }
-
-    /// The iOS 17 stand-in for `addressFilter`, which does not exist there. A
-    /// house number or a postcode puts a digit in the title and no city name
-    /// does, so this keeps street addresses out; it cannot tell a county from a
-    /// city, which is the part only the real filter gets right.
-    ///
-    /// Delete this, and the `#available` above it, if the deployment target ever
-    /// moves past 17.
-    private static func looksLikeAPlace(_ completion: MKLocalSearchCompletion) -> Bool {
-        !completion.title.contains(where: \.isNumber)
     }
 }

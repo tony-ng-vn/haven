@@ -1603,6 +1603,84 @@ textarea.field {
   transform: scale(0.92);
 }
 
+/* "Same person?" -- one glass well per candidate, in the same idiom as the
+   search pill and the add form's own rows, so picking a suggestion reads as
+   part of the same surface rather than a popover bolted on. */
+.atlas-suggest {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  width: 100%;
+  text-align: left;
+}
+
+.atlas-suggest-label {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.atlas-suggest-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.atlas-suggest-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  text-align: left;
+  transition:
+    border-color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+/* The picked row borrows the same accent the "preferred" handle mark uses
+   elsewhere on a person's page -- one color for "this is the one" everywhere
+   it means that. */
+.atlas-suggest-row.is-picked {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent-text);
+}
+
+.atlas-suggest-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.atlas-suggest-disambiguator {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.62);
+  text-align: right;
+}
+
+.atlas-suggest-row.is-picked svg {
+  flex: none;
+  color: var(--accent);
+}
+
 /* The inline add form under the search field: naming somebody by hand is the
    web's own way in, so it owns its inputs rather than borrowing another
    surface's. Glass wells over the sky, in the same idiom as the search pill. */
@@ -1698,6 +1776,25 @@ textarea.field {
   margin: 12px 0 0;
   font-size: 13px;
   color: var(--danger-text);
+}
+
+/* Same placement as .atlas-add-error, but muted rather than danger-toned:
+   the save landed, this is telling the user something did not fit, not
+   that anything failed. */
+.atlas-add-notice {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.atlas-add-notice-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-text);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 /* The form's own submit sits left with its label, not centered like the
@@ -2403,6 +2500,16 @@ a.card-handle:focus-visible {
 .person-handle .card-handle-value {
   margin-left: auto;
   text-align: right;
+}
+
+/* A question, not a warning: LinkedIn recycling an old slug is common and
+   not the person's fault, so this stays as quiet as the "preferred" mark
+   rather than reaching for the danger color. */
+.person-handle-stale {
+  margin: 4px 0 0;
+  padding: 0 16px;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .card-cta {

@@ -11,6 +11,12 @@ import { MutationCtx } from "./_generated/server";
 // One row per (userId, action). A function with more than one window (e.g.
 // a per-minute AND a per-day cap) calls this once per window with distinct
 // action names, e.g. "createCapture:minute" and "createCapture:day".
+//
+// Every existing call site here is left as-is (a working, tested cap, not
+// worth touching mid-brief) -- but @convex-dev/rate-limiter (composio.ts's
+// xLookupLimiter) is the pattern for any NEW quota from here on: it does
+// not admit the races a window scan does under concurrency, or lose quota
+// when a mutation fails partway through.
 export async function checkRateLimit(
   ctx: MutationCtx,
   userId: string,

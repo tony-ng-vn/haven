@@ -27,9 +27,40 @@ struct AddPersonSheet: View {
     /// Counts saves, so the haptic fires for a person who landed and never for
     /// state that merely arrived.
     @State private var saves = 0
+    /// Who the typed name might already be, exact or a close typo away.
+    /// Debounced -- see `havenSuggestionSection` -- rather than a computed
+    /// property re-read on every keystroke, the same reason the contacts
+    /// section below does not search on every keystroke either.
+    @State private var suggestions: [NameSuggestion] = []
+    /// Drives the "in your contacts" section. Built from the same mirror
+    /// snapshot this sheet already reads, at the same presentation-time
+    /// moment -- see the doc comment on `mirror` above.
+    @StateObject private var contactMatch: ContactMatchModel
+
+    init(mirror: DirectoryMirror?, queue: CaptureQueue, onSaved: @escaping () -> Void = {}) {
+        self.mirror = mirror
+        self.queue = queue
+        self.onSaved = onSaved
+        // The same queue this sheet's own draft writes to, not
+        // ContactMatchModel's `.forApp()` default -- a preview or a test
+        // that points `queue` at an isolated directory must not have a
+        // contact import quietly land in the real App Group container
+        // instead.
+        _contactMatch = StateObject(wrappedValue: ContactMatchModel(queue: queue, mirror: mirror))
+    }
 
     private var alreadyKnown: MirrorPerson? { draft.alreadyKnown(in: mirror) }
-    private var nameMatches: [MirrorPerson] { draft.nameMatches(in: mirror) }
+
+    /// What drives the contacts section: the name field first, since it is
+    /// always in play, and the handle field when it is a phone number being
+    /// typed -- "a name or phone number," per the product spec, and a
+    /// platform picked as Instagram or LinkedIn has no device-contact
+    /// equivalent worth searching for.
+    private var contactQuery: String {
+        let name = draft.name.trimmedLikeJS
+        if !name.isEmpty { return name }
+        return draft.platform.isPhoneNumber ? draft.handleText.trimmedLikeJS : ""
+    }
 
     var body: some View {
         // One scrolling piece, not HavenScreen's pinned slots. The pinned
@@ -48,8 +79,13 @@ struct AddPersonSheet: View {
                     VStack(alignment: .leading, spacing: 20) {
                         nameField
                         handleSection
+                        // One coherent "who is this?" area: Haven's own
+                        // people first, since they are the stronger signal
+                        // and the one an attach can act on, then the device
+                        // contacts nobody has saved yet.
+                        havenSuggestionSection
+                        contactMatchSection
                         noteField
-                        attachSection
                         if didFail {
                             Text("Haven could not save that. Your words are still here.")
                                 .havenSecondary()
@@ -77,6 +113,17 @@ struct AddPersonSheet: View {
         // commit; the sheet closing is the receipt, and this is what the
         // receipt feels like.
         .sensoryFeedback(.impact(weight: .light), trigger: saves)
+        // One settled name, not one lookup per keystroke: `.task(id:)`
+        // cancels the sleep the moment another character lands, so only the
+        // name somebody stopped typing on ever reaches the mirror.
+        .task(id: SuggestionRefreshKey(draft: draft)) {
+            do {
+                try await Task.sleep(for: SearchModel.debounce)
+            } catch {
+                return
+            }
+            suggestions = alreadyKnown == nil ? (mirror?.nameSuggestions(for: draft.name) ?? []) : []
+        }
     }
 
     /// The title and its one-line introduction, scrolling with the form.
@@ -138,6 +185,34 @@ struct AddPersonSheet: View {
         }
     }
 
+    /// "Where does this person live today": device contacts that are not
+    /// already in Haven, for the name or phone number just typed above.
+    ///
+    /// Only ever shown once there is something to search for -- an empty
+    /// query is not "everyone in your contacts," the same way an empty
+    /// search field in `SearchScreen` is not either.
+    @ViewBuilder private var contactMatchSection: some View {
+        if !contactQuery.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("In your contacts")
+                    .havenGroupLabel()
+                ContactMatchSection(
+                    model: contactMatch, query: contactQuery, onImported: onContactImported
+                )
+            }
+        }
+    }
+
+    /// A contact import is the same kind of commit a typed Save is: the
+    /// sheet closes and the closing is the receipt, so there is no reason
+    /// for this to behave differently just because the tap landed on a
+    /// device-contact row instead of the Save button.
+    private func onContactImported() {
+        saves += 1
+        onSaved()
+        dismiss()
+    }
+
     private var noteField: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Note")
@@ -155,7 +230,11 @@ struct AddPersonSheet: View {
         }
     }
 
-    @ViewBuilder private var attachSection: some View {
+    /// "Do I already know this person?" -- the informational exact-handle
+    /// answer when there is one, otherwise every exact or close name match
+    /// the mirror can offer, each with whatever the mirror actually stores
+    /// to tell two same-named people apart.
+    @ViewBuilder private var havenSuggestionSection: some View {
         if let alreadyKnown {
             // Not a warning. The server files the note against whoever holds
             // this account, which is the right outcome and worth saying before
@@ -166,21 +245,39 @@ struct AddPersonSheet: View {
             )
             .havenSecondary()
             .labelStyle(.titleAndIcon)
-        } else if !nameMatches.isEmpty {
+        } else if !suggestions.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Same person?")
                     .havenGroupLabel()
                 // Offered, never applied: a name is not a unique key, and two
-                // people really can share one.
-                ForEach(nameMatches) { person in
+                // people really can share one -- true of an exact match and
+                // even more true of a close one.
+                ForEach(suggestions) { suggestion in
                     AttachRow(
-                        person: person,
-                        isPicked: attachTo?.id == person.id,
-                        onTap: { attachTo = attachTo?.id == person.id ? nil : person }
+                        person: suggestion.person,
+                        detail: disambiguator(for: suggestion.person),
+                        isPicked: attachTo?.id == suggestion.person.id,
+                        onTap: {
+                            attachTo = attachTo?.id == suggestion.person.id ? nil : suggestion.person
+                        }
                     )
                 }
             }
         }
+    }
+
+    /// What the mirror actually stores beyond a name to tell two people
+    /// apart: their handles, formatted the same way `PersonScreen` already
+    /// shows them.
+    ///
+    /// Nothing else -- no note snippet, no company, no photo: `MirrorPerson`
+    /// carries none of those (see its own doc comment), and this shows
+    /// exactly what exists rather than promising more.
+    private func disambiguator(for person: MirrorPerson) -> String? {
+        let shown = person.handles.prefix(2).map {
+            PersonReach.display(platform: $0.platform, value: $0.value)
+        }
+        return shown.isEmpty ? nil : shown.joined(separator: " \u{00b7} ")
     }
 
     private func save() {
@@ -194,6 +291,21 @@ struct AddPersonSheet: View {
         saves += 1
         onSaved()
         dismiss()
+    }
+}
+
+/// Every draft field that changes whether a name suggestion should appear.
+/// The note is deliberately absent: typing context must not restart the name
+/// debounce, but changing the handle or platform can remove a direct match.
+private struct SuggestionRefreshKey: Equatable {
+    let name: String
+    let platform: AddPersonPlatform
+    let handleText: String
+
+    init(draft: AddPersonDraft) {
+        name = draft.name
+        platform = draft.platform
+        handleText = draft.handleText
     }
 }
 
@@ -237,6 +349,9 @@ private struct PlatformPicker: View {
 /// One person the typed name might already be.
 private struct AttachRow: View {
     let person: MirrorPerson
+    /// What the mirror can offer to tell two same-named people apart, or nil
+    /// when it has nothing but the name -- see `AddPersonSheet.disambiguator`.
+    var detail: String?
     let isPicked: Bool
     let onTap: () -> Void
 
@@ -245,8 +360,14 @@ private struct AttachRow: View {
             HStack(spacing: 10) {
                 Image(systemName: isPicked ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(isPicked ? HavenColor.star : HavenColor.faint)
-                Text(person.name)
-                    .havenBody()
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(person.name)
+                        .havenBody()
+                    if let detail {
+                        Text(detail)
+                            .havenSecondary()
+                    }
+                }
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 10)
@@ -258,7 +379,13 @@ private struct AttachRow: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(isPicked ? [.isSelected] : [])
+        // One spoken element with a real label, not the default "Mai Tran,
+        // button" VoiceOver would otherwise assemble from the visible parts
+        // -- the detail line is content a screen reader user needs exactly
+        // as much as a sighted one does to tell two "Mai Tran"s apart.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([person.name, detail].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityAddTraits(isPicked ? [.isButton, .isSelected] : [.isButton])
     }
 }
 

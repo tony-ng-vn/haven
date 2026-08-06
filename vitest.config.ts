@@ -1,9 +1,14 @@
 import { defineConfig, configDefaults } from "vitest/config";
 
-// Nested dev worktrees under .worktrees/ carry their own copies of these
-// test files; without this the suite runs every copy (slow) and surfaces
-// failures from stale branches we never touched.
-const exclude = [...configDefaults.exclude, "**/.worktrees/**"];
+// Nested dev worktrees carry their own copies of these test files; without
+// this the suite runs every copy (slow) and surfaces failures from stale
+// branches we never touched. Tooling plugins create theirs under
+// .claude/worktrees/, hence the second glob.
+const exclude = [
+  ...configDefaults.exclude,
+  "**/.worktrees/**",
+  "**/.claude/worktrees/**",
+];
 
 // The embed-retry files, plus profiles.test.ts, whose fan-out test has the
 // same shape (fake timers + finishAllScheduledFunctions over scheduled embed

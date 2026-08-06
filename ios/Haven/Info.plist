@@ -31,6 +31,18 @@
 	-->
 	<key>NSCameraUsageDescription</key>
 	<string>Haven uses the camera to read the code on the back of somebody's card. Nothing it sees is saved or sent anywhere.</string>
+	<!--
+	  ContactAccessButton and CNContactPickerViewController (see
+	  Haven/Contacts/) need no permission prompt of their own -- that is the
+	  whole point of both APIs. This key exists for the same reason
+	  NSCameraUsageDescription does above: declared once, truthfully, rather
+	  than left to whatever default iOS shows if some future path ever does
+	  trigger the classic prompt. The wording says what leaves the device and
+	  what does not: matching happens on it, an import is a choice, and the
+	  address book itself never travels anywhere.
+	-->
+	<key>NSContactsUsageDescription</key>
+	<string>Haven matches your contacts on this device and imports only people you choose. The address book itself is never uploaded.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -41,6 +53,16 @@
 				<string>haven</string>
 			</array>
 		</dict>
+	</array>
+	<!--
+	  Without this, `canOpenURL` answers no for every `instagram://` URL
+	  regardless of whether the app is installed -- iOS only lets a scheme
+	  through `canOpenURL` when it is declared here. `PersonReach.openURL`
+	  is what actually asks; this is what lets it get a truthful answer.
+	-->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>instagram</string>
 	</array>
 	<!--
 	  The export-compliance answer, given once here instead of by hand on every

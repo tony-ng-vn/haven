@@ -275,3 +275,32 @@ struct ConnectedPersonTests {
         #expect(person.reachableHandles.map(\.platform) == ["x", "instagram"])
     }
 }
+
+@Suite("A handle's provenance fields")
+struct HandleProvenanceDecodingTests {
+    // Both fields ride the person payload additively -- a server that has not
+    // resolved either yet, or a row saved before they existed, sends neither
+    // key at all rather than an explicit null.
+    @Test("a handle with neither field decodes both as nil")
+    func absent() throws {
+        let handle = try JSONDecoder().decode(
+            Person.Handle.self,
+            from: Data(#"{"platform":"linkedin","value":"mai-tran-8a91b2"}"#.utf8)
+        )
+        #expect(handle.platformId == nil)
+        #expect(handle.addedAt == nil)
+    }
+
+    @Test("a handle with both fields decodes them")
+    func present() throws {
+        let handle = try JSONDecoder().decode(
+            Person.Handle.self,
+            from: Data(
+                #"{"platform":"x","value":"mai_makes","platformId":"1477479148","addedAt":1700000000000}"#
+                    .utf8
+            )
+        )
+        #expect(handle.platformId == "1477479148")
+        #expect(handle.addedAt == 1_700_000_000_000)
+    }
+}

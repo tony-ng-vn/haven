@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// What `people:saveSharedProfile` answers.
 struct SharedProfileOutcome: Decodable, Equatable, Sendable {
@@ -7,6 +8,14 @@ struct SharedProfileOutcome: Decodable, Equatable, Sendable {
     /// True when the context cap cut the note. The capture landed, but not all
     /// of it, and the drain is the only thing that ever finds out.
     let noteTruncated: Bool
+    /// True when the account this capture named could not fit under the
+    /// 8-handle cap on the person it landed on. `var` with a default rather
+    /// than `let`: a `let` with a default value is dropped from Swift's
+    /// memberwise init entirely, which would make it uninitializable to
+    /// `true` from a test. Surfaced to the person saving it -- see
+    /// `HandleDropState` and `DrainResult.notices` -- and logged for
+    /// Console.app either way.
+    var handleDropped = false
 }
 
 /// Where a drained capture goes.
@@ -23,7 +32,9 @@ protocol CaptureSink: Sendable {
 /// What one pass of the drain did.
 struct DrainResult: Equatable, Sendable {
     var sent = 0
-    /// Could not be sent this time, still waiting. Almost always no network.
+    /// Could not be sent this time, still waiting -- no network, or a final
+    /// conflict that landed nowhere. Either way the
+    /// queue item is the one copy of what was written, and it stays.
     var kept = 0
     /// Could never be sent, so keeping it would mean retrying forever.
     var dropped = 0
@@ -40,6 +51,13 @@ struct DrainResult: Equatable, Sendable {
     /// It stays counted rather than dropped because the day there is a surface
     /// -- a triage screen, a capture log -- this is what it reads.
     var truncatedNotes = 0
+    /// Every capture this pass that needs a user-visible notice -- a handle
+    /// dropped at the cap, or a final conflict that landed nowhere -- in the
+    /// order they happened. `CaptureSync.run(userId:)` is what actually
+    /// records these into `HandleDropState` -- this only reports what
+    /// happened, the same separation `CaptureSink` draws between deciding
+    /// and doing.
+    var notices: [HandleDropState.Event] = []
 }
 
 /// Sends everything the share extension queued while the app was not running.
@@ -67,34 +85,48 @@ struct CaptureDrain {
     /// real deadline.
     var deadline: TimeInterval = HavenNetwork.deadline
 
+    /// Which queued captures have already told the person about a conflict,
+    /// so a later pass that replays the same unresolved conflict does not
+    /// notify again. `CaptureSync.run(userId:)` -- the only production
+    /// caller -- always constructs its own scoped to the real signed-in
+    /// `userId`; this struct-level default, scoped to a fresh random id
+    /// instead, exists only so the tests that do not care about conflict
+    /// bookkeeping can build a `CaptureDrain` without one. It can never see
+    /// another instance's marks, so it also never suppresses a repeat --
+    /// correct for those tests, and exactly why production never relies on
+    /// it.
+    var conflictMarks = ConflictNoticeMarks(userId: UUID().uuidString)
+
+    /// A Console.app breadcrumb for a dropped handle, alongside the
+    /// user-visible one `DrainResult.notices` carries back to `CaptureSync`.
+    /// The note still landed on the person either way, and the queue still
+    /// clears -- neither of those changes. A final conflict gets no matching
+    /// breadcrumb here: `process(...)` returns before this would run, since
+    /// nothing landed for it to log about.
+    private static let logger = Logger(subsystem: "com.inhavens.haven", category: "capture")
+
     func run() async -> DrainResult {
         var result = DrainResult()
         for capture in queue.pending() {
             switch capture.payload {
             case .profile(let profile):
-                do {
-                    let outcome = try await bounded { try await sink.saveProfile(profile) }
-                    if outcome.noteTruncated { result.truncatedNotes += 1 }
-                    try? queue.remove(capture)
-                    result.sent += 1
-                } catch {
-                    // Kept, not dropped: the usual reason is that there was no
-                    // network, and losing the capture is the one outcome the
-                    // whole queue exists to prevent.
-                    result.kept += 1
-                }
+                await process(
+                    captureId: capture.id,
+                    displayName: profile.name,
+                    platform: profile.link.platform.rawValue,
+                    into: &result,
+                    remove: { try? queue.remove(capture) },
+                    send: { try await bounded { try await sink.saveProfile(profile) } }
+                )
             case .manual(let manual):
-                do {
-                    let outcome = try await bounded { try await sink.saveManual(manual) }
-                    if outcome.noteTruncated { result.truncatedNotes += 1 }
-                    try? queue.remove(capture)
-                    result.sent += 1
-                } catch {
-                    // Kept for the same reason a shared profile is: the usual
-                    // reason is no network, and a person somebody typed out by
-                    // hand exists nowhere else yet.
-                    result.kept += 1
-                }
+                await process(
+                    captureId: capture.id,
+                    displayName: manual.name,
+                    platform: manual.platform,
+                    into: &result,
+                    remove: { try? queue.remove(capture) },
+                    send: { try await bounded { try await sink.saveManual(manual) } }
+                )
             case .screenshot(let screenshot):
                 let url = queue.imageURL(named: screenshot.fileName)
                 // Off the calling actor: CaptureSync.run() is @MainActor, and
@@ -120,12 +152,77 @@ struct CaptureDrain {
         return result
     }
 
+    /// Sends one shared-profile or manual capture and folds the answer into
+    /// `result`.
+    ///
+    /// Shared by both `.profile` and `.manual`: the payloads differ, but what
+    /// happens to their answer -- land, keep, or report -- does not. A
+    /// conflict is never retried after removing `attachToPersonId`: that id is
+    /// the person's explicit choice, and stripping it can silently route the
+    /// note to somebody else.
+    private func process(
+        captureId: UUID,
+        displayName: String,
+        platform: String,
+        into result: inout DrainResult,
+        remove: () -> Void,
+        send: () async throws -> SharedProfileOutcome
+    ) async {
+        do {
+            let outcome = try await send()
+            if outcome.status == "conflict" {
+                // Nothing was written. The queue item is the one copy of the
+                // note, so it is kept rather than rerouted or discarded. A
+                // later pass retries the same intact choice; Z1 ensures that
+                // replay does not notify again until something changes.
+                result.kept += 1
+                if !conflictMarks.hasNotified(captureId) {
+                    conflictMarks.markNotified(captureId)
+                    result.notices.append(
+                        HandleDropState.Event(
+                            personId: outcome.personId, personName: displayName, platform: platform,
+                            reason: .conflict
+                        )
+                    )
+                }
+                return
+            }
+            // Resolved to something other than a conflict -- whatever mark
+            // this capture carried from an earlier pass no longer describes
+            // it. Before `remove()`: if removal somehow fails (it is
+            // `try?`), the capture stays queued, and the mark should already
+            // be gone so the next pass can notify about a genuinely new
+            // problem rather than staying silently suppressed forever.
+            conflictMarks.clear(captureId)
+            if outcome.noteTruncated { result.truncatedNotes += 1 }
+            if outcome.handleDropped {
+                Self.logHandleDropped(platform: platform)
+                result.notices.append(
+                    HandleDropState.Event(
+                        personId: outcome.personId, personName: displayName, platform: platform, reason: .handleFull
+                    )
+                )
+            }
+            remove()
+            result.sent += 1
+        } catch {
+            // Kept, not dropped: the usual reason is that there was no
+            // network, and losing the capture is the one outcome the whole
+            // queue exists to prevent.
+            result.kept += 1
+        }
+    }
+
     private func bounded<Value>(_ call: @escaping () async throws -> Value) async throws -> Value {
         let work = Task { try await call() }
         guard let value = await work.value(within: .seconds(deadline)) else {
             throw DrainError.timedOut
         }
         return value
+    }
+
+    private static func logHandleDropped(platform: String) {
+        logger.notice("handle dropped at the 8-handle cap: \(platform, privacy: .public)")
     }
 
     private static func readImage(at url: URL) async -> Data? {

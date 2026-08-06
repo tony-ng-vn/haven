@@ -88,6 +88,10 @@ struct AddPersonDraftTests {
         #expect(manual.platform == "instagram")
         #expect(manual.handleValue == "mai.makes")
         #expect(manual.attachToPersonId == nil)
+        // Distinguishes this from a share or a Contacts import at the one
+        // point that still knows which it was -- see handleSourceValidator
+        // in convex/peopleFields.ts.
+        #expect(manual.source == "typed")
     }
 
     @Test("attaching to somebody records who was chosen")
@@ -106,19 +110,13 @@ struct AddPersonDraftTests {
         #expect(filled(platform: .x, handleText: "mai.makes").alreadyKnown(in: mirror) == nil)
     }
 
-    // Offered rather than applied, and only while the account itself is not
-    // already on file: once the server knows who this is, asking is noise.
-    @Test("a typed name offers the people already stored under it")
-    func nameMatches() {
-        #expect(filled(name: "nguyen mai", handleText: "stranger").nameMatches(in: mirror) == [mai, maiAgain])
-        #expect(filled(name: "nguyen mai", handleText: "mai.makes").nameMatches(in: mirror).isEmpty)
-        #expect(filled(name: "nobody", handleText: "stranger").nameMatches(in: mirror).isEmpty)
-    }
-
+    // "Who else is stored under this name" moved to `DirectoryMirror.nameSuggestions`
+    // (`NameSuggestionTests.swift`) once it grew a fuzzy match alongside the
+    // exact one -- that is a question about a typed string against the
+    // mirror, not about anything specific to a hand-typed draft.
     @Test("no mirror is an ordinary answer, not a failure")
     func noMirror() {
         #expect(filled().alreadyKnown(in: nil) == nil)
-        #expect(filled().nameMatches(in: nil).isEmpty)
         #expect(filled().capture() != nil)
     }
 }

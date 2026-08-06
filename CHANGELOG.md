@@ -6,6 +6,36 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.52.0
+
+2026-08-06
+
+**iOS**
+
+- Searching a name or phone number now also looks through your Apple contacts: people already in Haven show as themselves, people only in Contacts show with a one-tap import, and contacts Haven has never been allowed to see are reachable through the system's own contact button, which shares exactly the one person you tap. Nothing from your address book is imported without you choosing that person, and the address book itself never leaves the phone.
+- Sharing a contact card from the Contacts app now saves that person to Haven with their name and number read straight off the card -- no typing.
+- After you add someone new to Contacts, Haven quietly offers to save them the next time you open it. Dismissing the offer is remembered.
+- While typing a name in the add sheet, Haven now shows people you may already have -- including close-mistype matches like "Duogn" for "Duong" -- so answering "same person?" happens before a duplicate exists, not after.
+- Saved X profiles now open through the account's permanent id, so the link keeps working after a username change; saved Instagram profiles open in the Instagram app by permanent id when the app is installed.
+- A LinkedIn link saved more than six months ago shows a quiet "still the right link?" note, and re-sharing a renamed LinkedIn profile offers to update the saved person's link instead of creating a twin.
+- When a queued save cannot land at all -- the handle turns out to belong to someone else in your Haven -- the app now keeps your note safe, keeps trying, and tells you with a notice instead of silently counting it as saved.
+- Haven now requires iOS 18, which runs on exactly the same iPhones as iOS 17.
+
+**Web**
+
+- Typing a name that matches or nearly matches someone already saved now offers "Same person?" with an attach choice, instead of silently creating a second person.
+- When a saved note lands on someone whose handles are already full, Haven now says so and offers to open them, instead of silently dropping the new handle.
+- Phone numbers entered on the web are now normalized the same way iOS normalizes them, so one number saved in both places is one person, not two.
+- Saved X profiles link through the account's permanent id when Haven knows it; LinkedIn links older than six months carry a staleness hint.
+
+**Backend**
+
+- Every way of saving a person -- typing, sharing, importing a contact, accepting a screenshot -- now checks who already owns a handle first and attaches to them instead of minting a duplicate; when two candidates genuinely conflict, Haven reports it instead of guessing.
+- Handles now remember where they came from (proven by a connected account, typed by hand, imported) and, where a platform offers one, the permanent account id that survives renames -- including the ids LinkedIn, Instagram and X already hand back when you connect your own accounts.
+- A phone entry with no digits at all ("unknown", "call me") is refused instead of stored, because two such entries used to quietly count as the same number and glue strangers together.
+
+---
+
 ## v0.51.0
 
 2026-08-06

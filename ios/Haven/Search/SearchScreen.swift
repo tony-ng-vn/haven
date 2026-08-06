@@ -14,11 +14,22 @@ struct SearchScreen: View {
 
     @StateObject private var model: SearchModel
     @StateObject private var ask: AskModel
+    /// "Where else does this person live," for the same query the field
+    /// above already reads. Built from a fresh mirror load at presentation
+    /// time, the same discipline `AddPersonSheet` and `DirectoryScreen`'s add
+    /// sheet already follow.
+    @StateObject private var contactMatch: ContactMatchModel
+    /// Sending an import is the app's job, not this screen's; it only asks.
+    /// See `CaptureDrainRequest`.
+    @Environment(\.requestCaptureDrain) private var requestCaptureDrain
 
     init(openPerson: @escaping (String) -> Void = { _ in }) {
         self.openPerson = openPerson
         _model = StateObject(wrappedValue: SearchModel())
         _ask = StateObject(wrappedValue: AskModel())
+        _contactMatch = StateObject(
+            wrappedValue: ContactMatchModel(mirror: DirectoryMirrorStore.forApp().load())
+        )
     }
 
     /// A loaded screen that never opens a socket, for previews.
@@ -35,6 +46,11 @@ struct SearchScreen: View {
             )
         )
         _ask = StateObject(wrappedValue: AskModel(preview: ask))
+        // Nil, not a real load: this initializer's whole contract is a
+        // screen that never opens a socket or touches anything live, and
+        // `ContactMatchModel`'s own `.task` only ever runs a store search
+        // for a non-empty query, which none of this file's previews type.
+        _contactMatch = StateObject(wrappedValue: ContactMatchModel(mirror: nil))
     }
 
     var body: some View {
@@ -112,6 +128,15 @@ struct SearchScreen: View {
     /// would leave nobody sure which one to read.
     private var isAsking: Bool { ask.state != .idle }
 
+    /// The import is on disk; this asks for the same drain a manual save or
+    /// the add sheet's own contact import already asks for. `model`'s own
+    /// read is a live subscription, not a one-shot fetch, so the person
+    /// joins the Haven-side results on their own once the drain lands them
+    /// there -- nothing here has to ask it to look again.
+    private func onContactImported() {
+        Task { await requestCaptureDrain.run() }
+    }
+
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             if isAsking {
@@ -120,6 +145,26 @@ struct SearchScreen: View {
                 askInvitation
                 summary
                 results
+                contactMatchSection
+            }
+        }
+    }
+
+    /// Device contacts for the same query, not already in Haven -- kept out
+    /// of the "N matches" line above, which is a fact about the caller's own
+    /// directory and stays exactly that.
+    @ViewBuilder
+    private var contactMatchSection: some View {
+        if SearchRequest.isNarrowed(model.key), !model.query.trimmed.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("In your contacts")
+                    .havenGroupLabel()
+                    .padding(.top, 12)
+                ContactMatchSection(
+                    model: contactMatch,
+                    query: model.query,
+                    onImported: onContactImported
+                )
             }
         }
     }

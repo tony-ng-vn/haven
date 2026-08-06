@@ -103,3 +103,104 @@ struct PersonReachTests {
         #expect(PersonReach.parse(platform: "signal", from: "   ") == nil)
     }
 }
+
+// A handle rename breaks a link built from the handle -- these are the two
+// platforms with an id worth building a rename-proof link from.
+@Suite("Reaching a saved person by their platform id")
+struct PersonReachPlatformIdTests {
+    // X's own recommendation: a link built from the numeric id keeps working
+    // after the account renames, where a link built from the handle breaks.
+    @Test("an X handle with a resolved id opens the id-based link")
+    func xWithId() {
+        #expect(
+            PersonReach.url(platform: "x", value: "mai_makes", platformId: "1477479148")?
+                .absoluteString == "https://x.com/intent/user?user_id=1477479148"
+        )
+        // twitter is the same platform under its old name.
+        #expect(
+            PersonReach.url(platform: "twitter", value: "mai_makes", platformId: "1477479148")?
+                .absoluteString == "https://x.com/intent/user?user_id=1477479148"
+        )
+    }
+
+    @Test("an X handle with no resolved id falls back to the handle link")
+    func xWithoutId() {
+        #expect(
+            PersonReach.url(platform: "x", value: "mai_makes", platformId: nil)?.absoluteString
+                == "https://x.com/mai_makes"
+        )
+        #expect(
+            PersonReach.url(platform: "x", value: "mai_makes", platformId: "   ")?.absoluteString
+                == "https://x.com/mai_makes"
+        )
+    }
+
+    @Test("linkedin ignores a platformId entirely -- it never carries one")
+    func linkedInUntouched() {
+        #expect(
+            PersonReach.url(platform: "linkedin", value: "mai-tran-8a91b2", platformId: "999")?
+                .absoluteString == "https://linkedin.com/in/mai-tran-8a91b2"
+        )
+    }
+
+    @Test("instagram's plain url is always the web address, id or not")
+    func instagramURLIsAlwaysWeb() {
+        #expect(
+            PersonReach.url(platform: "instagram", value: "mai.makes", platformId: "17841")?
+                .absoluteString == "https://instagram.com/mai.makes"
+        )
+    }
+
+    @Test("instagram's app deep link needs a non-blank id")
+    func instagramAppURL() {
+        #expect(
+            PersonReach.instagramAppURL(platformId: "17841")?.absoluteString
+                == "instagram://user?id=17841"
+        )
+        #expect(PersonReach.instagramAppURL(platformId: "   ") == nil)
+    }
+
+    // The decision itself, not whether Instagram happens to be installed on
+    // whatever machine ran the test -- `canOpenAppURL` is what is pinned.
+    @Test("instagram opens the app when it is installed and there is an id")
+    func opensAppWhenInstalled() {
+        let opened = PersonReach.openURL(
+            platform: "instagram", value: "mai.makes", platformId: "17841",
+            canOpenAppURL: { _ in true }
+        )
+        #expect(opened?.absoluteString == "instagram://user?id=17841")
+    }
+
+    @Test("instagram falls back to the web url when the app cannot open it")
+    func fallsBackWhenNotInstalled() {
+        let opened = PersonReach.openURL(
+            platform: "instagram", value: "mai.makes", platformId: "17841",
+            canOpenAppURL: { _ in false }
+        )
+        #expect(opened?.absoluteString == "https://instagram.com/mai.makes")
+    }
+
+    @Test("instagram falls back to the web url when there is no id to link with")
+    func fallsBackWithNoId() {
+        let opened = PersonReach.openURL(
+            platform: "instagram", value: "mai.makes", platformId: nil,
+            canOpenAppURL: { _ in true }
+        )
+        #expect(opened?.absoluteString == "https://instagram.com/mai.makes")
+    }
+
+    // A platform other than Instagram never even asks `canOpenAppURL` --
+    // there is no app deep link for it to try.
+    @Test("openURL only asks canOpenAppURL for Instagram")
+    func onlyAsksForInstagram() {
+        var asked = false
+        _ = PersonReach.openURL(
+            platform: "x", value: "mai_makes", platformId: "1477479148",
+            canOpenAppURL: { _ in
+                asked = true
+                return true
+            }
+        )
+        #expect(!asked)
+    }
+}

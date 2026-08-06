@@ -99,6 +99,53 @@ struct ShareSheetIdentityTests {
         #expect(model("https://instagram.com/mai.makes").nameMatches.isEmpty)
     }
 
+    // LinkedIn is the one platform Haven cannot reopen after a rename
+    // (`PersonReach.openURL`), so a re-share with a changed slug is worth
+    // catching by name even when the guessed name is not an exact fold --
+    // this is the `NameSuggestion` machinery from the add sheet, reused here.
+    @Test("a re-shared LinkedIn slug with a slightly different guessed name still offers the person")
+    func closeNameMatch() {
+        let sheet = model("https://www.linkedin.com/in/mai-trann-8a91b2")
+        #expect(sheet.namePrefill == "Mai Trann")
+        #expect(sheet.alreadyKnown == nil)
+        #expect(sheet.nameMatches == [maiTran])
+        #expect(sheet.isLinkRefreshOffer)
+    }
+
+    // A contact card's name is a fact Apple already has on file, not a guess
+    // at a slug -- widening it to fuzzy would offer strangers who merely
+    // sound alike, so a card keeps the exact fold `people(named:)` already
+    // gave it.
+    @Test("a contact card keeps the exact name match, not the fuzzy one")
+    func contactCardStaysExact() {
+        let sheet = ShareSheetModel(
+            subject: .contact(name: "Mai Trann", platform: "phone", handleValue: "+1 415 555 0100"),
+            mirror: directory
+        )
+        #expect(sheet.nameMatches.isEmpty)
+        #expect(!sheet.isLinkRefreshOffer)
+    }
+
+    // The exact-handle path takes priority no matter how closely the guessed
+    // name also reads: the account is already shown as who this is, and a
+    // "same person?" offer to attach it to itself would be noise.
+    @Test("an exact handle match wins over a name-only guess, even when both exist")
+    func exactHandleWinsOverNameGuess() {
+        let maiWithLinkedIn = MirrorPerson(
+            id: "p4", name: "Mai Tran",
+            handles: [MirrorHandle(platform: "linkedin", value: "mai-tran-8a91b2")]
+        )
+        let mirror = DirectoryMirror(
+            refreshedAt: Date(timeIntervalSince1970: 0), people: [maiWithLinkedIn]
+        )
+        let sheet = ShareSheetModel(
+            subject: ShareSubject(sharedURL: "https://www.linkedin.com/in/mai-tran-8a91b2")!,
+            mirror: mirror
+        )
+        #expect(sheet.alreadyKnown?.id == "p4")
+        #expect(sheet.nameMatches.isEmpty)
+    }
+
     // Before the app has ever synced there is no mirror, and the sheet still
     // has to open and still has to save.
     @Test("no mirror yet is nobody, not a broken sheet")
@@ -173,6 +220,20 @@ struct ShareSheetSaveTests {
         #expect(profile.note == nil)
     }
 
+    // Offering a same-person match never applies it by itself: the person
+    // still has to tap the row. Saving without picking one queues a brand
+    // new person even though a match was on screen.
+    @Test("a same-person offer is never auto-attached")
+    func offerNeverAutoAttaches() {
+        let sheet = model("https://www.linkedin.com/in/mai-tran-8a91b2")
+        #expect(!sheet.nameMatches.isEmpty)
+        guard case .profile(let profile)? = capture(sheet, name: "Mai Tran")?.payload else {
+            Issue.record("expected a profile capture")
+            return
+        }
+        #expect(profile.attachToPersonId == nil)
+    }
+
     @Test("attaching records who the user picked")
     func attach() {
         let sheet = model("https://www.linkedin.com/in/mai-tran-8a91b2")
@@ -213,6 +274,77 @@ struct ShareSheetSaveTests {
         }
         #expect(screenshot.fileName == "abc.png")
         #expect(screenshot.note == "badge said Mai")
+    }
+
+    // Reuses the same .manual payload a hand-typed WhatsApp or Telegram add
+    // already queues -- no web profile to point at, and a note that is not
+    // required the way a hand-typed add's is.
+    @Test("a contact card saves through the manual payload, with no note required")
+    func savesContact() {
+        let sheet = ShareSheetModel(
+            subject: .contact(name: "Tony Nguyen", platform: "phone", handleValue: "+1 415 555 0132"),
+            mirror: directory
+        )
+        guard case .manual(let manual)? = capture(sheet, name: "Tony Nguyen")?.payload else {
+            Issue.record("expected a manual capture")
+            return
+        }
+        #expect(manual.name == "Tony Nguyen")
+        #expect(manual.platform == "phone")
+        #expect(manual.handleValue == "+1 415 555 0132")
+        #expect(manual.profileUrl == "")
+        #expect(manual.note == nil)
+        // A contact card is exactly the source the drain forwards as
+        // "imported" -- the person came off the device's own address book,
+        // not something the user typed.
+        #expect(manual.source == "imported")
+        #expect(manual.platformId == nil)
+    }
+}
+
+@Suite("What the share sheet does with a contact card")
+struct ShareSheetContactTests {
+    private func contactModel(
+        name: String = "Mai Tran",
+        platform: String = "phone",
+        handleValue: String = "+84901234567",
+        mirror: DirectoryMirror? = directory
+    ) -> ShareSheetModel {
+        ShareSheetModel(
+            subject: .contact(name: name, platform: platform, handleValue: handleValue),
+            mirror: mirror
+        )
+    }
+
+    // Unlike a LinkedIn slug, which is a guess, the card's name is a fact --
+    // still editable, same as every other prefill.
+    @Test("the card's own name fills the name field")
+    func namePrefill() {
+        #expect(contactModel(name: "Tony Nguyen").namePrefill == "Tony Nguyen")
+    }
+
+    @Test("the identity line shows the handle the card carried")
+    func identityLine() {
+        #expect(contactModel(handleValue: "+84901234567").identityLine == "+84901234567")
+    }
+
+    @Test("a phone already on file names its person, keyed the same way a hand-typed add is")
+    func alreadyKnownByPhone() {
+        let phoneMirror = DirectoryMirror(
+            refreshedAt: Date(timeIntervalSince1970: 0),
+            people: [MirrorPerson(id: "p3", name: "Ada", handles: [MirrorHandle(platform: "phone", value: "+84901234567")])]
+        )
+        let sheet = contactModel(handleValue: "+84901234567", mirror: phoneMirror)
+        #expect(sheet.alreadyKnown?.id == "p3")
+        // Known fills the name field with the name on file, same as a
+        // known profile share -- the field is showing who this is, not
+        // asking.
+        #expect(sheet.namePrefill == "Ada")
+    }
+
+    @Test("a phone nobody holds is somebody new")
+    func notYetKnown() {
+        #expect(contactModel(handleValue: "+1000000000").alreadyKnown == nil)
     }
 }
 

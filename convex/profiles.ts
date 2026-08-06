@@ -25,7 +25,7 @@ import {
   publicHandleValidator,
   toCityInput,
 } from "./profileFields";
-import { handleDisplayValue, handleIndexKeys } from "./handleKeys";
+import { handleDisplayValue, handleIndexKeys, hasPhoneDigit } from "./handleKeys";
 import { HANDLE_PATTERN, isReservedHandle } from "./handleNames";
 import {
   CARD_LINE_MAX,
@@ -168,6 +168,14 @@ function validateHandles(handles: HandleInput[]): HandleInput[] {
       throw new Error("Keep one handle per platform");
     }
     seen.add(handle.platform);
+    // Same refusal as people.ts's validateContactHandles, for the same
+    // reason: a digitless phone value folds to a plain lowercase string, and
+    // two different unreadable entries would otherwise be able to collide.
+    // platformValidator has no "whatsapp" literal, so "phone" is the only
+    // case a card handle can hit this on.
+    if (handle.platform === "phone" && !hasPhoneDigit(handle.value)) {
+      throw new Error("A phone number needs at least one digit");
+    }
     return {
       platform: handle.platform,
       // This mutation is the authority on how a handle is stored: the client
@@ -177,6 +185,12 @@ function validateHandles(handles: HandleInput[]): HandleInput[] {
       // however either side typed it.
       value: cappedHandleValue(handle.value),
       verified: handle.verified,
+      // Composio's proven id for the account (composio.ts's
+      // storeVerifiedHandle), passed through rather than dropped -- this is
+      // the one field on the card that survives a rename, and a fold that
+      // silently stripped it would make identity's platformId-preferred
+      // dedup never fire for anything shared off a Haven card.
+      platformId: handle.platformId,
     };
   });
 }

@@ -161,10 +161,7 @@ struct PersonEditor: View {
                 handles: model.person?.contactHandles ?? [],
                 preferred: model.person?.preferredPlatform
             ) { handles, preferred in
-                await model.edit([
-                    "contactHandles": handles.map { $0.convexArgument } as [ConvexEncodable?],
-                    "preferredPlatform": preferred,
-                ])
+                await model.editHandles(handles, preferred: preferred)
             }
         case .photo:
             PhotoEditor(photo: photo) { data in

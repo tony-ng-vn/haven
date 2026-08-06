@@ -35,7 +35,12 @@ type Doc = {
   company?: string;
   role?: string;
   city?: { name: string; admin?: string; country?: string };
-  contactHandles?: { platform: string; value: string }[];
+  contactHandles?: {
+    platform: string;
+    value: string;
+    platformId?: string;
+    addedAt?: number;
+  }[];
   preferredPlatform?: string;
   photoUrl: string | null;
   connection: { state: "connected" | "ended"; peerUsername: string } | null;
@@ -129,6 +134,61 @@ describe("the handles on a person's page", () => {
     const { container } = show(base);
     expect(container.querySelector(".person-handles")).toBeNull();
     expect(screen.queryByText("Ways to reach them")).toBeNull();
+  });
+
+  // LinkedIn frees a vanity slug back into its pool six months after the
+  // account holding it moves on -- an old enough saved handle is worth a
+  // quiet second look.
+  test("a linkedin handle saved more than six months ago gets a staleness hint", () => {
+    const sixMonthsMs = 1000 * 60 * 60 * 24 * 30 * 6;
+    show({
+      ...base,
+      contactHandles: [
+        {
+          platform: "linkedin",
+          value: "mai-tran-8a91b2",
+          addedAt: Date.now() - sixMonthsMs - 1,
+        },
+      ],
+    });
+    expect(screen.getByText("Saved a while ago -- still the right link?")).toBeTruthy();
+  });
+
+  test("a recently saved linkedin handle gets no staleness hint", () => {
+    show({
+      ...base,
+      contactHandles: [
+        { platform: "linkedin", value: "mai-tran-8a91b2", addedAt: Date.now() },
+      ],
+    });
+    expect(screen.queryByText(/still the right link/)).toBeNull();
+  });
+
+  // Legacy rows saved before addedAt existed must not read as stale by
+  // default -- there is nothing to date them against.
+  test("a linkedin handle with no addedAt gets no staleness hint", () => {
+    show({
+      ...base,
+      contactHandles: [{ platform: "linkedin", value: "mai-tran-8a91b2" }],
+    });
+    expect(screen.queryByText(/still the right link/)).toBeNull();
+  });
+
+  // The reclaim window is LinkedIn's own policy -- an equally old handle on
+  // any other platform stays quiet.
+  test("an old handle on a platform other than linkedin gets no staleness hint", () => {
+    const sixMonthsMs = 1000 * 60 * 60 * 24 * 30 * 6;
+    show({
+      ...base,
+      contactHandles: [
+        {
+          platform: "instagram",
+          value: "mai.makes",
+          addedAt: Date.now() - sixMonthsMs - 1,
+        },
+      ],
+    });
+    expect(screen.queryByText(/still the right link/)).toBeNull();
   });
 
   // The handles are added beside the free-text link, not instead of it: one is

@@ -53,13 +53,55 @@ struct QueuedCapture: Codable, Equatable, Identifiable, Sendable {
         /// The page this handle points at, or "" for a platform that has no
         /// web profile. The server keeps it as `link` and never overwrites one.
         let profileUrl: String
-        /// Required at the moment of saving, unlike a share's note: a handle is
-        /// identity and this is the story, and a person with neither is a row
-        /// nobody ever retrieves.
-        let note: String
+        /// Required at the moment of saving for a hand-typed add -- `AddPersonDraft`
+        /// enforces that itself, the same way `handle` above is required there --
+        /// but optional here because a card shared from Contacts carries no such
+        /// bar: the name is the confirmation, and the note is exactly as
+        /// optional as it is on a shared profile. Nil, never blank -- an empty
+        /// string would still file a blank line in the person's context.
+        let note: String?
         /// Who the user chose to add this to, when they chose. Same request,
         /// same staleness, same server-side resolution as a shared profile.
         let attachToPersonId: String?
+        /// How this handle was captured -- "typed" for a hand-typed add from
+        /// `AddPersonDraft`, "imported" for a vCard share or a Contacts
+        /// import. Forwarded straight to `saveSharedProfile`; see
+        /// `handleSourceValidator` in `convex/peopleFields.ts` for the full
+        /// set of values, most of which iOS never stamps itself.
+        let source: String?
+        /// The platform's own numeric id, when the capture already carries
+        /// one. Nothing that builds a `.manual` capture sets this today --
+        /// Instagram and X ids are resolved at drain time instead, in
+        /// `ConvexCaptureSink.saveShared` -- but the field exists here for
+        /// the same reason `source` does: symmetry with what
+        /// `saveSharedProfile` takes.
+        let platformId: String?
+
+        // A hand-written init rather than the synthesized memberwise one: a
+        // `let` property with a default value is silently dropped from
+        // Swift's memberwise init (there would be no parameter for it at
+        // all), which would make `source`/`platformId` impossible to set
+        // from any call site. Written out, both stay optional with a nil
+        // default and every existing call site keeps compiling unchanged.
+        init(
+            name: String,
+            platform: String,
+            handleValue: String,
+            profileUrl: String,
+            note: String?,
+            attachToPersonId: String?,
+            source: String? = nil,
+            platformId: String? = nil
+        ) {
+            self.name = name
+            self.platform = platform
+            self.handleValue = handleValue
+            self.profileUrl = profileUrl
+            self.note = note
+            self.attachToPersonId = attachToPersonId
+            self.source = source
+            self.platformId = platformId
+        }
     }
 }
 

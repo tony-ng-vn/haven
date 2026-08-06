@@ -1,6 +1,10 @@
 /// <reference types="vite/client" />
-import { convexTest } from "convex-test";
+import { convexTest, type TestConvexForDataModel } from "convex-test";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type {
+  DataModelFromSchemaDefinition,
+  FunctionArgs,
+} from "convex/server";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
@@ -15,6 +19,22 @@ function newHarness() {
   return convexTest(schema, modules);
 }
 type Harness = ReturnType<typeof newHarness>;
+type TestDataModel = DataModelFromSchemaDefinition<typeof schema>;
+
+// addPerson now returns a creation outcome, not a bare id (identity brief,
+// task 2). Every call in this file exists only to seed a person memories
+// tests then act on, so this unwraps the common case and throws loudly if a
+// seed unexpectedly collides with an existing handle instead of creating.
+async function addPersonId(
+  as: TestConvexForDataModel<TestDataModel>,
+  args: FunctionArgs<typeof api.people.addPersonWithOutcome>,
+): Promise<Id<"people">> {
+  const result = await as.mutation(api.people.addPersonWithOutcome, args);
+  if (result.status !== "created") {
+    throw new Error(`addPersonId: expected created, got ${result.status}`);
+  }
+  return result.personId;
+}
 
 // Mint a fake Clerk identity and return an authenticated test context bound
 // to it. requireUser() keys ownership on tokenIdentifier ("issuer|subject"),
@@ -88,7 +108,7 @@ afterEach(() => {
 // addPerson requires a handle and a note; tests that are not about that rule
 // spread this minimal valid payload and override what they exercise.
 const manualAdd = {
-  contactHandles: [{ platform: "phone", value: "unlisted" }],
+  contactHandles: [{ platform: "phone", value: "unlisted1" }],
   context: "met at the compiler meetup",
 };
 
@@ -107,7 +127,7 @@ test("addPerson records its note as a memory owned by the caller", async () => {
   const t = newHarness();
   const { userId, as } = await asNewUser(t);
 
-  const personId = await as.mutation(api.people.addPerson, {
+  const personId = await addPersonId(as, {
     ...manualAdd,
     name: "Ada Lovelace",
   });
@@ -122,7 +142,7 @@ test("a multi-line note becomes one memory per line", async () => {
   const t = newHarness();
   const { as } = await asNewUser(t);
 
-  const personId = await as.mutation(api.people.addPerson, {
+  const personId = await addPersonId(as, {
     ...manualAdd,
     name: "Ada Lovelace",
     context: "met at the meetup\n\nworks on an infinite-context database\n  ",
@@ -137,7 +157,7 @@ test("a multi-line note becomes one memory per line", async () => {
 test("editPerson adds only the new line and re-running it adds nothing", async () => {
   const t = newHarness();
   const { as } = await asNewUser(t);
-  const personId = await as.mutation(api.people.addPerson, {
+  const personId = await addPersonId(as, {
     ...manualAdd,
     name: "Ada Lovelace",
   });
@@ -155,7 +175,7 @@ test("editPerson adds only the new line and re-running it adds nothing", async (
 test("clearing the context keeps the memories already recorded", async () => {
   const t = newHarness();
   const { as } = await asNewUser(t);
-  const personId = await as.mutation(api.people.addPerson, {
+  const personId = await addPersonId(as, {
     ...manualAdd,
     name: "Ada Lovelace",
   });
@@ -170,7 +190,7 @@ test("clearing the context keeps the memories already recorded", async () => {
 test("updatePerson records the note it writes", async () => {
   const t = newHarness();
   const { as } = await asNewUser(t);
-  const personId = await as.mutation(api.people.addPerson, {
+  const personId = await addPersonId(as, {
     ...manualAdd,
     name: "Ada Lovelace",
   });
@@ -238,10 +258,12 @@ test("acceptCapture records its note as a memory", async () => {
     }),
   );
 
-  const personId = await as.mutation(api.captures.acceptCapture, {
+  const acceptedCapture = await as.mutation(api.captures.acceptCapture, {
     captureId,
     context: "screenshotted from the timeline",
   });
+  if (acceptedCapture.status !== "created") throw new Error("unreachable");
+  const personId = acceptedCapture.personId;
 
   expect((await memoriesOf(t, personId)).map((m) => m.text)).toEqual([
     "screenshotted from the timeline",
@@ -262,11 +284,13 @@ test("acceptManualCapture records its note as a memory", async () => {
     }),
   );
 
-  const personId = await as.mutation(api.captures.acceptManualCapture, {
+  const acceptedManual = await as.mutation(api.captures.acceptManualCapture, {
     captureId,
     name: "Ada Lovelace",
     context: "the human read the screenshot",
   });
+  if (acceptedManual.status !== "created") throw new Error("unreachable");
+  const personId = acceptedManual.personId;
 
   expect((await memoriesOf(t, personId)).map((m) => m.text)).toEqual([
     "the human read the screenshot",
@@ -276,7 +300,7 @@ test("acceptManualCapture records its note as a memory", async () => {
 test("deletePerson takes its memories with it", async () => {
   const t = newHarness();
   const { as } = await asNewUser(t);
-  const personId = await as.mutation(api.people.addPerson, {
+  const personId = await addPersonId(as, {
     ...manualAdd,
     name: "Ada Lovelace",
   });
@@ -290,7 +314,7 @@ test("deletePerson takes its memories with it", async () => {
 test("a person's memories stop at the cap instead of growing forever", async () => {
   const t = newHarness();
   const { userId, as } = await asNewUser(t);
-  const personId = await as.mutation(api.people.addPerson, {
+  const personId = await addPersonId(as, {
     ...manualAdd,
     name: "Ada Lovelace",
   });
@@ -324,7 +348,7 @@ test("a new memory is embedded and re-embedding it is a no-op", async () => {
   const { as } = await asNewUser(t);
   const stub = stubEmbedding(unitVector(3));
 
-  const personId = await as.mutation(api.people.addPerson, {
+  const personId = await addPersonId(as, {
     ...manualAdd,
     name: "Ada Lovelace",
   });
@@ -345,7 +369,7 @@ test("a failed memory embedding retries with backoff and then gives up", async (
     new Response("upstream error", { status: 500 }),
   );
 
-  await as.mutation(api.people.addPerson, {
+  await as.mutation(api.people.addPersonWithOutcome, {
     ...manualAdd,
     name: "Ada Lovelace",
   });

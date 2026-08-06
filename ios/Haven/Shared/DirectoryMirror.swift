@@ -31,6 +31,14 @@ struct MirrorHandle: Codable, Equatable, Sendable {
 }
 
 /// One person, as much of them as the sheet needs.
+///
+/// Deliberately not everything `people:listPeople` could send: no note, no
+/// company, no city, no photo -- `CaptureSync.refreshMirror` never asks for
+/// them (see `MirrorSource`), because none of the offline decisions this
+/// mirror answers ("do I already know them," "who holds this handle") needs
+/// more than a name and a handle to answer. A row that wants to show one of
+/// those fields as a disambiguator has only handles to work with until that
+/// changes.
 struct MirrorPerson: Codable, Equatable, Identifiable, Sendable {
     let id: String
     let name: String

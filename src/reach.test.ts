@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import {
   REACH_PLATFORMS,
+  isLinkedInHandleStale,
   isPhoneNumber,
+  localePhoneRegion,
+  normalizePhoneEntry,
   reachLabel,
   reachPlaceholder,
   reachUrl,
@@ -38,6 +41,37 @@ describe("what a handle turns into", () => {
   test("the old name for X still goes to X", () => {
     expect(reachLabel("twitter")).toBe("X");
     expect(reachUrl("twitter", "maimakes")).toBe("https://x.com/maimakes");
+  });
+
+  // An X username can be changed by its owner; the numeric id behind it
+  // cannot -- so a handle carrying one links by id, which survives a rename
+  // the username address below could not.
+  test("an X handle with a platform id links by id, not by username", () => {
+    expect(reachUrl("x", "maimakes", "1234567890")).toBe(
+      "https://x.com/intent/user?user_id=1234567890",
+    );
+    // A legacy row still saying "twitter" gets the same rename-proof link.
+    expect(reachUrl("twitter", "maimakes", "1234567890")).toBe(
+      "https://x.com/intent/user?user_id=1234567890",
+    );
+  });
+
+  test("an X handle with no platform id falls back to the username address", () => {
+    expect(reachUrl("x", "maimakes", undefined)).toBe(
+      "https://x.com/maimakes",
+    );
+    expect(reachUrl("x", "maimakes", "")).toBe("https://x.com/maimakes");
+  });
+
+  // Only X carries a rename-proof id today: a platformId on any other
+  // platform's handle must not change what it links to.
+  test("a platform id is ignored on every platform but X", () => {
+    expect(reachUrl("instagram", "mai.makes", "ig_12345")).toBe(
+      "https://instagram.com/mai.makes",
+    );
+    expect(reachUrl("linkedin", "mai-nguyen-8a91b2", "urn:li:person:abc")).toBe(
+      "https://linkedin.com/in/mai-nguyen-8a91b2",
+    );
   });
 
   // A number is dialled, not browsed: a stored number is one number however it
@@ -143,17 +177,37 @@ describe("what gets stored", () => {
     expect(reachValue("signal", "  mai.99  ")).toBe("mai.99");
   });
 
-  // A number is kept as typed. iOS folds one to E.164 with libphonenumber,
-  // which needs that whole library to do honestly, and reading a number back
-  // is already handled where it matters.
-  test("a number is kept as it was written", () => {
-    expect(reachValue("phone", "  +84 90 123 4567 ")).toBe("+84 90 123 4567");
-    expect(reachValue("whatsapp", "+84 90 123 4567")).toBe("+84 90 123 4567");
-    // Non-null asserted deliberately: a number is never refused, and the
-    // assertion above this line is what proves it.
+  // A number with its own country code folds to E.164, same as iOS folds one
+  // with PhoneNumberKit -- a person saved from either platform lands on the
+  // same key. Something that does not parse as a valid number is kept as
+  // typed rather than guessed at.
+  test("a number with a country code is folded to E.164", () => {
+    expect(reachValue("phone", "  +84 90 123 4567 ")).toBe("+84901234567");
+    expect(reachValue("whatsapp", "+84 90 123 4567")).toBe("+84901234567");
+    // Non-null asserted deliberately: a valid number is never refused, and
+    // the assertion above this line is what proves it.
     expect(reachUrl("phone", reachValue("phone", "+84 90 123 4567")!)).toBe(
       "tel:+84901234567",
     );
+  });
+
+  // A digitless value with digits elsewhere in it (a local number with no
+  // country code) is still kept as typed rather than guessed at -- only the
+  // total absence of a digit is refused, below.
+  test("something with digits that does not parse as a number is kept exactly as typed", () => {
+    expect(reachValue("phone", "555-1234")).toBe("555-1234");
+  });
+
+  // R1 (identity brief, round 2): a phone/whatsapp value with no digit at
+  // all folds through handleValueKey's own lowercase fallback server-side,
+  // so two different unreadable entries ("call me" from one person, "ask
+  // mai" from another) could otherwise collide on the same identity key.
+  // Refusing here, the same way convex/handleKeys.ts's hasPhoneDigit gates
+  // the server write, is the client-side half of that -- storing wreckage
+  // that later merges two strangers is worse than refusing the paste.
+  test("a phone or whatsapp value with no digit at all is refused, not stored", () => {
+    expect(reachValue("phone", "call me")).toBeNull();
+    expect(reachValue("whatsapp", "ask mai")).toBeNull();
   });
 
   test("what is stored is what opens again", () => {
@@ -171,6 +225,65 @@ describe("what gets stored", () => {
         "https://instagram.com/mai.makes",
       );
     }
+  });
+});
+
+// The web's half of the identity fix: the server (convex/handleKeys.ts)
+// refuses to guess a region for a bare number, so a number typed without its
+// country code has to arrive already carrying one -- the browser's own
+// locale is the region evidence the server does not have.
+describe("normalizePhoneEntry", () => {
+  test("three shapes of the same US number fold to one E.164 value with US region evidence", () => {
+    const shapes = ["(415) 555-0123", "+1 415 555 0123", "4155550123"];
+    const normalized = shapes.map((raw) => normalizePhoneEntry(raw, "US"));
+    expect(new Set(normalized).size).toBe(1);
+    expect(normalized[0]).toBe("+14155550123");
+  });
+
+  test("a number already carrying its own country code ignores the region", () => {
+    expect(normalizePhoneEntry("+84 90 123 4567", "US")).toBe("+84901234567");
+  });
+
+  test("no region and no country code in the string leaves it unparsed, so it is kept as typed", () => {
+    expect(normalizePhoneEntry("4155550123")).toBe("4155550123");
+  });
+
+  test("something that never parses as a number is returned untouched", () => {
+    expect(normalizePhoneEntry("call me", "US")).toBe("call me");
+  });
+});
+
+describe("localePhoneRegion", () => {
+  test("accepts only ISO alpha-2 region evidence", () => {
+    expect(localePhoneRegion("en-US")).toBe("US");
+    expect(localePhoneRegion("es-419")).toBeUndefined();
+    expect(localePhoneRegion("en-001")).toBeUndefined();
+    expect(localePhoneRegion("en")).toBeUndefined();
+  });
+});
+
+// reachValue calls normalizePhoneEntry with the browser's own region, which
+// this test environment reports as "en-US" -- the same evidence a real
+// browser would give a real person typing a local number.
+describe("reachValue folds a phone entry using the browser's region", () => {
+  test("the three US shapes reach one identical stored value with no region passed explicitly", () => {
+    const stored = [
+      "(415) 555-0123",
+      "+1 415 555 0123",
+      "4155550123",
+    ].map((raw) => reachValue("phone", raw));
+    expect(new Set(stored).size).toBe(1);
+    expect(stored[0]).toBe("+14155550123");
+  });
+});
+
+// wa.me needs the number without its leading plus; digitsOnly already strips
+// it, this just pins that an E.164-shaped value survives the same way.
+describe("a wa.me link built from an E.164 value", () => {
+  test("contains digits only", () => {
+    const url = reachUrl("whatsapp", "+14155550123");
+    expect(url).toBe("https://wa.me/14155550123");
+    expect(url).toMatch(/^https:\/\/wa\.me\/\d+$/);
   });
 });
 
@@ -351,9 +464,10 @@ describe("reachValue refuses an address it cannot read a handle out of", () => {
     expect(reachValue("linkedin", "https://www.linkedin.com/in/ada-lovelace-123/")).toBe("ada-lovelace-123");
     expect(reachValue("telegram", "https://t.me/ada")).toBe("ada");
     expect(reachValue("telegram", "t.me/+invite")).toBe("+invite");
-    // Unknown platform and numbers pass through: Haven does not know a rule.
+    // Unknown platform passes through: Haven does not know a rule for it.
     expect(reachValue("signal", "whatever they typed")).toBe("whatever they typed");
-    expect(reachValue("phone", "+84 90 123 4567")).toBe("+84 90 123 4567");
+    // A number with a country code folds; the fold is still a round-trip.
+    expect(reachValue("phone", "+84 90 123 4567")).toBe("+84901234567");
   });
 
   test("a length-changing fold does not shift where the handle starts", () => {
@@ -373,5 +487,41 @@ describe("reachUrl escaping", () => {
 
   test("is total, even on a lone surrogate", () => {
     expect(reachUrl("instagram", "mai\uD83D")).toBeNull();
+  });
+});
+
+describe("isLinkedInHandleStale", () => {
+  const now = Date.UTC(2026, 7, 4);
+  const sixMonthsMs = 1000 * 60 * 60 * 24 * 30 * 6;
+
+  test("a linkedin handle saved more than six months ago is stale", () => {
+    expect(isLinkedInHandleStale("linkedin", now - sixMonthsMs - 1, now)).toBe(true);
+  });
+
+  test("a linkedin handle saved within the last six months is not stale", () => {
+    expect(isLinkedInHandleStale("linkedin", now - sixMonthsMs + 1, now)).toBe(false);
+    expect(isLinkedInHandleStale("linkedin", now, now)).toBe(false);
+  });
+
+  // Legacy rows saved before addedAt existed must not read as stale by
+  // default -- a false "still the right link?" on a handle nobody can date
+  // is worse than staying quiet.
+  test("no addedAt at all is never stale", () => {
+    expect(isLinkedInHandleStale("linkedin", undefined, now)).toBe(false);
+  });
+
+  // The reclaim window is LinkedIn's own policy; no other platform recycles
+  // handles this way.
+  test("only linkedin is ever flagged, however old another platform's handle is", () => {
+    expect(isLinkedInHandleStale("instagram", now - sixMonthsMs - 1, now)).toBe(
+      false,
+    );
+    expect(isLinkedInHandleStale("x", now - sixMonthsMs - 1, now)).toBe(false);
+  });
+
+  test("defaults to the real clock when now is not given", () => {
+    expect(isLinkedInHandleStale("linkedin", Date.now() - sixMonthsMs - 1)).toBe(
+      true,
+    );
   });
 });

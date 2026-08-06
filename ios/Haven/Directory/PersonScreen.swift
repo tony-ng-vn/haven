@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// One person: who they are, how to reach them, and the note you keep.
 ///
@@ -205,23 +206,43 @@ struct PersonScreen: View {
 
     /// One handle. The row opens the app it names; a platform Haven cannot open
     /// still shows, because it is still how you reach them.
+    ///
+    /// A LinkedIn handle old enough to be worth a second look
+    /// (`HandleStaleness`) carries a quiet line under the row rather than a
+    /// warning on it -- the link is still shown and still opens; the only
+    /// thing being said is that it has not been checked in a while.
     private func reachRow(_ handle: Person.Handle) -> some View {
         let label = PersonReach.label(handle.platform)
         let display = PersonReach.display(platform: handle.platform, value: handle.value)
-        let url = PersonReach.url(platform: handle.platform, value: handle.value)
+        let url = PersonReach.openURL(
+            platform: handle.platform,
+            value: handle.value,
+            platformId: handle.platformId,
+            canOpenAppURL: { UIApplication.shared.canOpenURL($0) }
+        )
         var open: (() -> Void)?
         if let url { open = { openURL(url) } }
-        return HavenRow(
-            title: label,
-            detail: display,
-            accessibilityText: url == nil
-                ? "\(label), \(display)"
-                : "\(label), \(display), opens \(label)",
-            action: open
-        ) {
-            // The external mark rather than a chevron: a chevron promises a
-            // back button that is not coming.
-            if url != nil { RowMark.external }
+        let isStale = PersonReach.isLinkedIn(handle.platform) && HandleStaleness.isStale(addedAt: handle.addedAt)
+        return VStack(alignment: .leading, spacing: 2) {
+            HavenRow(
+                title: label,
+                detail: display,
+                accessibilityText: url == nil
+                    ? "\(label), \(display)"
+                    : "\(label), \(display), opens \(label)",
+                action: open
+            ) {
+                // The external mark rather than a chevron: a chevron promises a
+                // back button that is not coming.
+                if url != nil { RowMark.external }
+            }
+            if isStale {
+                Text("Saved a while ago -- still the right link?")
+                    .havenSecondary()
+                    .padding(.horizontal, 4)
+                    .padding(.bottom, 6)
+                    .accessibilityLabel("Saved a while ago. Still the right link for \(label)?")
+            }
         }
     }
 

@@ -178,6 +178,83 @@ struct CaptureQueueTests {
 
         #expect(queue.pending().isEmpty)
     }
+
+    // Provenance rides the same file a hand-typed add already writes -- if
+    // `source`/`platformId` did not survive the round trip, the drain would
+    // silently forward nothing to the server no matter what stamped them.
+    @Test("source and platformId survive the round trip whole")
+    func manualProvenanceRoundTrip() throws {
+        let (queue, root) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let capture = QueuedCapture(
+            id: UUID(),
+            capturedAt: Date(timeIntervalSince1970: 0),
+            payload: .manual(
+                QueuedCapture.Manual(
+                    name: "Mai Tran",
+                    platform: "instagram",
+                    handleValue: "mai.makes",
+                    profileUrl: "https://instagram.com/mai.makes",
+                    note: nil,
+                    attachToPersonId: nil,
+                    source: "typed",
+                    platformId: "1234567890"
+                )
+            )
+        )
+        try queue.enqueue(capture)
+        #expect(queue.pending() == [capture])
+        guard case .manual(let manual) = queue.pending().first?.payload else {
+            Issue.record("expected a manual capture")
+            return
+        }
+        #expect(manual.source == "typed")
+        #expect(manual.platformId == "1234567890")
+    }
+
+    // A capture file written by a build before this brief has neither key at
+    // all, not the keys present with a null -- Codable's own backward
+    // compatibility guarantee, pinned here rather than trusted blindly.
+    @Test("a queue file written before source and platformId existed still decodes")
+    func manualBackwardCompatible() throws {
+        let (queue, root) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        // The enum case's single associated value is keyed "_0" -- this is
+        // Swift's own synthesized shape for `case manual(Manual)`, confirmed
+        // against a real `encoder.encode(...)` before being pinned by hand
+        // here, not guessed at.
+        let id = UUID()
+        let json = """
+            {
+              "id": "\(id.uuidString)",
+              "capturedAt": "1970-01-01T00:00:00Z",
+              "payload": {
+                "manual": {
+                  "_0": {
+                    "name": "Mai Tran",
+                    "platform": "telegram",
+                    "handleValue": "mai_makes",
+                    "profileUrl": "https://t.me/mai_makes"
+                  }
+                }
+              }
+            }
+            """
+        try Data(json.utf8).write(to: root.appendingPathComponent("\(id.uuidString).json"))
+
+        let pending = queue.pending()
+        #expect(pending.count == 1)
+        guard case .manual(let manual) = pending.first?.payload else {
+            Issue.record("expected a manual capture")
+            return
+        }
+        #expect(manual.name == "Mai Tran")
+        #expect(manual.source == nil)
+        #expect(manual.platformId == nil)
+    }
 }
 
 @Suite("Screenshots in the queue")

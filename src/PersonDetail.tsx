@@ -4,7 +4,7 @@ import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { formatMonthYear, normalizeUrl, type PersonSnapshot } from "./lib";
 import { PersonSky } from "./PersonSky";
-import { reachLabel, reachUrl, samePlatform } from "./reach";
+import { isLinkedInHandleStale, reachLabel, reachUrl, samePlatform } from "./reach";
 
 /// Whether a field somebody left blank counts as something to draw. It does
 /// not: half the fields on most people are empty, and an empty one has to
@@ -280,7 +280,7 @@ export function PersonDetail({
           <h2 className="person-reach-title">Ways to reach them</h2>
           <ul className="card-handles person-handles">
             {handles.map((handle) => {
-              const href = reachUrl(handle.platform, handle.value);
+              const href = reachUrl(handle.platform, handle.value, handle.platformId);
               // A number dials in place: a new tab for tel: opens an empty
               // window that never comes back. Only the open web gets its own.
               const external = href !== null && href.startsWith("https://");
@@ -312,6 +312,15 @@ export function PersonDetail({
                     >
                       {row}
                     </a>
+                  )}
+                  {/* LinkedIn frees a vanity slug back into its pool six
+                      months after the account holding it moves on -- see
+                      isLinkedInHandleStale. Outside the link itself, so it
+                      never reads as part of what gets tapped. */}
+                  {isLinkedInHandleStale(handle.platform, handle.addedAt) && (
+                    <p className="person-handle-stale">
+                      Saved a while ago -- still the right link?
+                    </p>
                   )}
                 </li>
               );

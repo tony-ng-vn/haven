@@ -22,11 +22,13 @@ import { requireUser } from "./authz";
 import { checkRateLimit } from "./rateLimit";
 import { normalizeName, personSearchText } from "./nameSearch";
 import { cityInputValidator, toCityInput } from "./profileFields";
-import { contactHandleValidator } from "./peopleFields";
+import { contactHandleValidator, handleSourceValidator } from "./peopleFields";
 import {
   handleDisplayValue,
   handleIndexKeys,
   handleValueKey,
+  hasPhoneDigit,
+  isPhoneNumberPlatform,
 } from "./handleKeys";
 import { requireImageBlob } from "./imageBlobs";
 import { deleteMemories, syncMemories } from "./memories";
@@ -234,9 +236,9 @@ function structuredAttributeFields(args: {
   return fields;
 }
 
-type ContactHandleInput = Infer<typeof contactHandleValidator>;
+export type ContactHandleInput = Infer<typeof contactHandleValidator>;
 
-const MAX_CONTACT_HANDLES = 8;
+export const MAX_CONTACT_HANDLES = 8;
 
 // One handle per normalized platform keeps the preferredPlatform pointer
 // unambiguous -- same reasoning as profiles.primaryPlatform, except the
@@ -257,28 +259,54 @@ function validateContactHandles(
     if (value === "") {
       throw new Error("A handle cannot be blank");
     }
+    // A digitless phone/whatsapp value ("unknown", "ask mai", an OCR miss)
+    // folds through handleValueKey's own lowercase fallback -- two different
+    // unreadable values from two different strangers would otherwise collide
+    // on the same personHandles row (see handleKeys.ts's hasPhoneDigit).
+    // Every write path a person is actually present for goes through this
+    // function (addPerson, editPerson, saveSharedProfile all reach it), so
+    // the refusal belongs here rather than repeated at each caller.
+    if (isPhoneNumberPlatform(platform) && !hasPhoneDigit(value)) {
+      throw new Error("A phone number needs at least one digit");
+    }
     if (seen.has(platform)) {
       throw new Error("Keep one handle per platform");
     }
     seen.add(platform);
-    return { platform, value };
+    // source, platformId and addedAt pass through untouched: this is the
+    // fold every write path shares, capture pipelines included, and a fold
+    // that dropped provenance would make every other piece of it a no-op --
+    // the value would still dedup correctly, but nothing would ever again
+    // know a handle had been proven, or what its stable id was.
+    return {
+      platform,
+      value,
+      source: handle.source,
+      platformId: handle.platformId,
+      addedAt: handle.addedAt,
+    };
   });
 }
 
-// The interactive paths' handle validation: the same folding, plus the cap.
-// Deliberately not folded into validateContactHandles, which the capture
-// paths also use -- those run without the user present, so they stay lenient
-// rather than failing a queued share nobody can shorten.
+// The interactive paths' handle validation: the same folding, plus the cap,
+// plus a source. Deliberately not folded into validateContactHandles, which
+// the capture paths also use -- those run without the user present, so they
+// stay lenient rather than failing a queued share nobody can shorten, and
+// they stamp their own source (captures.ts) rather than defaulting to
+// "typed", which would be a lie about who entered the handle.
 function validateOwnedHandles(
   handles: ContactHandleInput[],
 ): ContactHandleInput[] {
   return validateContactHandles(handles).map((handle) => {
     requireWithin("a handle", handle.value, HANDLE_MAX);
-    return handle;
+    // A hand-filled form is the one source this file is certain of when the
+    // caller does not say otherwise -- addPerson and editPerson have no
+    // other way a handle could have arrived.
+    return { ...handle, source: handle.source ?? "typed" };
   });
 }
 
-async function insertPersonHandles(
+export async function insertPersonHandles(
   ctx: MutationCtx,
   userId: string,
   personId: Id<"people">,
@@ -295,7 +323,7 @@ async function insertPersonHandles(
 
 // Bounded by construction: one row per contactHandles entry, and that array
 // is capped at MAX_CONTACT_HANDLES on every write path.
-async function deletePersonHandles(
+export async function deletePersonHandles(
   ctx: MutationCtx,
   personId: Id<"people">,
 ): Promise<void> {
@@ -308,17 +336,320 @@ async function deletePersonHandles(
   }
 }
 
+// A scan bound, not an expected count: one (userId, platform, valueKey)
+// should own at most one row by construction. Shared with
+// reportDuplicateHandleOwners below, which names the same cap for the same
+// reason -- a handle owned by more people than this is already a five-alarm
+// finding.
+const MAX_HANDLE_OWNERS = 64;
+
+// Temporary safety net while backfillPhoneHandleKeys moves legacy phone and
+// WhatsApp index rows from trim+lowercase keys to the current phone-aware
+// fold. An index miss must not mean "safe to create" during that window: the
+// legacy index row still has the original valueKey, so a bounded scan of the
+// user's small handle rows can prove the owner without guessing a country.
+// The cap is defensive, and failing closed at it is safer than minting a
+// duplicate identity.
+const MAX_PHONE_MIGRATION_FALLBACK_HANDLES = 4096;
+
+async function findPhoneOwnerDuringKeyMigration(
+  ctx: MutationCtx,
+  userId: string,
+  platform: string,
+  valueKey: string,
+): Promise<Doc<"people"> | null> {
+  if (!isPhoneNumberPlatform(platform)) {
+    return null;
+  }
+  const rows = await ctx.db
+    .query("personHandles")
+    .withIndex("by_user_and_platform_and_valueKey", (q) =>
+      q.eq("userId", userId).eq("platform", platform),
+    )
+    .take(MAX_PHONE_MIGRATION_FALLBACK_HANDLES + 1);
+  if (rows.length > MAX_PHONE_MIGRATION_FALLBACK_HANDLES) {
+    throw new Error(
+      "Phone identity migration is incomplete. Finish the phone handle backfill before saving this number.",
+    );
+  }
+  const candidates = rows.filter(
+    (row) => handleValueKey(row.valueKey, platform) === valueKey,
+  );
+  return await oldestLiveOwner(ctx, userId, candidates, platform);
+}
+
+// Resolves a set of rows that already name one identity (a (userId,
+// platform, valueKey) or (userId, platform, platformId) match) to its oldest
+// still-live owner. Shared by both lookups in findHandleOwner below, so "two
+// rows for one identity" is handled identically -- logged and resolved to
+// the oldest -- regardless of which key found them.
+//
+// Tiebreaks on the owner PERSON's own _creationTime, not the personHandles
+// row's: a row is rewritten (deletePersonHandles + insertPersonHandles) on
+// every rename or contactHandles edit, so its _creationTime resets to
+// "whenever that edit happened" and says nothing about which person has
+// actually been known longer. The person doc's _creationTime is the one
+// timestamp here nothing ever resets.
+async function oldestLiveOwner(
+  ctx: MutationCtx,
+  userId: string,
+  rows: Doc<"personHandles">[],
+  platform: string,
+): Promise<Doc<"people"> | null> {
+  if (rows.length > 1) {
+    // platform + row ids only -- never the valueKey or platformId a caller
+    // passed in, which on most platforms is the personal handle itself.
+    console.error(
+      `findHandleOwner: ${rows.length} rows for platform=${platform}, ` +
+        `attaching to the oldest (rows=${rows.map((row) => row._id).join(",")})`,
+    );
+  }
+  const owners: Doc<"people">[] = [];
+  for (const row of rows) {
+    // The index this file's two callers query is already scoped to
+    // q.eq("userId", userId), so this can only fire on a row whose OWN
+    // userId happens to still match but whose personId now points at
+    // somebody else's person (a corrupt pointer, not a stale index) --
+    // caught below by the owner.userId check instead, since that is the
+    // shape this can actually arrive in. Kept here too as the same
+    // redacted-log belt, in case a future caller ever hands this rows from
+    // an unscoped read.
+    if (row.userId !== userId) {
+      console.error(
+        `findHandleOwner: cross-tenant row for platform=${platform} (row=${row._id}), skipping`,
+      );
+      continue;
+    }
+    const owner = await ctx.db.get("people", row.personId);
+    if (owner === null) {
+      // Self-heal a row orphaned by a write that bypassed deletePerson,
+      // rather than let it shadow -- or, within a duplicate group, outrank
+      // -- a real owner.
+      await ctx.db.delete("personHandles", row._id);
+      continue;
+    }
+    if (owner.userId !== userId) {
+      // A personId pointer that now names a different tenant's person --
+      // never leaked into the result, whatever wrote it that way.
+      console.error(
+        `findHandleOwner: row for platform=${platform} (row=${row._id}) points at a different tenant's person, skipping`,
+      );
+      continue;
+    }
+    owners.push(owner);
+  }
+  if (owners.length === 0) {
+    return null;
+  }
+  owners.sort((a, b) => a._creationTime - b._creationTime);
+  return owners[0];
+}
+
+// The current owner of one handle, tolerant of corruption a throwing
+// .unique() would jam on: addPerson and editPerson gate new writes so two
+// rows should never appear going forward, but rows written before that gate
+// -- or by a path this file does not cover, like the capture pipeline --
+// can still leave two. Rather than surface that as an error the caller
+// cannot resolve, the oldest row wins deterministically and the corruption
+// is logged; reportDuplicateHandleOwners stays the reconciliation surface
+// for a human to actually merge the twins.
+//
+// platformId, when the incoming handle carries one, is tried first: it is a
+// platform's own stable id for the account, so it still finds the right
+// person after a username rename, which valueKey -- folded from the
+// username itself -- cannot. A stored row with no platformId simply never
+// matches the platformId lookup (Convex index equality does not treat
+// undefined as a wildcard), so this can never falsely match an old,
+// unproven row against a new proven one; valueKey stays the fallback for
+// exactly that case.
+export async function findHandleOwner(
+  ctx: MutationCtx,
+  userId: string,
+  platform: string,
+  valueKey: string,
+  platformId?: string,
+): Promise<Doc<"people"> | null> {
+  if (platformId !== undefined) {
+    const rows = await ctx.db
+      .query("personHandles")
+      .withIndex("by_user_and_platform_and_platformId", (q) =>
+        q.eq("userId", userId).eq("platform", platform).eq("platformId", platformId),
+      )
+      .take(MAX_HANDLE_OWNERS);
+    const owner = await oldestLiveOwner(ctx, userId, rows, platform);
+    if (owner !== null) {
+      return owner;
+    }
+  }
+  const rows = await ctx.db
+    .query("personHandles")
+    .withIndex("by_user_and_platform_and_valueKey", (q) =>
+      q.eq("userId", userId).eq("platform", platform).eq("valueKey", valueKey),
+    )
+    .take(MAX_HANDLE_OWNERS);
+  const owner = await oldestLiveOwner(ctx, userId, rows, platform);
+  if (owner !== null) {
+    return owner;
+  }
+  return await findPhoneOwnerDuringKeyMigration(ctx, userId, platform, valueKey);
+}
+
+// What changes on an owner's existing contactHandles array when a handle
+// that findHandleOwner already resolved to this owner needs to be written
+// there. Three outcomes: nothing (the owner already holds this exact
+// account -- same platform, same valueKey), a rename in place (the owner
+// has an entry for this platform but a different valueKey -- reached either
+// through a stable platformId or after the person explicitly picked this
+// owner for a rename without one, as LinkedIn requires), or a genuinely new
+// platform for this owner, appended if there is room under the cap.
+//
+// addedAt is preserved on a rename (the account has been known since the
+// original addedAt; only its name changed) and stamped fresh only when a
+// platform is actually new to this owner -- "on newly stored handles only"
+// from the identity brief. source and platformId on the incoming handle are
+// stored as given; the caller decides those.
+export type MergeHandleResult =
+  | {
+      status: "merged";
+      handles: ContactHandleInput[];
+      changed: boolean;
+      handleDropped: boolean;
+    }
+  // An id match (this call was reached because findHandleOwner matched
+  // `owner` by platformId) and a value match disagree about who this
+  // account is: `owner` holds the id, but somebody else already owns the
+  // incoming username outright. Zero-guess doctrine -- refuse rather than
+  // pick a winner by overwriting the other person's handle onto this one.
+  | { status: "refused"; conflictingOwnerId: Id<"people"> };
+
+export async function mergeHandleIntoOwner(
+  ctx: MutationCtx,
+  userId: string,
+  owner: Doc<"people">,
+  existing: ContactHandleInput[],
+  incoming: ContactHandleInput,
+): Promise<MergeHandleResult> {
+  const incomingKeys = handleIndexKeys(incoming);
+  const index = existing.findIndex(
+    (handle) => handleIndexKeys(handle).platform === incomingKeys.platform,
+  );
+  if (index !== -1) {
+    const current = existing[index];
+    if (handleIndexKeys(current).valueKey === incomingKeys.valueKey) {
+      // Equal value does NOT mean equal account when both sides carry an id
+      // and the ids disagree: username reassignment. The stored handle
+      // (found by value, since findHandleOwner had no incoming.platformId
+      // to match yet) belongs to whoever this platform's account was when
+      // it was last proven -- if that account has since renamed away and a
+      // different one claimed the same username, the value alone reads as
+      // "the same person" while the ids prove otherwise. Refused rather
+      // than silently attaching a stranger's note to `owner` -- the exact
+      // wrong-person failure the id-preferred lookup exists to prevent.
+      if (
+        current.platformId !== undefined &&
+        incoming.platformId !== undefined &&
+        current.platformId !== incoming.platformId
+      ) {
+        return { status: "refused", conflictingOwnerId: owner._id };
+      }
+      // Equal value, but this submission may know something the stored
+      // handle does not: a platformId resolved after the fact (Composio's
+      // own-card lookup, a re-share that happened to carry one this time).
+      // Enriching it in place is what the rest of rename-proofing depends
+      // on -- without it, this handle can never become id-findable, and a
+      // genuine rename later (a different valueKey, same id) has nothing to
+      // match by id and mints a twin instead of updating this person.
+      // addedAt and source both stay: this is enrichment, not a fresh claim.
+      if (current.platformId === undefined && incoming.platformId !== undefined) {
+        const next = [...existing];
+        next[index] = { ...current, platformId: incoming.platformId };
+        return { status: "merged", handles: next, changed: true, handleDropped: false };
+      }
+      return { status: "merged", handles: existing, changed: false, handleDropped: false };
+    }
+    // Before renaming this owner's entry in place: is the NEW valueKey
+    // already somebody else's account? Asked with no platformId -- a
+    // platformId lookup would just find `owner` again (or whichever person
+    // it names), and the question here is specifically who the username
+    // itself currently belongs to.
+    const valueOwner = await findHandleOwner(
+      ctx,
+      userId,
+      incomingKeys.platform,
+      incomingKeys.valueKey,
+    );
+    if (valueOwner !== null && valueOwner._id !== owner._id) {
+      return { status: "refused", conflictingOwnerId: valueOwner._id };
+    }
+    const next = [...existing];
+    next[index] = { ...incoming, addedAt: current.addedAt };
+    return { status: "merged", handles: next, changed: true, handleDropped: false };
+  }
+  if (existing.length >= MAX_CONTACT_HANDLES) {
+    // The cap is invisible to whoever triggered this merge; stranding
+    // everything else behind it (the note, a rename already resolved above)
+    // would be worse than learning one fewer platform, so the merge still
+    // lands and only this one handle is dropped -- surfaced to the caller
+    // as handleDropped rather than silently lost.
+    return { status: "merged", handles: existing, changed: false, handleDropped: true };
+  }
+  return {
+    status: "merged",
+    handles: [...existing, { ...incoming, addedAt: incoming.addedAt ?? Date.now() }],
+    changed: true,
+    handleDropped: false,
+  };
+}
+
+// Stamps addedAt on a handle being written wholesale (a brand new person, or
+// editPerson's whole-array replacement), preserving the timestamp of a
+// platform+value pair that was already there rather than resetting it to
+// now on every resubmission. previous is the person's own contactHandles
+// before this write (empty for a person who does not exist yet); an
+// explicit addedAt the caller already sent is trusted as-is.
+export function withAddedAt(
+  previous: ContactHandleInput[],
+  handle: ContactHandleInput,
+): ContactHandleInput {
+  if (handle.addedAt !== undefined) {
+    return handle;
+  }
+  const keys = handleIndexKeys(handle);
+  const priorMatch = previous.find((existing) => {
+    const existingKeys = handleIndexKeys(existing);
+    return (
+      existingKeys.platform === keys.platform &&
+      existingKeys.valueKey === keys.valueKey
+    );
+  });
+  return { ...handle, addedAt: priorMatch?.addedAt ?? Date.now() };
+}
+
 // A re-share must never discard what the user typed, so a new note joins the
 // person's context instead of replacing it. Clamped rather than refused at
 // the cap: the drain replays a queued note long after the sheet closed, so
 // an overflow cannot ask the user and must not strand the capture. The
 // caller is told when the cap cut the note, so a drain never mistakes a
 // clipped save for a complete one.
-function appendContext(
+export function appendContext(
   existing: string | undefined,
   note: string | undefined,
 ): { context: string | undefined; noteTruncated: boolean } {
   if (note === undefined) {
+    return { context: existing, noteTruncated: false };
+  }
+  // At-least-once replay -- a queued capture retried after a dropped
+  // response, a conflict retried by the client -- must not double the same
+  // note into the context every time the same write lands twice. Matched
+  // against whole stored lines (context is "\n"-joined notes), trimmed-exact
+  // -- a plain substring check would read a genuinely new, shorter note
+  // ("Acme") as a replay of an unrelated longer one that happens to contain
+  // it ("Met at Acme"), and silently drop it.
+  if (
+    existing !== undefined &&
+    note !== "" &&
+    existing.split("\n").some((line) => line.trim() === note.trim())
+  ) {
     return { context: existing, noteTruncated: false };
   }
   const next =
@@ -329,12 +660,17 @@ function appendContext(
 
 // The shared URL is the only pointer back to the profile -- a LinkedIn slug
 // cannot be rebuilt into one -- so a person without a link keeps it. An
-// existing link is never overwritten: the user chose that one.
+// existing link is overwritten only when the same write also proves that a
+// same-platform handle was renamed; otherwise the user-chosen link wins.
 function linkBackfill(
   person: Doc<"people">,
   profileUrl: string,
+  replacingSamePlatformHandle = false,
 ): { link?: string } {
-  if (profileUrl === "" || (person.link !== undefined && person.link !== "")) {
+  if (
+    profileUrl === "" ||
+    (!replacingSamePlatformHandle && person.link !== undefined && person.link !== "")
+  ) {
     return {};
   }
   return { link: profileUrl };
@@ -353,17 +689,125 @@ function validatePreferredPlatform(
   return preferred;
 }
 
-export const addPerson = mutation({
-  args: {
-    name: v.string(),
-    context: v.optional(v.string()),
-    contactHandles: v.optional(v.array(contactHandleValidator)),
-    preferredPlatform: v.optional(v.string()),
-    photoStorageId: v.optional(v.id("_storage")),
-    ...structuredAttributeArgs,
-  },
-  returns: v.id("people"),
-  handler: async (ctx, args) => {
+// Merges a set of handles and a note onto a person addPerson has already
+// decided is the right target -- either the one owner its own handle check
+// found, or the one an attachToPersonId arg named directly. Shared so both
+// callers report noteTruncated/handleDropped the same way.
+async function attachToExistingPerson(
+  ctx: MutationCtx,
+  userId: string,
+  owner: Doc<"people">,
+  contactHandles: ContactHandleInput[],
+  note: string,
+): Promise<
+  | {
+      status: "attached" | "already";
+      personId: Id<"people">;
+      noteTruncated: boolean;
+      handleDropped: boolean;
+    }
+  | { status: "conflict"; personIds: Id<"people">[] }
+> {
+  let nextHandles = owner.contactHandles ?? [];
+  let handlesChanged = false;
+  let handleDropped = false;
+  for (const handle of contactHandles) {
+    const merged = await mergeHandleIntoOwner(ctx, userId, owner, nextHandles, handle);
+    if (merged.status === "refused") {
+      // Zero-guess: nothing about this attach is written -- not this
+      // handle, not the note, not any handle already merged earlier in this
+      // same loop -- so a partial write can never mask the conflict the
+      // caller still has to resolve.
+      return {
+        status: "conflict" as const,
+        personIds: [owner._id, merged.conflictingOwnerId],
+      };
+    }
+    nextHandles = merged.handles;
+    if (merged.changed) handlesChanged = true;
+    if (merged.handleDropped) handleDropped = true;
+  }
+
+  const fields: Partial<Doc<"people">> = {};
+  const { context, noteTruncated } = appendContext(owner.context, note);
+  if (context !== owner.context) {
+    fields.context = context;
+  }
+  if (handlesChanged) {
+    fields.contactHandles = nextHandles;
+  }
+
+  if (Object.keys(fields).length === 0) {
+    return { status: "already", personId: owner._id, noteTruncated, handleDropped };
+  }
+
+  const now = Date.now();
+  await ctx.db.patch("people", owner._id, {
+    ...fields,
+    searchText: personSearchText({ ...owner, ...fields }),
+    updatedAt: now,
+  });
+  if (handlesChanged) {
+    // A rename replaces one platform's row in place; a full rewrite is
+    // simpler and, capped at 8, no more expensive than diffing which
+    // platform actually changed.
+    await deletePersonHandles(ctx, owner._id);
+    await insertPersonHandles(ctx, userId, owner._id, nextHandles);
+  }
+  await syncMemories(ctx, {
+    userId,
+    personId: owner._id,
+    context: fields.context,
+    createdAt: now,
+  });
+  await ctx.scheduler.runAfter(0, internal.people.embed, { personId: owner._id });
+  return { status: "attached", personId: owner._id, noteTruncated, handleDropped };
+}
+
+// noteTruncated and handleDropped mirror saveSharedProfile's outcome shape:
+// a merge can silently clamp the note at the context cap or drop a handle
+// past the 8-handle cap, and a caller that never learns either would report
+// a complete save that was not one.
+const addPersonAttachedFields = {
+  personId: v.id("people"),
+  noteTruncated: v.boolean(),
+  handleDropped: v.boolean(),
+};
+const addPersonReturns = v.union(
+  v.object({ status: v.literal("created"), personId: v.id("people") }),
+  v.object({ status: v.literal("attached"), ...addPersonAttachedFields }),
+  v.object({ status: v.literal("already"), ...addPersonAttachedFields }),
+  v.object({
+    status: v.literal("conflict"),
+    personIds: v.array(v.id("people")),
+  }),
+);
+
+// What both addPerson (the legacy, bare-id contract) and addPersonWithOutcome
+// (the current one) actually do -- one dedup/attach/create implementation,
+// two public shapes around it, so the identity behavior in here can never
+// drift between which mutation name a given client happens to call.
+type AddPersonArgs = {
+  name: string;
+  context?: string;
+  contactHandles?: ContactHandleInput[];
+  preferredPlatform?: string;
+  photoStorageId?: Id<"_storage">;
+  // Set when the caller already answered "same person?" -- from a SearchAdd
+  // suggestion, e.g. -- so this save should not go looking for an owner
+  // itself, it should land on the one the user already picked. Absent on
+  // the legacy addPerson's own args: no client that only knows the old
+  // bare-id contract has ever been able to send this.
+  attachToPersonId?: Id<"people">;
+  city?: CityInput;
+  company?: string;
+  role?: string;
+};
+
+async function addPersonCore(
+  ctx: MutationCtx,
+  args: AddPersonArgs,
+): Promise<Infer<typeof addPersonReturns>> {
     const userId = await requireUser(ctx);
     await checkRateLimit(ctx, userId, "addPerson", 30, MINUTE_MS);
     const name = args.name.trim();
@@ -391,6 +835,103 @@ export const addPerson = mutation({
       args.preferredPlatform === undefined
         ? undefined
         : validatePreferredPlatform(args.preferredPlatform, contactHandles);
+
+    // Identity beats a second trip through this form: every submitted handle
+    // is checked against who already owns it before anything is written, the
+    // same idempotent-creation rule saveSharedProfile already follows.
+    // platformId-first: two forms of the same proven account (a rename)
+    // still resolve to one owner.
+    const ownersByHandle = await Promise.all(
+      contactHandles.map(async (handle) => {
+        const keys = handleIndexKeys(handle);
+        return await findHandleOwner(
+          ctx,
+          userId,
+          keys.platform,
+          keys.valueKey,
+          handle.platformId,
+        );
+      }),
+    );
+    const distinctOwners = [
+      ...new Map(
+        ownersByHandle
+          .filter((owner): owner is Doc<"people"> => owner !== null)
+          .map((owner) => [owner._id, owner] as const),
+      ).values(),
+    ];
+
+    if (args.attachToPersonId !== undefined) {
+      // The handle check still runs first (above): a handle already proven
+      // to belong to someone else is not overridden by a client's "same
+      // person?" guess, however confident. Only a handle with no owner, or
+      // one whose only owner is the very person being attached to, may
+      // proceed past this point.
+      const conflicting = distinctOwners.filter(
+        (owner) => owner._id !== args.attachToPersonId,
+      );
+      if (conflicting.length > 0) {
+        return {
+          status: "conflict" as const,
+          personIds: conflicting.map((owner) => owner._id),
+        };
+      }
+      const target = await ctx.db.get("people", args.attachToPersonId);
+      if (target === null || target.userId !== userId) {
+        throw new Error("Person not found");
+      }
+      const outcome = await attachToExistingPerson(
+        ctx,
+        userId,
+        target,
+        contactHandles,
+        args.context,
+      );
+      if (outcome.status === "conflict") {
+        return outcome;
+      }
+      return {
+        status: outcome.status,
+        personId: outcome.personId,
+        noteTruncated: outcome.noteTruncated,
+        handleDropped: outcome.handleDropped,
+      };
+    }
+
+    if (distinctOwners.length > 1) {
+      // Two submitted handles, two different existing owners: this is not
+      // one person to attach to, and there is no honest way to guess which
+      // owner is right. Nothing is written; the caller decides.
+      return {
+        status: "conflict" as const,
+        personIds: distinctOwners.map((owner) => owner._id),
+      };
+    }
+
+    if (distinctOwners.length === 1) {
+      const outcome = await attachToExistingPerson(
+        ctx,
+        userId,
+        distinctOwners[0],
+        contactHandles,
+        args.context,
+      );
+      if (outcome.status === "conflict") {
+        return outcome;
+      }
+      return {
+        status: outcome.status,
+        personId: outcome.personId,
+        noteTruncated: outcome.noteTruncated,
+        handleDropped: outcome.handleDropped,
+      };
+    }
+
+    // A brand new person: every submitted handle is new to them, so
+    // withAddedAt(with no prior array) always stamps a fresh timestamp.
+    const stampedHandles = contactHandles.map((handle) =>
+      withAddedAt([], handle),
+    );
     const attributes = structuredAttributeFields(args);
     const now = Date.now();
     const personId = await ctx.db.insert("people", {
@@ -398,7 +939,7 @@ export const addPerson = mutation({
       name,
       normalizedName: normalizeName(name),
       context: args.context,
-      contactHandles,
+      contactHandles: stampedHandles,
       preferredPlatform,
       photoStorageId: args.photoStorageId,
       ...attributes,
@@ -407,14 +948,14 @@ export const addPerson = mutation({
         company: attributes.company,
         role: attributes.role,
         city: attributes.city,
-        contactHandles,
+        contactHandles: stampedHandles,
         context: args.context,
       }),
       updatedAt: now,
     });
     // Same transaction as the array, always: the index is only trustworthy
     // if it cannot drift from what the card shows.
-    await insertPersonHandles(ctx, userId, personId, contactHandles);
+    await insertPersonHandles(ctx, userId, personId, stampedHandles);
     await syncMemories(ctx, {
       userId,
       personId,
@@ -422,7 +963,100 @@ export const addPerson = mutation({
       createdAt: now,
     });
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
-    return personId;
+    return { status: "created" as const, personId };
+}
+
+// The current contract: every dedup/attach/create outcome addPersonCore can
+// reach, named explicitly so the caller can act on which one happened
+// (open the new person, offer a merge on conflict, tell the user their note
+// landed on someone they already knew). src/SearchAdd.tsx calls this one.
+export const addPersonWithOutcome = mutation({
+  args: {
+    name: v.string(),
+    context: v.optional(v.string()),
+    contactHandles: v.optional(v.array(contactHandleValidator)),
+    preferredPlatform: v.optional(v.string()),
+    photoStorageId: v.optional(v.id("_storage")),
+    attachToPersonId: v.optional(v.id("people")),
+    ...structuredAttributeArgs,
+  },
+  returns: addPersonReturns,
+  handler: async (ctx, args) => addPersonCore(ctx, args),
+});
+
+// The legacy contract, restored: an open SPA tab from before this mutation
+// ever returned an outcome object calls "people:addPerson" by that literal
+// registered name and assigns the result straight to a person id --
+// `const id = await addPerson(...)`. Assigning an outcome OBJECT to that
+// binding would not throw (JavaScript does not care), it would just quietly
+// corrupt whatever that id was used for next -- a broken save with no error
+// message anywhere. Kept as its own mutation, not a v.union return, because
+// the shape a client decodes has to be exactly what the tab already
+// deployed expects, not a superset it merely tolerates.
+//
+// Every dedup/attach/provenance behavior addPersonCore has still runs; an
+// old tab just cannot see WHICH of created/attached/already happened (it
+// gets silent dedup: an "attached" or "already" outcome quietly hands back
+// the existing person's id) or pick a winner on conflict (there is no
+// bare-id answer for "two different people," so this throws instead --
+// nothing is written either way, and the tab's own error handling, built
+// long before conflict existed, already has to survive an unexpected throw
+// from this call).
+export const addPerson = mutation({
+  args: {
+    name: v.string(),
+    context: v.optional(v.string()),
+    contactHandles: v.optional(v.array(contactHandleValidator)),
+    preferredPlatform: v.optional(v.string()),
+    photoStorageId: v.optional(v.id("_storage")),
+    ...structuredAttributeArgs,
+  },
+  returns: v.id("people"),
+  handler: async (ctx, args) => {
+    const outcome = await addPersonCore(ctx, args);
+    if (outcome.status === "conflict") {
+      throw new Error(
+        "That handle already belongs to two different people. Open one of them to add this note.",
+      );
+    }
+    return outcome.personId;
+  },
+});
+
+// How many of the caller's people this loads in full for client-side typo
+// matching (src/nameSuggestion.ts). Personal directories are small
+// pre-launch, so this is a generous cap, not a real limit anyone is
+// expected to hit -- if it ever needs raising, the answer is pagination,
+// not doubling the number.
+const SUGGESTION_POOL_LIMIT = 2000;
+
+// Convex's own search index (searchPeople below) does not typo-match, and
+// the sky's own subscriptions are either scoped to a query or capped at the
+// 20 most recent -- neither is a pool a client can run its own edit-distance
+// suggester over and expect a mistyped name to surface. This is that pool:
+// name and handles only (a suggestion row's disambiguator, nothing else),
+// so loading every one of the caller's people stays cheap.
+export const listPersonNames = query({
+  args: {},
+  returns: v.array(
+    v.object({
+      _id: v.id("people"),
+      name: v.string(),
+      contactHandles: v.optional(v.array(contactHandleValidator)),
+    }),
+  ),
+  handler: async (ctx) => {
+    const userId = await requireUser(ctx);
+    const people = await ctx.db
+      .query("people")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .order("desc")
+      .take(SUGGESTION_POOL_LIMIT);
+    return people.map((person) => ({
+      _id: person._id,
+      name: person.name,
+      contactHandles: person.contactHandles,
+    }));
   },
 });
 
@@ -785,7 +1419,14 @@ export const editPerson = mutation({
     company: v.optional(v.union(v.string(), v.null())),
     role: v.optional(v.union(v.string(), v.null())),
   },
-  returns: personValidator,
+  returns: v.union(
+    personValidator,
+    v.object({
+      status: v.literal("handle_taken"),
+      personId: v.id("people"),
+      name: v.string(),
+    }),
+  ),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await checkRateLimit(ctx, userId, "editPerson", 60, MINUTE_MS);
@@ -845,7 +1486,134 @@ export const editPerson = mutation({
       }
     }
     if (args.contactHandles !== undefined) {
-      fields.contactHandles = validateOwnedHandles(args.contactHandles);
+      // Folded, capped and length-checked the same way validateOwnedHandles
+      // does (one call, so the "at most MAX_CONTACT_HANDLES total" and "one
+      // handle per platform" checks still see the whole submitted array) --
+      // but NOT yet defaulted to "typed": a client that only reorders or
+      // re-saves an unrelated field (iOS's PersonFieldEditors sends bare
+      // {platform, value} for every handle, not just the one that changed)
+      // must not have that read as a fresh, hand-typed entry for a handle
+      // that was actually proven months ago. Whether this is the same
+      // account decides that below, per handle.
+      const candidateHandles = validateContactHandles(args.contactHandles).map(
+        (handle) => {
+          requireWithin("a handle", handle.value, HANDLE_MAX);
+          return handle;
+        },
+      );
+      // A handle already on this same person is a re-save, not a theft:
+      // only a DIFFERENT owner blocks the write. Checked before anything is
+      // touched, including the photo swap below, so a taken handle leaves
+      // the row exactly as it was. platformId-first, same as addPerson, so
+      // a rename of this person's own handle never misreads as someone
+      // else's account.
+      const previousHandles = person.contactHandles ?? [];
+      for (const handle of candidateHandles) {
+        const keys = handleIndexKeys(handle);
+        const owner = await findHandleOwner(
+          ctx,
+          userId,
+          keys.platform,
+          keys.valueKey,
+          handle.platformId,
+        );
+        if (owner !== null && owner._id !== args.id) {
+          return {
+            status: "handle_taken" as const,
+            personId: owner._id,
+            name: owner.name,
+          };
+        }
+        // findHandleOwner stops at its first hit: a platformId match short
+        // circuits before it ever tries the value on its own. When that hit
+        // is this same person, this is a rename in place (the id proves the
+        // account, the new value is the claim) -- exactly the case
+        // mergeHandleIntoOwner's own rename branch guards elsewhere, but
+        // this rewrite is editPerson's own wholesale replace, not a merge,
+        // so it needs the same question asked here: does somebody else
+        // already hold that value outright? Skipped when owner is null,
+        // since findHandleOwner's internal fallback already tried the value
+        // lookup on its own in that case and found nobody either way.
+        if (owner !== null && handle.platformId !== undefined) {
+          const valueOwner = await findHandleOwner(
+            ctx,
+            userId,
+            keys.platform,
+            keys.valueKey,
+          );
+          if (valueOwner !== null && valueOwner._id !== args.id) {
+            return {
+              status: "handle_taken" as const,
+              personId: valueOwner._id,
+              name: valueOwner.name,
+            };
+          }
+        }
+        // W2: equal value, but this submission's platformId disagrees with
+        // what THIS person's own handle already had proven -- the id-vs-id
+        // conflict the two checks above cannot see, because both of them
+        // ask "does somebody else own this," and here nobody else does.
+        // mergeHandleIntoOwner's own equal-valueKey branch (people.ts)
+        // treats the exact same shape -- both ids present and differing on
+        // an equal value -- as username-reassignment evidence, not a
+        // rename of this account, and refuses rather than overwrite the
+        // proof. There is no other Haven person to name, so this mirrors
+        // that branch's naming: personId/name point back at this same
+        // person. An absent platformId (a bare {platform, value} resubmit,
+        // S1's carry-forward case) never reaches this check at all.
+        const priorMatch = previousHandles.find((existing) => {
+          const existingKeys = handleIndexKeys(existing);
+          return (
+            existingKeys.platform === keys.platform &&
+            existingKeys.valueKey === keys.valueKey
+          );
+        });
+        if (
+          priorMatch !== undefined &&
+          priorMatch.platformId !== undefined &&
+          handle.platformId !== undefined &&
+          priorMatch.platformId !== handle.platformId
+        ) {
+          return {
+            status: "handle_taken" as const,
+            personId: args.id,
+            name: person.name,
+          };
+        }
+      }
+      // The array is rewritten wholesale below. For each submitted handle,
+      // find the entry already on this person for the SAME (platform,
+      // valueKey) -- the same account, not merely the same platform slot --
+      // and carry its source/platformId/addedAt forward unless this
+      // submission explicitly brings its own (an editor that DOES know a
+      // fresher platformId, e.g. the X-rename flow, still gets to set it).
+      // No prior match means either a brand new platform for this person or
+      // a changed value on an existing one -- a different account either
+      // way, so nothing carries over and "typed" is the one source this
+      // file is certain of when the caller does not say otherwise.
+      fields.contactHandles = candidateHandles.map((handle) => {
+        const keys = handleIndexKeys(handle);
+        const priorMatch = previousHandles.find((existing) => {
+          const existingKeys = handleIndexKeys(existing);
+          return (
+            existingKeys.platform === keys.platform &&
+            existingKeys.valueKey === keys.valueKey
+          );
+        });
+        if (priorMatch !== undefined) {
+          return {
+            ...handle,
+            source: handle.source ?? priorMatch.source,
+            platformId: handle.platformId ?? priorMatch.platformId,
+            addedAt: handle.addedAt ?? priorMatch.addedAt ?? Date.now(),
+          };
+        }
+        return {
+          ...handle,
+          source: handle.source ?? "typed",
+          addedAt: handle.addedAt ?? Date.now(),
+        };
+      });
     }
 
     // The preferred platform must point at a handle that exists once this
@@ -956,17 +1724,42 @@ export const saveSharedProfile = mutation({
     name: v.string(),
     note: v.optional(v.string()),
     attachToPersonId: v.optional(v.id("people")),
+    // Both optional: a caller with nothing to say about provenance (most of
+    // them, today) gets legacy behavior -- source stored as given, undefined
+    // when omitted, never guessed at "typed" the way a hand-entered form
+    // defaults, because a share is not something anyone typed here.
+    source: v.optional(handleSourceValidator),
+    platformId: v.optional(v.string()),
   },
   returns: v.object({
     status: v.union(
       v.literal("created"),
       v.literal("already"),
       v.literal("attached"),
+      v.literal("conflict"),
     ),
+    // A single flat shape rather than a discriminated union, deliberately:
+    // iOS's SharedProfileOutcome (CaptureDrain.swift) is a plain Decodable
+    // struct with no CodingKeys, so it only ever reads status and
+    // noteTruncated and requires personId on every response it can decode.
+    // "conflict" still fills personId -- with the handle's true owner, not
+    // the caller's guess -- so an old client that never learns about
+    // "conflict" still gets a person id it can act on instead of a decode
+    // failure that redrains this capture forever.
     personId: v.id("people"),
     // True when the context cap cut the note: the capture landed, but the
     // drain should surface the loss instead of reporting a complete save.
     noteTruncated: v.boolean(),
+    // True when the account this share names could not fit under the
+    // 8-handle cap on the person it landed on. Only "already" and "attached"
+    // can ever set it: "created" always has room for the one handle it is
+    // made of, and "conflict" never writes anything.
+    handleDropped: v.boolean(),
+    // Set only on "conflict": the person the caller asked to attach to,
+    // which this save did NOT use because the handle already, provably,
+    // belongs to someone else (personId above). Additive -- a client that
+    // does not know this field yet just sees personId and moves on.
+    conflictPersonId: v.optional(v.id("people")),
   }),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
@@ -976,10 +1769,16 @@ export const saveSharedProfile = mutation({
     // "@mai.makes" and one of "mai.makes" must render and search alike, not
     // just dedup alike. validateContactHandles owns the platform fold and the
     // blank checks, same as every other handle write path.
-    const [{ platform, value }] = validateContactHandles([
-      { platform: args.platform, value: handleDisplayValue(args.handleValue) },
+    const [handle] = validateContactHandles([
+      {
+        platform: args.platform,
+        value: handleDisplayValue(args.handleValue),
+        source: args.source,
+        platformId: args.platformId,
+      },
     ]);
-    const valueKey = handleValueKey(value);
+    const { platform, value } = handle;
+    const valueKey = handleValueKey(value, platform);
     const name = args.name.trim();
     if (name === "") {
       throw new Error("Name is required");
@@ -989,37 +1788,86 @@ export const saveSharedProfile = mutation({
       trimmedNote === undefined || trimmedNote === "" ? undefined : trimmedNote;
     const profileUrl = args.profileUrl.trim();
 
-    // .unique(), not .first(): two owners of one handle is corruption, and
-    // picking the older one silently is how it stays invisible. Production
-    // reported zero duplicate handle owners on 2026-07-28 (wave C step 3 of
-    // the backend completion plan), which is what unblocked this. addPerson
-    // still imposes no global uniqueness, so this can throw on a directory
-    // the owner built by hand -- see that plan's B3 for the trade.
-    const indexed = await ctx.db
-      .query("personHandles")
-      .withIndex("by_user_and_platform_and_valueKey", (q) =>
-        q
-          .eq("userId", userId)
-          .eq("platform", platform)
-          .eq("valueKey", valueKey),
-      )
-      .unique();
-    const owner =
-      indexed === null ? null : await ctx.db.get("people", indexed.personId);
-    if (indexed !== null && owner === null) {
-      // Self-heal a row orphaned by a write that bypassed deletePerson,
-      // rather than let it shadow the person this capture is about.
-      await ctx.db.delete("personHandles", indexed._id);
-    }
+    // Two owners of one handle is still corruption -- addPerson and
+    // editPerson now gate new writes so this cannot happen going forward,
+    // but a row from before that gate, or from a path this file does not
+    // cover, can still leave two. This drains unattended (the share sheet,
+    // a queued capture), so a throw here would jam the queue on corruption
+    // nobody present can fix; findHandleOwner attaches to the oldest row
+    // deterministically and logs the rest for reportDuplicateHandleOwners to
+    // surface instead. platformId-first: a re-share of a renamed account
+    // still finds the same person.
+    const owner = await findHandleOwner(
+      ctx,
+      userId,
+      platform,
+      valueKey,
+      handle.platformId,
+    );
     if (owner !== null) {
+      if (
+        args.attachToPersonId !== undefined &&
+        args.attachToPersonId !== owner._id
+      ) {
+        // The caller answered "same person?" for a specific person, but this
+        // handle is already, provably, somebody else's -- silently landing
+        // the note there anyway would be exactly the identity theft this
+        // whole file exists to prevent. Nothing is written on this branch;
+        // the true owner is handed back so the caller can react (offer a
+        // merge, or ask again) instead of the capture just vanishing onto
+        // the wrong card.
+        return {
+          status: "conflict" as const,
+          personId: owner._id,
+          noteTruncated: false,
+          handleDropped: false,
+          conflictPersonId: args.attachToPersonId,
+        };
+      }
       // Handle identity beats the attach target: this account provably
       // belongs to this person, however stale the caller's mirror is.
+      // mergeHandleIntoOwner updates the stored value in place when this
+      // owner was found by platformId but the username has since changed --
+      // the rename-following behavior the product wants -- and is a no-op
+      // when the share is byte-identical to what is already stored.
+      const replacingSamePlatformHandle = (owner.contactHandles ?? []).some(
+        (existing) => {
+          const keys = handleIndexKeys(existing);
+          return keys.platform === platform && keys.valueKey !== valueKey;
+        },
+      );
+      const merged = await mergeHandleIntoOwner(
+        ctx,
+        userId,
+        owner,
+        owner.contactHandles ?? [],
+        handle,
+      );
+      if (merged.status === "refused") {
+        // The id says this is `owner`; the username the share carries
+        // already belongs to somebody else. Nothing written, same as the
+        // attachToPersonId mismatch above -- both are "two different
+        // people disagree about who this is" and get the same answer.
+        return {
+          status: "conflict" as const,
+          personId: owner._id,
+          noteTruncated: false,
+          handleDropped: false,
+          conflictPersonId: merged.conflictingOwnerId,
+        };
+      }
       const fields: Partial<Doc<"people">> = {};
       const { context, noteTruncated } = appendContext(owner.context, note);
       if (context !== owner.context) {
         fields.context = context;
       }
-      Object.assign(fields, linkBackfill(owner, profileUrl));
+      if (merged.changed) {
+        fields.contactHandles = merged.handles;
+      }
+      Object.assign(
+        fields,
+        linkBackfill(owner, profileUrl, replacingSamePlatformHandle),
+      );
       if (Object.keys(fields).length > 0) {
         const now = Date.now();
         await ctx.db.patch("people", owner._id, {
@@ -1027,6 +1875,10 @@ export const saveSharedProfile = mutation({
           searchText: personSearchText({ ...owner, ...fields }),
           updatedAt: now,
         });
+        if (merged.changed) {
+          await deletePersonHandles(ctx, owner._id);
+          await insertPersonHandles(ctx, userId, owner._id, merged.handles);
+        }
         await syncMemories(ctx, {
           userId,
           personId: owner._id,
@@ -1045,7 +1897,12 @@ export const saveSharedProfile = mutation({
           await ctx.db.patch("people", owner._id, { searchText });
         }
       }
-      return { status: "already" as const, personId: owner._id, noteTruncated };
+      return {
+        status: "already" as const,
+        personId: owner._id,
+        noteTruncated,
+        handleDropped: merged.handleDropped,
+      };
     }
 
     if (args.attachToPersonId !== undefined) {
@@ -1053,62 +1910,78 @@ export const saveSharedProfile = mutation({
       // A target that is gone or somebody else's falls through to create:
       // the extension's mirror can be days stale and a capture is never lost.
       if (target !== null && target.userId === userId) {
-        const handles = target.contactHandles ?? [];
-        // Folded on both sides, like validateContactHandles does: a legacy row
-        // holding "Instagram " is the same platform, and mistaking it for a
-        // second one would throw away the note over an identical handle.
-        const held = handles.find(
-          (handle) => handleIndexKeys(handle).platform === platform,
+        const targetHandles = target.contactHandles ?? [];
+        // `attachToPersonId` is the person's explicit "same person" answer.
+        // That is the proof LinkedIn rename handling needs because LinkedIn
+        // exposes no stable account id: replace the old slug on the selected
+        // person, but still let mergeHandleIntoOwner refuse if the new value
+        // is already proven to belong to somebody else.
+        const replacingSamePlatformHandle = targetHandles.some((existing) => {
+          const keys = handleIndexKeys(existing);
+          return keys.platform === platform && keys.valueKey !== valueKey;
+        });
+        const merged = await mergeHandleIntoOwner(
+          ctx,
+          userId,
+          target,
+          targetHandles,
+          handle,
         );
-        // A target already holding a different account on this platform means
-        // the mirror was stale. The drain replays this with nobody present to
-        // resolve it, so the capture falls through to create rather than
-        // strand the queued item; the user can merge the twins later.
-        if (held === undefined || handleIndexKeys(held).valueKey === valueKey) {
-          const { context, noteTruncated } = appendContext(
-            target.context,
-            note,
-          );
-          const fields: Partial<Doc<"people">> = {
-            context,
-            ...linkBackfill(target, profileUrl),
-          };
-          if (held === undefined) {
-            fields.contactHandles = validateContactHandles([
-              ...handles,
-              { platform, value },
-            ]);
-          }
-          const now = Date.now();
-          await ctx.db.patch("people", target._id, {
-            ...fields,
-            searchText: personSearchText({ ...target, ...fields }),
-            updatedAt: now,
-          });
-          // Inserted even when the array already held this handle: that only
-          // happens for a person written before this index existed.
-          await insertPersonHandles(ctx, userId, target._id, [
-            { platform, value },
-          ]);
-          await syncMemories(ctx, {
-            userId,
-            personId: target._id,
-            context: fields.context,
-            createdAt: now,
-          });
-          await ctx.scheduler.runAfter(0, internal.people.embed, {
-            personId: target._id,
-          });
+        if (merged.status === "refused") {
           return {
-            status: "attached" as const,
-            personId: target._id,
-            noteTruncated,
+            status: "conflict" as const,
+            personId: merged.conflictingOwnerId,
+            noteTruncated: false,
+            handleDropped: false,
+            conflictPersonId: target._id,
           };
         }
+        const { context, noteTruncated } = appendContext(
+          target.context,
+          note,
+        );
+        const fields: Partial<Doc<"people">> = {
+          context,
+          ...linkBackfill(
+            target,
+            profileUrl,
+            replacingSamePlatformHandle,
+          ),
+        };
+        if (merged.changed) {
+          fields.contactHandles = merged.handles;
+        }
+        const now = Date.now();
+        await ctx.db.patch("people", target._id, {
+          ...fields,
+          searchText: personSearchText({ ...target, ...fields }),
+          updatedAt: now,
+        });
+        if (merged.changed) {
+          // Inserted even when the array already held this handle: that
+          // only happens for a person written before this index existed.
+          await deletePersonHandles(ctx, target._id);
+          await insertPersonHandles(ctx, userId, target._id, merged.handles);
+        }
+        await syncMemories(ctx, {
+          userId,
+          personId: target._id,
+          context: fields.context,
+          createdAt: now,
+        });
+        await ctx.scheduler.runAfter(0, internal.people.embed, {
+          personId: target._id,
+        });
+        return {
+          status: "attached" as const,
+          personId: target._id,
+          noteTruncated,
+          handleDropped: merged.handleDropped,
+        };
       }
     }
 
-    const contactHandles = [{ platform, value }];
+    const contactHandles = [withAddedAt([], handle)];
     // Through appendContext even with nothing to append to, so the clamp
     // policy lives in exactly one place.
     const { context, noteTruncated } = appendContext(undefined, note);
@@ -1128,7 +2001,12 @@ export const saveSharedProfile = mutation({
     await insertPersonHandles(ctx, userId, personId, contactHandles);
     await syncMemories(ctx, { userId, personId, context, createdAt: now });
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
-    return { status: "created" as const, personId, noteTruncated };
+    return {
+      status: "created" as const,
+      personId,
+      noteTruncated,
+      handleDropped: false,
+    };
   },
 });
 
@@ -1138,6 +2016,94 @@ export const getPersonInternal = internalQuery({
   args: { id: v.id("people") },
   handler: async (ctx, args) => {
     return await ctx.db.get("people", args.id);
+  },
+});
+
+// Writes an X account's stable platform id onto the person's existing x
+// handle, once composio.ts's resolveXPlatformId has proven it. Deliberately
+// narrow: this patches one field on one already-present handle, it never
+// creates a handle, changes a value, or touches any other platform.
+//
+// Both authz and the username-still-matches guard are re-checked here, not
+// only in the calling action: two Composio network calls run between the
+// action's own checks and this write landing, and either the person could
+// stop belonging to the caller or the card's x handle could be renamed in
+// that gap. Writing a stale username's id onto a since-renamed handle is
+// exactly the bug rename-proofing exists to prevent, so a mismatch is a
+// silent no-op rather than a write of what the caller asked for a moment ago
+// but is no longer true.
+export const patchXPlatformId = internalMutation({
+  args: {
+    personId: v.id("people"),
+    username: v.string(),
+    platformId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    // Derived here rather than trusted from the caller (guidelines.md's
+    // authentication rule: never accept a userId as an argument for
+    // authorization). Auth propagates through ctx.runMutation from the
+    // calling action -- composio.ts's resolveXPlatformId already proved
+    // this identity with its own requireUser call a moment earlier: this is
+    // the same request, not a fresh one that could disagree.
+    const userId = await requireUser(ctx);
+    const person = await ctx.db.get("people", args.personId);
+    if (person === null || person.userId !== userId) {
+      return null;
+    }
+    const handles = person.contactHandles ?? [];
+    const index = handles.findIndex((handle) => handle.platform === "x");
+    if (index === -1) {
+      return null;
+    }
+    const existing = handles[index];
+    if (handleValueKey(existing.value, "x") !== handleValueKey(args.username, "x")) {
+      return null;
+    }
+    // W3: the value still matches, but this handle already had a DIFFERENT
+    // id proven -- the same username-reassignment shape mergeHandleIntoOwner's
+    // X1 rule and editPerson's own guard (W2) refuse elsewhere. Compared
+    // directly rather than through findHandleOwner below: that lookup only
+    // answers "does somebody ELSE own id-new," and here nobody does yet
+    // (Composio just resolved it) -- the disagreement is with THIS handle's
+    // own prior proof, which only a direct comparison catches.
+    if (existing.platformId !== undefined && existing.platformId !== args.platformId) {
+      console.error(
+        `patchXPlatformId: stored platformId for x disagrees with the resolved one (person=${args.personId}), skipping`,
+      );
+      return null;
+    }
+    // The X id resolves AFTER the save (composio.ts's resolveXPlatformId
+    // runs fire-and-forget once the person already exists), so the
+    // platformId-first dedup in findHandleOwner never got a chance to see
+    // it at write time. If this exact id already belongs to a DIFFERENT one
+    // of this user's people -- two saves for the same X account, landed as
+    // two people some other way -- stamping it here a second time would be
+    // exactly the corruption findHandleOwner's own platformId index exists
+    // to prevent. Refused, not merged: nobody asked this write to reconcile
+    // two people into one, only to prove an id.
+    const existingOwner = await findHandleOwner(
+      ctx,
+      userId,
+      "x",
+      handleValueKey(args.username, "x"),
+      args.platformId,
+    );
+    if (existingOwner !== null && existingOwner._id !== args.personId) {
+      console.error(
+        `patchXPlatformId: platformId for x already belongs to a different person (owner=${existingOwner._id}, target=${args.personId}), skipping`,
+      );
+      return null;
+    }
+    const nextHandles = [...handles];
+    nextHandles[index] = { ...existing, platformId: args.platformId };
+    await ctx.db.patch("people", args.personId, {
+      contactHandles: nextHandles,
+      updatedAt: Date.now(),
+    });
+    await deletePersonHandles(ctx, args.personId);
+    await insertPersonHandles(ctx, userId, args.personId, nextHandles);
+    return null;
   },
 });
 
@@ -1854,6 +2820,13 @@ export const backfillPersonHandles = internalMutation({
   args: { cursor: v.optional(v.union(v.string(), v.null())) },
   returns: v.object({
     patched: v.number(),
+    // A digitless phone/whatsapp entry (identity brief, W1): sibling to
+    // backfillLegacyHandles's own gate below, for the same reason -- this
+    // migration indexes contactHandles entries that already exist but have
+    // no personHandles row yet, and indexing one straight through would
+    // fold it onto the same collision-prone key hasPhoneDigit gates on
+    // every live write path.
+    refused: v.number(),
     isDone: v.boolean(),
     cursor: v.string(),
   }),
@@ -1863,6 +2836,7 @@ export const backfillPersonHandles = internalMutation({
       cursor: args.cursor ?? null,
     });
     let patched = 0;
+    let refused = 0;
     for (const person of page.page) {
       const handles = person.contactHandles ?? [];
       if (handles.length === 0) {
@@ -1879,10 +2853,21 @@ export const backfillPersonHandles = internalMutation({
       if (missing.length === 0) {
         continue;
       }
-      await insertPersonHandles(ctx, person.userId, person._id, missing);
+      const indexable = missing.filter((handle) => {
+        const keys = handleIndexKeys(handle);
+        if (isPhoneNumberPlatform(keys.platform) && !hasPhoneDigit(handle.value)) {
+          refused++;
+          return false;
+        }
+        return true;
+      });
+      if (indexable.length === 0) {
+        continue;
+      }
+      await insertPersonHandles(ctx, person.userId, person._id, indexable);
       patched++;
     }
-    return { patched, isDone: page.isDone, cursor: page.continueCursor };
+    return { patched, refused, isDone: page.isDone, cursor: page.continueCursor };
   },
 });
 
@@ -1906,6 +2891,13 @@ export const backfillLegacyHandles = internalMutation({
   returns: v.object({
     patched: v.number(),
     skipped: v.number(),
+    // A digitless phone/whatsapp scalar (identity brief, X2): folded here
+    // with no gate, this would recreate the exact collision hasPhoneDigit
+    // exists to prevent, just through the maintenance path instead of a
+    // live write. Counted separately from "skipped" (a disagreement this
+    // migration correctly declines to referee) since a refused row is a
+    // different situation -- there is nothing here worth indexing at all.
+    refused: v.number(),
     isDone: v.boolean(),
     cursor: v.string(),
   }),
@@ -1916,6 +2908,7 @@ export const backfillLegacyHandles = internalMutation({
     });
     let patched = 0;
     let skipped = 0;
+    let refused = 0;
     for (const person of page.page) {
       if (person.platform === undefined || person.handle === undefined) {
         continue;
@@ -1928,6 +2921,15 @@ export const backfillLegacyHandles = internalMutation({
       // A platform with no handle, or a handle of punctuation alone, names
       // no account: there is nothing to index and nothing to report.
       if (keys.platform === "" || keys.valueKey === "") {
+        continue;
+      }
+      // Same refusal as every other write path (convex/handleKeys.ts's
+      // hasPhoneDigit): a digitless phone/whatsapp value folds to a plain
+      // lowercase string, and two different unreadable legacy rows could
+      // otherwise collide on the same personHandles row the moment this
+      // migration ran.
+      if (isPhoneNumberPlatform(keys.platform) && !hasPhoneDigit(legacy.value)) {
+        refused++;
         continue;
       }
       const handles = person.contactHandles ?? [];
@@ -1961,18 +2963,72 @@ export const backfillLegacyHandles = internalMutation({
     return {
       patched,
       skipped,
+      refused,
       isDone: page.isDone,
       cursor: page.continueCursor,
     };
   },
 });
 
-// How many index rows one report page scans, and how many owners of a single
-// account it will name. A handle owned by more people than the cap is already
-// a five-alarm finding; the cap only stops one pathological group from
-// unbounding the read.
+// One-off maintenance: personHandles rows for phone and whatsapp were folded
+// by the old trim+lowercase key. This recomputes valueKey with
+// handleValueKey's phone-aware fold: country-prefixed numbers become E.164,
+// while plain national numbers become digits-only without guessing a region.
+// It reads the source number back from contactHandles rather than the row
+// itself because the old key did not preserve the exact display value. Two
+// people whose values now fold alike can land on one key after this; that is a
+// duplicate for reportDuplicateHandleOwners to surface, not this migration's
+// to merge, same doctrine as it. Paged like the neighbors above.
+// Run with:
+// npx convex run people:backfillPhoneHandleKeys '{}'
+// and re-run with '{"cursor": "<cursor>"}' until isDone.
+export const backfillPhoneHandleKeys = internalMutation({
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  returns: v.object({
+    patched: v.number(),
+    isDone: v.boolean(),
+    cursor: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const page = await ctx.db.query("people").paginate({
+      numItems: BACKFILL_BATCH_SIZE,
+      cursor: args.cursor ?? null,
+    });
+    let patched = 0;
+    for (const person of page.page) {
+      const handles = person.contactHandles ?? [];
+      if (handles.length === 0) {
+        continue;
+      }
+      const rows = await ctx.db
+        .query("personHandles")
+        .withIndex("by_person", (q) => q.eq("personId", person._id))
+        .take(MAX_CONTACT_HANDLES);
+      for (const row of rows) {
+        if (row.platform !== "phone" && row.platform !== "whatsapp") {
+          continue;
+        }
+        const source = handles.find(
+          (handle) => handleIndexKeys(handle).platform === row.platform,
+        );
+        if (source === undefined) {
+          continue;
+        }
+        const newKey = handleValueKey(source.value, row.platform);
+        if (newKey !== row.valueKey) {
+          await ctx.db.patch("personHandles", row._id, { valueKey: newKey });
+          patched++;
+        }
+      }
+    }
+    return { patched, isDone: page.isDone, cursor: page.continueCursor };
+  },
+});
+
+// How many index rows one report page scans. MAX_HANDLE_OWNERS, how many
+// owners of a single account it will name, is declared with findHandleOwner
+// above, which uses the same cap for the same reason.
 const DUPLICATE_SCAN_PAGE_SIZE = 500;
-const MAX_HANDLE_OWNERS = 64;
 
 // Report only, never a merge: which of two people holding one account is the
 // real one is a product decision, and a migration that guessed would delete
