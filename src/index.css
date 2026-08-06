@@ -3363,14 +3363,34 @@ a.card-handle:focus-visible {
   align-items: flex-start;
   justify-content: center;
   gap: 18px;
-  padding: 0 6vw;
+  /* Narrowed from 6vw: the column runs to ~45% of the viewport now (see
+     .landing2-art's own 55% below), and the extra reclaimed width is what
+     lets "are a constellation." (the longer of the headline's two lines)
+     actually fit without wrapping -- see .landing2-hero-title's own
+     white-space: nowrap and comment for the rest of that fix. */
+  padding: 0 3vw;
   text-align: left;
 }
 
 .landing2-hero-title {
   margin: 0;
-  max-width: 12ch;
-  font-size: clamp(34px, 5.4vw, 4.2rem);
+  /* The bug this replaces: max-width: 12ch fit "Your people" (the shorter
+     line) but not "are a constellation." (the longer one) -- CSS max-width
+     constrains the whole box, so the longer line wrapped a second time,
+     giving three lines instead of the intended two. white-space: nowrap is
+     what actually guarantees exactly two lines now: it blocks ordinary
+     reflow-driven wrapping on either line while still honoring the
+     component's own explicit <br /> between them (a hard break is never
+     suppressed by nowrap). max-width stays only as a loose outer bound, not
+     the wrap trigger. */
+  max-width: 30ch;
+  white-space: nowrap;
+  /* Vw-coefficient lowered (5.4vw -> 3.6vw) and the cap nudged up (4.2rem ->
+     4.4rem) together: the cap now engages past ~2040px viewport width, so
+     at every width from 1280px up (the brief's own floor) the size still
+     scales with the column's own vw-based width rather than sitting flat at
+     a fixed px value picked for a narrower column that no longer applies. */
+  font-size: clamp(30px, 3.6vw, 4.4rem);
   line-height: 1.05;
   letter-spacing: -0.02em;
   color: #fff;
@@ -3378,7 +3398,8 @@ a.card-handle:focus-visible {
 
 .landing2-hero-sub {
   margin: 0;
-  max-width: 42ch;
+  /* ~40 characters per line, matching the brief's own comfort target. */
+  max-width: 40ch;
   font-size: clamp(16px, 1.3vw, 18px);
   line-height: 1.55;
   color: rgba(242, 239, 233, 0.85);
@@ -3395,8 +3416,14 @@ a.card-handle:focus-visible {
 
 .landing2-art {
   position: relative;
-  flex: 0 0 58%;
-  max-width: 58%;
+  /* Narrowed from 58% (the copy column below grows to fill the rest, ~45%
+     of the viewport) so the headline's longer second line has room to sit
+     on one line -- see .landing2-copy-col and .landing2-hero-title's own
+     comments for the rest of that fix. The 16vw blend zone below still
+     comfortably fits inside 55% of the viewport at every width this page
+     supports. */
+  flex: 0 0 55%;
+  max-width: 55%;
   overflow: hidden;
 }
 
@@ -3487,9 +3514,16 @@ a.card-handle:focus-visible {
   }
 }
 
-/* Small screens: the fixed single viewport becomes a natural, scrolling
-   stack -- a 58%-wide side panel has no room to read as art on a phone. */
-@media (max-width: 859px) {
+/* Small AND medium screens: the fixed single viewport becomes a natural,
+   scrolling stack -- a 55%-wide side panel has no room to read as art on a
+   phone, and below the row layout's own 1280px floor (see
+   .landing2-hero-title's own comment: that is the narrowest width the
+   headline's nowrap second line is sized to fit without measuring real
+   glyph widths in a browser) staying in the row layout risks the exact
+   wrap bug this breakpoint exists to avoid, just on a still-narrow tablet
+   or small-laptop window instead of a phone. 1279px, not 859px, is the
+   deliberate cutoff -- one pixel short of the row layout's own floor. */
+@media (max-width: 1279px) {
   .landing2-hero {
     height: auto;
     min-height: 100vh;
