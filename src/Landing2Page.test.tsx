@@ -1,11 +1,32 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+
+// Same stubbing pattern as LandingPage.test.tsx / PolishedLandingPage.test.tsx:
+// this page's own job is the hero composition, not DriftSky's own animation
+// loop (driftSkyCanvasSizing.test.ts already pins the canvas's sizing).
+// TopNav itself is NOT stubbed here (see the existing "hosts the nav and the
+// footer" test below) -- it is trivial, already covered by its own dedicated
+// test, and rendering it for real is what lets this file assert the icon prop
+// actually reaches real markup.
+const driftSky = vi.hoisted(() => ({
+  props: null as Record<string, unknown> | null,
+  mounts: 0,
+}));
+vi.mock("./DriftSky", () => ({
+  DriftSky: (props: Record<string, unknown>) => {
+    driftSky.props = props;
+    driftSky.mounts += 1;
+    return null;
+  },
+}));
 
 const { Landing2Page } = await import("./Landing2Page");
 
 afterEach(() => {
   cleanup();
+  driftSky.props = null;
+  driftSky.mounts = 0;
 });
 
 describe("Landing2Page", () => {
@@ -62,27 +83,51 @@ describe("Landing2Page", () => {
 
   test("hosts the nav and the footer rather than duplicating their logic", () => {
     render(<Landing2Page />);
-    // TopNav and Footer are not stubbed here (unlike LandingPage.test.tsx):
+    // TopNav and Footer are not stubbed here (unlike PolishedLandingPage.test.tsx):
     // both are trivial and already covered by their own dedicated tests, so
     // rendering them for real is simpler than adding two more module mocks.
     expect(screen.getByText("Haven", { selector: ".top-nav-brand" })).toBeTruthy();
     expect(screen.getByText("Privacy", { selector: ".site-footer-links a" })).toBeTruthy();
   });
 
-  // No DriftSky, no shard/seam/reveal DOM at all -- the art is the sky now.
-  test("has no DriftSky canvas and no leftover glass-shard DOM", () => {
+  // The mascot icon is unconditional on TopNav now (see its own comment);
+  // this just confirms this page still gets it via the real TopNav render
+  // above rather than a prop passed to a stub.
+  test("shows the Haven mascot icon next to the wordmark", () => {
     const { container } = render(<Landing2Page />);
-    expect(container.querySelector("canvas")).toBeNull();
+    const icon = container.querySelector(".top-nav-brand .top-nav-icon");
+    expect(icon).toBeTruthy();
+    expect(icon?.getAttribute("src")).toBe("/icon-nav.png");
+    expect(icon?.getAttribute("alt")).toBe("");
+  });
+
+  // Reused, not copied: the same host class driftSkyCanvasSizing.test.ts
+  // pins the sizing/masking for, so this page's own test only needs to check
+  // that DriftSky is actually mounted on it, not re-check the CSS.
+  test("mounts DriftSky once, on the hero's own host class", () => {
+    render(<Landing2Page />);
+    expect(driftSky.mounts).toBe(1);
+    expect(driftSky.props?.className).toBe("landing2-sky");
+    expect(driftSky.props?.lens).toBe(true);
+  });
+
+  // No leftover shard/seam/reveal DOM from the earlier CSS-only version of
+  // this page (see the component's own header comment) -- DriftSky itself is
+  // stubbed above, so it is not what this guards.
+  test("has no leftover glass-shard DOM", () => {
+    const { container } = render(<Landing2Page />);
     expect(container.querySelector(".landing2-shard")).toBeNull();
     expect(container.querySelector(".landing2-beneath")).toBeNull();
   });
 
   // Decorative art: the surrounding copy already carries the page's message
   // (see the component's own comment for the reasoning), so an empty alt is
-  // the deliberate choice here, not an oversight.
+  // the deliberate choice here, not an oversight. Scoped to .landing2-art
+  // (not a bare "img" query) since the nav icon is now a second <img> on
+  // this page, earlier in the DOM.
   test("the art image is present, decorative, and points at the given asset", () => {
     const { container } = render(<Landing2Page />);
-    const img = container.querySelector("img")!;
+    const img = container.querySelector(".landing2-art img")!;
     expect(img).toBeTruthy();
     expect(img.getAttribute("src")).toBe("/glass-hero.jpg");
     expect(img.getAttribute("alt")).toBe("");

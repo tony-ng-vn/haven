@@ -2575,14 +2575,24 @@ a.card-handle:focus-visible {
 
 /* Your Sky download page (inhavens.com/#/sky) --------------------------
 
-   Shares the legal page's column measure -- this is reading, not a hero form
-   -- but keeps its own hero block at the top for the download CTA, and its
-   own step/privacy sections below.
-   ------------------------------------------------------------------------ */
+   Reading, not a hero form -- a left-aligned column with its own hero block
+   at the top for the download CTA, and its own step/privacy sections below.
+
+   The column's max-width used to sit flat at 34rem (the legal pages' own
+   measure, sized for body copy at 16px/1.65 line-height): comfortable for
+   a phone, but adrift in empty space on a real desktop window, where this
+   is a features/download page, not a dense article. clamp() widens it on
+   wide viewports the same way .landing-hero-title etc. scale elsewhere in
+   this file: the 34rem floor holds unchanged up to roughly tablet width (30vw
+   stays below it until ~1015px), so mobile and narrow windows are untouched,
+   then it grows through the 1280px desktop floor this codebase already
+   treats as its breakpoint (see .landing2-hero-title's own comment) up to a
+   50rem ceiling that only engages past ~1870px, so text never runs edge to
+   edge on an ultra-wide monitor either. */
 .sky-page {
   position: relative;
   z-index: 1;
-  max-width: 34rem;
+  max-width: clamp(34rem, 30vw + 15rem, 50rem);
   margin: 0 auto;
   /* Extra top padding clears the absolutely positioned .top-nav overlaid on
      .card-page above it (see TopNav). */
@@ -2595,7 +2605,11 @@ a.card-handle:focus-visible {
   margin-top: 28px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  /* Same clamp shape as .sky-page's own max-width: floor holds through
+     mobile/tablet (unchanged from the old flat 10px), grows to a beat that
+     reads as intentional once the column has real desktop width to breathe
+     into, caps at 18px so the stack never feels loose. */
+  gap: clamp(10px, 1vw + 1px, 18px);
 }
 
 .sky-eyebrow {
@@ -2607,7 +2621,14 @@ a.card-handle:focus-visible {
 }
 
 .sky-title {
-  font-size: 34px;
+  /* Flat 34px before -- this page is a feature/download page, not a
+     marketing hero, so the clamp stays far short of .landing-hero-title's
+     own scale: additive vw+px (not pure vw, unlike the landing titles)
+     because a pure-vw formula tuned to reach ~40px by desktop width would
+     undershoot 34px at mobile, shrinking the title there. The 34px floor
+     keeps mobile byte-for-byte where it already was; growth only starts
+     past roughly tablet width. */
+  font-size: clamp(34px, 1.2vw + 22px, 42px);
   font-weight: 500;
   line-height: 1.18;
   margin: 4px 0 2px;
@@ -2616,7 +2637,9 @@ a.card-handle:focus-visible {
 
 .sky-tagline {
   margin: 0 0 6px;
-  font-size: 17px;
+  /* Same reasoning as .sky-title just above: floor matches the old flat
+     17px so mobile is unchanged, modest growth on desktop. */
+  font-size: clamp(17px, 0.6vw + 11px, 20px);
   line-height: 1.55;
   color: rgba(242, 239, 233, 0.85);
 }
@@ -2644,7 +2667,10 @@ a.card-handle:focus-visible {
 }
 
 .sky-download-repeat {
-  margin-top: 40px;
+  /* Same clamp shape as .sky-steps/.sky-privacy below: this button closes
+     the page the same way those sections open, so it grows with them
+     rather than staying flat once the column is wider. */
+  margin-top: clamp(40px, 3vw + 8px, 64px);
 }
 
 .sky-install-note {
@@ -2652,12 +2678,20 @@ a.card-handle:focus-visible {
   font-size: 13px;
   line-height: 1.6;
   color: rgba(242, 239, 233, 0.55);
+  /* Deliberately narrower than the page's own widened column: this is dense
+     small print, not the page's main copy, and a 30rem measure keeps it
+     readable rather than stretching legal text edge to edge with the rest
+     of the hero. */
   max-width: 30rem;
 }
 
 .sky-steps,
 .sky-privacy {
-  margin-top: 48px;
+  /* Flat 48px before, tight even at the old phone-width column. Same clamp
+     shape as .sky-page's own max-width and .sky-hero's own gap: floor holds
+     through mobile/tablet, opens up to a real section break once the column
+     has desktop width to spend it in. */
+  margin-top: clamp(48px, 4vw + 13px, 80px);
 }
 
 .sky-steps h2,
@@ -2706,8 +2740,15 @@ a.card-handle:focus-visible {
   color: var(--text);
 }
 
+/* max-width in ch, not left to the widened .sky-page column: unlike the
+   hero copy above, this is small-print prose, and .sky-page's own max-width
+   now grows well past a comfortable line length for it (up to ~99ch at the
+   50rem cap) -- capping the measure in ch keeps it tracking the font instead
+   of stretching with the column, the same reasoning .sky-install-note's own
+   max-width: 30rem already applies just below this. */
 .sky-step-body {
   margin: 0;
+  max-width: 66ch;
   font-size: 15px;
   line-height: 1.55;
   color: rgba(242, 239, 233, 0.72);
@@ -2720,25 +2761,29 @@ a.card-handle:focus-visible {
 
 .sky-privacy li {
   margin-bottom: 10px;
+  max-width: 66ch;
   font-size: 15px;
   line-height: 1.55;
   color: rgba(242, 239, 233, 0.78);
 }
 
 /* ---------------------------------------------------------------------------
-   Haven landing (inhavens.com/, signed out)
+   Landing hero (inhavens.com/landing, signed out) -- PolishedLandingPage.tsx
 
-   The front door: a full-viewport hero that puts the product's own world on
-   screen, then two full-width sections (not cards) introducing each product,
-   and a quiet footer. Ordinary document flow, unlike .card-page: the hero is
-   the one fixed-height box (one viewport tall, position: relative), and the
-   rest of the page scrolls past it.
+   Not the front door anymore -- the bare root now serves the iOS waitlist
+   page instead (see resolveView in lib.ts) -- but still a full page in its
+   own right, reachable for comparison against Landing2Page's own concept: a
+   full-viewport hero that puts the product's own world on screen, then two
+   full-width sections (not cards) introducing each product, and a quiet
+   footer. Ordinary document flow, unlike .card-page: the hero is the one
+   fixed-height box (one viewport tall, position: relative), and the rest of
+   the page scrolls past it.
    ------------------------------------------------------------------------ */
 /* A fixed, page-wide background layer, not scoped to the hero: the sky
    continues behind every section as the page scrolls, the way the old
    full-bleed waitlist page did for its one screen. One canvas for the whole
-   page (see LandingPage.tsx), not one per section -- a second canvas would
-   double the animation cost for no visible gain when the first already
+   page (see PolishedLandingPage.tsx), not one per section -- a second canvas
+   would double the animation cost for no visible gain when the first already
    covers the viewport. z-index: -1 rather than a stacking context on .landing
    keeps this simple: it paints behind ordinary in-flow content by the normal
    stacking rules, with nothing else needing a z-index to sit above it.
@@ -2821,6 +2866,23 @@ a.card-handle:focus-visible {
   margin-top: 8px;
 }
 
+/* .sky-download's own align-self/margin-top (above) exist for its solo life
+   as the lone child of .sky-hero's flex column, where align-self:flex-start
+   hugs the column's left edge and margin-top:8px adds one beat of space
+   above it. Inside this shared row, both fight align-items:center instead:
+   flex-start overrides the row's own cross-axis centering, and the extra
+   margin-top shoves the button further down -- together landing it 4px below
+   its centered .landing-cta-secondary sibling (measured tops 640.1 vs 636.1
+   via CDP). Reset here, not on the base rule, since .sky-download still
+   renders solo outside this row -- the Sky page's own bottom repeat button --
+   and still depends on those values there. Unscoped to .landing-hero-ctas
+   itself rather than any one page, so every caller that composes the two
+   buttons in this row (/landing, landing2, and Sky's hero) gets it. */
+.landing-hero-ctas .sky-download {
+  align-self: auto;
+  margin-top: 0;
+}
+
 /* The secondary iPhone/waitlist action, everywhere it appears (hero and the
    iPhone section below): an outline, deliberately quieter than .sky-download's
    gold fill -- available-today and join-the-waitlist should not read as the
@@ -2851,10 +2913,11 @@ a.card-handle:focus-visible {
   color: rgba(255, 255, 255, 0.6);
 }
 
-/* Shared by the landing hero, Your Sky, and the iOS page: wordmark left,
-   three plain links right, no pill chrome. Absolutely positioned so it drops
-   onto either a position: relative hero or a position: fixed .card-page
-   without needing to know which. */
+/* Shared by every public page: the wordmark, brand-only, nothing to its
+   right -- the owner had the links cluster that used to sit there removed
+   site-wide. Absolutely positioned so it drops onto either a position:
+   relative hero or a position: fixed .card-page without needing to know
+   which. */
 .top-nav {
   position: absolute;
   top: 0;
@@ -2867,28 +2930,18 @@ a.card-handle:focus-visible {
   padding: 20px 24px;
 }
 
+/* Icon and wordmark on one line. Was scoped under .landing2 .top-nav-brand
+   while the icon itself was opt-in on TopNav (a landing2-only experiment);
+   the owner then asked for the icon on every page, bigger, so the layout
+   moved onto this base rule -- every caller needs it now, not just one. */
 .top-nav-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 19px;
   font-weight: 500;
   color: #fff;
   text-decoration: none;
-}
-
-.top-nav-links {
-  display: flex;
-  align-items: center;
-  gap: 22px;
-}
-
-.top-nav-links a {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.75);
-  text-decoration: none;
-}
-
-.top-nav-links a:hover,
-.top-nav-links a:focus-visible {
-  color: #fff;
 }
 
 /* The compliance footer (Footer.tsx), shared by the landing page, Your Sky,
@@ -3012,13 +3065,14 @@ a.card-handle:focus-visible {
    Polished landing (inhavens.com/landing) -- PolishedLandingPage.tsx
 
    Every selector below is scoped under .landing-polished, the class the root
-   element carries alongside the plain .landing it reuses. That is the whole
-   contract that keeps LandingPage.tsx's own page byte-for-byte identical:
-   nothing here can ever match an element on the default landing, because
-   nothing there carries this class. Reused pieces (TopNav, Footer,
-   SkyDemoEmbed, .sky-download, .landing-cta-secondary, .landing-hero-title,
-   .top-nav-links, ...) keep their base rules completely untouched above --
-   this section only adds to them, under this one extra ancestor class.
+   element carries alongside the plain .landing base it reuses -- .landing-sky,
+   .landing-hero and the rest of that system were written for an earlier
+   landing component, deleted once the owner moved the root to the iOS
+   waitlist page; PolishedLandingPage.tsx is their sole surviving host now, at
+   inhavens.com/landing. Reused pieces (TopNav, Footer, SkyDemoEmbed,
+   .sky-download, .landing-cta-secondary, .landing-hero-title, ...) keep their
+   base rules completely untouched above -- this section only adds to them,
+   under this one extra ancestor class.
    ------------------------------------------------------------------------ */
 
 /* Satoshi for everything except the serif headline: set once, here, and
@@ -3057,7 +3111,6 @@ a.card-handle:focus-visible {
   .landing-polished .sky-download,
   .landing-polished .landing-cta-secondary,
   .landing-polished .top-nav-brand,
-  .landing-polished .top-nav-links a,
   .landing-polished .demo-panel {
     transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
   }
@@ -3065,7 +3118,6 @@ a.card-handle:focus-visible {
   .landing-polished .sky-download:active,
   .landing-polished .landing-cta-secondary:active,
   .landing-polished .top-nav-brand:active,
-  .landing-polished .top-nav-links a:active,
   .landing-polished .demo-panel:active {
     transform: scale(0.97);
   }
@@ -3074,8 +3126,7 @@ a.card-handle:focus-visible {
 /* Hover, fine pointers only -- a coarse pointer has no hover state to fake,
    and faking one there just leaves a "stuck" highlight after a tap. */
 @media (hover: hover) and (pointer: fine) {
-  .landing-polished .top-nav-brand,
-  .landing-polished .top-nav-links a {
+  .landing-polished .top-nav-brand {
     transition: opacity 150ms var(--ease-out), color 150ms var(--ease-out);
   }
 
@@ -3318,11 +3369,15 @@ a.card-handle:focus-visible {
    to the real image. This version does not draw an approximation -- the
    image IS the page. A single-viewport hero: the real copy on the flat page
    navy at left, the artwork at right, fused with one blend gradient where
-   they meet. No DriftSky here at all; the art is the sky (contrast
-   .landing-sky above, still the default landing's own full-page canvas).
+   they meet. The navy left also carries its own DriftSky, .landing2-sky
+   below -- scoped to this one section rather than fixed to the whole page
+   like .landing-sky above, and sized (not just masked) to the navy zone so
+   the stars, and the wandering constellation's whole travel path, never sit
+   on top of the image (see .landing2-sky's own comment for why the box
+   itself, not only the mask, is what keeps the figure on screen).
 
-   .landing-polished is reused wholesale on the root (see that section
-   above): Satoshi, the press/hover/focus treatment on the shared
+   .landing-polished is reused wholesale from the polished landing (see that
+   section above): Satoshi, the press/hover/focus treatment on the shared
    .sky-download / .landing-cta-secondary / TopNav classes, and the
    [data-mounted] entrance mechanism all apply here for free, which is why
    this page's own rules below only add the new layout and the two
@@ -3352,6 +3407,56 @@ a.card-handle:focus-visible {
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
+}
+
+/* The hero's own DriftSky, scoped to .landing2-hero (position: relative,
+   overflow: hidden above) rather than the full-page .landing-sky used
+   elsewhere -- this page's own sky lives behind one section, not the whole
+   route. Same canvas-sizing gotcha as every other host class (see
+   driftSkyCanvasSizing.test.ts, extended to pin this one too): a <canvas> is
+   a replaced element, so inset: 0 alone collapses it to its 300x150
+   intrinsic size -- explicit width/height are load-bearing, not decoration.
+
+   Unlike the other host classes, though, this one is deliberately NOT full
+   width. DriftSky's wander path (wanderPoint in lens.ts) sweeps 10%-90% of
+   the CANVAS's own measured width, wherever that canvas is sized -- a
+   full-width canvas here, masked only where the artwork sits, still handed
+   the wander that whole width to roam, so the figure spent long stretches
+   parked behind the opaque artwork (masked to invisible) rather than over
+   the navy where it could actually be seen. Sizing the box itself to the
+   navy zone is what fixes that: the box IS the confinement mechanism, not
+   the mask. The mask stays, but now only for a soft fade at the canvas's
+   own right fringe -- see its own comment below. */
+.landing2-sky {
+  position: absolute;
+  inset: 0;
+  /* .landing2-art starts at 45% of the viewport (the copy column is flex: 1
+     1 auto against the art's own flex: 0 0 55%); its own blend gradient
+     (.landing2-art::before, 16vw wide) then keeps eating into the image from
+     there, so the artwork's opaque pixels do not actually start until ~61%
+     of the viewport. 55% lands past the seam (45%) but still inside that
+     blend zone, so anything visible at the canvas's own right edge is still
+     sitting on navy-ish blend, never on a visible art pixel -- with room to
+     spare before 61%. This also fixes the wander: 10%-90% of a 55%-wide
+     canvas maps to ~5.5%-49.5% of the viewport, comfortably clear of the
+     artwork at every point in its cycle, not just where the old mask
+     happened to still show it. */
+  width: 55%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  /* A soft fade at the canvas's OWN right fringe, not a hard edge: without
+     this, star density would clip at a straight vertical line at 55% of the
+     viewport instead of tapering off. Stops are percentages of this box's
+     own 55%-wide width -- 70% (~38.5% of the viewport) to 100% (55%, the
+     box's own right edge) -- so density starts tapering a little before the
+     copy column/art seam (45%) and is fully gone by the canvas's own edge,
+     still inside the art's own 16vw blend (45%-61%, see .landing2-art::
+     before) that already hides the seam underneath. -webkit-mask-image is
+     Safari's own prefix; it does not fall back to the unprefixed property
+     on its own. */
+  mask-image: linear-gradient(to right, black 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black 70%, transparent 100%);
 }
 
 .landing2-copy-col {
@@ -3412,6 +3517,23 @@ a.card-handle:focus-visible {
    landing and the polished preview keep their centered version untouched. */
 .landing2 .landing-hero-ctas {
   justify-content: flex-start;
+}
+
+/* icon-nav.png (not icon-192/512, which stay wired to the PWA manifest and
+   the SERP logo) is a trimmed asset: alpha-cropped to the mascot's own bbox
+   plus a symmetric 3%-of-height transparent border on all four sides, so the
+   art itself -- not empty canvas -- fills this box, and its content center
+   sits exactly on the box's own center. That symmetry is what makes plain
+   flexbox centering on .top-nav-brand (align-items: center) land the mascot
+   optically centered against the wordmark; the old icon-192.png crop had
+   asymmetric margins that no amount of CSS nudging could center cleanly.
+   Height is the controlling dimension (the trimmed art is taller than wide,
+   ~300:363) -- width: auto keeps the aspect ratio rather than pinning both
+   and risking a stretch. */
+.top-nav-icon {
+  display: block;
+  height: 40px;
+  width: auto;
 }
 
 .landing2-art {
@@ -3530,6 +3652,34 @@ a.card-handle:focus-visible {
     min-height: 100dvh;
     flex-direction: column;
     overflow: visible;
+  }
+
+  .landing2-sky {
+    /* Same confinement principle as the row layout's own width: 55% above,
+       applied to the other axis. The hero is a scrolling column here (copy
+       on top, the art block at the bottom, both full width), so the wander
+       needs vertical room over the copy, not horizontal room past a seam --
+       full width, but a height that stops exactly where the art block
+       begins (max(46vh, 260px), matching .landing2-art below exactly) so
+       DriftSky's wander (14%-78% of the canvas's own measured height, see
+       lens.ts's wanderPoint) stays over the copy area instead of roaming
+       into a region masked to invisible over the art. calc() against a
+       percentage height works here the same way it does for any absolutely
+       positioned box whose containing block (.landing2-hero) has a
+       determinate height, even though that height is itself content-driven
+       (min-height: 100vh, not a fixed value) in this breakpoint -- an
+       absolutely positioned descendant's percentage still resolves against
+       it once layout has settled, unlike an ordinary in-flow percentage
+       height. */
+    width: 100%;
+    height: calc(100% - max(46vh, 260px));
+    /* The soft fade moves to the canvas's own bottom fringe, mirroring the
+       row layout's right-fringe fade (same 70%/100% stops, "to bottom"
+       instead of "to right") -- the box's own height already stops before
+       the art block, so this only has to avoid a hard line at that shorter
+       box's own edge, not reach all the way down to the art itself. */
+    mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
   }
 
   .landing2-art {

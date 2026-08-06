@@ -48,10 +48,10 @@ describe("resolveView", () => {
     ).toBe("home");
   });
 
-  test("the signed-out default is the Haven landing page", () => {
-    expect(resolveView(base)).toBe("landing");
-    // A first-time visitor paints the landing immediately, before Clerk loads.
-    expect(resolveView({ ...base, isLoading: true })).toBe("landing");
+  test("the signed-out default is the iOS waitlist page", () => {
+    expect(resolveView(base)).toBe("ios");
+    // A first-time visitor paints the waitlist immediately, before Clerk loads.
+    expect(resolveView({ ...base, isLoading: true })).toBe("ios");
   });
 
   test("Clerk callbacks and the explicit sign-in route mount sign-in", () => {
@@ -72,8 +72,8 @@ describe("resolveView", () => {
     expect(
       resolveView({ ...base, isLoading: true, hasSessionHint: true }),
     ).toBe("splash");
-    // Once resolved signed-out, they fall through to the landing.
-    expect(resolveView({ ...base, hasSessionHint: true })).toBe("landing");
+    // Once resolved signed-out, they fall through to the waitlist.
+    expect(resolveView({ ...base, hasSessionHint: true })).toBe("ios");
   });
 
   test("the '#/join' route is never treated as a Clerk flow, and stays a way to join", () => {
@@ -855,7 +855,7 @@ describe("resolveView with a card path", () => {
   });
 
   test("every other path routes exactly as it did before", () => {
-    expect(resolveView({ ...base, pathname: "/" })).toBe("landing");
+    expect(resolveView({ ...base, pathname: "/" })).toBe("ios");
     // Hyphenated, so it is not a claimable handle and not a card. It used to
     // fall through to the waitlist, which is the bug reported from production:
     // somebody typing the most obvious url was told Haven has no sign-in.
@@ -1088,8 +1088,8 @@ describe("resolveView with the polished landing path", () => {
     expect(handleFromPath("/landing")).toBeNull();
   });
 
-  test("the bare root still resolves to the default landing", () => {
-    expect(resolveView({ ...base, pathname: "/" })).toBe("landing");
+  test("the bare root still resolves to the default waitlist, not the polished preview", () => {
+    expect(resolveView({ ...base, pathname: "/" })).toBe("ios");
   });
 });
 

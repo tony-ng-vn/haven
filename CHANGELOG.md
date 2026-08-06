@@ -6,6 +6,32 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.50.0
+
+2026-08-06
+
+**Web**
+
+- The Sky download page no longer feels squeezed into a narrow phone-width column on a computer screen -- it now uses the space a real desktop page has, with a wider reading column and more generous spacing the wider the window gets.
+- That page now makes its pitch before its ask: the hero carries just the headline and the honest install notes, and the one Download for Mac button sits at the end, after the steps and the privacy promises.
+- The Your Sky / iPhone / Sign in links that used to sit in the top corner of every page are gone everywhere, not just on some pages -- each page's own buttons already point you where you need to go, and the Haven wordmark alone gets you back to the front door.
+- The Haven mascot in that top corner is noticeably bigger now, and it sits truly centered next to the wordmark -- it used to look faintly off-center no matter what, because the mascot artwork itself was trimmed unevenly; that is fixed at the source now, not papered over with CSS.
+- The front door at inhavens.com is the iPhone waitlist again -- the same page the "join the iPhone waitlist" links already pointed at. The landing-page hero that had been living at the root is still there to compare, now at its own /landing address, alongside a second landing concept previewed at landing2 -- neither is what a new visitor meets first anymore.
+- The two hero buttons ("Sky app, coming soon" and "Join the iPhone waitlist") now line up exactly level with each other everywhere they appear together -- they used to sit 4 pixels apart.
+
+---
+
+## v0.49.0
+
+2026-08-05
+
+**Web**
+
+- The landing2 concept page now has the same living night sky as the main landing -- drifting stars and the wandering constellation -- behind its copy on the left, fading away before the artwork begins on the right so the two never overlap.
+- The Haven mascot icon now sits next to the wordmark in landing2's nav.
+
+---
+
 ## v0.48.0
 
 2026-08-05

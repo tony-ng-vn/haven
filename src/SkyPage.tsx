@@ -60,9 +60,10 @@ export function SkyPage() {
             and draws the people you actually talk to as a 3D map you can
             explore.
           </p>
-          <a className="sky-download" href={DOWNLOAD_HREF}>
-            Download for Mac
-          </a>
+          {/* No hero buttons, on the owner's direction: the page's one
+              download action lives at the bottom, after the steps and the
+              privacy list have made their case. The step-1 "Download" text
+              link above it stays as the in-flow shortcut. */}
           <p className="sky-install-note">
             This build is not notarized yet -- macOS will warn on first open.
             Go to <strong>System Settings &gt; Privacy &amp; Security</strong>{" "}

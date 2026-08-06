@@ -488,19 +488,21 @@ export function bootMode(input: {
 }
 
 // The single source of truth for which top-level screen App renders. The
-// signed-out default is the Haven landing -- that is the shareable root URL,
-// telling people what Haven is and pointing them at the two products. Existing
-// users still reach sign-in: Clerk OAuth/verification callbacks and the
-// explicit "#/sign-in" route mount it, and a returning visitor with a live
-// session resolves straight to Home (via the splash) without ever seeing the
-// landing. The "#/join" route stays public even though it matches the generic
-// Clerk-flow shape, and lands on "ios" -- the waitlist signup now lives on the
-// iOS product page rather than at the root.
+// signed-out default at the bare root is "ios" -- the iPhone waitlist page,
+// the same page "#/ios" and its older alias "#/join" already resolve to. The
+// owner asked for this back after trying the newer landing hero as the front
+// door: "the root should still be the waitlist page we have right now". The
+// two landing hero designs are still reachable, deliberately not deleted --
+// the polished one at "/landing" and the second concept at "#/landing2" --
+// just no longer the thing a stranger meets first. Existing users still
+// reach sign-in: Clerk OAuth/verification callbacks and the explicit
+// "#/sign-in" route mount it, and a returning visitor with a live session
+// resolves straight to Home (via the splash) without ever seeing the
+// waitlist.
 export type View =
   | "home"
   | "signin"
   | "splash"
-  | "landing"
   | "landing-polished"
   | "card"
   | "legal"
@@ -611,7 +613,9 @@ export function resolveView(input: {
   if (isLanding2Hash(input.hash)) return "landing2";
   if (isClerkFlowHash(input.hash)) return "signin";
   if (input.isLoading && bootMode(input) === "splash") return "splash";
-  return "landing";
+  // The bare root, and anything else that fell through every check above --
+  // the iOS waitlist page, same as "#/ios" and "#/join".
+  return "ios";
 }
 
 // The triage card's drag gesture: scroll-style momentum projection for
