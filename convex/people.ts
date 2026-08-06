@@ -2971,15 +2971,14 @@ export const backfillLegacyHandles = internalMutation({
 });
 
 // One-off maintenance: personHandles rows for phone and whatsapp were folded
-// by the old trim+lowercase key, which reads "(415) 555-0123" and
-// "+1 415 555 0123" as two different accounts. This recomputes valueKey with
-// handleValueKey's phone-aware fold, reading the source number back from
-// contactHandles rather than the row itself -- the old key is lossy (digits
-// alone cannot be un-stripped into an E.164 string), so contactHandles.value
-// is the only place the original number still lives. Two people who saved
-// the same number in different shapes can land on one key after this; that
-// is a duplicate for reportDuplicateHandleOwners to surface, not this
-// migration's to merge, same doctrine as it. Paged like the neighbors above.
+// by the old trim+lowercase key. This recomputes valueKey with
+// handleValueKey's phone-aware fold: country-prefixed numbers become E.164,
+// while plain national numbers become digits-only without guessing a region.
+// It reads the source number back from contactHandles rather than the row
+// itself because the old key did not preserve the exact display value. Two
+// people whose values now fold alike can land on one key after this; that is a
+// duplicate for reportDuplicateHandleOwners to surface, not this migration's
+// to merge, same doctrine as it. Paged like the neighbors above.
 // Run with:
 // npx convex run people:backfillPhoneHandleKeys '{}'
 // and re-run with '{"cursor": "<cursor>"}' until isDone.

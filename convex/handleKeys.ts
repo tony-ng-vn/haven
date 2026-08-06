@@ -66,8 +66,9 @@ function phoneValueKey(value: string): string {
 
 // The identity key behind a handle: the same account shared as "@Mai.Makes"
 // and as "mai.makes" has to resolve to one person. Platform-aware only for
-// phone and whatsapp, where "+1 415 555 0123" and "(415) 555-0123" are the
-// same account; every other platform keeps the plain trim/strip-@/lowercase
+// phone and whatsapp: a number carrying a country code is stored as E.164,
+// while a plain national number has formatting stripped but is never given a
+// guessed region. Every other platform keeps the plain trim/strip-@/lowercase
 // fold.
 export function handleValueKey(value: string, platform?: string): string {
   const display = handleDisplayValue(value);
