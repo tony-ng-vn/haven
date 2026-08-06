@@ -1,0 +1,680 @@
+You are helping me create a complete technical and product briefing for the current development version of **Haven**.
+
+Haven’s broader vision is a private relationship-memory system that helps users:
+
+* Remember important information about people they know
+* Search their personal network using natural language
+* Retrieve people based on memories, interests, skills, goals, relationships, and context
+* Eventually identify useful connections between people based on complementary needs, offers, interests, and characteristics
+* Provide grounded explanations for why a person or connection was suggested
+
+Another AI will use your briefing to help me clarify the product vision, define the domain model, evaluate the architecture, plan a Polygres-backed retrieval system, and create an implementation roadmap.
+
+## Your task
+
+Perform a thorough, read-only audit of the current Haven repository.
+
+Do not modify application code, dependencies, configuration, migrations, or infrastructure.
+
+Do not expose API keys, credentials, tokens, private user data, or environment-variable values. You may list the names of relevant environment variables, but redact their values.
+
+Base every conclusion on repository evidence. Clearly distinguish:
+
+* What currently exists
+* What is partially implemented
+* What is planned or implied
+* What you are inferring
+* What remains unknown
+
+When possible, cite evidence using:
+
+```text
+path/to/file.ext:line-start-line-end
+```
+
+If exact line numbers are unavailable, cite the file path and relevant class, function, component, table, route, or symbol.
+
+## Inspect
+
+Inspect all relevant parts of the repository, including:
+
+* README and project documentation
+* Package and dependency files
+* Application entry points
+* iOS targets and Swift code
+* Backend services
+* API routes
+* Database schemas and migrations
+* Authentication and authorization
+* Models and types
+* AI prompts and model integrations
+* Embedding and vector-search logic
+* Search and ranking logic
+* Memory extraction and summarization
+* Contact, person, relationship, and interaction models
+* Background jobs and scheduled processing
+* Sync and offline behavior
+* Encryption and key management
+* Analytics, logging, and crash reporting
+* Tests, fixtures, and seed data
+* Deployment and infrastructure configuration
+* TODOs, FIXME comments, stubs, mocks, and disabled features
+* Git history or open branches only when available and useful
+
+Do not spend substantial space describing generic framework boilerplate. Focus on Haven-specific decisions and behavior.
+
+## Return one Markdown document with this structure
+
+# Haven Current-State Briefing
+
+## 1. Executive Summary
+
+Explain in plain language:
+
+* What Haven currently is
+* What a user can actually do today
+* How complete the development version appears to be
+* The strongest parts of the implementation
+* The largest architectural or product risks
+* The three most important decisions that need to be made next
+
+## 2. Current Product Experience
+
+Describe the current user-facing experience from launch onward.
+
+For every existing workflow, explain:
+
+1. How the user enters it
+2. What screens or interfaces are involved
+3. What data the user provides
+4. What processing occurs
+5. What result the user receives
+6. What gets persisted
+7. What is mocked, incomplete, or broken
+
+Cover workflows such as:
+
+* Account creation and login
+* Onboarding
+* Adding or importing people
+* Adding memories or notes
+* Viewing a person
+* Editing and deleting information
+* Searching
+* Chatting with Haven
+* Receiving recommendations or matches
+* Managing privacy or permissions
+* Syncing across devices
+
+Only include workflows that exist or are clearly represented in the code.
+
+## 3. Intended Product Vision Found in the Repository
+
+Extract the product direction implied by:
+
+* Documentation
+* Comments
+* Naming
+* UI copy
+* Prompts
+* Data models
+* Incomplete features
+* TODOs
+* Test cases
+
+Separate:
+
+### Explicitly documented vision
+
+### Vision inferred from implementation
+
+### Conflicts or inconsistencies in the vision
+
+Do not treat inferred intentions as confirmed facts.
+
+## 4. Technology Stack
+
+Create a concise table covering:
+
+* iOS technologies
+* Backend framework
+* Database
+* Hosting
+* Authentication
+* Storage
+* AI model providers
+* Embedding providers
+* Search technologies
+* Analytics
+* Observability
+* Testing
+* CI/CD
+* Third-party integrations
+
+For each entry, include:
+
+* Technology
+* Purpose
+* Where it is configured or used
+* Whether it appears production-ready, experimental, or unused
+
+## 5. System Architecture
+
+Explain the current architecture and data flow.
+
+Include a Mermaid diagram showing:
+
+* iOS application
+* Local storage
+* Backend
+* Database
+* Authentication provider
+* Model providers
+* Embedding services
+* External integrations
+* Background processing
+* Analytics or logging
+
+Then explain the lifecycle of a typical request from the user interface to persistence and back.
+
+## 6. Repository Map
+
+Provide a curated repository tree showing only meaningful directories and files.
+
+For each major directory, explain:
+
+* Its responsibility
+* Important files
+* Architectural patterns used
+* Whether it contains active, legacy, generated, or experimental code
+
+Identify duplicate implementations, abandoned approaches, or confusing boundaries.
+
+## 7. Domain Model
+
+Document every Haven-specific entity that currently exists.
+
+Potential examples include:
+
+* User
+* Person
+* Contact
+* Memory
+* Note
+* Interaction
+* Relationship
+* Interest
+* Trait
+* Skill
+* Goal
+* Need
+* Offer
+* Match
+* Introduction
+* Conversation
+* Message
+* Embedding
+
+For each actual entity, include:
+
+* Purpose
+* Important fields
+* Relationships
+* Source of truth
+* Where it is defined
+* How it is created
+* How it is updated
+* How it is deleted
+* Whether it has timestamps
+* Whether it has provenance or source evidence
+* Whether it has confidence
+* Whether it has privacy or visibility controls
+* Whether it supports conflicting or stale information
+
+Then identify:
+
+* Missing entities
+* Overloaded entities
+* Ambiguous terminology
+* Important concepts represented only as free text
+* Places where the data model will make future retrieval or matching difficult
+
+Include a Mermaid entity-relationship diagram based only on the current implementation.
+
+## 8. Data Storage and Synchronization
+
+Explain:
+
+* What is stored locally
+* What is stored remotely
+* What is cached
+* What is considered the source of truth
+* How synchronization works
+* How conflicts are handled
+* Whether offline usage works
+* How deletion propagates
+* Whether migrations exist
+* Whether multi-device usage is supported
+
+Estimate likely storage pressure only when repository evidence supports it.
+
+## 9. Privacy and Security
+
+Audit the implementation of:
+
+* Authentication
+* Authorization
+* Per-user data isolation
+* Database row-level security
+* Encryption in transit
+* Encryption at rest
+* End-to-end encryption, if any
+* iOS Keychain usage
+* Secure Enclave usage
+* Cloud key management
+* Sensitive data in logs
+* Analytics collection
+* Crash reports
+* Model-provider data exposure
+* Backups
+* Account deletion
+* Data export
+* Key recovery
+* Multi-device key sharing
+
+For every claim, state whether it is:
+
+* Implemented
+* Partially implemented
+* Configured externally but not verifiable
+* Planned
+* Missing
+* Unknown
+
+Call out any situation where marketing the app as “local,” “private,” “encrypted,” or “zero knowledge” would currently be misleading.
+
+## 10. Current AI and Agent System
+
+Explain all current AI behavior.
+
+Cover:
+
+* Models used
+* Where inference runs
+* Prompt construction
+* System prompts
+* Tool or function calling
+* Structured output
+* Context assembly
+* Token management
+* Model fallback behavior
+* Streaming
+* Error handling
+* Rate limiting
+* Cost controls
+* Safety rules
+* Hallucination prevention
+* Citations or evidence grounding
+
+For each AI feature, trace:
+
+```text
+User input
+→ preprocessing
+→ retrieved context
+→ model request
+→ parsing
+→ application action
+→ stored output
+→ user-visible result
+```
+
+Include exact file and symbol references.
+
+## 11. Memory Pipeline
+
+Explain whether Haven currently distinguishes between:
+
+* Raw source information
+* Interactions
+* Notes
+* Extracted memories
+* Structured assertions
+* Summaries
+* Person profiles
+* Interests
+* Traits
+* Current goals
+* Historical facts
+* Model-generated inferences
+
+For each stage that exists, explain:
+
+* Input
+* Processing
+* Model or algorithm
+* Output format
+* Persistence
+* Confidence handling
+* Provenance
+* Deduplication
+* Contradiction handling
+* Reprocessing
+* User correction
+* Deletion behavior
+
+Identify where an LLM-generated inference could accidentally become treated as a confirmed fact.
+
+## 12. Search and Retrieval
+
+Describe the current search implementation.
+
+Identify whether it uses:
+
+* Exact matching
+* SQL filtering
+* Full-text search
+* Fuzzy matching
+* Embeddings
+* Vector similarity
+* Graph traversal
+* LLM-generated queries
+* Reranking
+* Hybrid retrieval
+
+For natural-language search, explain:
+
+* How the query is interpreted
+* What is searched
+* How candidates are generated
+* How results are ranked
+* How permissions are applied
+* How evidence is returned
+* How results are explained
+
+Give three representative examples based on the current code.
+
+## 13. Matching and Recommendations
+
+Explain what matching currently means in the code.
+
+Determine whether Haven is matching:
+
+* Queries to memories
+* Queries to people
+* Similar people
+* Complementary needs and offers
+* Shared interests
+* Relationship paths
+* Potential introductions
+
+Document:
+
+* Candidate generation
+* Scoring factors
+* Ranking
+* Thresholds
+* Privacy restrictions
+* Evidence
+* Recency
+* User feedback
+* Consent before introductions
+
+Clearly state what is implemented versus aspirational.
+
+## 14. Polygres Readiness Assessment
+
+Evaluate how the current architecture could map to Polygres for hybrid relational, lexical, vector, and graph retrieval.
+
+Do not redesign the entire system yet. Assess compatibility.
+
+Cover:
+
+* Existing Postgres usage
+* Tables that could become graph nodes
+* Relationships that could become graph edges
+* Text suitable for lexical search
+* Records suitable for embeddings
+* Existing vector infrastructure
+* Stable IDs and foreign keys
+* User isolation
+* Data that must not be exposed to server-side retrieval
+* Potential graph supernodes or noisy relationships
+* Migration complexity
+* Vendor lock-in
+* Operational unknowns
+
+Propose an initial Polygres retrieval shape for:
+
+```text
+“Find people I know who may be useful for an education startup.”
+```
+
+Show the likely stages:
+
+1. Query interpretation
+2. Structured filters
+3. Lexical retrieval
+4. Vector retrieval
+5. Graph expansion
+6. Reranking
+7. Evidence collection
+8. Response generation
+
+Label this section as an architectural assessment, not an implementation plan.
+
+## 15. Current API Surface
+
+List all meaningful backend endpoints, RPC functions, GraphQL operations, or service methods.
+
+For each, include:
+
+* Method or operation
+* Path or name
+* Authentication requirements
+* Input
+* Output
+* Data modified
+* Callers
+* Error behavior
+* Implementation status
+
+Exclude generic framework endpoints unless relevant.
+
+## 16. Build, Run, Test, and Deploy
+
+Provide verified instructions for:
+
+* Installing dependencies
+* Configuring environment variables
+* Running the backend
+* Running the iOS app
+* Running migrations
+* Seeding data
+* Running tests
+* Running linters
+* Building production artifacts
+* Deploying
+
+Do not invent missing instructions.
+
+List blockers that would prevent a new developer from running the project.
+
+Include environment-variable names, but never include their values.
+
+## 17. Test Coverage and Reliability
+
+Explain:
+
+* What is tested
+* What is not tested
+* Test quality
+* Use of mocks
+* Presence of integration tests
+* Presence of retrieval evaluations
+* Presence of AI-output evaluations
+* Presence of privacy or authorization tests
+* Known flaky or disabled tests
+
+Identify the five highest-risk behaviors lacking tests.
+
+## 18. Current Development Status
+
+Create a feature matrix with these labels:
+
+* Working
+* Partially working
+* Mocked
+* Stubbed
+* Planned
+* Broken
+* Unknown
+
+Include major features such as:
+
+* Authentication
+* Onboarding
+* Person creation
+* Contact import
+* Memory creation
+* Memory extraction
+* Person profiles
+* Search
+* AI chat
+* Semantic retrieval
+* Relationship graph
+* Matching
+* Introductions
+* Offline mode
+* Cloud sync
+* Encryption
+* Account deletion
+* Data export
+
+Provide evidence for each status.
+
+## 19. Technical Debt and Risks
+
+Rank the most important issues by:
+
+* User impact
+* Privacy impact
+* Data integrity impact
+* Difficulty to fix
+* Likelihood of blocking future work
+
+Pay particular attention to:
+
+* Multiple sources of truth
+* Unstructured or denormalized memories
+* Missing provenance
+* Missing confidence
+* Weak authorization
+* Prompt injection
+* Cross-user retrieval
+* Stale embeddings
+* Deleted data remaining in derived indexes
+* LLM outputs becoming permanent facts
+* Tight coupling to a model provider
+* Tight coupling to a database vendor
+* Lack of evaluation datasets
+
+## 20. Important Existing Decisions
+
+List decisions already encoded in the repository, including decisions that might not have been intentionally documented.
+
+For every decision, include:
+
+* The apparent decision
+* Evidence
+* Consequences
+* How difficult it would be to reverse
+* Whether it should be preserved, reviewed, or replaced
+
+## 21. Open Questions
+
+Provide a prioritized list of questions I need to answer as the founder.
+
+Do not ask questions that can be answered from the repository.
+
+Focus on decisions such as:
+
+* Primary user and first use case
+* Privacy promise
+* Cloud versus on-device processing
+* What counts as a memory
+* Whether inferred traits require confirmation
+* What Haven is allowed to infer
+* What information can be used for matching
+* Whether matches require current intent
+* Whether Haven can suggest people outside direct contacts
+* Consent before introductions
+* Data retention
+* Business model
+* Acceptable latency
+* Acceptable model cost
+* Whether Polygres is strategic or experimental
+
+Rank the questions by how strongly they affect architecture or product scope.
+
+## 22. Recommended Next Investigation
+
+Do not create a full roadmap.
+
+Recommend the next three discovery or prototype activities based on the largest unresolved risks.
+
+For each activity, state:
+
+* Question being answered
+* Why it matters
+* Required input
+* Expected output
+* Success criteria
+
+## 23. Evidence Index
+
+Create a table of the most important repository evidence:
+
+| Topic | File or symbol | What it demonstrates |
+| ----- | -------------- | -------------------- |
+
+## 24. Compact Context for Another AI
+
+End with a self-contained summary of no more than 2,000 words titled:
+
+# Context to Give the Planning AI
+
+This final section must summarize:
+
+* Haven’s current product
+* Current architecture
+* Current domain model
+* Current AI and retrieval behavior
+* Current privacy model
+* Current implementation status
+* Major constraints
+* Confirmed technical decisions
+* Important uncertainties
+* The most relevant repository paths
+* The highest-priority founder questions
+
+It should be possible to paste only this final section into another AI and have that AI understand the current Haven development version.
+
+## Quality requirements
+
+* Be concrete rather than generic.
+* Use repository evidence.
+* Do not flatter the implementation.
+* Do not rewrite the product vision to sound more complete than it is.
+* Do not confuse UI placeholders with working functionality.
+* Do not confuse schema presence with actively used behavior.
+* Do not assume TODO comments represent committed plans.
+* Do not assume encryption at rest means end-to-end encryption.
+* Do not assume embedding similarity equals relationship matching.
+* Do not expose secrets or private data.
+* State uncertainty directly.
+* Prefer accurate incompleteness over confident speculation.
+
+Return the complete Markdown briefing in your response.
+
+If the response is too long for one message, prioritize completing **Context to Give the Planning AI**, then continue the remaining sections in numbered parts without repeating earlier content.
