@@ -5,18 +5,22 @@ import { Footer } from "./Footer";
 import { WaitlistForm } from "./WaitlistForm";
 import { WAITLIST_COPY } from "./waitlistCopy";
 
-// inhavens.com/#/ios.
+// inhavens.com/, and inhavens.com/#/ios.
 //
 // Haven for iPhone is the primary client -- mvp-design.md owns the product
 // vision -- and it is still in development, so this page's job is to
-// introduce it honestly and carry the waitlist signup that used to sit at the
-// site's root. WAITLIST_COPY (eyebrow, headline, tagline) is the pitch that
-// page always carried; it lives here now because this is where joining
-// happens. WaitlistForm is the ask itself, extracted so this page reuses it
-// rather than duplicating the join logic.
+// introduce it honestly and carry the waitlist signup. It is also the bare
+// root's front door again (see resolveView in lib.ts): the owner tried a
+// landing hero there instead for a while, then asked for the waitlist back,
+// so the two landing designs live on at their own urls (/landing,
+// #/landing2) rather than being deleted, and this is what a stranger with no
+// link at all actually meets. WAITLIST_COPY (eyebrow, headline, tagline) is
+// the pitch this page carries; WaitlistForm is the ask itself, extracted so
+// this page reuses it rather than duplicating the join logic.
 //
-// Public and unauthenticated, like the sky download page: reachable at
-// "#/ios" (and its older alias "#/join") for anyone with the link.
+// Public and unauthenticated, like the sky download page: reachable at the
+// root, "#/ios", and the older alias "#/join" alike, for anyone with any of
+// those links.
 const COMING = [
   {
     title: "One profile",

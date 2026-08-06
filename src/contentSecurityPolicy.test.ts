@@ -152,7 +152,7 @@ describe("the content security policy", () => {
   });
 });
 
-// demo-sky.html is a given file (see LandingPage.tsx / SkyDemoEmbed.tsx): a
+// demo-sky.html is a given file (see PolishedLandingPage.tsx / SkyDemoEmbed.tsx): a
 // single self-contained page with its own inline <script> and <style> and no
 // external requests at all. The site's general policy blocks inline script
 // execution and framing outright, so it needs its own narrower rule rather

@@ -1,41 +1,33 @@
-// The minimal nav shared by every public page (the landing hero, Your Sky,
-// and the iOS waitlist page): the Haven mascot and wordmark left, three
-// plain-text links right. No pills, no background of its own -- it reads
-// directly on the dark sky behind it, wherever that page's own DriftSky
-// sits.
+// The minimal nav shared by every public page (the waitlist root, Your Sky,
+// the iOS product page, and both landing concepts): the Haven mascot and
+// wordmark, left, linking home. Nothing else -- no pills, no background of
+// its own -- it reads directly on the dark sky behind it, wherever that
+// page's own DriftSky sits.
 //
-// Absolutely positioned so it drops onto any positioning context (the
-// landing hero's `position: relative` box, or the other pages' `position:
-// fixed` .card-page) without needing to know which.
+// Absolutely positioned so it drops onto any positioning context (a
+// `position: relative` hero, or the other pages' `position: fixed`
+// .card-page) without needing to know which.
 //
 // The mascot icon used to be opt-in, added only for Landing2Page's own
 // glass-hero composition; the owner then asked for it on every page, and
-// bigger, so it is now unconditional -- there is no prop left to turn it
-// off.
+// bigger, so it is now unconditional.
 //
-// One remaining opt-in prop:
-// - links defaults to true; Sky and Landing2 opt out (links={false}). On
-//   Sky, of the cluster's three destinations, "Your Sky" is moot (already
-//   the page you are on) and "iPhone" is covered by the page's own second
-//   hero CTA; on Landing2 the owner wants nothing sitting on top of the
-//   glass artwork, and its own two hero CTAs cover the same ground. "Sign
-//   in" is not covered by anything on either page and is intentionally
-//   dropped, not offered elsewhere -- the wordmark, which stays either way,
-//   is the way back to it (via root).
-export function TopNav({ links = true }: { links?: boolean }) {
+// The "Your Sky / iPhone / Sign in" links cluster that used to sit to the
+// right of the wordmark is gone -- the owner asked for it removed twice, and
+// the second time asked for it gone everywhere, not opted out of per page.
+// There is no prop left to configure it back in: this component is
+// brand-only, full stop, on every caller. Each page's own CTAs carry the
+// navigation onward now (Sky's and Landing2's hero buttons, the landing
+// pages' two product sections); sign-in is reachable only by typing
+// "#/sign-in" directly, an owner-accepted consequence of dropping the last
+// link that pointed at it.
+export function TopNav() {
   return (
     <header className="top-nav">
       <a className="top-nav-brand" href="/">
-        <img className="top-nav-icon" src="/icon-192.png" alt="" />
+        <img className="top-nav-icon" src="/icon-nav.png" alt="" />
         Haven
       </a>
-      {links ? (
-        <nav className="top-nav-links" aria-label="Haven">
-          <a href="#/sky">Your Sky</a>
-          <a href="#/ios">iPhone</a>
-          <a href="#/sign-in">Sign in</a>
-        </nav>
-      ) : null}
     </header>
   );
 }

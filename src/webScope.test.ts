@@ -96,9 +96,8 @@ describe("the web stays a front door and a viewer", () => {
     // App.tsx too, not merely present on disk.
     const app = readFileSync(join("src", "App.tsx"), "utf8");
     for (const surface of [
-      "LandingPage", // the front door
       "SkyPage", // Your Sky for Mac, the download landing
-      "IosPage", // Haven for iPhone, the waitlist landing
+      "IosPage", // Haven for iPhone -- also the front door, at root
       "SearchAdd", // your network as a sky, search, add by name
       "PersonDetail", // one person's page
       "CardPage", // the public card a stranger opens

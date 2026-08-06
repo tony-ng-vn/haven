@@ -50,7 +50,7 @@ export function SkyPage() {
   return (
     <div className="card-page">
       <DriftSky className="card-sky" />
-      <TopNav links={false} />
+      <TopNav />
       <main className="sky-page">
         <div className="sky-hero">
           <span className="sky-eyebrow">Your Sky, for Mac</span>

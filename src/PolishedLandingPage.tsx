@@ -6,17 +6,17 @@ import { Footer } from "./Footer";
 
 // inhavens.com/landing, signed out.
 //
-// A polished copy of the default landing (LandingPage.tsx) for the owner to
-// compare side by side: identical content, structure, copy, CTAs, DriftSky
-// hero and reused components -- only the type, motion, and focus treatment
-// are elevated, all of it scoped under the "landing-polished" class on the
-// root element so nothing here can bleed into the untouched default (see
-// index.css's own ".landing-polished" section, and driftSkyCanvasSizing's
-// .landing-sky host class, reused as-is rather than duplicated).
-//
-// LandingPage.tsx itself, its test, and every style it uses stay
-// byte-identical to main -- this file exists so a changed mind never has to
-// touch either.
+// Started as a polished copy of an earlier default landing, kept side by
+// side for the owner to compare against the untouched original. That
+// original page and its test are gone now -- the owner moved the bare root
+// to the iOS waitlist page instead (see resolveView in lib.ts) -- so this is
+// the sole surviving landing hero design: content, structure, copy, CTAs,
+// DriftSky hero and reused components, with elevated type, motion, and focus
+// treatment, all of it scoped under the "landing-polished" class on the root
+// element (see index.css's own ".landing-polished" section, and
+// driftSkyCanvasSizing's .landing-sky host class, reused as-is rather than
+// duplicated). Reachable at its own /landing url for comparison against
+// Landing2Page's own concept at #/landing2.
 function prefersFinePointer(): boolean {
   return (
     typeof window !== "undefined" &&
@@ -26,9 +26,8 @@ function prefersFinePointer(): boolean {
 
 // A below-fold section's own reveal: invisible until it has been seen once,
 // then settled -- see the "once" comment on the observer below. Local to this
-// file since nothing else needs it yet; LandingPage's sections do not get
-// this treatment (byte-identical to main), and Landing2Page's single hero has
-// no below-fold content of its own to reveal.
+// file since nothing else needs it yet; Landing2Page's single hero has no
+// below-fold content of its own to reveal.
 function useRevealOnScroll<T extends HTMLElement>() {
   const ref = useRef<T | null>(null);
   const [revealed, setRevealed] = useState(false);
@@ -61,8 +60,8 @@ function useRevealOnScroll<T extends HTMLElement>() {
 }
 
 export function PolishedLandingPage() {
-  // Same read-once reasoning as LandingPage's own prefersFinePointer: a
-  // device's pointer type does not change mid-session.
+  // Read once, not tracked live: a device's pointer type does not change
+  // mid-session (same reasoning as this file's own prefersFinePointer above).
   const [interactive] = useState(prefersFinePointer);
   // Written straight to the DOM via a ref rather than React state: this
   // attribute only ever drives a CSS transition

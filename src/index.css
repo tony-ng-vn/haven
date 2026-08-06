@@ -2778,19 +2778,22 @@ a.card-handle:focus-visible {
 }
 
 /* ---------------------------------------------------------------------------
-   Haven landing (inhavens.com/, signed out)
+   Landing hero (inhavens.com/landing, signed out) -- PolishedLandingPage.tsx
 
-   The front door: a full-viewport hero that puts the product's own world on
-   screen, then two full-width sections (not cards) introducing each product,
-   and a quiet footer. Ordinary document flow, unlike .card-page: the hero is
-   the one fixed-height box (one viewport tall, position: relative), and the
-   rest of the page scrolls past it.
+   Not the front door anymore -- the bare root now serves the iOS waitlist
+   page instead (see resolveView in lib.ts) -- but still a full page in its
+   own right, reachable for comparison against Landing2Page's own concept: a
+   full-viewport hero that puts the product's own world on screen, then two
+   full-width sections (not cards) introducing each product, and a quiet
+   footer. Ordinary document flow, unlike .card-page: the hero is the one
+   fixed-height box (one viewport tall, position: relative), and the rest of
+   the page scrolls past it.
    ------------------------------------------------------------------------ */
 /* A fixed, page-wide background layer, not scoped to the hero: the sky
    continues behind every section as the page scrolls, the way the old
    full-bleed waitlist page did for its one screen. One canvas for the whole
-   page (see LandingPage.tsx), not one per section -- a second canvas would
-   double the animation cost for no visible gain when the first already
+   page (see PolishedLandingPage.tsx), not one per section -- a second canvas
+   would double the animation cost for no visible gain when the first already
    covers the viewport. z-index: -1 rather than a stacking context on .landing
    keeps this simple: it paints behind ordinary in-flow content by the normal
    stacking rules, with nothing else needing a z-index to sit above it.
@@ -2884,7 +2887,7 @@ a.card-handle:focus-visible {
    renders solo outside this row -- the Sky page's own bottom repeat button --
    and still depends on those values there. Unscoped to .landing-hero-ctas
    itself rather than any one page, so every caller that composes the two
-   buttons in this row (root, /landing, landing2, and Sky's hero) gets it. */
+   buttons in this row (/landing, landing2, and Sky's hero) gets it. */
 .landing-hero-ctas .sky-download {
   align-self: auto;
   margin-top: 0;
@@ -2920,10 +2923,11 @@ a.card-handle:focus-visible {
   color: rgba(255, 255, 255, 0.6);
 }
 
-/* Shared by the landing hero, Your Sky, and the iOS page: wordmark left,
-   three plain links right, no pill chrome. Absolutely positioned so it drops
-   onto either a position: relative hero or a position: fixed .card-page
-   without needing to know which. */
+/* Shared by every public page: the wordmark, brand-only, nothing to its
+   right -- the owner had the links cluster that used to sit there removed
+   site-wide. Absolutely positioned so it drops onto either a position:
+   relative hero or a position: fixed .card-page without needing to know
+   which. */
 .top-nav {
   position: absolute;
   top: 0;
@@ -2948,23 +2952,6 @@ a.card-handle:focus-visible {
   font-weight: 500;
   color: #fff;
   text-decoration: none;
-}
-
-.top-nav-links {
-  display: flex;
-  align-items: center;
-  gap: 22px;
-}
-
-.top-nav-links a {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.75);
-  text-decoration: none;
-}
-
-.top-nav-links a:hover,
-.top-nav-links a:focus-visible {
-  color: #fff;
 }
 
 /* The compliance footer (Footer.tsx), shared by the landing page, Your Sky,
@@ -3088,13 +3075,14 @@ a.card-handle:focus-visible {
    Polished landing (inhavens.com/landing) -- PolishedLandingPage.tsx
 
    Every selector below is scoped under .landing-polished, the class the root
-   element carries alongside the plain .landing it reuses. That is the whole
-   contract that keeps LandingPage.tsx's own page byte-for-byte identical:
-   nothing here can ever match an element on the default landing, because
-   nothing there carries this class. Reused pieces (TopNav, Footer,
-   SkyDemoEmbed, .sky-download, .landing-cta-secondary, .landing-hero-title,
-   .top-nav-links, ...) keep their base rules completely untouched above --
-   this section only adds to them, under this one extra ancestor class.
+   element carries alongside the plain .landing base it reuses -- .landing-sky,
+   .landing-hero and the rest of that system were written for an earlier
+   landing component, deleted once the owner moved the root to the iOS
+   waitlist page; PolishedLandingPage.tsx is their sole surviving host now, at
+   inhavens.com/landing. Reused pieces (TopNav, Footer, SkyDemoEmbed,
+   .sky-download, .landing-cta-secondary, .landing-hero-title, ...) keep their
+   base rules completely untouched above -- this section only adds to them,
+   under this one extra ancestor class.
    ------------------------------------------------------------------------ */
 
 /* Satoshi for everything except the serif headline: set once, here, and
@@ -3133,7 +3121,6 @@ a.card-handle:focus-visible {
   .landing-polished .sky-download,
   .landing-polished .landing-cta-secondary,
   .landing-polished .top-nav-brand,
-  .landing-polished .top-nav-links a,
   .landing-polished .demo-panel {
     transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
   }
@@ -3141,7 +3128,6 @@ a.card-handle:focus-visible {
   .landing-polished .sky-download:active,
   .landing-polished .landing-cta-secondary:active,
   .landing-polished .top-nav-brand:active,
-  .landing-polished .top-nav-links a:active,
   .landing-polished .demo-panel:active {
     transform: scale(0.97);
   }
@@ -3150,8 +3136,7 @@ a.card-handle:focus-visible {
 /* Hover, fine pointers only -- a coarse pointer has no hover state to fake,
    and faking one there just leaves a "stuck" highlight after a tap. */
 @media (hover: hover) and (pointer: fine) {
-  .landing-polished .top-nav-brand,
-  .landing-polished .top-nav-links a {
+  .landing-polished .top-nav-brand {
     transition: opacity 150ms var(--ease-out), color 150ms var(--ease-out);
   }
 
@@ -3401,8 +3386,8 @@ a.card-handle:focus-visible {
    on top of the image (see .landing2-sky's own comment for why the box
    itself, not only the mask, is what keeps the figure on screen).
 
-   .landing-polished is reused wholesale on the root (see that section
-   above): Satoshi, the press/hover/focus treatment on the shared
+   .landing-polished is reused wholesale from the polished landing (see that
+   section above): Satoshi, the press/hover/focus treatment on the shared
    .sky-download / .landing-cta-secondary / TopNav classes, and the
    [data-mounted] entrance mechanism all apply here for free, which is why
    this page's own rules below only add the new layout and the two
@@ -3544,10 +3529,21 @@ a.card-handle:focus-visible {
   justify-content: flex-start;
 }
 
+/* icon-nav.png (not icon-192/512, which stay wired to the PWA manifest and
+   the SERP logo) is a trimmed asset: alpha-cropped to the mascot's own bbox
+   plus a symmetric 3%-of-height transparent border on all four sides, so the
+   art itself -- not empty canvas -- fills this box, and its content center
+   sits exactly on the box's own center. That symmetry is what makes plain
+   flexbox centering on .top-nav-brand (align-items: center) land the mascot
+   optically centered against the wordmark; the old icon-192.png crop had
+   asymmetric margins that no amount of CSS nudging could center cleanly.
+   Height is the controlling dimension (the trimmed art is taller than wide,
+   ~300:363) -- width: auto keeps the aspect ratio rather than pinning both
+   and risking a stretch. */
 .top-nav-icon {
   display: block;
-  width: 32px;
-  height: 32px;
+  height: 40px;
+  width: auto;
 }
 
 .landing2-art {

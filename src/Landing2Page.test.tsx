@@ -83,7 +83,7 @@ describe("Landing2Page", () => {
 
   test("hosts the nav and the footer rather than duplicating their logic", () => {
     render(<Landing2Page />);
-    // TopNav and Footer are not stubbed here (unlike LandingPage.test.tsx):
+    // TopNav and Footer are not stubbed here (unlike PolishedLandingPage.test.tsx):
     // both are trivial and already covered by their own dedicated tests, so
     // rendering them for real is simpler than adding two more module mocks.
     expect(screen.getByText("Haven", { selector: ".top-nav-brand" })).toBeTruthy();
@@ -97,16 +97,8 @@ describe("Landing2Page", () => {
     const { container } = render(<Landing2Page />);
     const icon = container.querySelector(".top-nav-brand .top-nav-icon");
     expect(icon).toBeTruthy();
-    expect(icon?.getAttribute("src")).toBe("/icon-192.png");
+    expect(icon?.getAttribute("src")).toBe("/icon-nav.png");
     expect(icon?.getAttribute("alt")).toBe("");
-  });
-
-  // TopNav's links cluster ("Your Sky" / "iPhone" / "Sign in") sat on top of
-  // the glass artwork -- the owner asked for it gone on this page. TopNav is
-  // rendered for real above (links={false}), so this checks the real markup.
-  test("has no top nav links cluster on top of the artwork", () => {
-    const { container } = render(<Landing2Page />);
-    expect(container.querySelector(".top-nav-links")).toBeNull();
   });
 
   // Reused, not copied: the same host class driftSkyCanvasSizing.test.ts

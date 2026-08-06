@@ -2,10 +2,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 
-// Mirrors LandingPage.test.tsx: this page's own job is the elevated
-// typography/motion/focus treatment and the below-fold reveal wiring: the
-// nav, the demo embed, and the footer each have their own dedicated tests, so
-// all three are stood in for here the same way LandingPage's test does.
+// This page's own job is the elevated typography/motion/focus treatment and
+// the below-fold reveal wiring: the nav, the demo embed, and the footer each
+// have their own dedicated tests, so all three are stood in for here rather
+// than exercised for real.
 const driftSky = vi.hoisted(() => ({
   props: null as Record<string, unknown> | null,
   mounts: 0,

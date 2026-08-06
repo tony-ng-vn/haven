@@ -85,18 +85,6 @@ describe("the sky download page", () => {
     expect(body).toMatch(/on your mac/i);
   });
 
-  // TopNav's links cluster is redundant here: the two hero CTAs above
-  // already cover both destinations it would otherwise offer (see TopNav's
-  // own `links` prop comment). The wordmark stays as the way back out.
-  test("does not repeat TopNav's links cluster, since its own two CTAs cover it", () => {
-    const { container } = render(<SkyPage />);
-    expect(container.querySelector(".top-nav-links")).toBeNull();
-    const hrefs = Array.from(container.querySelectorAll("a")).map((a) =>
-      a.getAttribute("href"),
-    );
-    expect(hrefs).not.toContain("#/sign-in");
-  });
-
   test("links back to the front door", () => {
     render(<SkyPage />);
     const hrefs = Array.from(document.querySelectorAll("a")).map((a) =>

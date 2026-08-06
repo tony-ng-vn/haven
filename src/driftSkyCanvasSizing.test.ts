@@ -27,11 +27,12 @@ import { describe, expect, test } from "vitest";
 const css = readFileSync("src/index.css", "utf8");
 
 // Every class known to host a <DriftSky>. See App.tsx (SignIn -> .wl-sky),
-// SkyPage.tsx / IosPage.tsx (-> .card-sky), and LandingPage.tsx /
-// PolishedLandingPage.tsx (both -> .landing-sky, reused rather than
-// duplicated). Landing2Page.tsx also hosts one (-> .landing2-sky), but it is
-// NOT in this array: unlike these three, its width is deliberately not
-// 100% (see its own describe block below, and its comment in index.css) --
+// SkyPage.tsx / IosPage.tsx (-> .card-sky), and PolishedLandingPage.tsx
+// (-> .landing-sky, the sole surviving host of that class since the earlier
+// landing component it was reused from was deleted). Landing2Page.tsx also
+// hosts one (-> .landing2-sky), but it is NOT in this array: unlike these
+// three, its width is deliberately not 100% (see its own describe block
+// below, and its comment in index.css) --
 // the box itself is sized to confine DriftSky's wander path to the navy
 // zone, not just a full-width canvas hidden behind a mask, so it cannot
 // share the 100%/100% check every other host class gets. A new FULL-WIDTH
@@ -66,7 +67,7 @@ describe("DriftSky canvas hosts stretch to fill their box", () => {
 
   // The landing page's sky is the one of the three that must be fixed (a
   // page-wide background layer, not scoped to one section) rather than
-  // absolute -- see LandingPage.tsx and the comment on .landing-sky.
+  // absolute -- see PolishedLandingPage.tsx and the comment on .landing-sky.
   test(".landing-sky is fixed, not scoped to a scrolling ancestor", () => {
     expect(ruleFor(".landing-sky")).toMatch(/position:\s*fixed/);
   });

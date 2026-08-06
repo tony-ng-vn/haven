@@ -7,7 +7,6 @@ import { SearchAdd } from "./SearchAdd";
 import { PersonDetail } from "./PersonDetail";
 import { CaptureTriage } from "./CaptureTriage";
 import { FeedbackWidget } from "./FeedbackWidget";
-import { LandingPage } from "./LandingPage";
 import { PolishedLandingPage } from "./PolishedLandingPage";
 import { DriftSky } from "./DriftSky";
 import {
@@ -248,8 +247,8 @@ function writeSessionHint(present: boolean): void {
 export default function App() {
   const { isLoading, isAuthenticated } = useConvexAuth();
 
-  // The hash is tracked live so a "Sign in" tap on the waitlist (or the back
-  // button) re-routes in place, without a reload.
+  // The hash is tracked live so navigating between the site's hash routes
+  // (or the back button) re-routes in place, without a reload.
   const [hash, setHash] = useState(() => window.location.hash);
   useEffect(() => {
     const onHashChange = () => setHash(window.location.hash);
@@ -291,10 +290,11 @@ export default function App() {
   if (view === "landing-polished") return <PolishedLandingPage />;
   if (view === "support") return <SupportPage />;
   if (view === "sky") return <SkyPage />;
-  if (view === "ios") return <IosPage />;
   if (view === "landing2") return <Landing2Page />;
   if (view === "home") return <Home />;
   if (view === "signin") return <SignIn />;
   if (view === "splash") return <Splash />;
-  return <LandingPage />;
+  // "ios" and everything resolveView falls back to (the bare root included)
+  // land here -- the iOS waitlist page is the front door again.
+  return <IosPage />;
 }
