@@ -1,0 +1,1308 @@
+So there are three team leads to work and one out first is we need to look into how can we get user contact if they give us a phone number, like, an Apple contact now. That's the first thing. Second, a person can have multiple profile if there's multiple profile, like, Instagram, x, etcetera, how do we know if that belong to one person or a different person? I guess when you taught... put in the people name and say, like, it's just a text box. It's gonna be, like, a text box plus you'll show up the real name so we can choose the way know, like, it... the name ready... they already match. And that name show we have some info about them so that we know whether it's the same person or not not the same person that we choose to put in, then it will add the social profile into that contact else create a new contact. Last thing we need to look into is that how can we monitor the URL of the LinkedIn x and Instagram because as user changed your profile name, that the username, their URL will also change. So it's mean we're gonna... we we're gonna direct the current profile into the wrong profile. It's not access. Please look into that so we don't mistaken it
+
+---
+
+<task-notification>
+<task-id>a1ce7707fce4a65c1</task-id>
+<tool-use-id>toolu_01GH1fsuUg4FMTUFDtbyhayH</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/6e71617f-d5f4-48a0-a3a5-a2056577d301/tasks/a1ce7707fce4a65c1.output</output-file>
+<status>completed</status>
+<summary>Agent "Map contact/profile data model" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Research complete. Findings below.
+
+---
+
+# Person / contact / social-profile modeling in euno-app (Haven)
+
+## 0. Correction up front: there is no Composio ContactConnector
+
+The premise "ContactConnector using Composio backend OAuth" is not what the code does.
+
+`ios/Haven/Onboarding/ContactConnector.swift` is **ClerkKit**, not Composio. It calls `Clerk.shared.user`, `user.verifiedExternalAccounts`, `user.createExternalAccount(provider:)`, `half.prepareReauthorization()`, `pending.reauthorize()` — Clerk's own external-account linking, driven client-side through `ASWebAuthenticationSession`. Providers are `.x` and `.linkedinOidc` (`ContactScreen.swift:243-263`).
+
+The only Composio artifact in the repo is `COMPOSIO_API_KEY` in `.env.local` (untracked env file). The two commits whose subjects mention Composio (`9657518` "I add composio api key inside .env.local", `0451a65` "What about composio? are we using composio") touched **only** `.entire/metadata/**` session-transcript files, on branch `entire/6f9a41a-e3b0c4`. Zero references in `convex/`, `src/`, `ios/`, `package.json`, or any doc.
+
+---
+
+## 1. Convex data model
+
+### `convex/schema.ts` — the four person-related tables
+
+**`people`** (schema.ts:14-104) — one private row per person the user knows, owned by `userId` (Clerk `tokenIdentifier`). There is **no shared/global person table**; each user's directory is entirely their own rows.
+
+Identity-bearing fields, in three coexisting generations:
+
+| Field | Line | Shape |
+|---|---|---|
+| `platform` + `handle` (scalars) | 29-30 | Legacy, from screenshot capture. One handle only. |
+| `link` | 24 | Free-form string. **The only field that holds a raw URL.** |
+| `contactHandles: [{platform, value}]` | 60 | Current structured form. Capped at 8 (`MAX_CONTACT_HANDLES`, people.ts:239), one per normalized platform. |
+| `preferredPlatform` | 64 | Must name a platform present in `contactHandles`. |
+
+Other fields: `name`, `normalizedName`, `context` (the user's note), `city`/`cityKey`, `company`/`companyKey`, `role`/`roleKey`, `headline`, `bio`, `photoStorageId`, `screenshotId`, `embedding`/`embeddedText`, `searchText`, `havenContactUserId`, `connectionEndedAt`.
+
+**`personHandles`** (schema.ts:135-146) — the scalar identity index behind the array. Convex cannot index inside arrays, so `{userId, personId, platform, valueKey}` rows are maintained in the same transaction as every `contactHandles` write. Index `by_user_and_platform_and_valueKey` is the dedup key for the whole system.
+
+**`connections`** (schema.ts:150-161) — mutual, both-sides-consented Haven-user links: `{userAId, userBId, personAId, personBId, status: "connected"}`. Each side keeps its own private `people` row; this row is only the access gate for `sharedNotes`.
+
+**`profiles`** (schema.ts:218-243) — the user's *own* card. `handles: [{platform, value, verified}]` where `platform` is a **closed union**: `instagram | x | linkedin | phone` (`profileFields.ts:9-14`). Email is deliberately excluded (comment at profileFields.ts:7-8).
+
+**`memories`** (schema.ts:112-129) — one row per line of `people.context`, with its own vector.
+
+### Handles are bare usernames, not URLs, not structured objects
+
+`convex/handleKeys.ts` is the single folding seam:
+- `handleDisplayValue` (line 10-12): trim, strip leading `@`.
+- `handleValueKey` (line 17-19): the above, lowercased. Comment: *"Deliberately naive in v1; per-platform rules can grow here later."*
+- `handleIndexKeys` (line 24-35): platform trimmed + lowercased, value → `valueKey`.
+
+So `instagram/mai.makes` is stored as `value: "mai.makes"`, `valueKey: "mai.makes"`. URLs are **reconstructed at render time**, never stored as identity.
+
+### Two asymmetries in the schema
+
+1. **Platform vocabulary**: `profiles.handles.platform` is a closed union of 4; `people.contactHandles.platform` is free-form `v.string()` (`peopleFields.ts:11-14`, comment: *"platform is free-form on purpose... WhatsApp and Telegram included"*).
+2. **Provenance**: `profiles.handles` carries `verified: boolean`; `people.contactHandles` has **no `verified` field at all**. On the profile side only X ever sets it true, because X returns the username with the token while LinkedIn does not (`profileFields.ts:16-18`, `ContactScreen.swift:186-194`).
+
+---
+
+## 2. iOS Contacts capability
+
+### The shipping iOS app has none
+
+Grep for `CNContact`, `CNContactStore`, `import Contacts` across `ios/Haven`, `ios/HavenTests`, `ios/HavenShare`, `ios/HavenWidget` returns **zero hits**. The only files matching "Contact" are `ContactConnector.swift`, `ContactScreen.swift`, `ContactValue.swift` — all about the onboarding "how should people reach you?" question, not the address book.
+
+`ios/Haven/Info.plist` declares exactly one usage description: `NSCameraUsageDescription` (line 32). No `NSContactsUsageDescription`.
+
+### What ContactConnector actually does
+
+`ContactConnector.connect(_ provider:)` (ContactConnector.swift:34-59) links an external account to the signed-in Clerk user, in three cases: already-verified → return it with no browser trip; half-linked → `prepareReauthorization()`; nothing yet → `createExternalAccount`. Returns `ConnectedAccount { username: String?, fullName: String, imageUrl: String? }` (lines 5-13), built from Clerk's `ExternalAccount.username / firstName+lastName / imageUrl`.
+
+Consumed by `ContactScreen.finish` (ContactScreen.swift:176-196): the avatar URL is handed to `model.rememberAvatar`; the username is accepted as a handle **only if the platform proves it** (`provesItsHandle: true` for X, `false` for LinkedIn). LinkedIn falls through to `degrade`, which prefills a guessed slug from the proven name (`ContactValue.linkedInSlug`, ContactValue.swift:63-71) for the user to correct. Instagram is `.typed` — no OAuth attempted at all, because Clerk offers no Instagram connection (ContactScreen.swift:265-272).
+
+That is the entire scope: **one handle for the user's own card**. It pulls no contact list, no phone numbers, no address book.
+
+### The Contacts work is in `graph/`, a separate non-shipping macOS package
+
+`graph/` is a standalone SwiftPM package (`graph/Package.swift`) plus a macOS app (`graph/App/project.yml`). `graph/GOAL.md` describes it as *"a personal tool with exactly one user, never distributed"* and constraint 5 forbids it from touching `convex/`, `src/`, `ios/`, or root config. `graph/App/project.yml:60-62` records that it deliberately ships with **no entitlements file and no App Sandbox**, because Full Disk Access cannot be granted to a sandboxed app.
+
+- `graph/Sources/GraphCore/ContactsDatabase.swift` reads `AddressBook-v22.abcddb` via **raw read-only SQLite**, not `CNContactStore`. It queries `ZABCDRECORD` (filtered by the `ABCDContact` entity id looked up in `Z_PRIMARYKEY`), `ZABCDPHONENUMBER.ZFULLNUMBER`, `ZABCDEMAILADDRESS.ZADDRESS`, producing `ContactRecord{recordID, uniqueID, firstName, lastName, organization, nickname, phoneNumbers, emails, thumbnailImageData}`.
+- `graph/Sources/GraphCore/AccessProbes.swift:33-63` — `ContactsPathDiscovery` finds *multiple* stores: top-level `~/Library/Application Support/AddressBook/AddressBook-v22.abcddb` plus one per linked account under `Sources/&lt;id&gt;/`.
+- `graph/Sources/GraphCore/IdentityResolution.swift` is a union-find over normalized identifiers (details in §4).
+
+---
+
+## 3. Current add-person UX
+
+### Web (`src/SearchAdd.tsx`)
+
+There is **no separate name field**. The search box *is* the name field: "Search a name, or type a new one" (line 394). Typing filters the sky of existing people (name search + debounced semantic search, lines 128-172). The Add button appears only when `showAdd = searchLoaded &amp;&amp; trimmed !== "" &amp;&amp; !hasExact` (line 254), where `hasExact` is a case-insensitive full-string name match (line 250-252).
+
+Expanded form (lines 425-490): platform `&lt;select&gt;` over `REACH_PLATFORMS` (`instagram, x, linkedin, phone, whatsapp, telegram`), handle input, note input. `reach.ts:36-44` states the list-not-textbox choice is *"a decision about dedup, not about capability."*
+
+Submits `api.people.addPerson({name, contactHandles: [{platform, value: reachValue(...)}], context})` (line 320).
+
+**Dedup on web: exact-name suppression of the Add button only.** No handle lookup. No merge affordance. `src/PersonDetail.tsx` renders handles read-only and only calls `updatePerson` (link + context) — the web cannot add a handle to an existing person.
+
+### iOS (`ios/Haven/Directory/AddPersonSheet.swift` + `AddPersonDraft.swift`)
+
+Three fields: Name (`HavenField`, autofocus, `.name` content type), platform menu + handle field, note. All three required (`AddPersonDraft.canSave`, line 117-119).
+
+**Two-tier dedup, driven by a local `DirectoryMirror` cache** (`ios/Haven/Shared/DirectoryMirror.swift`), which the share extension and app both read from the App Group:
+
+1. `draft.alreadyKnown(in:)` → `mirror.person(holding: platform, value: handle)`, an exact `(platform, valueKey)` match using a Swift port of `handleValueKey` (`MirrorHandle.valueKey`, DirectoryMirror.swift:24-30). When hit, the sheet shows *"Already saved as {name}. Your note will be added to them."* (AddPersonSheet.swift:126-135) — informational, not blocking.
+2. Otherwise `draft.nameMatches(in:)` → `mirror.people(named:)`, an **exact accent-folded name equality** (`NameFold.normalize`), surfaced as a "Same person?" radio list of attach targets (AddPersonSheet.swift:136-150). Comment: *"Offered, never applied: a name is not a unique key, and two people really can share one."*
+
+There is no partial-prefix typeahead in the add sheet. `DirectoryMirror.search(_:limit:)` (substring match, DirectoryMirror.swift:91-98) exists but is called only by the **share extension**'s picker (`ShareSheetModel.swift:114`, `HavenShare/ShareSheet.swift:195`), not by `AddPersonSheet`.
+
+### The crucial routing difference
+
+iOS manual add does **not** call `addPerson`. It enqueues a `.manual` capture (`AddPersonDraft.capture`, line 147-169) that drains through `ConvexCaptureSink.saveManual` → `people:saveSharedProfile` (ConvexCaptureSink.swift:34-77). The comment at ConvexCaptureSink.swift:21-27 is explicit: *"`people:addPerson` is the mutation written for this, and it is deliberately not the one called here."*
+
+So **iOS manual add gets server-side handle dedup; web manual add does not.**
+
+### Server-side behaviour per entry point
+
+| Mutation | File:line | Handle dedup? |
+|---|---|---|
+| `addPerson` | people.ts:356-427 | **None.** Inserts unconditionally. Never queries `by_user_and_platform_and_valueKey`. |
+| `editPerson` | people.ts:775-913 | **None.** Rewrites `contactHandles` wholesale, `deletePersonHandles` + `insertPersonHandles` (lines 894-897), no cross-person uniqueness check. |
+| `saveSharedProfile` | people.ts:951-1133 | **Yes**, via `.unique()` on the index (lines 998-1006). Three outcomes: `already` / `attached` / `created`. |
+| `captures.acceptCapture` | captures.ts:221-288 | **None.** Inserts a new person. |
+| `captures.acceptManualCapture` | captures.ts:295+ | **None.** |
+
+---
+
+## 4. What the design docs decided about cross-platform identity
+
+### `docs/2026-07-30-imessage-connection-graph-research.md` (726 lines, "research complete, no decision made")
+
+- **Central recommendation** (lines 52, 474): *"Import the people. Do not persist the graph server-side."* The people are defensible; the edges are a separate processing operation that 2009 EU guidance said lacks a legal basis, and that drags toward GDPR Art. 9.
+- **On merging** (lines 264-267): *"On uncertain matches, never auto-merge. Auto-merge only exact normalized-identifier equality. Everything probabilistic goes to a confirmation queue, implemented as a non-destructive link with provenance so unlinking is lossless, which is the pattern Apple Contacts uses."* Rationale: a wrong non-merge costs a duplicate row; a wrong merge blends two humans' notes.
+- **Apple's own cross-handle key is unusable** (line 257-259): `person_centric_id` in `chat.db` is Apple's cross-handle clustering key, but the maintainer of the most mature open-source exporter found it empty in 100% of polled databases. *"Treat any value present as an opportunistic hint, never as authority."*
+- **Phone normalization** (line 261-262): `chat.db` stores handles already E.164-canonicalized at write time. *"The messy side is our own saved handles and Contacts entries, where libphonenumber via PhoneNumberKit with the device region handles most of it."*
+- **Explicit self-correction about the current schema** (lines 612-621): *"`people.contactHandles` is an array of `{platform, value}` where the value is the raw handle, and `personHandles` mirrors every one of them as an indexed `valueKey` row. Convex holds the phone numbers and email addresses of non-consenting third parties **today**."*
+- **`personHandles` named as the cross-user primitive** (line 388): *"The `personHandles` index on normalized handles is exactly the primitive that enables querying across the `userId` boundary."*
+- **Cross-user correlation ruled out** (§4): fails on Apple guideline 5.1.2(iv)/(iii), on cryptography (PSI is a protocol between parties who already decided to compare; hashing phone numbers is an encoding, reversed at 0.1 ms in NDSS 2021), and on precedent (Path, Buzz, PYMK, Clubhouse, Covve). The one form with a clean record is LinkedIn-style mutual confirmation — *"which Haven already has"* in the `connections` table (lines 356-364).
+- **Not building** (line 653-659): 3rd degree; cross-user correlation; server-side derived edges; visible closeness scores; bulk invite.
+
+### `docs/2026-07-31-polygres-network-design.md` (214 lines, "proposed, nothing applied")
+
+Proposes a Postgres (Polygres) **read model** synced from Convex for agent retrieval; Convex stays system of record and the UI never reads Polygres. Mirrors `people`, `person_handles` (with `unique (user_id, platform, value_key)` — line 103), `memories`, `connections`, plus a new `person_edges` table (`kind`: `same_company | same_city | introduced_by`, `source`: `derived | manual | import`), empty at launch. Line 24-26 explicitly fences off the iMessage graph. Line 52: *"Fuzzy: not configured now. Names arrive normalized (`normalizedName`, `valueKey`); add trigram matching only if typo-miss becomes an observed problem."*
+
+### `graph/PLAN.md` + `graph/Sources/GraphCore/IdentityResolution.swift` (the only implemented identity resolution)
+
+Rules, implemented as union-find over normalized identifier strings:
+- **Rule 1**: two handles normalizing to the same string are the same person (falls out for free — equal strings are the same node).
+- **Rule 2**: identifiers **co-listed on one contact card** are the same person (IdentityResolution.swift:89-103). A card naming both a phone and an email is the join evidence.
+- **Rule 3**: user-asserted merges from the override store, applied as extra unions (lines 112-114).
+- **Contacts never creates a node** (PLAN.md:108) — a card only *attaches* to a person that messages created. (Amended 2026-08-03 to let never-messaged contacts appear as hollow, inference-excluded rings.)
+- **Same-name pairs are never auto-merged** — they become `MergeCandidate{personID1, personID2, sharedName}` for a human queue (IdentityResolution.swift:42-54, 195-211), and answers persist as `MergeAnswer{identifierA, identifierB, decision: merged|separate}` in `Overrides.swift:17-32`.
+- **Overrides key on normalized identifier, never row id** (PLAN.md:91), because row ids renumber across resync.
+- `Person.id` is the lexicographically smallest normalized identifier, with a documented instability: attaching a new card can introduce a smaller phone number and shift the id (IdentityResolution.swift:6-12).
+- `HandleNormalization.normalize` (HandleNormalization.swift:24-35): contains `@` → `.email(lowercased)`; else E.164-ish phone with a **hardcoded US `+1` default** for 10-digit and leading-1 11-digit strings; else `.other(unchanged)`. Comment: a non-normalized phone *"merely fails to merge later, one duplicate node, which PLAN.md prices far cheaper than a wrong merge."*
+- Same-name collisions get a masked-suffix disambiguator (last 4 chars of identifier) at display time only (PLAN.md:134-136).
+
+### Other docs
+
+`mvp-design.md:141,151,191` is the cited authority for the platform asymmetry (own card = 4 platforms; a saved person = any handle, WhatsApp and Telegram included) and for "if the person is a connected Haven user, the contact holds a reference to their live profile and the app renders the merge." Line 386 lists *"LinkedIn enrichment, where you paste a profile link and Haven scrapes it into structured data"* as out of scope.
+
+`people.md` (repo root, untracked) is an X-handle outreach list of people who commented on a video — not data-model material, despite the filename.
+
+`docs/design/` contains only `2026-07-27-card-review.md`; `docs/loop/` contains the loop's own GOAL/JOURNAL.
+
+---
+
+## 5. Social URL normalization — four independent implementations
+
+All four parse `platform.com/username` → bare `username`; none stores the URL as identity.
+
+| Implementation | File | Hosts recognized | Notes |
+|---|---|---|---|
+| `parseProfileUrl` / `normalizeUrl` / `nameGuessFromSlug` | `src/lib.ts:43-320` | `instagram.com`, `linkedin.com`, `x.com`, `twitter.com` (suffix-match on dot boundary, line 233) | Server/web canonical. Reserved first-segments (`p`, `reel`, `stories`, `i`, `intent`…) and content subpaths (`status`) reject non-profile URLs. LinkedIn requires `/in/`. |
+| `ProfileURL` | `ios/Haven/Shared/ProfileURL.swift` | same four | An explicit **port** of the above, pinned against vectors generated from the TypeScript (`HavenTests/SharedFixtures.swift`). Hand-rolled percent-decoding and dot-segment removal to match `new URL` byte-for-byte. Comment line 28-29: *"the URL is a pointer, never fetched."* Also `nameGuess(fromSlug:)` — `mai-tran-8a91b2` → `Mai Tran`. |
+| `ContactValue` | `ios/Haven/Onboarding/ContactValue.swift:12-56` | `instagram.com/`, `x.com/`, `twitter.com/`, `linkedin.com/in/`, `t.me/`, `telegram.me/` | Adds per-platform charset and length rules (IG ≤30, X ≤15, Telegram 5-32, LinkedIn ≤60 to match server `HANDLE_MAX`). Phone → E.164 via **PhoneNumberKit against the device region**. |
+| `reachValue` / `reachUrl` | `src/reach.ts:132-245` | `KNOWN` map: instagram, x, **twitter (read-only alias)**, linkedin, telegram, whatsapp, phone | Web's reverse+forward. `reachUrl` builds `tel:` for phone and `wa.me/&lt;digits&gt;` for WhatsApp. Documents that it deliberately does **not** mirror ContactValue's charset rules. |
+
+Also: `src/lib.ts:150-158` `HANDLE_URLS` / `deriveProfileUrl` covers a wider set for capture-derived links (`x`, `instagram`, `github`, `tiktok`, `threads`, `bluesky`) — LinkedIn/Facebook excluded because their slugs never appear in a screenshot. `AddPersonPlatform.profileUrl` (`ios/Haven/Directory/AddPersonDraft.swift:66-75`) builds the `link` for a hand-typed person. `ios/Haven/Directory/PersonReach.swift` is the iOS twin of `reach.ts`.
+
+---
+
+## 6. Gaps observed, mapped to the three areas
+
+### (a) Looking up an Apple contact by phone number
+
+- The shipping iOS app has no Contacts framework code, no `NSContactsUsageDescription`, and no phone-number-to-contact lookup anywhere.
+- The only address-book reader is `graph/Sources/GraphCore/ContactsDatabase.swift`, a **macOS raw-SQLite** reader in a package that is by charter forbidden from touching `ios/` and by build config unsandboxed. It reads `ZFULLNUMBER` raw and keys by owner row — there is **no phone → contact reverse index**; the caller iterates records.
+- **Three different phone normalizers write into the same `valueKey` column**: `ContactValue.phoneNumber` uses PhoneNumberKit with the *device* region (ContactValue.swift:78-81); `graph`'s `HandleNormalization.normalizedPhone` hardcodes a US `+1` default (HandleNormalization.swift:39-57); `reach.ts` keeps a web-entered number **exactly as typed** (line 194). `reach.ts:185-189` states the consequence outright: *"the two platforms do still disagree on the stored string, so a person saved on both makes two keys rather than one. That is a real gap and closing it needs a phone library here, not a regex."*
+- `handleValueKey` (handleKeys.ts:17-19) is trim + strip-`@` + lowercase only — it applies no phone normalization at all.
+
+### (b) Attaching a new social profile to an existing person vs creating a new one
+
+The write paths disagree, and the code documents the disagreement:
+
+1. `addPerson` (people.ts:356-427) inserts unconditionally; its handler never touches `by_user_and_platform_and_valueKey`.
+2. `editPerson` (people.ts:847-897) rewrites `contactHandles` and re-inserts `personHandles` with no cross-person check.
+3. `saveSharedProfile` (people.ts:998-1006) reads that index with **`.unique()`**. The comment above it (people.ts:992-997) records the trade: *".unique(), not .first(): two owners of one handle is corruption… Production reported zero duplicate handle owners on 2026-07-28… **addPerson still imposes no global uniqueness, so this can throw on a directory the owner built by hand** — see that plan's B3 for the trade."*
+4. Therefore a web add (`SearchAdd.tsx:320`) or an iOS handle-add through `editPerson` can create two owners of one `(userId, platform, valueKey)`. A subsequent share, or an iOS manual add on that handle, hits `.unique()` and throws — and because iOS manual add drains through `saveSharedProfile` (`ConvexCaptureSink.swift:77`), that queued capture cannot drain.
+5. `reportDuplicateHandleOwners` (people.ts:1984-2076) is the detector for exactly this state. Its header comment: *"Report only, never a merge: which of two people holding one account is the real one is a decision only the user can make."*
+6. **There is no merge mutation in `convex/`.** `mergePeerHandles` (people.ts:649) merges a *connected peer's live card* into the read projection of the detail screen; it is not a person-merge. `deletePerson` is the only way to collapse duplicates, and it takes the memories with it.
+7. `saveSharedProfile`'s attach path itself falls through to **create** when the target already holds a *different* account on the same platform (people.ts:1063-1067): *"the capture falls through to create rather than strand the queued item; the user can merge the twins later"* — a merge that does not exist server-side.
+8. Web has no attach affordance at all (`PersonDetail.tsx` renders handles read-only; only iOS's `PersonHandlesEditor` can add a handle to an existing person, via `editPerson`).
+9. `graph/` has the merge machinery Haven lacks — `MergeCandidate`, `MergeAnswer{merged|separate}`, `MergeQueueView.swift`, `MergeCandidateSuppression.swift`, union-find over co-listed card identifiers — but it is a separate, non-distributed macOS tool with no server component.
+
+### (c) Social profile URLs going stale when usernames change
+
+- Nothing stores a URL as an identity key; `contactHandles.value` is a bare username and `valueKey` is its lowercase fold. URLs are rebuilt at render (`reachUrl`, `ProfileURL`, `AddPersonPlatform.profileUrl`, `deriveProfileUrl`).
+- The one raw-URL store is `people.link` (schema.ts:24), and `linkBackfill` (people.ts:333-341) **never overwrites an existing link** by design: *"An existing link is never overwritten: the user chose that one."* Once set, it persists unchanged.
+- Nothing ever re-fetches or re-verifies a handle. `ProfileURL.swift:28-29`: *"Pure and offline by design: the URL is a pointer, never fetched, and the extension does no network at all."*
+- `people.contactHandles` carries **no `verified` field** (peopleFields.ts:11-14), so a person-level handle has no recorded provenance — no way to distinguish an OAuth-proven handle from a guessed LinkedIn slug. Only `profiles.handles` has `verified`, and only X ever sets it true (ContactScreen.swift:186-194).
+- Consequence chain: a username change means `reachUrl` keeps building the dead address indefinitely, and a re-share under the *new* username misses `by_user_and_platform_and_valueKey` entirely and creates a **second person** — which lands back in gap (b) with no merge path.
+- `reach.ts:23-27` shows the one form of staleness that *is* handled: `twitter` is kept as a readable-but-not-offerable alias for `x`, *"because rows written before the rename still say twitter, and the person behind them has not moved."* That is platform-rename tolerance, not username-change tolerance — and it means `platform: "twitter"` and `platform: "x"` are two distinct `valueKey` namespaces for one account.
+- `handleValueKey`'s comment (handleKeys.ts:16) flags the extension point: *"Deliberately naive in v1; per-platform rules can grow here later"* — e.g. Instagram treats dots as significant while Gmail does not, and none of that is modeled.</result>
+<usage><subagent_tokens>172517</subagent_tokens><tool_uses>54</tool_uses><duration_ms>454526</duration_ms></usage>
+</task-notification>
+
+---
+
+/goal do more research until u found the best way for all
+
+---
+
+lead 1
+- i think we can implement 2 things where in haven if user type in someone name or phone number, we will also match it with in contacts too and show up the sign (in contact) so that user can click and choose to import. so like if i search Dun Dun, it will either show nothing as Dun Dun not in Haven nor contact, or show Dun Dun which means Dun Dun is in Haven, and Dun Dun (import to Haven?) means Dun Dun in only contact and user can choose  to add to Haven and create that profile to Haven? then the other thing is user can also share that contact directly into Haven app like any other profile? And i think for sharing apple contact directly into Haven we can read the name direcly and user doesnt need to type in right? for the silently check, how do we do so? can we auto detect when a new number being add to the contact? if so that would be great
+- ok after reading the new answer from you, then we will need to set the condition or note for user to know that they need to update their ios 18 to make it works? would that be a friction right? maybe at least for the start we can try to do that instead of trying to make it perfect for everyone, focusing on the newer version where more people possibily wil have it and makes it works very well is a better way? what do u think?
+- hmm so will not do the auto check full address book thing? can u explain more?
+- about prereq and disagree, can u explain more, im trying to understand so i can make decision
+
+lead 2
+- for the matching, we always convert to lower case and strip down all the non alphabet character? or we shouldn't strip non alphabet char? (this is the backend the frontend user still see the full name). cuz there are 2 ways of adding people now. Manualy add (which right now when i type i still don't see anything rollup as i type a similar name) and auto share profile and fill in the name in haven (i still do't see it too). And there will be case where user mis-type without recognize does that count? right now we have user temporarily type, but idk if its possible to auto detect name and able to measure the correctness of it. idt we can fine tune or doing anything because sometimes on social media there is no name at all and only nickname (like ig and x) right? maybe linkedln and contact and eventually whatsapp (we don't cover whatsapp now but that's the nearest future add on) would be different? the merging we talking about is harder that we want to do, but there is an easier one apple doing is merging based on same phone number, name, email right? tell me if im wrong but i do know apple has merge contact function in contact
+- and should we fix connector into composio as we switch now to composio? and can composio read whatsapp too? cuz right now i test that x, linkedln and instagram works so far. have not try with imessage or composio
+- can u create for me diagram to show me different flow of this and how the app logic will act? 
+- after reading the second one, right now we are not really adding company name, photo or anything yet. the flow of it right now for adding directly from the profile is name + note. maybe adding manually include more details? is that a problem when its not sync?
+- given there will be no limitation in term of rule for u when u do research, u can tell me what u think is the best way to do so with clear explanation to prove to me why we should do it certain way
+
+lead 3: 
+- just want to be clear url is still important part of haven as it reference you to the main contact of the person in haven as haven is not a communication platform
+- maybe what we can do is we store the url, and every time user open it or sometimes whatever logic, we will do the url comparison? hmm wait but how can we compare if we don't know the new one right? for re-link how does it works? i mean assume it works for relink in user profile, but im talking about other people that user saves in their haven, how can we relink when its not our linkedln? even if its our how do we know or remember to relink? there is absolutely no way we can detect that? are u sure? can we try to think in first principal again of how those url and platform works? cuz the worst thing we want is to link user to the wrong url and they would lost the person again...
+- after the second read of your updated response, yes seem like X is the most possible one, and it's harder for Instagram and Linkedln. Would scarping tool like browserbase or https://monid.ai/ help any for this? it's gonna be tough to think of a way to make it reliable for linkedln and x cuz i know for sure user won't go back and forth to manually change it. in linkedln or instagram, if u follow or connected already, no matter how the url change the account still connected, is that something we might be able to replicate? or the full name of the profile as well as the baseline information of a linkedln profile is something we can use to match and check their linkedln uri? instagram would be harder as its an account that can be anything
+
+one thing i will say. all the rule i set in this repo or about certain part, it's not always right. the reason why i set rule is for certain part u don't hallucinate and go too far, but most of the rules and arhitecture and structure can be change if we find a better way. i just need to understand it and decide, for you there is no rule for u when it comes to doing research and find the best way to sovle the problem, as long as the agent give me a clear explanation and reason and prove for why i should trust certain things it research, or pros and cons of multiple. maybe we can add that to the global agents.md rule
+
+---
+
+what version u think we can call this iteration is?
+
+---
+
+what version u think we can call this iteration is? if we don't have then lets do it because i want to set the version so i know what am i working on
+
+---
+
+ok can we note that down into our change log? we will start logging it from now on
+
+---
+
+so we good to start implementation? yes or no
+
+---
+
+/goal use /fusion to implementation all of the lead, verify, test, refine, and keep doing it until everything works
+
+---
+
+<task-notification>
+<task-id>ae93238f2e8a0f102</task-id>
+<tool-use-id>toolu_01XojoRwtHnGuXfgDqDTp8NH</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/6e71617f-d5f4-48a0-a3a5-a2056577d301/tasks/ae93238f2e8a0f102.output</output-file>
+<status>completed</status>
+<summary>Agent "Unify phone normalization seam" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Green. Everything is in order, uncommitted in the working tree as instructed.
+
+## Summary
+
+**Files changed** (all in `/Users/minhthiennguyen/Desktop/Euno/euno-app`, working tree only, nothing committed):
+
+- `convex/handleKeys.ts` — the single folding seam. `handleValueKey` now takes an optional `platform` param; for `"phone"`/`"whatsapp"` it parses via `libphonenumber-js` with **no default region** (so it can never guess one) and keys to E.164 when the string itself carries a country code, otherwise falls back to digits-only — except when a value has *no digits at all* ("call me"), where it falls back to the plain trim/lowercase fold instead of an empty string (fixed a collision bug the advisor caught: two unreadable phone entries were both keying to `""` and would throw in `saveSharedProfile`'s `.unique()` lookup). `handleIndexKeys` now threads the normalized platform through.
+- `convex/people.ts` — updated the one bare `handleValueKey(value)` call site (in `saveSharedProfile`) to pass `platform`; added `backfillPhoneHandleKeys`, a paged `internalMutation` matching the style of `backfillPersonHandles`/`backfillLegacyHandles`, recomputing `personHandles.valueKey` for phone/whatsapp rows from the source `contactHandles.value` (the old key is lossy, so it must re-read the source string, not the stored key).
+- `src/reach.ts` — `reachValue` now normalizes phone/whatsapp at entry via new `normalizePhoneEntry(raw, region?)`, using a new `browserRegion()` (reads `Intl.Locale(navigator.language).region`, never widened with likely-subtag guessing — undefined stays undefined, same anti-guess doctrine as the server). Invalid/unparseable input is unchanged (kept as typed). `reachUrl`'s wa.me/tel logic needed no changes (digit-stripping already works over an E.164 value).
+- `convex/handleKeys.test.ts`, `src/reach.test.ts`, `convex/people.test.ts` — new/updated tests (see below). Two pre-existing `reach.test.ts` assertions that literally encoded "phone number stored as typed" were updated since that's exactly the behavior the brief closes.
+- `package.json` / `package-lock.json` — added `libphonenumber-js` (^1.13.10).
+
+**Test counts**: 48 files / 761 tests before -&gt; 48 files / 778 tests after. `npm test` and `npx tsc -b` both green.
+
+**New fold rules, two sentences**: For platforms `"phone"` and `"whatsapp"`, a value that parses as a valid number with its own country-code evidence (a leading `+`) keys as its E.164 string, and a value with no such evidence keys as its digits alone (or, if it has no digits at all, falls back to the plain trim/lowercase fold so unreadable entries don't collide). The server never supplies a default region — that evidence comes from `src/reach.ts` normalizing web entries against the browser's own locale before they're ever stored, since the server (serving all users from one process) has no basis to guess one.
+
+**Things worth the lead's attention** (not fixed, out of scope per constraint 5/"report only, never merge"):
+1. **CHANGELOG/version bump** — repo convention requires an entry for user-visible changes (web: phone dedup + E.164 display; backend: key derivation). The brief's "definition of done" didn't ask for it and the lead commits, so I left it for you to decide/write.
+2. **The backfill is forward-only for bare numbers.** It correctly unifies formatting variants of numbers that already carry a `+` (e.g. `"+1 415 555 0123"` -&gt; `"+14155550123"`). But a pre-existing web row stored as `"(415) 555-0123"` (no `+`) recomputes to digits-only `"4155550123"`, which still won't match an iOS row keyed `"+14155550123"` — inherent to constraint 2's ban on server-side region guessing, not a bug, but worth knowing before running the migration in prod.
+3. **Migration-driven duplicates hit `.unique()`.** Recomputing keys can make two existing rows collapse onto one `(userId, platform, valueKey)` — the migration only patches keys and reports via the existing `reportDuplicateHandleOwners`, per the repo's "report only" doctrine (people.ts:1977). Downstream, `saveSharedProfile`'s `.unique()` lookup will throw for that user/platform until reconciled; changing that lookup is out of scope here.
+4. **Test-first, honestly**: I implemented before writing the full test set (verified the libphonenumber-js parsing behavior empirically first per the advisor's flag on the 555 trap, which turned out fine — no fixture swap needed). I do have genuine red-then-green for the two `reach.test.ts` assertions that encoded the old "stored as typed" behavior, and for the collision-bug fix (confirmed via a standalone script that the old fallback produced two empty-string keys before the fix).</result>
+<usage><subagent_tokens>178156</subagent_tokens><tool_uses>91</tool_uses><duration_ms>796735</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ade79beb570e521a4</task-id>
+<tool-use-id>toolu_01Pa6NwWXED7vN6mNmKHd7tn</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/6e71617f-d5f4-48a0-a3a5-a2056577d301/tasks/ade79beb570e521a4.output</output-file>
+<status>completed</status>
+<summary>Agent "iOS 18 bump + vCard share" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+**Unit 1 (deployment target 17.0 -&gt; 18.0):**
+- `ios/project.yml`: bumped `deploymentTarget.iOS` to `"18.0"`; `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION` untouched.
+- `ios/Haven/Onboarding/CityCompleter.swift`: removed the now-dead `#available(iOS 18.0, *)` gate (the `addressFilter` line now runs unconditionally), deleted the `looksLikeAPlace` iOS-17 stand-in and its `.filter` call site, and updated `resolve`'s doc comment to drop the "iOS 17 device" caveat. The file's own comment said to delete this exact code "if the deployment target ever moves past 17" -- it did.
+- Grepped `ios/` for other `#available`/`@available` gates and stale "iOS 17" references: none found in code or docs under `ios/`. Two stale "iOS 17" mentions exist in `docs/superpowers/...` at the repo root, outside `ios/` -- flagging, not touching (out of scope).
+
+**Unit 2 (share a contact card into Haven):**
+- `ios/HavenShare/Info.plist`: added a `public.vcard` clause to `NSExtensionActivationRule` (no `NOT file-url` exclusion -- a shared `.vcf` genuinely is a vCard, unlike a Files-app document merely conforming to url/image/text), with comment updates explaining why.
+- `ios/project.yml`: added `- sdk: Contacts.framework` to both the `Haven` and `HavenShare` targets (the new shared file compiles into both), each with a one-line why; updated the "Foundation only" comment on `HavenShare`'s `Haven/Shared` path.
+- `ios/Haven/Shared/VCardContact.swift` (new): parses vCard `Data` via `CNContactVCardSerialization.contacts(with:)`, extracts name (given+family, falling back to organization for a business card), first phone, first email.
+- `ios/Haven/Shared/ShareSheetModel.swift`: added `ShareSubject.contact(name:platform:handleValue:)` and `init?(vCard:)` (phone wins over email when both present); wired `.contact` through `alreadyKnown`, `namePrefill`, `identityLine`, and `capture()` (which reuses the existing `.manual` payload -- zero new `QueuedCapture` cases, zero server changes).
+- `ios/Haven/Shared/CaptureQueue.swift`: `QueuedCapture.Manual.note` changed from `String` to `String?` -- a vCard share has no required-note bar the way `AddPersonDraft`'s hand-typed add does, and the model's existing "empty note -&gt; nil" logic needed an optional target to compile against.
+- `ios/HavenShare/ShareInput.swift`: vCard attachments are read first (highest priority, since Contacts' "Share Contact" hands over nothing else), via a `loadDataRepresentation`-based helper (not `loadItem`, which returns a sandboxed temp-file URL that can be reclaimed before a later `Data(contentsOf:)` read).
+- `ios/Haven/Onboarding/ContactValue.swift`: added `normalizedOrRaw(phone:)` (`phoneNumber(from:) ?? raw`).
+- `ios/Haven/Capture/ConvexCaptureSink.swift`: `saveManual` normalizes the handle through `ContactValue.normalizedOrRaw` when `platform == "phone"`, at drain time in the app process where PhoneNumberKit exists (HavenShare has none). Without this, a raw card phone like `"+84 90 123 4567"` would never dedup against the E.164 form `AddPersonDraft` already writes.
+- `ios/HavenShare/ShareSheet.swift`: one-line copy update to the "Not a profile" dead-end so it mentions contact cards too.
+- Tests: `ios/HavenTests/VCardContactTests.swift` (new, vCard 3.0 fixtures: full card, phone-only, email-only, org-only, name-only-no-handle, garbage data), plus additions to `ShareSheetModelTests.swift` (contact -&gt; `.manual` capture, `alreadyKnown`/`namePrefill`/`identityLine` for a contact subject) and `ContactValueTests.swift` (`normalizedOrRaw`).
+
+**Payload decision:** phone-only (stronger key), per the brief's explicit fallback. `QueuedCapture.Manual` carries exactly one `platform`/`handleValue` pair, confirmed against both the Swift type and the live `people:saveSharedProfile` mutation (`convex/people.ts:951`, single `platform`/`handleValue` args, no array). A card with both is keyed on phone; a card with only an email is keyed on email; a card with neither is not a savable subject (`ShareSubject(vCard:)` returns nil, same as an unrecognized URL).
+
+**Photo:** skipped. Neither `QueuedCapture.Profile`, `.Screenshot`, nor `.Manual` carries an image field for a named capture (the `.screenshot` case is a wholly separate OCR-extraction pipeline, not "attach a photo to a name"), and the brief says not to invent server fields.
+
+**Verification:**
+```
+cd ios &amp;&amp; xcodegen
+xcodebuild -project Haven.xcodeproj -scheme Haven \
+  -destination 'platform=iOS Simulator,id=905373FF-AB9F-4A4C-BCD0-36C7B47DB912' \
+  -derivedDataPath build -only-testing:HavenTests test
+```
+(iPhone 17, iOS 26.5 runtime.) Result: `** TEST SUCCEEDED **`, exit code 0. Swift Testing summary: `Test run with 372 tests in 73 suites passed after 1.774 seconds` (0 failures), plus the legacy XCTest `PreviewGallerySnapshotTests` (1 skipped, 0 failures, pre-existing, not mine). Build log confirms `HavenShare` links `-framework Contacts` and both extensions build at `-target arm64-apple-ios18.0-simulator`. No new compiler warnings in any file I touched (two pre-existing Swift 6 concurrency warnings in `HavenNetworkTests.swift` are unrelated).
+
+One bug caught mid-implementation and fixed: I initially wrote `CNContactVCardSerialization.contacts(from:)`, which doesn't exist -- the real API is `.contacts(with:)`. Caught by the first build attempt, fixed, rebuilt green.
+
+**Not done / flagged for the lead:** CHANGELOG.md and package.json left untouched (both outside `ios/`, and `package.json` is already dirty from the concurrent agent) -- this iOS feature would normally warrant a Web... no, an **iOS** category entry plus a minor bump once the lead is ready to place it. Two stale "iOS 17" doc mentions exist under `docs/superpowers/` at the repo root (outside my scope, not touched).</result>
+<usage><subagent_tokens>188740</subagent_tokens><tool_uses>117</tool_uses><duration_ms>1021638</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae93238f2e8a0f102</task-id>
+<tool-use-id>toolu_01VCjYYcK5nq7npD4PqUqDKQ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/6e71617f-d5f4-48a0-a3a5-a2056577d301/tasks/ae93238f2e8a0f102.output</output-file>
+<status>completed</status>
+<summary>Agent "Unify phone normalization seam" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All checks are green. Final summary:
+
+## Task 2 (identity brief, "no write path may create a second owner") complete
+
+**Verification:** `npm test` -&gt; 48 files, 783 tests passed. `npx tsc -b` (root, src+convex prod code) -&gt; exit 0. `npx tsc -p convex/tsconfig.json` (convex incl. tests) -&gt; exit 0. Test counts before this task (end of task 1): 48 files / 778 tests. After: 48 files / 783 tests (net +5: 4 new dedup/conflict tests in `people.test.ts`, 1 new conflict test in `SearchAdd.test.tsx`).
+
+**Files changed:**
+- `/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts` -- new shared `findHandleOwner` helper (bounded read, oldest-row-wins, self-heals orphans, logs corruption via `console.error`). `addPerson` now checks every submitted handle against existing owners before writing. `editPerson` refuses to steal a handle a different person owns. `saveSharedProfile`'s throwing `.unique()` replaced with `findHandleOwner`.
+- `/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.test.ts` -- getter-based unique `manualAdd.contactHandles` fixture (a fixed value would have collided dozens of same-user multi-add tests against the new dedup check); `addPersonId`/`editPersonOk` helpers; ~50 call sites converted; new dedup/conflict/handle_taken tests; the "twins" and duplicate-owner tests reseeded via raw DB inserts since `addPerson` now prevents creating that corruption itself.
+- `/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/memories.test.ts`, `sharedNotes.test.ts`, `profiles.test.ts`, `captures.test.ts` -- same call-site conversion (no fixture collisions existed here; one add per identity per test).
+- `/Users/minhthiennguyen/Desktop/Euno/euno-app/src/SearchAdd.tsx` -- handles `conflict` (plain error, form stays open, nothing opened) and `attached`/`already` (fetches the real owner name via one imperative `getPerson` query before navigating, so PersonDetail never flashes the wrong just-typed name).
+- `/Users/minhthiennguyen/Desktop/Euno/euno-app/src/SearchAdd.test.tsx` -- mock updated to a structured outcome, `useConvex` mocked, new conflict-branch test.
+
+**Outcome vocabulary shipped:**
+- `addPerson`: `{status:"created"|"attached"|"already", personId}` or `{status:"conflict", personIds: Id&lt;"people"&gt;[]}` (zero writes on conflict).
+- `editPerson`: success returns the bare `personValidator` shape, byte-identical to before (iOS's `let _: Person?` keeps decoding); a handle owned by someone else returns `{status:"handle_taken", personId, name}` instead of throwing or silently succeeding, db unchanged.
+
+**Contradicts / deviates from the brief (flagged, not fixed):**
+1. The literal "Already saved as {name}. Your note was added." string is not rendered on web -- there's no cross-view toast surface, and building one is the deferred typeahead UX. Instead the destination screen (PersonDetail) shows the real name with the note already in context.
+2. `captures.ts` (screenshot/OCR pipeline) still creates second owners -- `insertCaptureHandle`/`foldContactHandle` never call `findHandleOwner`. Not in the brief's 3 named functions, so "no write path" isn't fully true system-wide yet.
+3. `noteTruncated` is on `saveSharedProfile`'s outcomes but not `addPerson`'s (matches the brief's literal vocabulary) -- `addPerson`'s "attached" merge can silently clamp an over-long note with no signal.
+4. `already` is a real, tested branch but near-unreachable from today's live callers, since `addPerson` requires a non-blank note and `appendContext` always changes context when one is given.
+5. Attaching a new handle to a person already at the 8-handle cap silently drops the handle (note still lands, still "attached") rather than surfacing the cap.
+6. `git status` shows the other agent is actively modifying `ios/Haven/Directory/AddPersonSheet.swift` and related files concurrently -- I never touched `ios/`, only read a few files for context.
+7. Test-first was genuine for the new dedup/conflict tests (real red, e.g. `expected undefined to be 'created'`); the ~90 pre-existing call-site updates were mechanical ripple fixes from the return-type change, not test-first work.</result>
+<usage><subagent_tokens>411081</subagent_tokens><tool_uses>173</tool_uses><duration_ms>1778882</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ade79beb570e521a4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/6e71617f-d5f4-48a0-a3a5-a2056577d301/tasks/ade79beb570e521a4.output</output-file>
+<status>completed</status>
+<summary>Agent "iOS 18 bump + vCard share" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary — Brief 2 (contact matching + import)
+
+**New: `ios/Haven/Contacts/` (10 files)**
+- `AddressBookContact.swift` — the reduced device-contact shape (id/name/phones/emails).
+- `ContactImportMatching.swift` — pure: phone-over-email handle selection, mirror dedup (normalized phone/email against `DirectoryMirror`), `importCandidates` filtering, and the `.manual` capture builder (reuses the exact payload the vCard share writes — no new server fields).
+- `AddressBookProviding.swift` — the protocol wrapping `CNContactStore` (`authorizationStatus`, `search`, `contacts(withIdentifiers:)`, `newlySeenContacts`).
+- `LiveAddressBook.swift` — the only file touching `CNContactStore`, untested directly (same split as `ConvexCaptureSink`/`CaptureSink`).
+- `ContactChangeState.swift` — App Group `UserDefaults` bookkeeping (history token, known-identifier baseline, dismissals), injectable for tests.
+- `ContactSuggestion.swift` — pure "pick at most one" logic + `ContactIdentifierDiff` (first-check-establishes-baseline rule).
+- `ContactMatchModel.swift` — thin `@MainActor` glue: debounced search, reveal (button/picker grants), one-tap enqueue.
+- `ContactSuggestionModel.swift` — thin glue for the foreground "you added X" check.
+- `ContactMatchSection.swift` — the SwiftUI section (`ContactAccessButton` for `.limited`/`.notDetermined`, plain rows for `.authorized`/`.limited`, picker row for `.denied`/`.restricted`).
+- `ContactPicker.swift` — `CNContactPickerViewController` wrapper; hands back only an identifier, re-fetched with an explicit key list (never trusts the delegate's own `CNContact`).
+
+**Wired into (both product-shape surfaces, plus the suggestion banner):**
+- `Haven/Directory/AddPersonSheet.swift` — "In your contacts" section under name/handle; contact rows are direct one-tap imports (see deviation below), not field prefills.
+- `Haven/Search/SearchScreen.swift` — same section under the results list, gated on a narrowed query.
+- `Haven/Directory/DirectoryScreen.swift` — `ContactSuggestionModel` checked on appear + foreground (mirrors `RootView`'s `CaptureSync` cadence), rendered via the existing `PromoCard` component.
+- `Haven/Info.plist` — `NSContactsUsageDescription` added per the brief's explicit instruction.
+- `project.yml` — `ContactsUI.framework` added to the `Haven` target only (not `HavenShare`; confirmed via build log that `HavenShare` links `Contacts` but not `ContactsUI`).
+
+**Tests:** `HavenTests/ContactImportMatchingTests.swift` (15) + `HavenTests/ContactChangeStateTests.swift` (21) = 36 new. Suite: **408 tests, 0 failures** (up from 372 after Brief 1).
+
+**Verification:**
+```
+cd ios &amp;&amp; xcodegen
+xcodebuild -project Haven.xcodeproj -scheme Haven \
+  -destination 'platform=iOS Simulator,id=905373FF-AB9F-4A4C-BCD0-36C7B47DB912' \
+  -derivedDataPath build -only-testing:HavenTests test
+```
+`** TEST SUCCEEDED **`, no compiler warnings anywhere in touched/new files. `HavenWidget`/`HavenShare` still build and link correctly (Brief 2 code never touches `Haven/Shared`, so nothing new reaches the extensions).
+
+**ContactAccessButton lives in `ContactMatchSection.swift`** (the shared section view), not duplicated per screen — both `AddPersonSheet` and `SearchScreen` embed the same `ContactMatchSection`/`ContactMatchModel` pair.
+
+**Deviations from the brief — please read:**
+
+1. **Constraint 5 (change history) could not be built as literally specified.** `CNContactStore`'s only change-history walker, `enumeratorForChangeHistoryFetchRequest:error:`, is declared `NS_SWIFT_UNAVAILABLE("")` in `CNContactStore.h` on the iOS 26.5 SDK (confirmed by grepping the actual SDK header on this machine, not a guess) — there is no Swift-visible alternative. I substituted identifier-set diffing: `LiveAddressBook.newlySeenContacts` enumerates every visible contact identifier (one lightweight key) and diffs against a stored baseline (`ContactChangeState.knownContactIdentifiers`), with the "first check establishes a baseline, reports nothing" rule tested explicitly. `CNContactStore.currentHistoryToken` (which *is* Swift-visible) is still persisted for a future native implementation, but nothing reads it back today. Consequence: a contact that only becomes *visible* through a `ContactAccessButton` limited-access grant can surface as newly *added* the first time it's seen, since there's no true "added vs. became visible" distinction without real change history.
+
+2. **"the add sheet" wording**: I read this as "contact matching appears in the add sheet," not "contacts prefill the add-sheet form." Contact rows are one-tap direct imports everywhere (search, add sheet, suggestion banner), bypassing `AddPersonDraft`/`AddPersonPlatform` entirely. Reason: `AddPersonPlatform` has no `.email` case, so an email-only contact can't be prefilled into that form without adding one — and `AddPersonDraft`/`AddPersonPlatform` are left completely untouched per your note that Brief 1's reasoning here was correct.
+
+3. **`ignoredPhoneNumbers`/`ignoredEmails` on `ContactAccessButton` are documented as unreliable** (community-reported matching bugs). Compensated: `ContactMatchModel.enqueueImport` re-runs `alreadyInHaven` against the mirror before queueing regardless of how a contact was revealed, so a duplicate button-grant is a no-op import rather than a visible double row (the server also dedups on the handle either way).
+
+4. **Legacy/pre-normalization phone rows**: `alreadyInHaven` compares against `ContactValue.normalizedOrRaw(phone:)` (E.164). A person whose phone was stored before Brief 1's drain-time normalization existed (or added via a path that never normalized) could show as an importable duplicate. Same limitation already accepted for the vCard flow.
+
+5. **`NSContactsUsageDescription`**: neither `ContactAccessButton` nor `CNContactPickerViewController` strictly requires it — I added it because the brief explicitly asked for it.
+
+**Not directly unit-tested** (matches existing repo precedent — `CaptureSync`/`ConvexCaptureSink` aren't either): `ContactMatchModel`, `ContactSuggestionModel`, `LiveAddressBook`. Everything decision-worthy underneath them is.
+
+**Worth an on-device check I could not run here:** after a `ContactAccessButton` grant moves status from `.notDetermined` to `.limited`, confirm the revealed contact stays visible through the next keystroke's `search()` (which overwrites `rows` wholesale) rather than only through `reveal()`'s merge. It should — the grant is persistent — but this seam has no automated coverage.
+
+Relevant files (all under `/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/`): `Haven/Contacts/*`, `Haven/Directory/AddPersonSheet.swift`, `Haven/Directory/DirectoryScreen.swift`, `Haven/Search/SearchScreen.swift`, `Haven/Info.plist`, `project.yml`, `HavenTests/ContactImportMatchingTests.swift`, `HavenTests/ContactChangeStateTests.swift`.</result>
+<usage><subagent_tokens>420201</subagent_tokens><tool_uses>138</tool_uses><duration_ms>1914392</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ade79beb570e521a4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/6e71617f-d5f4-48a0-a3a5-a2056577d301/tasks/ade79beb570e521a4.output</output-file>
+<status>completed</status>
+<summary>Agent "iOS 18 bump + vCard share" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary — Brief 3 (live "who is this?" name suggestions)
+
+**New:**
+- `Haven/Shared/NameSuggestion.swift` — `EditDistance.levenshtein` (plain Levenshtein, two-row DP), `NameMatchKind` (`.exact`/`.close`), `NameSuggestion`, and `DirectoryMirror.nameSuggestions(for:limit:)` — folds via the existing `NameFold`, exact matches first, then close ones within a length-scaled distance threshold.
+- `HavenTests/NameSuggestionTests.swift` — 19 tests: distance primitives, exact/close/unrelated/diacritic/hyphenated/short-name-guard suggester cases, ordering, blank query, and the explicit composition test (a same-key contact stays suppressed from "in your contacts" even when the same person also surfaces as a Haven name suggestion).
+
+**Changed:**
+- `Haven/Directory/AddPersonSheet.swift` — name suggestions now live and debounced (`SearchModel.debounce`, same 300ms as the contacts section) via `.task(id: draft.name)`; sections reordered to name -&gt; handle -&gt; Haven suggestions -&gt; contacts -&gt; note ("Haven matches first, contacts below," one contiguous "who is this?" area); `AttachRow` gained a `detail` line (handles via `PersonReach.display`, since that's all `MirrorPerson` stores) and an explicit combined VoiceOver label/traits (previously none beyond the default). The "Already saved as {name}" exact-handle path is untouched.
+- `Haven/Directory/AddPersonDraft.swift` — removed `nameMatches(in:)` (exact-only), now superseded by `DirectoryMirror.nameSuggestions`, which is a question about a typed string against the mirror, not about the draft.
+- `Haven/Shared/DirectoryMirror.swift` — `MirrorPerson`'s doc comment now states explicitly what it doesn't carry (note, company, city, photo) and why (`CaptureSync.refreshMirror` never asks `people:listPeople` for them), so the gap is documented at the type, not just in my head.
+- `HavenTests/AddPersonDraftTests.swift` — removed the now-obsolete `nameMatches` test; `alreadyKnown` tests untouched.
+
+**Test counts:** 426 total (408 after Brief 2, +19 new, -1 removed obsolete test).
+
+**Distance rule shipped, in one sentence:** plain Levenshtein distance over `NameFold`-normalized names, exact fold match always wins outright, and a close match needs distance &lt;= 0 (i.e. none — exact only) under 4 folded characters, &lt;= 1 for 4-7 characters, &lt;= 2 at 8 or more.
+
+**Verification:**
+```
+cd ios &amp;&amp; xcodegen
+xcodebuild -project Haven.xcodeproj -scheme Haven \
+  -destination 'platform=iOS Simulator,id=905373FF-AB9F-4A4C-BCD0-36C7B47DB912' \
+  -derivedDataPath build -only-testing:HavenTests test
+```
+`** TEST SUCCEEDED **`, 426/426, no warnings in any touched file.
+
+**Things worth flagging, none of which I believe contradict the brief but are judgment calls:**
+1. **Mirror field gap confirmed, not widened**: `MirrorPerson` only ever carries `id`, `name`, `handles` — no note snippet, company, or photo exists in the offline mirror at all (confirmed against `CaptureSync.refreshMirror`'s `MirrorSource` decode). Disambiguator rows show up to 2 handles, formatted via the existing `PersonReach.display`. No server/mirror payload change made.
+2. **No cross-section name-based suppression**: I verified the *handle*-based dedup from Brief 2 still holds (new composition test), but deliberately did **not** suppress a "in your contacts" row just because the same real person also shows up as a Haven *name* suggestion — a fuzzy or even exact name match is not proof of identity anywhere else in this codebase ("a name is not a unique key," repeated in `ShareSheetModel`, `AddPersonDraft`'s old doc comment, and now here), so treating a name match as grounds to hide an unrelated device contact would be a new, unjustified assumption. Flagging this reasoning explicitly in case the intent was broader.
+3. **Debounce chosen for consistency, not necessity**: `nameSuggestions` is a pure, synchronous, in-memory computation with no I/O — nothing about it *requires* debouncing. I debounced it anyway per constraint 4's explicit instruction, purely so the two suggestion areas settle together rather than one updating per keystroke and the other lagging 300ms behind.
+4. **No new model class**: unlike `ContactMatchModel` (which wraps genuine async/external work needing DI for testability), the name suggester has nothing to inject or mock — `DirectoryMirror.nameSuggestions` is already fully unit-testable on its own. I used plain `@State` + `.task(id:)` in the view rather than inventing a thin wrapper class that would exist only to hold debounced state.
+
+Relevant files (all under `/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/`): `Haven/Shared/NameSuggestion.swift`, `Haven/Directory/AddPersonSheet.swift`, `Haven/Directory/AddPersonDraft.swift`, `Haven/Shared/DirectoryMirror.swift`, `HavenTests/NameSuggestionTests.swift`, `HavenTests/AddPersonDraftTests.swift`.</result>
+<usage><subagent_tokens>488429</subagent_tokens><tool_uses>39</tool_uses><duration_ms>647220</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae93238f2e8a0f102</task-id>
+<tool-use-id>toolu_01Jcgx7pGJ9rEorVrcoxkCxZ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/6e71617f-d5f4-48a0-a3a5-a2056577d301/tasks/ae93238f2e8a0f102.output</output-file>
+<status>completed</status>
+<summary>Agent "Unify phone normalization seam" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All confirmed. No commits made, nothing in `ios/` touched by me, nothing in `.worktrees/`.
+
+## Brief 3 report
+
+**Test counts:** before this brief (end of brief 2): 48 files / 783 tests. After: 48 files / 799 tests (16 new: 7 in `people.test.ts`, 7 in `captures.test.ts`, 6 in `composio.test.ts` minus overlap... exact breakdown: 7 provenance/rename/cap tests in `people.test.ts`, 5 platformId-extraction tests + reused fixtures in `composio.test.ts`, 4 provenance/no-second-owner tests in `captures.test.ts`). `npm test` green, `npx tsc -b` (root) exit 0, `npx tsc -p convex/tsconfig.json` (convex incl. tests) exit 0.
+
+**Files changed:**
+- `convex/peopleFields.ts` -- new `handleSourceValidator` ("proven"|"typed"|"imported"|"guessed") and `HandleSource` type; `contactHandleValidator` gains optional `source`, `platformId`, `addedAt`.
+- `convex/profileFields.ts` -- `handleValidator` gains optional `platformId`.
+- `convex/schema.ts` -- `personHandles` gains optional `platformId` and a new `by_user_and_platform_and_platformId` index (unstaged -- no existing precedent for `staged: true` in this schema; flag if `personHandles` is large in prod).
+- `convex/handleKeys.ts` -- `handleIndexKeys` now threads `platformId` through unfolded (opaque, not normalized).
+- `convex/people.ts` -- `validateContactHandles`/`validateOwnedHandles` now pass provenance through instead of stripping it (`validateOwnedHandles` defaults `source: "typed"`); new exported `findHandleOwner` (platformId-first, valueKey-fallback, via new `oldestLiveOwner` helper), `mergeHandleIntoOwner` (rename-in-place, cap-aware, `addedAt`-preserving), `withAddedAt` (stamps only genuinely-new platform+value pairs); `addPerson`/`editPerson`/`saveSharedProfile` all use platformId-preferred lookup and `mergeHandleIntoOwner`; `addPerson`'s attach/already outcomes gained `noteTruncated` (closes prior flag 3) and `handleDropped` (closes prior flag 5); `saveSharedProfile`'s outcomes gained `handleDropped` and new optional `source`/`platformId` args.
+- `convex/captures.ts` -- deleted the redundant `insertCaptureHandle` in favor of the shared `insertPersonHandles`; new `tryAttachToOwner` routes `acceptCapture`/`acceptManualCapture` through `findHandleOwner`/`mergeHandleIntoOwner` before creating (closes prior flag 2); `acceptCapture` stamps `source: "imported"`, `acceptManualCapture` defaults to `"typed"`; both now return `{status: created|attached|already, personId, ...}` instead of a bare `Id&lt;"people"&gt;`.
+- `convex/composio.ts` -- new `extractPlatformId` sibling to `extractHandle` (LinkedIn `id`, Instagram `user_id` then `id`, X `id` nested like `username`); `storeVerifiedHandle` writes `platformId` alongside `verified: true` when present.
+- `convex/profiles.ts` -- `validateHandles` now passes `platformId` through instead of stripping it.
+- Test files (`people.test.ts`, `captures.test.ts`, `composio.test.ts`, `profiles.test.ts`, `memories.test.ts`, `sharedNotes.test.ts`, `handleKeys.test.ts`) -- new tests plus mechanical ripple fixes (return-shape unwrap helpers, `displayOnly()` provenance-stripping helper for tests not about provenance, one `Trần` re-escape).
+
+**Shape changes a client must know about:**
+- `addPerson` -- attached/already outcomes gained `noteTruncated: boolean`, `handleDropped: boolean`. Web-only (verified no iOS caller), so no compat concern.
+- `saveSharedProfile` -- outcomes gained `handleDropped: boolean`; new optional args `source`, `platformId`. **Verified against `ios/Haven/Capture/CaptureDrain.swift`'s `SharedProfileOutcome`**: plain `Decodable` struct with only `status`/`personId`/`noteTruncated`, no `CodingKeys` -- Swift's synthesized decoding ignores unknown JSON keys, so this is additive-safe. iOS never sends `source`/`platformId`, which is fine (both optional, legacy behavior).
+- `captures.acceptCapture`/`acceptManualCapture` -- now return `{status, personId, ...}` instead of bare `Id&lt;"people"&gt;`. **Verified iOS never calls these** (only `captures:generateUploadUrl`, `captures:createCapture`, `people:saveSharedProfile`) -- web-only (`CaptureTriage.tsx`), whose consumption is fire-and-forget (`.then(() =&gt; setSavedCount(...))`), so no ripple there either.
+- `people.contactHandles[]` / `personHandles` rows / `profiles.handles[]` all gained optional fields. **Verified against `PersonModel.Handle`, `MyCard.Handle`** (both plain synthesized `Decodable`, no `CodingKeys`) -- additive-safe.
+- `editPerson`'s `handle_taken` branch (from brief 2) is unchanged by this brief; still flagged as needing the iOS agent to adapt.
+
+**Contradicts / interpretation calls (flagged per the brief's own request):**
+1. `acceptManualCapture`'s handle source defaults to `"typed"` (a human is typing it at triage) rather than `"imported"`; the brief's literal wording ("capture pipeline writes imported for OCR/screenshot-derived handles") is about `acceptCapture` specifically -- documented with a one-line why at the call site.
+2. `editPerson` does not do platformId-based rename-*addedAt*-preservation for a person's own handles (only the owner-merge paths -- `addPerson`, `saveSharedProfile`, captures -- do, via `mergeHandleIntoOwner`). `editPerson` uses the simpler `withAddedAt` (platform+valueKey match) since it has no independent proof of "same account, new name" without going through the owner-lookup path. Not asked for explicitly; scoped out.
+3. The new `by_user_and_platform_and_platformId` index was added unstaged, matching this schema's existing convention (no prior use of `staged: true` anywhere in it) -- worth a second look if `personHandles` is large in production.
+4. Composio's exact `id`/`user_id` field names are per the brief's literal description (I could not independently fetch the live OpenAPI doc this session); implemented and tested exactly as specified.</result>
+<usage><subagent_tokens>656931</subagent_tokens><tool_uses>181</tool_uses><duration_ms>1638113</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae93238f2e8a0f102</task-id>
+<status>stopped</status>
+<summary>No completion record was found for background agent "Agent "ae93238f2e8a0f102" had no active task; resumed from transcript in the background with your message. You'll be notified when it finishes. Output: /private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/6e71617f-d5f4-48a0-a3a5-a2056577d301/tasks/ae93238f2e8a0f102.output" after it was re-dispatched via SendMessage in the previous session. It may have been stopped (via the UI, an SDK interrupt, or agent teardown — these leave no transcript marker), or it may have been running when the previous Claude Code process exited. Check its worktree/output for partial work before assuming the task landed.</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ade79beb570e521a4</task-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/6e71617f-d5f4-48a0-a3a5-a2056577d301/tasks/ade79beb570e521a4.output</output-file>
+<status>stopped</status>
+<summary>No completion record was found for background agent "iOS 18 bump + vCard share" after it was re-dispatched via SendMessage in the previous session. It may have been stopped (via the UI, an SDK interrupt, or agent teardown — these leave no transcript marker), or it may have been running when the previous Claude Code process exited. Check its worktree/output for partial work before assuming the task landed.</summary>
+</task-notification>
+
+---
+
+keep going
+
+---
+
+<task-notification>
+<task-id>ae93238f2e8a0f102</task-id>
+<tool-use-id>toolu_01L86WSuMNn5uMtXk3tdX7sW</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/06bcb100-ed6e-4776-963f-add6fa2ec0ee/tasks/ae93238f2e8a0f102.output</output-file>
+<status>killed</status>
+<summary>Agent "Unify phone normalization seam" was stopped by user</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now let's implement the SearchAdd.tsx integration.</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae93238f2e8a0f102</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/6e71617f-d5f4-48a0-a3a5-a2056577d301/tasks/ae93238f2e8a0f102.output</output-file>
+<status>completed</status>
+<summary>Agent "Unify phone normalization seam" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Brief 4 is complete. Full report below.
+
+## Files changed
+
+**Server (convex/):**
+- `convex/composio.ts` -- added `resolveXPlatformId` action (Part A) and `TWITTER_LOOKUP_BY_USERNAME_TOOL` constant.
+- `convex/people.ts` -- added `attachToPersonId` to `addPerson` (Part B), extracted `attachToExistingPerson` helper shared by both the handle-owner-found path and the new attach path, added a `conflict` outcome to `saveSharedProfile` plus `conflictPersonId` field, added `patchXPlatformId` internal mutation (authz + stale-username guarded, called by `resolveXPlatformId`).
+- `convex/composio.test.ts`, `convex/people.test.ts` -- test-first coverage (below).
+
+**Web (src/):**
+- `src/reach.ts` -- `reachUrl` gained an optional `platformId` third arg (x/twitter only, links via `x.com/intent/user?user_id=`); added `isLinkedInHandleStale`.
+- `src/PersonDetail.tsx` -- passes `handle.platformId` to `reachUrl`; renders the LinkedIn staleness hint.
+- `src/CardPage.tsx` -- comment only, explaining why the public card can't pass a platformId yet.
+- `src/SearchAdd.tsx` -- `attachTo` state, `nameSuggestions` memo over `nameMatches`, "Same person?" suggestion UI, `attachToPersonId` wired into the `addPerson` call, conflict-message branch for the picked-someone-else case.
+- `src/index.css` -- `.atlas-suggest*` rules, `.person-handle-stale` rule.
+- `src/reach.test.ts`, `src/PersonDetail.test.tsx`, `src/SearchAdd.test.tsx` -- new/extended tests.
+
+**Provenance note:** `src/nameSuggestion.ts` and `src/nameSuggestion.test.ts` (the Levenshtein/name-fold port) were written and later rewritten by something outside my own edits mid-session -- I found duplicate content on disk after writing my own first version, adopted the version that was there (the `nameOf` accessor / `{item, kind}` shape), and built `SearchAdd.tsx`'s wiring against it. Worth knowing whose work that actually is before reviewing it as mine.
+
+## Exact public names shipped (per the contract)
+
+- `composio:resolveXPlatformId`, args `{ personId: Id&lt;"people"&gt;, username: string }`, returns `{status: "resolved", platformId} | {status: "unavailable"} | {status: "failed"}` -- matches the brief verbatim.
+- `attachToPersonId` on both `people:addPerson` and `people:saveSharedProfile` (the latter already had it pre-Brief-4; `addPerson` did not, now does).
+
+## Verification
+
+- `npm test`: **845 passed / 49 files** (baseline at end of Brief 3 was 799/48; net +46, one new file).
+- `npx tsc -b`: clean.
+- `npx tsc -p convex/tsconfig.json --noEmit`: clean.
+- No dead code, ASCII only, comments explain why.
+
+## Deviations and things to flag
+
+1. **`saveSharedProfile`'s conflict shape is a flat object, not a new discriminated-union branch.** iOS's `SharedProfileOutcome` (`CaptureDrain.swift`) is a plain `Decodable` struct with no `CodingKeys` and a non-optional `personId`. A conflict now returns `{status: "conflict", personId: &lt;true owner&gt;, noteTruncated: false, handleDropped: false, conflictPersonId: &lt;what was picked&gt;}` -- decodable by the current struct, nothing written. I changed a pre-existing test (`saveSharedProfile lets handle identity beat the attach target`) that had asserted the OLD behavior (silently favor the true owner, report "already") to assert the new refusal instead, since the brief explicitly asks for this exact scenario to become a conflict.
+
+2. **Deploy-ordering consequence, not just a compat note:** on an iOS build that predates the iOS counterpart of this brief, `CaptureDrain` doesn't branch on `status` -- it decodes fine, removes the queue item, and counts it sent regardless. So today's shipped iOS app, if this server change goes out first, will silently drop the note (not append it to the true owner, as it used to) whenever a stale "same person?" pick collides with a handle that already belongs to someone else. That's a real, if narrow, regression window between this deploy and the iOS counterpart shipping -- a deploy-ordering call for you, not something I can resolve from the server side alone.
+
+3. **`addPerson`'s conflict variant is untouched (`{status: "conflict", personIds: Id&lt;"people"&gt;[]}`)** -- web-only caller, no iOS compat constraint, so I didn't force it into the same shape as `saveSharedProfile`'s.
+
+4. **`CardPage.tsx` (the public card) still links X by username, never by id.** `publicHandleValidator` deliberately has no `platformId` field, and widening the public card's shape wasn't asked for -- left as a scope note in a code comment rather than expanding it myself.
+
+5. **The suggester's candidate pool is `searchPeople`'s live result set (&lt;=20, server search-index matched), not a full directory scan.** A person the search index doesn't surface for a given query can't be suggested however close the edit distance -- this mirrors "whatever the web person payload already carries" from the brief, but is worth knowing as a real ceiling, unlike iOS's full local mirror.
+
+6. **`resolveXPlatformId` checks ownership (`person.userId === userId`) before spending any Composio call**, not just before writing -- otherwise a signed-in user could burn the rate-limited lookup probing an arbitrary `personId` for free.</result>
+<usage><subagent_tokens>291023</subagent_tokens><tool_uses>218</tool_uses><duration_ms>1914753</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ade79beb570e521a4</task-id>
+<tool-use-id>toolu_01AwQBBaHomj1ExqxChTPTEh</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/6e71617f-d5f4-48a0-a3a5-a2056577d301/tasks/ade79beb570e521a4.output</output-file>
+<status>completed</status>
+<summary>Agent "iOS 18 bump + vCard share" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Clean and green: 456 tests, 0 failures, 0 warnings. Brief 4 is complete.
+
+## Report
+
+**Part A - provenance and ids on captures**
+- `ios/Haven/Shared/CaptureQueue.swift`: `QueuedCapture.Manual` gains optional `source`/`platformId`, with a hand-written init (a `let` property with a default value is silently dropped from Swift's synthesized memberwise init, so all existing call sites still compile).
+- `ios/Haven/Directory/AddPersonDraft.swift`: stamps `source: "typed"`.
+- `ios/Haven/Contacts/ContactImportMatching.swift`, `ios/Haven/Shared/ShareSheetModel.swift` (`.contact` case): stamp `source: "imported"`.
+- `ios/Haven/Capture/PlatformIdResolving.swift` (new): `PlatformIdResolving` protocol + `LivePlatformIdResolving`. `instagramId(forHandle:)` hits `i.instagram.com/api/v1/users/web_profile_info` with the given app-id header, 5s timeout, fail-silent via `try?`; `InstagramWebProfileInfo` parses `data.user.id` defensively (accepts string or number). `resolveXPlatformId(personId:username:)` fires `composio:resolveXPlatformId` and discards the result.
+- `ios/Haven/Capture/ConvexCaptureSink.swift`: `saveShared` now resolves a missing Instagram `platformId` before saving (works for both `.profile` and `.manual`, since `AddPersonDraft` offers Instagram/X as hand-typed platforms too), then fires the X resolve via `Task.detached` (not a plain `Task`, so it survives the drain moving on) after `platform == "x"`.
+
+**Part B - rename-proof links**
+- `ios/Haven/Directory/PersonReach.swift`: `url(platform:value:platformId:)` builds `x.com/intent/user?user_id=&lt;id&gt;` when a platformId exists (falls back to the handle link otherwise; linkedin/other platforms untouched); `instagramAppURL(platformId:)` builds the app deep link; `openURL(platform:value:platformId:canOpenAppURL:)` is the pure decision function (app link only when both an id exists and `canOpenAppURL` says yes) - the `canOpenURL` dependency is injected so the decision itself is unit-testable.
+- `ios/Haven/Directory/PersonModel.swift`: `Person.Handle` gains optional `platformId`/`addedAt` (decoded additively).
+- `ios/Haven/Directory/PersonScreen.swift`: `reachRow` now calls `PersonReach.openURL(..., canOpenAppURL: UIApplication.shared.canOpenURL)`; added `import UIKit`.
+- `ios/Haven/Info.plist`: added `LSApplicationQueriesSchemes` with `instagram`, so `canOpenURL` can answer honestly.
+
+**Part C - LinkedIn honesty**
+- `ios/Haven/Directory/HandleStaleness.swift` (new): `isStale(addedAt:comparedTo:calendar:)`, 6-month threshold, Gregorian calendar explicitly (not `.current`, to avoid locale-dependent month arithmetic), nil `addedAt` never flags.
+- `ios/Haven/Directory/PersonScreen.swift`: `reachRow` shows a quiet one-line hint under a stale LinkedIn handle.
+- `ios/Haven/Shared/ShareSheetModel.swift`: `nameMatches` now uses `DirectoryMirror.nameSuggestions` (fold + edit-distance, Brief 3's machinery) specifically for LinkedIn profile shares, keeping the exact fold match for contact cards; added `isLinkRefreshOffer`. `attachToPersonId` already existed on `QueuedCapture.Profile` and the attach-row UI already wired it through, so no new plumbing was needed there.
+- `ios/HavenShare/ShareSheet.swift`: section header reads "Same person? Update their link" for the LinkedIn case.
+
+**Cleanup**: found and removed two orphaned, unreferenced files (`ios/Haven/Capture/InstagramProfileLookup.swift`, `ios/Haven/Capture/XPlatformIdResolver.swift`) - a superseded earlier draft of the same Part A.2/A.3 design from before this session's context was compacted, never wired into `ConvexCaptureSink.swift`. Confirmed via evidence (my own edits' `old_string` matches succeeded against the pristine pre-Brief-4 file state, and a background agent's log showed it observing but not creating these files) that this was leftover scaffolding of my own, not another agent's work, so deleting it was safe.
+
+**Tests**: 456 passing (was 426 at end of Brief 3, +30 net: 29 new plus the numeric-id fixture added after the advisor's review). New files: `HavenTests/PlatformIdResolvingTests.swift`, `HavenTests/HandleStalenessTests.swift`, plus additions to `PersonReachTests.swift`, `PersonModelTests.swift`, `CaptureQueueTests.swift`, `ShareSheetModelTests.swift`.
+
+**Verification**: `cd ios &amp;&amp; xcodegen` then `xcodebuild -project Haven.xcodeproj -scheme Haven -destination 'platform=iOS Simulator,id=905373FF-AB9F-4A4C-BCD0-36C7B47DB912' -derivedDataPath build -only-testing:HavenTests test` -&gt; `** TEST SUCCEEDED **`, 456 tests, 0 failures, 0 new warnings.
+
+**Stubbed/unverifiable**: `composio:resolveXPlatformId` does not exist server-side yet (confirmed absent from `convex/composio.ts`) - the call site is live and will silently no-op via `try?` until it lands; nothing depends on its result. The Instagram app-vs-web deep-link path cannot be exercised on the simulator (Instagram is never installed, so `canOpenURL` always answers false and the web fallback always wins) - the decision logic itself is unit-tested via injected `canOpenAppURL`, but the real `UIApplication.shared.canOpenURL` wiring needs a real device to see the app-link branch actually taken.
+
+**Assumption**: `handleSourceValidator`'s `"proven"` and `"guessed"` values are never stamped from iOS in this brief - the brief only named `"typed"` and `"imported"` explicitly, and `"guessed"` is reserved per the server's own comment for this rename-proof-links work in a way I read as server-side, not an iOS stamp I was asked to add.</result>
+<usage><subagent_tokens>256850</subagent_tokens><tool_uses>126</tool_uses><duration_ms>2247894</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ade79beb570e521a4</task-id>
+<tool-use-id>toolu_01Xd1Xa654HejZ3RjfnZ4VrR</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/6e71617f-d5f4-48a0-a3a5-a2056577d301/tasks/ade79beb570e521a4.output</output-file>
+<status>completed</status>
+<summary>Agent "iOS 18 bump + vCard share" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Clean, no orphans, no `.worktrees/` or `convex/`/`src/` touched. Everything is complete and green.
+
+## Report - conflict fallback follow-up
+
+**Files changed:**
+- `ios/Haven/Capture/CaptureDrain.swift`: added `ConflictRetry.shouldRetry(_:hadAttachToPersonId:)` (pure decision: retry only when the capture asked to attach and the outcome status is `"conflict"`), and `fileprivate strippingAttach` on both `QueuedCapture.Profile` and `QueuedCapture.Manual` (same capture, `attachToPersonId` cleared). `CaptureDrain.run()`'s `.profile` and `.manual` branches now resubmit exactly once through the same `sink` when `shouldRetry` is true, then treat whatever comes back as final (still counted `sent`, capture still removed) - no loop, no second retry even on a second `"conflict"`.
+- `ios/HavenTests/CaptureDrainTests.swift`: extended `FakeSink` with `conflictingOnce`/`alwaysConflicting` (per-handle call counting to simulate "conflict once then created" vs "always conflict"), and `profile`/`manual` test helpers gained an `attachToPersonId` parameter. Added 4 integration tests against `CaptureDrain.run()` (conflicted profile resubmits once with attach stripped; conflicted manual resubmits once; a non-conflict outcome is sent untouched with exactly one call; a second conflict on the resubmit is final with exactly two calls total, not three) plus a new `ConflictRetryTests` suite with 3 pure tests on `ConflictRetry.shouldRetry` directly (retries on conflict+attach; never retries with no attach even if status says conflict; never retries on any non-conflict status).
+
+**Verification:** `cd ios &amp;&amp; xcodegen` then the same `xcodebuild ... -only-testing:HavenTests test` command -&gt; `** TEST SUCCEEDED **`, 463 tests (was 456), 0 failures, 0 new warnings.
+
+**Note:** the server's `conflictPersonId`/`handleDropped` fields were not added to iOS's `SharedProfileOutcome` - the fix only needed `status`, which was already decoded, and the coordinator's earlier confirmation that unknown-key decoding is safe means no change was needed there.</result>
+<usage><subagent_tokens>280096</subagent_tokens><tool_uses>140</tool_uses><duration_ms>2538026</duration_ms></usage>
+</task-notification>
+
+---
+
+give me a master prompt i can use other agent to review
+
+---
+
+can u teach me everything u done for each lead?
+
+---
+
+Found 6 high-severity and 10 medium-severity defects. I made no source changes or commits. `HEAD` equals `main`, so the reviewed feature is entirely in the uncommitted working tree.
+
+## Correctness defects
+
+1. **P1 - Editing handles in iOS destroys stable identity metadata.**  
+   [PersonFieldEditors.swift:355](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Directory/PersonFieldEditors.swift:355), [PersonEditor.swift:159](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Directory/PersonEditor.swift:159), [people.ts:1233](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:1233)  
+   Input: an X handle has `platformId: "123"` and `source: "proven"`; the user merely changes which handle is primary. The editor serializes every handle as only `platform` and `value`; the server preserves `addedAt` but replaces `source` with `typed` and drops `platformId`, so the link is no longer rename-proof. I traced the complete decode-edit-encode-write path and found no metadata restoration. Confidence: certain.
+
+2. **P1 - The production X rename flow creates a duplicate instead of following the stable ID.**  
+   [ConvexCaptureSink.swift:13](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Capture/ConvexCaptureSink.swift:13), [ConvexCaptureSink.swift:111](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Capture/ConvexCaptureSink.swift:111), [people.ts:1420](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:1420), [people.ts:1562](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:1562), [people.ts:1626](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:1626)  
+   Input: Mai is stored as `old_name` with X ID `123`; she renames to `new_name`, which is shared from iOS. iOS first saves `new_name` without a platform ID, so value lookup misses and creates a second person; the detached lookup then adds ID `123` to that duplicate without reconciling it with the original. I checked the patch mutation and it only updates the requested person. Confidence: certain.
+
+3. **P1 - Platform-ID lookup can rename a handle onto a username already owned by another person.**  
+   [people.ts:389](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:389), [people.ts:430](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:430), [people.ts:1453](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:1453)  
+   Input: A owns `{value:"old", platformId:"id-a"}` and B owns `{value:"new"}`; saving `{value:"new", platformId:"id-a"}` selects A by ID and rewrites A to `new`, leaving both A and B indexed under `new`. Neither the merge nor index insertion rechecks the incoming value's existing owner. Confidence: certain.
+
+4. **P1 - The `addPerson` response change has no safe mixed-version rollout.**  
+   [people.ts:602](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:602), [SearchAdd.tsx:367](/Users/minhthiennguyen/Desktop/Euno/euno-app/src/SearchAdd.tsx:367), [vercel.json:2](/Users/minhthiennguyen/Desktop/Euno/euno-app/vercel.json:2)  
+   Input: an already-open production web tab calls the new backend after deployment. The old client expects a bare ID, receives `{status, personId}`, assigns that object to `_id`, and the next `getPerson` fails ID validation after the person was already written. Conversely, deploying a new iOS build first sends `attachToPersonId` to an old mutation validator that rejects the unknown argument. I compared the current files with `git show main:` and found no compatibility bridge or transition endpoint. Confidence: certain.
+
+5. **P1 - Invalid phone text can merge unrelated people.**  
+   [reach.ts:137](/Users/minhthiennguyen/Desktop/Euno/euno-app/src/reach.ts:137), [handleKeys.ts:38](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/handleKeys.ts:38)  
+   Input: Alice is saved with phone `unknown`, then Bob is saved with phone `Unknown`. The web phone field is only `inputMode="tel"` and retains invalid text; the server lowercases the no-digit fallback, so Bob's note attaches to Alice. I checked both client normalization and backend validation and found no requirement for at least one digit. Confidence: certain.
+
+6. **P1 - Attaching a screenshot capture discards the screenshot and extracted profile data.**  
+   [captures.ts:74](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/captures.ts:74), [captures.ts:103](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/captures.ts:103), [captures.ts:346](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/captures.ts:346), [captures.ts:360](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/captures.ts:360)  
+   Input: Ada already owns `x/ada_l`; a new screenshot of that account contains a headline, bio, link, and `screenshotId`. The attach path copies only the note and handle, deletes the capture, and leaves the screenshot blob unreferenced for the orphan sweep; the headline, bio, and link are also lost. I compared the attach path with the create path, which preserves all of those fields. Confidence: certain.
+
+7. **P2 - The denied-permission contact picker cannot complete an import.**  
+   [ContactPicker.swift:31](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Contacts/ContactPicker.swift:31), [ContactMatchModel.swift:110](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Contacts/ContactMatchModel.swift:110), [ContactMatchSection.swift:81](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Contacts/ContactMatchSection.swift:81)  
+   Input: Contacts access is denied, the user opens the system picker and selects Mai. The picker provides the selected `CNContact`, but the code discards it, retains only its ID, and attempts a new `CNContactStore` fetch while access remains denied, so nothing is queued. The installed iOS 26.5 SDK states that the app has access only to the picker's final selection, consistent with [Apple's picker API](https://developer.apple.com/documentation/contactsui/cncontactpickerviewcontroller). Confidence: certain.
+
+8. **P2 - One phone number can split into two people across client and server save paths.**  
+   [reach.ts:137](/Users/minhthiennguyen/Desktop/Euno/euno-app/src/reach.ts:137), [handleKeys.ts:29](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/handleKeys.ts:29), [captures.ts:339](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/captures.ts:339)  
+   Input: an `en-GB` browser saves `020 7946 0018` as `+442079460018`; later screenshot OCR returns the same local number. Server-side parsing has no region and indexes it as `02079460018`, misses the first owner, and creates a duplicate. I checked that the browser supplies a region while screenshot acceptance folds entirely server-side. Confidence: likely.
+
+9. **P2 - Web typo suggestions do not work against the real backend.**  
+   [SearchAdd.tsx:156](/Users/minhthiennguyen/Desktop/Euno/euno-app/src/SearchAdd.tsx:156), [SearchAdd.tsx:289](/Users/minhthiennguyen/Desktop/Euno/euno-app/src/SearchAdd.tsx:289), [people.ts:780](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:780), [nameSuggestion.ts:74](/Users/minhthiennguyen/Desktop/Euno/euno-app/src/nameSuggestion.ts:74)  
+   Input: stored name `Maya`, query `Meya`. The component requests backend full-text results first and runs Levenshtein only over that pool; Convex no longer includes typo-fuzzy matches, so Maya never reaches the distance check. This is confirmed by [Convex's search behavior](https://docs.convex.dev/search/text-search), which documents prefix matching and deprecation of fuzzy typo matches. Confidence: certain.
+
+10. **P2 - Limited Contacts access mislabels newly visible old contacts as newly created.**  
+    [ContactSuggestion.swift:9](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Contacts/ContactSuggestion.swift:9), [LiveAddressBook.swift:91](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Contacts/LiveAddressBook.swift:91), [DirectoryScreen.swift:198](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Directory/DirectoryScreen.swift:198)  
+    Input: the baseline contains only currently visible contact C1; the user grants limited access to years-old C2. The identifier set diff calls C2 newly added and displays `You added C2`, although only visibility changed. I verified the installed SDK really does make the change-history enumerator unavailable to Swift, but no authorization-scope guard compensates for that fallback. Confidence: certain.
+
+11. **P2 - "Oldest owner wins" is based on disposable index-row age and can silently flip.**  
+    [people.ts:339](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:339), [people.ts:349](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:349), [people.ts:1282](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:1282), [people.ts:1641](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:1641)  
+    Input: duplicate owners A then B exist for one handle, so A initially wins. Editing A's handles or adding an X ID deletes and recreates A's index row, making B's row older; the next share attaches to B. The person creation times are never considered. Confidence: certain.
+
+12. **P2 - Composio's advertised failure-safe action can still throw on a malformed successful response.**  
+    [composio.ts:582](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/composio.ts:582), [composio.ts:617](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/composio.ts:617), [composio.ts:658](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/composio.ts:658)  
+    Input: Composio returns HTTP 200 with `{}` or `items:null`. JSON parsing succeeds, then `owned.items.find(...)` throws outside the catch instead of returning `{status:"failed"}`. The final patch mutation is also outside a catch. Confidence: certain.
+
+13. **P2 - iOS silently ignores explicit data-loss and handle-conflict outcomes.**  
+    [CaptureDrain.swift:3](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Capture/CaptureDrain.swift:3), [CaptureDrain.swift:119](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Capture/CaptureDrain.swift:119), [PersonModel.swift:298](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Directory/PersonModel.swift:298), [PersonModel.swift:389](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Directory/PersonModel.swift:389), [people.ts:1139](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:1139)  
+    Input A: attaching a ninth handle returns `handleDropped:true`, but `SharedProfileOutcome` does not decode it and the queue item is removed as fully sent. Input B: editing a handle already owned by Mai returns `{status:"handle_taken", name:"Mai"}`, but iOS decodes only `Person`, so the user gets a generic network error rather than the conflict. Confidence: certain.
+
+14. **P2 - A timed-out conflict retry can append the same note twice.**  
+    [CaptureDrain.swift:108](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Capture/CaptureDrain.swift:108), [CaptureDrain.swift:171](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Capture/CaptureDrain.swift:171), [TaskDeadline.swift:8](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Onboarding/TaskDeadline.swift:8)  
+    Input: the initial attach returns conflict, the stripped retry commits its note but its response arrives after the client deadline. The wait times out while work continues, the queue keeps the item, and the next foreground replays it and appends the same note again. The retry is bounded to two calls per run, so it cannot loop; the defect is cross-run replay after a committed timeout. Confidence: certain.
+
+15. **P2 - JavaScript and Swift name matching diverge for astral Unicode names.**  
+    [nameSuggestion.ts:19](/Users/minhthiennguyen/Desktop/Euno/euno-app/src/nameSuggestion.ts:19), [nameSuggestion.ts:84](/Users/minhthiennguyen/Desktop/Euno/euno-app/src/nameSuggestion.ts:84), [NameSuggestion.swift:16](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Shared/NameSuggestion.swift:16), [NameSuggestion.swift:74](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Shared/NameSuggestion.swift:74)  
+    Input: query `"\u{20BB7}\u7530\u4E2D"` and candidate `"\u{20BB7}\u7530\u4EF2"`. JavaScript counts the astral character as two UTF-16 units, giving folded length 4 and distance allowance 1; Swift counts three characters and allows distance 0. Web offers a match and iOS does not. Both folds retain CJK rather than collapsing it to empty. Confidence: certain.
+
+16. **P2 privacy - Duplicate-owner diagnostics log raw personal identifiers.**  
+    [people.ts:344](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:344), [people.ts:396](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:396), [people.ts:405](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:405)  
+    Input: two rows contain phone `+14155550123`; the next lookup prints that complete number into Convex logs. `npm test` reproduced the same behavior with an Instagram username. No redaction guard exists. Confidence: certain.
+
+## Test-quality findings
+
+- **High:** [people.test.ts:1067](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.test.ts:1067) injects the stable ID into both saves. The real X client saves without it and resolves afterward, so the passing rename test bypasses defect 2.
+- **High:** [SearchAdd.test.tsx:277](/Users/minhthiennguyen/Desktop/Euno/euno-app/src/SearchAdd.test.tsx:277) manually supplies `Dun Duong` as the result for query `Dun Duogn`. That tests local Levenshtein rendering while bypassing the backend retrieval that prevents the candidate from appearing.
+- **High:** [people.test.ts:1055](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.test.ts:1055) tests defaulting a newly supplied handle to `typed`, but there is no iOS edit round-trip test asserting that existing `platformId` and provenance survive.
+- **Medium:** [captures.test.ts:1301](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/captures.test.ts:1301) verifies the note and capture deletion but never asserts retention of the screenshot, headline, bio, link, or blob.
+- **Medium:** [CaptureDrainTests.swift:382](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/HavenTests/CaptureDrainTests.swift:382) uses immediate fake responses and does not model "mutation commits, response times out, late work continues."
+- **Medium:** [ContactChangeStateTests.swift:78](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/HavenTests/ContactChangeStateTests.swift:78) tests pure set subtraction, not limited-access expansion; there is also no denied-picker import test.
+- **Low:** The new malformed-vCard tests at [VCardContactTests.swift:98](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/HavenTests/VCardContactTests.swift:98) and [VCardContactTests.swift:109](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/HavenTests/VCardContactTests.swift:109) emit repeated `Incorrect NSStringEncoding value 0x0000` and vCard lexer warnings. The tests pass, but they add noisy runtime diagnostics.
+
+## Risk notes not fully provable locally
+
+- [schema.ts:151](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/schema.ts:151) adds the platform-ID index unstaged and immediately queries it. This contradicts the repository's generated Convex guidance at [guidelines.md:191](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/_generated/ai/guidelines.md:191). Production table size was unavailable, so the deploy-block duration is unquantified. Confidence: likely.
+- [composio.ts:595](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/composio.ts:595) allows 10 lookups per minute with no daily cap, and an arbitrary username reaches two metered calls after only proving ownership of the person ID. Exact possible volume is 14,400 actions per day; financial severity depends on the Composio plan. Confidence: likely.
+- [people.ts:339](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:339) does not verify that a found person's `userId` matches the index row's user. A corrupt cross-tenant row could attach one user's note to another user's person, but I found no normal branch write path that creates that corruption. Confidence: speculative.
+
+## Verification and areas without findings
+
+- `npm test`: 49 files and 845 tests passed.
+- `npx tsc -b`: passed.
+- `npx tsc -p convex/tsconfig.json --noEmit`: passed.
+- `xcodegen`: passed.
+- iPhone 17 Pro, iOS 26.5 test run: 463 tests passed; one opt-in snapshot test skipped.
+- `git diff --check`: passed.
+- I found no separate defect in backfill paging or rerun idempotence, no write before the explicit conflict returns, and no change to non-phone handle folding.
+- Contact matching stays on-device and only selected contacts are queued; I found no wholesale address-book upload or permission prompt on app launch.
+- The untestable Instagram deep-link branch falls back to the web URL, and Instagram/X lookup failures do not block the original save. ContactAccessButton persistence still requires a physical-device check, as expected.
+
+---
+
+<task-notification>
+<task-id>ade79beb570e521a4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/486a209b-9733-4ce9-9e5b-e90fdb5efd48/tasks/ade79beb570e521a4.output</output-file>
+<status>completed</status>
+<summary>Agent "iOS 18 bump + vCard share" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Clean, no stray files, `convex/`/`src/` untouched. Everything is complete and green.
+
+## Report
+
+**Files changed (this follow-up):**
+- `ios/Haven/Directory/PersonModel.swift` - `Person.Handle` gains `source: String?` (was missing entirely; Brief 4 only added `platformId`/`addedAt`), new `EditPersonOutcome` (decodes `editPerson`'s `handle_taken` union), new `HandleEditOutcome`, new `PersonModel.editHandles(_:preferred:)`.
+- `ios/Haven/Directory/PersonFieldEditors.swift` - `Person.Handle.convexArgument` now round-trips `platformId`/`source`/`addedAt` when present; `PersonHandlesEditor`'s `save` closure returns `HandleEditOutcome`, shows an inline "That handle is saved on {name}." message on conflict, form stays open.
+- `ios/Haven/Directory/PersonEditor.swift` - `.handles` case now calls `model.editHandles(...)` instead of the generic `edit(...)`.
+- `ios/Haven/Capture/PlatformIdResolving.swift` - `xId(forUsername:)` replaces `resolveXPlatformId(personId:username:)`; new `ResolveXUsernameResponse`.
+- `ios/Haven/Capture/ConvexCaptureSink.swift` - resolves both Instagram and X ids before the save (was: X resolved via detached task after); removed the post-save fire-and-forget entirely.
+- `ios/Haven/Capture/CaptureDrain.swift` - `SharedProfileOutcome.handleDropped` decoded and logged via `os.Logger` (no UI, no counter); unaffected by conflict-retry ordering.
+- `ios/Haven/Contacts/ContactPicker.swift` - delegate now maps the picker's own `CNContact` through `LiveAddressBook.reduce` and hands back `AddressBookContact` directly, not just an identifier.
+- `ios/Haven/Contacts/ContactMatchModel.swift` - `importPicked(_:)` tries a store fetch first, falls back to the delegate-provided contact (which is the only thing that ever works under `.denied`/`.restricted`, where this picker is shown).
+- `ios/Haven/Contacts/ContactMatchSection.swift` - updated call sites for the new `ContactPicker`/`importPicked` signatures.
+- `ios/Haven/Contacts/ContactSuggestionModel.swift` - gate narrowed from `.authorized || .limited` to `.authorized` only; added injectable `changeState:` param for testability.
+
+**Tests: 463 before this follow-up -&gt; 486 after (+23).** New: `HavenTests/PersonFieldEditorsTests.swift` (handle round-trip + `EditPersonOutcome` decode), `HavenTests/LiveAddressBookReduceTests.swift` (delegate-style `CNContact` mapping), `HavenTests/ContactSuggestionModelTests.swift` (gate). Extended: `PlatformIdResolvingTests.swift` (`ResolveXUsernameResponse`), `CaptureDrainTests.swift` (`handleDropped`), `NameSuggestionTests.swift` (astral fixture).
+
+**Per-defect:**
+- I1: fixed. `Person.Handle` was also missing `source` outright (added it); `convexArgument` now sends it only when present, omits it for a freshly-typed handle.
+- I2: fixed. X id now resolved before `saveSharedProfile`, same fail-silent/short-timeout shape as Instagram; old post-save `Task.detached` call removed.
+- I3: fixed. Delegate's `CNContact` mapped directly via `LiveAddressBook.reduce`; store fetch is tried first and only used if it actually returns something.
+- I4: fixed. Gate narrowed to `.authorized` only; no baseline write happens under `.limited`/`.denied` either.
+- I5: fixed both halves. `handle_taken` decodes into an inline, non-dismissing message in the handles editor; `handleDropped` decodes and logs (no UI, no counter - queue still clears either way).
+- I6: no code change needed. Verified empirically (see below) that Swift's `Character`-based counting already agrees with Unicode code points for the reviewer's fixture; added the fixture as a pinned regression test.
+
+**One thing worth flagging, not a disagreement:** while implementing I5(b) I wrote a test assuming `var handleDropped = false`'s default would make a *missing* JSON key decode leniently, the same way `Person.Handle`'s optional provenance fields do. It doesn't - Swift's synthesized `Decodable` only treats `Optional`-typed properties as decode-if-present; a non-optional `Bool` with a default value still throws on a missing key (verified by direct test: `DecodingError.keyNotFound`). I caught this because I test-drove it and the test failed for the reason I didn't expect, not because the fix was pre-verified. It doesn't matter in practice - `saveSharedProfile`'s validator makes `handleDropped` non-optional server-side, so every real response includes it - but it's worth knowing about since the same trap is easy to hit again anywhere a `var x: Bool = false` is added to a `Decodable` type and assumed to be backward-compatible with old payloads the way an `Optional` field is.
+
+**On I6's empirical check** (verified via a standalone Swift script, not assumed): `"\u{20BB7}\u{7530}\u{4E2D}".count == 3`, matching `.unicodeScalars.count == 3` - Swift's grapheme-cluster counting and Unicode code-point counting agree here because none of the three characters combine with a neighbor. Levenshtein distance between the two folded names is 1, which stays above the `distanceLimit(forFoldedLength: 3) == 0` exact-only threshold, so no match surfaces - matching the reviewer's expected "NO match."</result>
+<usage><subagent_tokens>433812</subagent_tokens><tool_uses>105</tool_uses><duration_ms>1211930</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae93238f2e8a0f102</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/486a209b-9733-4ce9-9e5b-e90fdb5efd48/tasks/ae93238f2e8a0f102.output</output-file>
+<status>completed</status>
+<summary>Agent "Unify phone normalization seam" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+All 11 defects (S1-S11) fixed, test-first throughout. Both tsc configs clean. Full suite: my own 49 files / 882 tests are green in isolation and in the large majority of full runs; a pre-existing test-infra flake (below) intermittently hits timer-heavy tests under full parallel load.
+
+### Files changed
+- `convex/people.ts` — S1, S3, S4, S8, S10, S11b, plus `listPersonNames` (S7)
+- `convex/composio.ts` — S2, S9
+- `convex/captures.ts` — S3 (capture path), S6
+- `convex/profiles.ts` — S5 (`validateHandles`)
+- `convex/handleKeys.ts` — S5 (`isPhoneNumberPlatform`, `hasPhoneDigit`)
+- `convex/schema.ts` — S11 (unstaged-index comment)
+- `src/reach.ts` — S5 (client mirror)
+- `src/nameSuggestion.ts` — S11a (Unicode code points)
+- `src/SearchAdd.tsx` — S4 (calls `addPersonWithOutcome`), S7 (suggester pool)
+- Test files: `convex/{people,composio,captures,profiles,handleKeys}.test.ts`, `src/{nameSuggestion,reach,SearchAdd}.test.ts(x)` — new/updated coverage for every item above, plus the two reviewer-requested high-value tests (X-rename-without-pre-seeded-platformId via S2+S3 combined, capture-attach retention of headline/bio/link/screenshotId)
+
+### Per-defect (fixed how)
+- **S1**: `editPerson` now folds handles without defaulting `source` first, then carries forward `source`/`platformId`/`addedAt` from the prior entry when `(platform, valueKey)` matches; a changed value or new platform gets no carry-over, and an explicit submission still overrides.
+- **S2**: new `resolveXUsername` action (identical flow, no personId/authz); `patchXPlatformId` now refuses (+ redacted log) if a different person already owns that `(x, platformId)`; both X actions share a `xLookup:day` (50/day) cap on top of their own per-minute caps (renamed to `:minute` suffix for consistency with `createCapture`'s convention).
+- **S3**: `mergeHandleIntoOwner` is now async, takes `ctx`/`userId`/`owner`, and checks whether the incoming valueKey is already owned by someone else before a rename-in-place; refuses (zero-guess) instead of double-indexing. `addPerson`/`addPersonWithOutcome` surface this as `conflict`; `saveSharedProfile` surfaces it as `conflict` with `conflictPersonId`; `captures.ts` falls through to create (unattended, can't strand).
+- **S4**: `addPerson` reverted to `returns: v.id("people")`; all the dedup/attach/conflict logic moved into a shared `addPersonCore`; the outcome-shaped mutation is now `addPersonWithOutcome` (`src/SearchAdd.tsx` points at it). Legacy `addPerson` throws on conflict (nothing written either way) and has no `attachToPersonId` arg — safe to drop since nothing outside this branch ever saw it.
+- **S5**: `hasPhoneDigit`/`isPhoneNumberPlatform` in `handleKeys.ts`; `validateContactHandles` throws for a digitless phone/whatsapp value (covers `addPerson`, `editPerson`, `saveSharedProfile`); `acceptManualCapture` throws the same way (human at keyboard); `acceptCapture`'s `foldContactHandle` drops it instead and flags `handleDropped` on `created` too (which gained the field). `profiles.ts`'s `validateHandles` throws for platform `"phone"`. `src/reach.ts`'s `reachValue` returns `null` for a digitless phone entry.
+- **S6**: `tryAttachToOwner` gained a `fillIfEmpty` param (headline/bio/link/screenshotId); fills only when the owner's own field is empty, never overwrites; an owner who already has a screenshot legitimately orphans the new one (commented).
+- **S7**: new `listPersonNames` query (every one of the caller's people, name+handles only, capped at 2000). `SearchAdd.tsx`'s suggester now runs over that instead of `nameMatches` (which is query-scoped/search-indexed and doesn't typo-match).
+- **S8**: `oldestLiveOwner` now loads every candidate owner first and sorts by the **person's** `_creationTime`, not the row's; added the cross-tenant belt (row `userId` mismatch, and separately, a resolved owner whose own `userId` doesn't match); logs redacted to platform + row/person ids.
+- **S9**: extracted `resolveXId`, wraps the whole list+execute+extract flow (plus the trailing `patchXPlatformId` write) in one try/catch; malformed `items` (missing key, `null`) is distinguished from a well-formed empty list — malformed → `failed`, empty → `unavailable`.
+- **S10**: `appendContext` is now idempotent — skips the append when the note already appears verbatim in the existing context (closes every at-least-once replay path, not just conflict retries).
+- **S11a**: `levenshtein` and `nameSuggestions` in `nameSuggestion.ts` now count Unicode code points via `Array.from`, converted once per string not per comparison; added the reviewer's exact fixture.
+- **S11b**: every `console.error` touched this branch (`findHandleOwner`, `patchXPlatformId`) now logs platform + row/person ids only, never the raw valueKey/platformId/username.
+
+### Test counts
+Baseline (end of Brief 4): 845 tests / 49 files. Now: **882 tests / 49 files** (net +37, all new; nothing removed).
+
+### Verification
+- `npx tsc -b`: clean. `npx tsc -p convex/tsconfig.json --noEmit`: clean.
+- `npm test`: my 49 files pass 100% in every isolated/targeted run this session. Full-suite runs are flaky: of 5 consecutive `npm test` runs, one was 100% green (1643/1643, 97/97 — includes an unrelated foreign worktree `.claude/worktrees/revise-claude-md/` that appeared mid-session and isn't excluded by `vitest.config.ts`'s glob, roughly doubling parallel load), the others had 1-4 sporadic failures in timer/scheduler-heavy tests (`memories.test.ts` embed-retry-backoff, `profiles.test.ts` fan-out), scattered non-deterministically across both my files and the foreign copy, and passing 100% every time in isolation. This is the same CPU-contention failure mode `vitest.config.ts`'s own comments describe (why `people.test.ts`/`memories.test.ts` already run in a serial project group) — pre-existing test-infra fragility, not a regression; I did not touch `vitest.config.ts` since it's shared and out of this defect list's scope.
+
+### Disagreements / flags
+- **S2 daily cap**: read "on BOTH X actions" as one **shared** bucket (`xLookup:day`, 50/day total across both), not 50 each — this is the reading that actually bounds the wallet risk the review named; flagging since the brief could be read either way.
+- **S4 conflict on legacy `addPerson`**: throws with the same message the "two different people" branch already used elsewhere; nothing is written either way, so this can't corrupt data, but it does mean an old tab's generic error handler now has to survive an error type it never used to see (it previously always got a bare id back).
+- Two things outside S1-S11 that I noticed but did not touch (scope discipline): `CHANGELOG.md` shows as modified in git status but I never opened it — that's someone else's edit; and the foreign `.claude/worktrees/revise-claude-md/` directory causing the flake above — I did not modify `vitest.config.ts` to exclude it since that file is shared and untouched by this brief.</result>
+<usage><subagent_tokens>570117</subagent_tokens><tool_uses>229</tool_uses><duration_ms>2404050</duration_ms></usage>
+</task-notification>
+
+---
+
+The branch is not ready to commit yet. The second pass found 4 P1 and 2 P2 correctness defects. No files were changed during review.
+
+## Spec
+
+1. [P1] Digitless phone values still merge unrelated people - [handleKeys.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/handleKeys.ts:27), [people.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:244), [reach.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/src/reach.ts:260)
+
+   Alice saved with phone `"unknown"`, followed by Bob with `"Unknown"`, still attaches Bob to Alice. `hasPhoneDigit` was added, but no production code calls it. Only its isolated unit test does. Confidence: certain.
+
+2. [P1] `editPerson` can rename a stable-ID handle onto another person's username - [people.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:1422)
+
+   A owns `{old, id-a}` and B owns `{new}`. Editing A to `{new, id-a}` finds A through the ID-first lookup and never separately checks B's ownership of `new`. Both people then own the same username. The refusal test only covers `saveSharedProfile`. Confidence: certain.
+
+3. [P1] Same-value saves discard newly resolved stable IDs - [people.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:476)
+
+   An existing `mai.makes` handle has no stable ID. A new share resolves `id-123`, but the equal-value branch returns `changed: false` without enriching the handle. After a later rename, ID-first dedup still cannot find the original person and can mint a twin. Confidence: certain.
+
+4. [P1] Note replay detection drops legitimate notes - [people.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:556)
+
+   Existing context `"Met at Acme"` plus a later note `"Acme"` is treated as a replay because the implementation uses `existing.includes(note)`. The new note is silently discarded. Tests cover exact duplicates and partial word overlap, but not a contained note. Confidence: certain.
+
+5. [P2] A capture conflict deliberately creates a third conflicting identity - [captures.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/captures.ts:139), [captures.test.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/captures.test.ts:1513)
+
+   A owns `{old, id-a}`, B owns `{new}`, and an incoming capture contains `{new, id-a}`. The merge correctly refuses, but the refusal becomes `null`, causing the create branch to mint C with both A's ID and B's username. The test currently asserts this corruption as expected. Current UI callers do not send this combination, but the public authenticated mutation accepts it. Confidence: certain.
+
+6. [P2] `handleDropped` is still invisible to users - [SearchAdd.tsx](/Users/minhthiennguyen/Desktop/Euno/euno-app/src/SearchAdd.tsx:382), [CaptureDrain.swift](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Capture/CaptureDrain.swift:113)
+
+   Adding a ninth platform to an eight-handle person saves the note but drops the handle. Web navigates away without examining the flag. iOS writes only to Console, clears the queue, and reports the capture as sent. Confidence: certain.
+
+Test quality gaps correspond directly to these defects: no production-path digitless-phone test, no disagreeing ID/value-owner `editPerson` test, no same-value ID-enrichment test, no contained-note test, and no user-visible `handleDropped` assertion.
+
+The unstaged index remains a deployment risk only: [schema.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/schema.ts:151) says the table is small and pre-launch, but I could not verify deployed row count. I would confirm that assumption before deployment rather than classify it as a proven defect.
+
+## Standards
+
+- [P2] [patchXPlatformId](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:1881) accepts `userId` and uses it for authorization. The generated Convex rule requires deriving identity server-side. Current reachability is limited to internal callers, but the authorization boundary trusts caller-supplied identity. Confidence: certain standards violation.
+
+- [P2] The new X lookup quotas in [composio.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/composio.ts:674) extend the hand-rolled limiter despite the generated guideline requiring `@convex-dev/rate-limiter` for per-key quotas. The minute/day blocks are also duplicated between both lookup actions. Confidence: certain standards violation.
+
+- [P2] New tests contain literal non-ASCII data in [people.test.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.test.ts:527) and [nameSuggestion.test.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/src/nameSuggestion.test.ts:63), contrary to the repository's ASCII-only rule. Unicode escapes can preserve the cases. Confidence: certain standards violation.
+
+## Verification
+
+- `npm test`: 49 files, 882 tests passed.
+- `npx tsc -b`: passed.
+- `npx tsc -p convex/tsconfig.json --noEmit`: passed.
+- `xcodegen generate`: passed.
+- iOS: 486 tests in 98 suites passed; one opt-in gallery test skipped.
+- `git diff --check`: passed.
+- The worktree exclusion works; the suite was not doubled.
+- The deferred malformed-vCard log noise remains. No branch-attributable test failure occurred.
+
+The old-tab contract, pre-save X resolution, iOS metadata round-trip, picker fallback, limited-contact handling, screenshot retention, typo candidate pool, PII redaction, cross-tenant self-healing, and oldest-person tiebreak are genuinely fixed.
+
+---
+
+<task-notification>
+<task-id>ade79beb570e521a4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/486a209b-9733-4ce9-9e5b-e90fdb5efd48/tasks/ade79beb570e521a4.output</output-file>
+<status>completed</status>
+<summary>Agent "iOS 18 bump + vCard share" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Report
+
+**Test counts: 486 -&gt; 496 (+10).** New: `ios/HavenTests/HandleDropStateTests.swift` (7 tests: record/pending, second-drop-replaces-first, dismiss clears, dismiss-with-nothing-pending, same-event-resurfaces-after-dismiss, per-user scoping). Extended `ios/HavenTests/CaptureDrainTests.swift` (+3: profile/manual event content, no-event-when-not-dropped).
+
+**Files changed:**
+- `ios/Haven/Capture/HandleDropState.swift` (new) - the bookkeeping type, same style as `ContactChangeState`: App Group defaults, injectable, one pending slot rather than a growing dismissed set (a dropped handle is today's problem, not a standing judgment about a person the way a turned-down contact suggestion is).
+- `ios/Haven/Capture/CaptureDrain.swift` - `DrainResult` gains `droppedHandles: [HandleDropState.Event]`; both `.profile` and `.manual` branches append an event (personId from the outcome, name from the capture, platform) alongside the existing Console log.
+- `ios/Haven/Capture/CaptureSync.swift` - `run()` -&gt; `run(userId: String)`; records every reported drop into `HandleDropState(userId:)`.
+- `ios/Haven/RootView.swift` - all 3 call sites pass `userId:` (already in scope inside `signedIn`).
+- `ios/Haven/Directory/DirectoryScreen.swift` - reads `HandleDropState(userId:).pending` on the same `.task`/`scenePhase` cadence the contact suggestion already checks on; shows it via a `PromoCard` ahead of every other card; "View" opens the person and dismisses, the X dismisses alone.
+- `ios/HavenTests/ContactValueTests.swift` - hygiene: two pre-existing literal-Vietnamese/diacritic test strings converted to `\u{...}` escapes (predates this branch's own diff, but the file is branch-edited so it was in scope; verified this was the only violation across all 56 branch-touched files, before and after the fix).
+
+**Call-site evidence (file:line):**
+- Record side: `ios/Haven/Capture/CaptureDrain.swift:144-147` (profile branch, `result.droppedHandles.append(HandleDropState.Event(...))`) and `:170-173` (manual branch).
+- `DrainResult.droppedHandles` declared: `ios/Haven/Capture/CaptureDrain.swift:92`.
+- Bookkeeping write: `ios/Haven/Capture/CaptureSync.swift:95` (`let handleDrops = HandleDropState(userId: userId)`) and `:102-103` (`for event in result.droppedHandles { handleDrops.record(event) }`).
+- `userId` threaded from the only place it's known: `ios/Haven/RootView.swift:54`, `:57`, `:64` (`captures.run(userId: userId)`).
+- Read side: `ios/Haven/Directory/DirectoryScreen.swift:130-131` (`checkForDroppedHandle()` -&gt; `HandleDropState(userId: userId).pending`), called from `:121` (`.task`) and `:126` (`.onChange(of: scenePhase)`).
+- UI: `ios/Haven/Directory/DirectoryScreen.swift:229-236` (`PromoCard(title: "Could not add the \(...) handle for \(...)...", detail: "Their handles are full.", action: "View", open: openPersonForDroppedHandle, dismiss: dismissDroppedHandle)`), handlers at `:137-145`.
+- `HandleDropState` itself: `ios/Haven/Capture/HandleDropState.swift:20`.
+
+**One thing I'll flag rather than silently decide:** `DirectoryScreen`'s own check and `CaptureSync`'s drain aren't wired through a shared publisher - they're two independent listeners on the same `.task`/`scenePhase` moments (exactly how the contact suggestion already works, which is why I didn't invent a new mechanism). If `DirectoryScreen` happens to render and check before that pass's drain finishes, the notice waits for the next foreground rather than appearing immediately. This is a pre-existing architectural shape, not a defect I introduced, but worth knowing about if it comes up again.
+
+**Verification:** `cd ios &amp;&amp; xcodegen` then `xcodebuild -project Haven.xcodeproj -scheme Haven -destination 'platform=iOS Simulator,id=905373FF-AB9F-4A4C-BCD0-36C7B47DB912' -derivedDataPath build -only-testing:HavenTests test` -&gt; `** TEST SUCCEEDED **`, 496 tests, 0 failures, 0 new warnings. Full-branch ASCII scan (56 changed/added `ios/` files) clean both before commit review and after the `ContactValueTests.swift` fix.</result>
+<usage><subagent_tokens>495997</subagent_tokens><tool_uses>46</tool_uses><duration_ms>633543</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae93238f2e8a0f102</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/486a209b-9733-4ce9-9e5b-e90fdb5efd48/tasks/ae93238f2e8a0f102.output</output-file>
+<status>completed</status>
+<summary>Agent "Unify phone normalization seam" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All fixes are implemented, test-first, with real red-then-green verified for every item. Full suite: 898 tests / 49 files, green (two known pre-existing flaky tests under full-parallel load, both always green in isolation, unrelated to this work). Both `npx tsc -b` and `npx tsc -p convex/tsconfig.json --noEmit` are clean.
+
+## R1 - digitless phone/whatsapp rejection, wired for real this time
+
+- `convex/people.ts:269` inside `validateContactHandles` - throws `"A phone number needs at least one digit"`. Covers `addPerson`/`addPersonWithOutcome` (via `validateOwnedHandles` -&gt; `addPersonCore`), `editPerson` (call at `people.ts:1422`), and `saveSharedProfile` (call at `people.ts:1628`) in one place, confirmed as the only three real callers via grep.
+  - Tests: `convex/people.test.ts:1952` (`addPerson rejects a phone or whatsapp value with no digit at all` - the coordinator's exact "Alice"/"unknown" scenario), `:1973` (`editPerson rejects...`), `:2975` (`saveSharedProfile rejects...`).
+- `convex/profiles.ts:176` inside `validateHandles` - throws same message for `platform === "phone"` (platformValidator has no "whatsapp" literal there, so phone is the only reachable case; documented at the check).
+  - Test: `convex/profiles.test.ts:293` (`updateMyProfile rejects a phone handle with no digit at all`).
+- `convex/captures.ts:547` inside `acceptManualCapture` - throws before folding (human present).
+  - Test: `convex/captures.test.ts:1706` (`acceptManualCapture refuses a typed phone value with no digit at all`).
+- `convex/captures.ts:424` inside `acceptCapture` - computes `handleDropped`, folds `contactHandle` as `undefined` when true (nobody present, drop don't throw); `handleDropped` threaded onto the `"created"` outcome (`captureAcceptReturns` widened at `captures.ts` union, both `acceptCapture` and `acceptManualCapture`'s `created` returns updated).
+  - Test: `convex/captures.test.ts:281` (`acceptCapture drops a digitless extracted phone value and flags handleDropped`).
+- `src/reach.ts:270` inside `reachValue` - returns `null` before calling `normalizePhoneEntry` when `digitsOnly(trimmed) === ""`.
+  - Test: `src/reach.test.ts:207` (`a phone or whatsapp value with no digit at all is refused, not stored`) - this rewrites a previously-passing test that wrongly asserted `"call me"`/`"ask mai"` were kept as typed. Added a sibling test (`:198`, digits-but-unparseable still kept as typed) to prove the fix didn't overreach.
+- **The coordinator's exact two-person scenario**: `convex/captures.test.ts:311` (`a legacy person's digitless phone value does not attach a new capture's own digitless read`) - seeds a legacy Alice directly in the DB with a stored `"unknown"` phone value (bypassing the new gate, simulating a pre-fix row), then runs `acceptCapture` for Bob with OCR handle `"Unknown"`. I verified this test is a real regression guard by temporarily reverting `captures.ts` (`git stash`) and re-running it: it fails with `result.personId === alice` (Bob silently merged into Alice) on the old code, and passes with the fix. Restored immediately after (`git stash pop`), full suite re-confirmed green.
+
+## R2 - `convex/people.ts:1478`
+
+Inside `editPerson`'s handle-owner loop: when `findHandleOwner`'s platformId-preferred lookup resolves to the person being edited themselves (`owner !== null`, no conflict by the pre-existing check), a second plain-value lookup (no platformId) now checks whether the *new* value independently belongs to someone else, refusing with `handle_taken` if so.
+- Test: `convex/people.test.ts:674` (`editPerson refuses an id-preferred rename onto a value someone else already owns`) - both orderings covered: the pre-existing `people.test.ts:605` test covers the plain-value-collision case (no platformId), the new test covers the id-first-hit-on-self gap.
+
+## R3 - `convex/people.ts:510`
+
+Inside `mergeHandleIntoOwner`'s exact-valueKey-match branch: when `current.platformId === undefined &amp;&amp; incoming.platformId !== undefined`, enriches the stored handle in place (preserves `addedAt`, doesn't touch `source`), returns `changed: true`.
+- Test: `convex/people.test.ts:1531` (`saveSharedProfile enriches a handle with a resolved platformId on an equal-value re-share, so a later rename still finds the same person`) - full three-step chain: save without id -&gt; re-share same value with id -&gt; verify enrichment -&gt; share a renamed value with the same id -&gt; verify it attaches to the same person, no twin.
+
+## R4 - `convex/people.ts:598`
+
+`appendContext`'s replay check changed from `existing.includes(note)` to `existing.split("\n").some((line) =&gt; line.trim() === note.trim())`.
+- Tests: `convex/people.test.ts:227` (contained note still appends - "Acme" vs "Met at Acme"), `:236` (byte-identical note still skips).
+
+## R5 - `convex/captures.ts:168` and `:240`
+
+`tryAttachToOwner`'s refused-merge branch now returns `{status: "conflict", personId: owner._id}` instead of `null` (previously indistinguishable from "no owner, safe to create"). `captureAcceptReturns` gained a `conflict` member (`captures.ts:240`). Capture row is left undeleted on this branch (unchanged code path - confirmed the delete call is unreachable from here). `src/lib.ts`'s new `captureWasSaved(outcome)` helper plus `src/CaptureTriage.tsx`'s `save()` now check it: on conflict, roll the card back (same rollback as a failed mutation) instead of counting it saved or letting it fly off.
+- Test: `convex/captures.test.ts:1546` (`acceptManualCapture refuses rather than minting a corrupt third identity...`) - rewrite of the old test that asserted the corruption as expected; now asserts `{status: "conflict", personId: a.personId}`, capture still in triage, exactly 2 people exist (no twin).
+- Note (disagreement/finding, not silently skipped): I could not write an equivalent `acceptCapture` version of this test. `acceptCapture`'s own `foldContactHandle` call never passes a `platformId` (the `extracted` schema at `convex/schema.ts:192` has no `platformId` field - vision extraction can't read a numeric X id off a screenshot), and without a `platformId`, `findHandleOwner`'s value-only lookup can never disagree with the merge's own value comparison, so the "refused" branch is structurally unreachable from `acceptCapture` today. I tried constructing this test by patching a capture's `extracted.platformId` directly and it threw `Validator error: Unexpected field platformId in object` - confirmed illegal, not just untested. Documented this at `captures.ts:1596` (comment) instead of building a fake test around it. `tryAttachToOwner` still defends both callers since it's the shared seam.
+- `src/lib.test.ts` (`captureWasSaved` describe block) covers the pure decision function; `src/CaptureTriage.test.ts` has no render-level test (repo has no component-render harness for this file today - only `uploadScreenshot` is tested there), so the React wiring itself is covered by `tsc -b` (clean) plus the `captureWasSaved` unit test, not a fresh render test. Flagging this as a proportionality judgment call, not a silent gap.
+
+## R6 - `src/SearchAdd.tsx:625` (JSX), state at `:191`, branch in `handleAdd` before `onOpen`
+
+On `attached`/`already` with `handleDropped: true`, shows an inline `role="status"` notice ("Note saved to {name}. Their handles are full, so the {platform} handle was not added.") with a "View them" button that still calls `onOpen`, instead of auto-navigating. New CSS: `.atlas-add-notice`/`.atlas-add-notice-link` in `src/index.css`.
+- Test: `src/SearchAdd.test.tsx:299` (`handleDropped shows a notice instead of silently navigating, with a way to still open them`) - asserts the notice renders, `onOpen` is NOT called automatically, and clicking "View them" does call it.
+
+## Standards 1 - `convex/people.ts:1950`
+
+`patchXPlatformId` no longer takes a `userId` arg; derives it via `requireUser(ctx)` inside the internal mutation. I verified auth genuinely propagates through `ctx.runMutation` from an action in this repo's convex-test harness (not assumed) - the existing happy-path test `composio.test.ts:847` still passes unmodified after the refactor, proving the internally-derived identity matches the action's own. Updated the two direct test call sites (`people.test.ts:1706`, `:1751`) from `t.mutation(...)` to `as.mutation(...)` since there's no arg to spoof identity with anymore. Added `people.test.ts:1778` (`patchXPlatformId authorizes against the caller's own identity, not any argument`) as a direct cross-identity proof.
+
+## Standards 2 - `convex/composio.ts:601`
+
+New `enforceXLookupCaps(ctx, userId, minuteAction)` helper, called from `resolveXPlatformId` (`composio.ts:674`, was ~11 duplicated lines) and `resolveXUsername` (`composio.ts:734`). Comment at the helper (`:597-600`) notes the deferred `@convex-dev/rate-limiter` migration. No new test needed (pure dedup, no behavior change) - existing `composio.test.ts:1121` (`resolveXPlatformId and resolveXUsername share one daily cap`) still passes unmodified, proving no regression.
+
+## Standards 3
+
+`convex/people.test.ts:527` (`Mai Trần` -&gt; `Mai Tr\u1EA7n`) and `src/nameSuggestion.test.ts` (`Nguyễn Mai` -&gt; `Nguy\u1EC5n Mai` at two sites, and the CJK literals at the astral-plane test -&gt; `\u7530\u4E2D`/`\u7530\u4EF2`, kept the pre-existing `\u{20BB7}` escape as-is). Confirmed zero remaining non-ASCII in both files. Did not touch pre-existing non-ASCII elsewhere in `profiles.test.ts` (Đà Nẵng, Đặng, 李雷) - verified via `git diff main` these predate this session and are out of scope (the coordinator named only the two files/lines added this session).
+
+## Incidental fixture fixes required by R1
+
+Several pre-existing test fixtures used digitless phone placeholders (`"unlisted"`, `"call me"`-style) that my `validateContactHandles`/`profiles.ts` throw now correctly rejects. Fixed by adding a digit, not by weakening the check: `convex/profiles.test.ts` (3 sites), `convex/captures.test.ts` (2 sites), `convex/sharedNotes.test.ts`, `convex/memories.test.ts`, `convex/people.test.ts` (2 sites: an over-length fixture and a not-mine fixture).
+
+## Verification commands run
+
+`npm test` -&gt; 898 tests / 49 files green (confirmed clean twice in a row at the end; two tests in `memories.test.ts`/`profiles.test.ts` are flaky only under full parallel load - same pre-existing cause I flagged in my Phase 2 report, a foreign `.claude/worktrees/revise-claude-md/` directory duplicating test files, still present, out of scope for this brief - confirmed via 3x isolated reruns of both files, always green).
+`npx tsc -b` -&gt; clean. `npx tsc -p convex/tsconfig.json --noEmit` -&gt; clean.
+
+One process note: mid-verification I ran `git stash push -- convex/captures.ts` to prove the R1 two-person test was real (it reverted the whole file to the pre-session baseline, further back than intended); I immediately `git stash pop`ped and re-verified the full suite green afterward - nothing was lost, but flagging the detour for transparency.
+
+Files touched this turn: `convex/people.ts`, `convex/people.test.ts`, `convex/profiles.ts`, `convex/profiles.test.ts`, `convex/captures.ts`, `convex/captures.test.ts`, `convex/composio.ts`, `convex/sharedNotes.test.ts`, `convex/memories.test.ts`, `src/reach.ts`, `src/reach.test.ts`, `src/lib.ts`, `src/lib.test.ts`, `src/SearchAdd.tsx`, `src/SearchAdd.test.tsx`, `src/CaptureTriage.tsx`, `src/nameSuggestion.test.ts`, `src/index.css`.</result>
+<usage><subagent_tokens>363391</subagent_tokens><tool_uses>341</tool_uses><duration_ms>2814625</duration_ms></usage>
+</task-notification>
+
+---
+
+[Image #3] remove all the button for me except the last download one
+
+---
+
+Not ready to commit yet. Round 3 found 3 P1 correctness defects, 1 P2, and 1 unresolved standards violation.
+
+## Standards
+
+- Hard violation: [convex/composio.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/composio.ts:592) still implements X quotas through the hand-rolled limiter. The Convex rule explicitly requires `@convex-dev/rate-limiter` for per-key quotas. Consolidating the duplicated blocks was good, but documenting the component migration as deferred does not fix this standard.
+
+- Non-blocking judgment calls: [CaptureDrain.swift](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Capture/CaptureDrain.swift:130) duplicates profile/manual outcome processing, and [peopleFields.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/peopleFields.ts:11) persists the unused, reserved `"guessed"` provenance case.
+
+## Spec
+
+- P1, certain - [people.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:501) ignores conflicting stable IDs when the username is equal. Input: stored `mai/id-old`, then a newly resolved `mai/id-new` after username reassignment. The value fallback finds the old person, the equal-value branch discards `id-new`, and the new human's note is attached to the old human. Missing-ID enrichment is fixed, but differing-ID evidence must refuse rather than merge.
+
+- P1, certain - [captures.ts](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/captures.ts:419) drops digitless OCR handles from the new identity fields but preserves them in legacy `platform` and `handle`; [backfillLegacyHandles](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:2773) then indexes them without the digit gate. Two captures containing `phone/unknown` and `phone/Unknown`, followed by the documented backfill, recreate the exact duplicate identity the fix was meant to prevent.
+
+- P1, certain - [CaptureDrain.swift](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Capture/CaptureDrain.swift:132) deletes a queued capture and counts it as sent even when the server's final response remains `conflict`. No note was written, but the only local copy is discarded. [The test](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/HavenTests/CaptureDrainTests.swift:441) currently codifies that data loss as success.
+
+- P2, certain - [DirectoryScreen.swift](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Directory/DirectoryScreen.swift:119) reads the dropped-handle event only on initial load or foreground. An in-app save drains asynchronously without refreshing the banner, so it remains invisible until another foreground. Multiple drops also overwrite one another in the single pending-event slot.
+
+Test gaps correspond directly to these findings: differing stable IDs with equal usernames, digitless OCR followed by backfill, final iOS conflict retention, and `CaptureSync -> DirectoryScreen` notification delivery.
+
+Verification:
+
+- Focused web/server: 525 passed.
+- Full web/server: 897/898; the existing scheduler timer-abort failed, then its 18-test file passed in isolation.
+- Both TypeScript checks passed.
+- iOS: 496 passed, zero failures.
+- `git diff --check` passed.
+- No source files were changed.
+
+::code-comment{title="[P1] Reject conflicting stable IDs" body="When the username matches but both stored and incoming platformId values exist and differ, this branch treats the submission as already merged. That discards stronger identity evidence and attaches the new account to the old owner. Return a conflict instead." file="/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts" start=501 end=515 priority=1}
+::code-comment{title="[P1] Gate digitless legacy backfills" body="The screenshot path preserves a dropped digitless phone in the legacy scalar fields, and this migration later writes it into contactHandles and personHandles without applying hasPhoneDigit. That recreates the identity collision through the maintenance path." file="/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts" start=2777 end=2811 priority=1}
+::code-comment{title="[P1] Keep captures after final conflict" body="After zero or one retry, the capture is removed regardless of whether outcome.status is still conflict. A refused server write is therefore reported as sent and the queued note is permanently lost." file="/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Capture/CaptureDrain.swift" start=132 end=151 priority=1}
+::code-comment{title="[P2] Refresh notice after draining" body="An in-app save starts the drain but never reloads HandleDropState when the drain completes. The banner therefore does not appear while the app remains active." file="/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Directory/DirectoryScreen.swift" start=161 end=163 priority=2}
+::code-comment{title="[Standards] Replace the manual quota" body="This still uses the hand-rolled rate-limit table even though the repository's generated Convex guidance requires @convex-dev/rate-limiter for per-key quotas. Consolidation removes duplication but not the standards violation." file="/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/composio.ts" start=592 end=618 priority=2}
+
+Summary: Standards - 1 hard violation; Spec - 3 P1 and 1 P2, with wrong-person attachment from conflicting stable identity as the worst issue.
+
+---
+
+<task-notification>
+<task-id>ade79beb570e521a4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/486a209b-9733-4ce9-9e5b-e90fdb5efd48/tasks/ade79beb570e521a4.output</output-file>
+<status>completed</status>
+<summary>Agent "iOS 18 bump + vCard share" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 503 tests pass (`xcodegen` clean, full `HavenTests` suite green; up from 496 before this round). Report:
+
+## Files changed
+
+**`ios/Haven/Capture/CaptureDrain.swift`** (Y1 + optional unification)
+- `DrainResult.droppedHandles` renamed to `notices` (now carries both handle-cap drops and final conflicts).
+- New private `process(...)` method (line 194) replaces the near-duplicate `.profile`/`.manual` bodies `run()` used to have; `run()`'s two cases (lines 139-158) now just supply the payload-specific `send`/`resend`/`remove` closures. This is the optional unification the coordinator said to take "if it falls out naturally" - it did, since Y1 needed identical treatment in both branches.
+- Final-conflict handling (line 210-224): `if outcome.status == "conflict"` after the one-time retry -&gt; `result.kept += 1` (line 219, no `queue.remove` call - matches the exact retention mechanism the `catch` block at line 242 already uses for network failures) and `result.notices.append(HandleDropState.Event(..., reason: .conflict))` (line 220). Covers both cases the coordinator named: the resubmit itself conflicting again, and a capture with no `attachToPersonId` at all (server's `mergeHandleIntoOwner` "refused" branch, confirmed in `convex/people.ts` lines 1751-1762 - fires independent of whether the client ever set an attach guess).
+- `ConflictRetry.shouldRetry`'s gate is unchanged (still `hadAttachToPersonId &amp;&amp; status == "conflict"`) - retrying the id-vs-value refusal would just get the same deterministic answer again, so it's a wasted call, not a fix; only doc comments updated to explain why.
+
+**`ios/Haven/Capture/HandleDropState.swift`** (Y2b)
+- Converted from a single overwriting slot to a FIFO capped at `capacity = 5` (line 25), oldest evicted on overflow, oldest surfaced via `pending`, `dismiss()` advances to the next.
+- `Event` gained `reason: Reason` (`.handleFull` / `.conflict`).
+- `record`/`dismiss` now post `didChangeNotification` (line 48) with the `userId` as `object` (line 109) - this is Y2(a)'s live-update mechanism, placed at the single source of truth rather than duplicated at each call site.
+
+**`ios/Haven/Capture/CaptureSync.swift`** - `run(userId:)`'s recording loop (line 105-106) just follows the rename; no new call needed for Y2(a) since `HandleDropState.record` posts itself.
+
+**`ios/Haven/Directory/DirectoryScreen.swift`** (Y2a + Y1 banner copy)
+- Added `import Combine`, `.onReceive(NotificationCenter.default.publisher(for: HandleDropState.didChangeNotification))` (line 135), filtered to this screen's `userId` (line 136), calling `checkForDroppedHandle()` - fixes the "banner never appears while active" bug: a foreground-driven drain (AddPersonSheet/SearchScreen) now updates the banner immediately instead of waiting for the next scenePhase transition.
+- `dismissDroppedHandle()` (line 181) now re-reads `pending` after `dismiss()` instead of hardcoding `nil`, so the next queued FIFO event shows immediately.
+- New `droppedHandleTitle`/`droppedHandleDetail` (lines 149-165) switch on `reason` - conflict copy is "Could not save {name}." / "Their handle belongs to someone else in your Haven." per the coordinator's suggested wording; handle-full copy unchanged.
+
+**Test files**: `ios/HavenTests/CaptureDrainTests.swift`, `ios/HavenTests/HandleDropStateTests.swift`.
+
+## Red-test evidence
+
+I temporarily reverted just `CaptureDrain.swift`'s conflict branch and `HandleDropState`'s record/dismiss to their pre-fix behavior (keeping the new type shapes so the new tests would compile) and reran. Confirmed failures for the right reasons, then restored the fix and reran green:
+
+- `secondConflictIsFinal` (now "...the capture is kept, not sent"): red was `result.sent -&gt; 1 == 0`, `result.kept -&gt; 0 == 1`, `queue.pending().count -&gt; 0 == 1` at `CaptureDrainTests.swift:460-462`.
+- `conflictWithNoAttachIsKept` (new): same three assertions, red at lines 484-486.
+- `FinalConflictNoticeTests` (new suite, 2 tests): red was `result.notices -&gt; [] == [...]` at lines 579, 599.
+- `HandleDropStateTests`: `secondDropQueuesBehindFirst`, `dismissSurfacesNext`, `capacityEvictsOldest`, `recordPostsNotification`, `dismissPostsNotification` all red for the expected reasons (overwrite instead of FIFO, no notification posted).
+- All 18 previously-passing tests in the same run stayed green throughout, confirming the reverts were scoped correctly.
+
+Full command used both for red and for final green: `xcodegen` then `xcodebuild -project Haven.xcodeproj -scheme Haven -destination 'platform=iOS Simulator,id=905373FF-AB9F-4A4C-BCD0-36C7B47DB912' -derivedDataPath build -only-testing:HavenTests test`.
+
+## Test counts
+
+496 -&gt; 503 (net +7: `conflictWithNoAttachIsKept`, `FinalConflictNoticeTests` x2, `dismissSurfacesNext`, `capacityEvictsOldest`, `recordPostsNotification`, `dismissPostsNotification`; `secondConflictIsFinal` and `secondDropReplacesFirst`-&gt;`secondDropQueuesBehindFirst` were rewritten in place, not added).
+
+## Assumptions / things worth flagging
+
+- For a final-conflict notice, `HandleDropState.Event.personId` is the server's `outcome.personId` - the *existing* person who already, provably, owns the handle (not the capture's own guess). "View" therefore opens that existing card, which reads naturally with the "belongs to someone else" copy, but I inferred this target rather than it being spelled out in the brief.
+- Did not touch `CHANGELOG.md` - none of the three rounds' briefs mentioned it and the standing rule scopes me to `ios/`; flagging in case the coordinator wants an entry for the user-visible "Haven now tells you when a save could not land at all" behavior.
+- `HandleDropState.capacity = 5` is my pick for "single-digit cap" - the brief didn't specify an exact number.
+- Backup/temp files used for the red-test verification lived only in the scratchpad and in the working tree's own files (swapped back and diff-verified clean); nothing left behind.</result>
+<usage><subagent_tokens>158877</subagent_tokens><tool_uses>60</tool_uses><duration_ms>1597842</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae93238f2e8a0f102</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/486a209b-9733-4ce9-9e5b-e90fdb5efd48/tasks/ae93238f2e8a0f102.output</output-file>
+<status>completed</status>
+<summary>Agent "Unify phone normalization seam" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All citations confirmed. Everything is implemented, verified, and green. Here is my Round 3 report.
+
+## X1 - `convex/people.ts:509-517` (in `mergeHandleIntoOwner`'s equal-valueKey branch)
+
+Added: when `current.platformId !== undefined &amp;&amp; incoming.platformId !== undefined &amp;&amp; current.platformId !== incoming.platformId`, returns `{status: "refused", conflictingOwnerId: owner._id}` before the existing enrichment/no-op logic runs. `owner._id` is used (not a second distinct person) because there genuinely is no other Haven person to name here — the incoming id belongs to nobody in Haven's records yet; the conflict is "the id disagrees with who the stored value says this is," not "someone else owns this."
+- Test: `convex/people.test.ts:1674` (`saveSharedProfile refuses an equal-username share whose platformId disagrees with the stored one`) — the reviewer's exact mai/id-old + mai/id-new scenario. Confirmed real red first (`expected 'already' to be 'conflict'`) before the fix.
+- Ran the full `people.test.ts` + `captures.test.ts` suites afterward (198 tests) since `mergeHandleIntoOwner` has 4 call sites — all green, no fallout.
+
+## X2a - `convex/captures.ts:460-461` (in `acceptCapture`)
+
+`legacyPlatform`/`legacyHandle` are `undefined` when `handleDropped` is true, and both the `people` insert's `platform`/`handle` fields and `personSearchText`'s `handle` input use these instead of the raw `capture.extracted.platform`/`.handle`. Verified the only other reader I found of these two scalars in this file/adjacent files is `projectPerson`'s display projection and `backfillLegacyHandles` (X2b) — nothing else consumes them in this write path, so nothing else needed changing.
+- Tests: strengthened the existing `convex/captures.test.ts:288` (`acceptCapture drops a digitless extracted phone value and flags handleDropped`) with `person?.platform`/`person?.handle` assertions, and `convex/captures.test.ts:355` (inside the R1 two-person scenario test) with the same on Bob's row. Confirmed real red first (`expected 'phone' to be undefined`) before the fix.
+
+## X2b - `convex/people.ts:2816` (in `backfillLegacyHandles`)
+
+Added the same `isPhoneNumberPlatform(keys.platform) &amp;&amp; !hasPhoneDigit(legacy.value)` gate used everywhere else, incrementing a new `refused` counter and `continue`-ing past the row instead of folding it. Added `refused: v.number()` to the returns validator; updated the test helper `drainLegacyHandlesBackfill` and its 6 existing call sites to track/assert it (all still green, `refused: 0` in every pre-existing scenario).
+- Tests: `convex/people.test.ts:3366` (`backfillLegacyHandles skips a digitless phone scalar and counts it refused`) and `convex/people.test.ts:3400` (`backfillLegacyHandles never creates a shared valueKey between two legacy digitless phone rows` — the reviewer's exact two-legacy-row chain, seeded directly since acceptCapture can no longer produce such a row post-X2a). I verified both are real regression guards by temporarily removing the gate (`cp` backup, edit, run, restore) — both failed with `patched: 1`/`patched: 2` instead of `refused`, confirming they're not vacuous now that X2a prevents new rows from ever reaching this state.
+
+## X3 - `@convex-dev/rate-limiter` migration
+
+- `convex/convex.config.ts` (new) mounts the component per the guidelines' example.
+- `convex/composio.ts:606-634`: `xLookupLimiter = new RateLimiter(components.rateLimiter, {...})` defines `resolveXPlatformIdMinute`, `resolveXUsernameMinute` (fixed window, rate 10, period MINUTE_MS), and `xLookupDay` (fixed window, rate 50, period DAY_MS) — one shared name for both actions, matching the old shared-bucket semantics. `enforceXLookupCaps` (`composio.ts:637`) now calls `xLookupLimiter.limit(ctx, name, {key: userId})` and throws the exact old message `"Too many requests -- please wait a moment"` on `!ok`, rather than using the component's own `throws: true` (whose `ConvexError` message is a JSON blob, not this text — verified by constructing one directly and printing `.message`).
+- All three limits use `start: 0` (deterministic, epoch-aligned windows). Finding worth flagging: I initially left `start` unspecified (the component's documented default — a random offset picked once per key at first use) and hit a real, reproducible-under-load flake in the exact shared-daily-cap test: about 1 run in ~50 let the 51st call through because the random window origin happened to roll over during the test's `vi.advanceTimersByTime` span. Diagnosed by reading `calculateRateLimit` in the package source (`ts: config.start ?? now - Math.floor(Math.random() * config.period)`), confirmed by a scratch reproduction, fixed by pinning `start: 0`, then confirmed clean across 5 consecutive full runs of `composio.test.ts` (41/41 each). I'm flagging this since it's exactly the class of subtle correctness gap this migration was meant to close, not open.
+- `convex/composio.test.ts:16`: `rateLimiterTest.register(t)` (from `@convex-dev/rate-limiter/test`, the package's own convex-test helper) added to `newHarness()`.
+- Test: `convex/composio.test.ts:1128` (`resolveXPlatformId and resolveXUsername share one daily cap`) — unmodified, passes against the component. Ran it 5x standalone and as part of the full `composio.test.ts` file (41/41 each time) after the `start: 0` fix.
+- `convex/rateLimit.ts`: one-line comment added above `checkRateLimit` pointing future quotas at the component; zero pre-existing call sites touched (verified `composio.ts:463` and `:527`, the only other `enforceRateLimit` sites in that file, are byte-identical to before).
+- `npx convex codegen` run twice (once after mounting the component, once after the composio.ts edits settled) — process note: this round-trips through the dev deployment (`Downloading current deployment state` / `Uploading functions to Convex` in its own output), which is expected/unavoidable for mounting a new component per Convex's own docs, but flagging for transparency since it's a side effect beyond local codegen. Final diff to `convex/_generated/api.d.ts` is exactly the `components: { rateLimiter: ... }` addition, nothing else.
+
+## Cleanup - `convex/peopleFields.ts:11-13`
+
+Comment now says plainly: `"guessed" is reserved, unused today, for the LinkedIn slug-guess flow (reach.ts's LinkedIn staleness hint reads addedAt, not source...) -- not dead, just not built yet.`
+
+## Verification
+
+- `npm test`: the machine is under very heavy load right now (`uptime` showed load averages of 170/146/92 — many concurrent processes, 4 logged-in users) and the known timer-abort flake fired across a shifting set of files on repeated full-parallel runs (`profiles.test.ts`, `memories.test.ts`, `captures.test.ts`, `crons.test.ts`, `sharedNotes.test.ts` at various points) — this is the exact flake the coordinator pre-acknowledged, not a regression: every single flagged file passed clean in isolation every time I checked. To get a trustworthy number under current load, I ran all 49 test files individually (sequential, no cross-file contention): **901/901 tests, 49/49 files, all green.**
+- `npx tsc -b`: clean.
+- `npx tsc -p convex/tsconfig.json --noEmit`: clean.
+- `npx convex codegen`: clean, diff limited to the `components.rateLimiter` addition.
+
+Files touched this round: `convex/convex.config.ts` (new), `convex/composio.ts`, `convex/composio.test.ts`, `convex/people.ts`, `convex/people.test.ts`, `convex/captures.ts`, `convex/captures.test.ts`, `convex/rateLimit.ts`, `convex/peopleFields.ts`, `package.json`, `package-lock.json`.</result>
+<usage><subagent_tokens>490938</subagent_tokens><tool_uses>139</tool_uses><duration_ms>1664793</duration_ms></usage>
+</task-notification>
+
+---
+
+Round 3 is improved, but I would not ship yet. I found four remaining correctness defects and one flaky test.
+
+## Standards
+
+0 reportable violations. Worst: none.
+
+The rate-limiter migration, server-derived auth, versioning, changelog, locks, ASCII rule, and diff hygiene are correct.
+
+## Spec
+
+4 defects. Worst: P2 identity-index contamination.
+
+1. P2, certain - [backfillPersonHandles](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:2737) still bypasses the digitless-phone gate. Two legacy people containing `phone: "unknown"` and `phone: "Unknown"` without index rows are both indexed under the same key. This creates forbidden duplicate ownership and pollutes reconciliation reports. Live writes reject the value, which keeps this below P1. Production prevalence is unconfirmed.
+
+2. P2, certain - [editPerson](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:1468) silently replaces a proven stable ID when the username is unchanged. Stored `{value: "mai", platformId: "id-old"}` plus incoming `{value: "mai", platformId: "id-new"}` resolves to the same person by value, then overwrites `id-old`. Neither ownership check compares the two IDs.
+
+3. P2, certain - [CaptureDrain](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Capture/CaptureDrain.swift:210) retains final conflicts but reprocesses them on every launch or foreground. Each pass appends another identical event through [HandleDropState](/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Capture/HandleDropState.swift:78). Dismissed banners therefore return, and duplicates can evict unrelated FIFO notices.
+
+4. P3, certain - [patchXPlatformId](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts:1976) has the same stable-ID overwrite. If the stored username still matches but Composio returns a different ID, value fallback finds the target itself and the ID is replaced. No current in-tree client calls `resolveXPlatformId`, so reachability is lower, but the public action remains exposed.
+
+## Test quality
+
+1 P2 issue. Worst: the daily-cap test is still time-dependent.
+
+[The shared daily-cap test](/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/composio.test.ts:1128) advances fake time by about 25 minutes without pinning its starting time. If it begins during the final 25 minutes before midnight UTC, the epoch-aligned daily window resets and the expected 51st-call rejection can fail. `vi.setSystemTime` should pin the test just after midnight.
+
+## Verification
+
+- Web/server: 49 files, 901/901 tests passed in the full run.
+- Focused identity suites: 528/528 passed.
+- Both TypeScript checks passed.
+- Convex codegen/typecheck passed.
+- iOS: 503 tests passed, zero failures. The opt-in gallery test was skipped as designed.
+- `git diff --check` passed.
+- No files were changed by this review.
+
+::code-comment{title="[P2] Backfill bypasses the phone gate" body="This migration sends stored contactHandles directly to insertPersonHandles. Legacy phone or WhatsApp values without digits are therefore indexed even though every live write now refuses them. Filter them with the same hasPhoneDigit rule and report the refused count." file="/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts" start=2737 end=2752 priority=2}
+::code-comment{title="[P2] Conflicting stable ID overwrites proof" body="When the value is unchanged, owner lookup falls back to this same person and the incoming platformId replaces the stored one. If both IDs exist and differ, treat that as username reassignment and refuse instead of overwriting." file="/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts" start=1521 end=1535 priority=2}
+::code-comment{title="[P2] Retained conflict is notified forever" body="The capture remains queued, so every later CaptureSync pass returns this same conflict and records another identical notice. Dismissal is not durable and duplicates can displace unrelated FIFO events. Persist a terminal or already-notified state keyed to the capture." file="/Users/minhthiennguyen/Desktop/Euno/euno-app/ios/Haven/Capture/CaptureDrain.swift" start=210 end=225 priority=2}
+::code-comment{title="[P3] X patch can replace a proven ID" body="If the supplied ID is new, findHandleOwner falls back by username and returns the target itself, allowing the stored platformId to be overwritten. Compare against existing.platformId directly and refuse when both IDs differ." file="/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/people.ts" start=1976 end=2003 priority=3}
+::code-comment{title="[P2] Daily-cap test crosses midnight" body="Fake timers inherit the current clock, then this test advances about 25 minutes. Near midnight UTC that crosses the fixed-window boundary and resets the daily quota. Pin system time inside a known UTC day before issuing calls." file="/Users/minhthiennguyen/Desktop/Euno/euno-app/convex/composio.test.ts" start=1128 end=1168 priority=2}
+
+---
+
+<task-notification>
+<task-id>ae93238f2e8a0f102</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-minhthiennguyen-Desktop-Euno-euno-app/486a209b-9733-4ce9-9e5b-e90fdb5efd48/tasks/ae93238f2e8a0f102.output</output-file>
+<status>completed</status>
+<summary>Agent "Unify phone normalization seam" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All confirmed. Here is my Round 4 report.
+
+## W1 - `convex/people.ts:2806` (in `backfillPersonHandles`)
+
+Added the same `isPhoneNumberPlatform(keys.platform) &amp;&amp; !hasPhoneDigit(handle.value)` gate as `backfillLegacyHandles`, filtering `missing` into an `indexable` subset before calling `insertPersonHandles`, counting refused entries. Added `refused: v.number()` to the returns validator; updated `drainPersonHandlesBackfill` (test helper) and its 3 existing call sites from a bare-number return to `{patched, refused}`.
+- Test: `convex/people.test.ts:3355` (`backfillPersonHandles skips a digitless phone value and counts it refused, so two legacy people never share a valueKey`) — Alice (`contactHandles: [{platform:"phone", value:"unknown"}]`) and Bob (`"Unknown"`), both already carrying the array but no index row (the exact pre-index state this migration exists for). Confirmed real red first: `refused: NaN` (the mutation didn't return the field yet) before the fix; `refused: 2, patched: 0`, zero `personHandles` rows after.
+- Full `people.test.ts` suite re-run (140 tests) after — green, no fallout on the 3 existing backfill tests.
+
+## W2 - `convex/people.ts:1468-1544` (in `editPerson`'s contactHandles block)
+
+Moved `previousHandles` above the owner-check loop and added a third check inside it: when `priorMatch !== undefined &amp;&amp; priorMatch.platformId !== undefined &amp;&amp; handle.platformId !== undefined &amp;&amp; priorMatch.platformId !== handle.platformId`, returns `{status: "handle_taken", personId: args.id, name: person.name}` — mirroring `mergeHandleIntoOwner`'s X1 shape (no other Haven person to name, so it points back at the same person) — before any write happens. The carry-forward `.map()` step is otherwise unchanged.
+- Tests: `convex/people.test.ts:1477` (differing-id refusal, zero writes asserted via `toEqual(before)`), `:1510` (explicit same id — passes, `platformId` stays `"id-old"`), `:1533` (absent `platformId` — S1's carry-forward untouched, still forwards `"id-old"`). Confirmed real red first on the refusal test: the platformId was silently overwritten to `"id-new"` and the mutation returned the full edited person instead of `handle_taken`.
+- Verified the pre-existing `editPerson lets an explicit submission override carried-forward provenance` test (`people.test.ts:1444`) still passes unmodified — it seeds NO prior `platformId` (`priorMatch.platformId === undefined`), so my new check's guard condition never fires there, exactly as intended.
+- Full `people.test.ts` + `captures.test.ts` (246 tests) — green.
+
+## W3 - `convex/people.ts:2018` (in `patchXPlatformId`)
+
+Added a direct comparison right after the value-match check and before the `findHandleOwner` cross-person check: `if (existing.platformId !== undefined &amp;&amp; existing.platformId !== args.platformId)` logs the same redacted `console.error` pattern (names only the person id, never the platform value or either platformId) and returns `null` (no-op) without reaching the write.
+- Test: `convex/people.test.ts:1903` (`patchXPlatformId no-ops when the resolved id disagrees with the one already proven`) — asserts `console.error` was called, the log contains neither `"id-old"`, `"id-new"`, nor `"mai"`, and the stored `platformId` stays `"id-old"`. Confirmed real red first: `expected "error" to be called at least once` — the old code silently overwrote to `"id-new"` with no log at all.
+- Confirmed the existing `patchXPlatformId allows re-stamping the same id onto the person who already owns it` test (`people.test.ts` — same id both times) stays green, since equal ids never trip the new guard.
+
+## W4 - `convex/composio.test.ts:1153`
+
+Added `vi.setSystemTime(new Date("2026-01-01T00:05:00.000Z"))` immediately after `vi.useFakeTimers()`, before the loop, in the shared daily-cap test. I reproduced the hazard directly before fixing it: temporarily pinned to `23:50:00Z` (within the ~25-minute advance window of the next UTC midnight) and the test failed exactly as predicted — `promise resolved {status: "resolved", ...} instead of rejecting` on the 51st call, because the epoch-aligned `xLookupDay` window (`start: 0`) rolled over mid-loop and handed the bucket a fresh day's capacity. Restored the safe pin and confirmed 5 consecutive clean runs of the full `composio.test.ts` file (41/41 each).
+- Checked for sibling hazards: grepped all `vi.useFakeTimers()`/`vi.advanceTimersByTime()` uses in `composio.test.ts` (3 total) and all references to the new limit names (`resolveXPlatformIdMinute`, `resolveXUsernameMinute`, `xLookupDay`) across every test file — only this one test exercises the fixed-window quotas via fake-timer advancement. The other two `vi.useFakeTimers()` blocks (`deleteMyAccount`'s scheduled-cleanup flush tests) never advance time by a fixed amount or touch the rate limiter at all — no fix needed there.
+
+## Verification
+
+- `npm test`: machine load was elevated for part of this round (`uptime` showed 57/38/52 at check time, down from Round 3's 170/146/92) — one full-parallel run showed 3 unrelated flaky failures, a second and third full run were clean at **906/906 tests, 49/49 files**.
+- Given the coordinator's explicit ask, also ran every test file individually (no cross-file contention): **906/906 tests, 49/49 files, 100% green**, matching the full-parallel clean runs.
+- `npx tsc -b`: clean.
+- `npx tsc -p convex/tsconfig.json --noEmit`: clean.
+
+Files touched this round: `convex/people.ts`, `convex/people.test.ts`, `convex/composio.test.ts`.</result>
+<usage><subagent_tokens>549074</subagent_tokens><tool_uses>55</tool_uses><duration_ms>789473</duration_ms></usage>
+</task-notification>
+
+---
+
+ready. u can create a PR and ship it with note for what we should think and check on after on this just in case (like the Still needing a real device eventually: the ContactAccessButton grant persistence, the Instagram deep-link branch, and one live X lookup - all degrade safely if they fail.). run the ci locally as github ci is outage now
