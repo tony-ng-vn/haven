@@ -1,37 +1,32 @@
-// The minimal nav shared by the three public pages (the landing hero, Your
-// Sky, and the iOS waitlist page): the wordmark left, three plain-text links
-// right. No pills, no background of its own -- it reads directly on the dark
-// sky behind it, wherever that page's own DriftSky sits.
+// The minimal nav shared by every public page (the landing hero, Your Sky,
+// and the iOS waitlist page): the Haven mascot and wordmark left, three
+// plain-text links right. No pills, no background of its own -- it reads
+// directly on the dark sky behind it, wherever that page's own DriftSky
+// sits.
 //
 // Absolutely positioned so it drops onto any positioning context (the
 // landing hero's `position: relative` box, or the other pages' `position:
 // fixed` .card-page) without needing to know which.
 //
-// Two opt-in props, both defaulting to the shape every existing caller
-// already renders, so root, /landing, and iOS keep this anchor exactly as
-// before with no props at all:
-// - icon defaults to false; only Landing2Page opts in, to sit the Haven
-//   mascot next to the wordmark. The icon+text row layout lives under
-//   .landing2 .top-nav-brand in index.css rather than a modifier class here,
-//   since Landing2Page is the only caller today and the ancestor selector
-//   already guarantees no other page's markup or style can shift.
-// - links defaults to true; only Sky opts out (links={false}). Of the
-//   cluster's three destinations, "Your Sky" is moot (already the page you
-//   are on) and "iPhone" is covered by the page's own second hero CTA;
-//   "Sign in" is not covered by anything and is intentionally dropped here,
-//   not offered elsewhere on this page -- the wordmark, which stays either
-//   way, is the way back to it (via root).
-export function TopNav({
-  icon = false,
-  links = true,
-}: {
-  icon?: boolean;
-  links?: boolean;
-}) {
+// The mascot icon used to be opt-in, added only for Landing2Page's own
+// glass-hero composition; the owner then asked for it on every page, and
+// bigger, so it is now unconditional -- there is no prop left to turn it
+// off.
+//
+// One remaining opt-in prop:
+// - links defaults to true; Sky and Landing2 opt out (links={false}). On
+//   Sky, of the cluster's three destinations, "Your Sky" is moot (already
+//   the page you are on) and "iPhone" is covered by the page's own second
+//   hero CTA; on Landing2 the owner wants nothing sitting on top of the
+//   glass artwork, and its own two hero CTAs cover the same ground. "Sign
+//   in" is not covered by anything on either page and is intentionally
+//   dropped, not offered elsewhere -- the wordmark, which stays either way,
+//   is the way back to it (via root).
+export function TopNav({ links = true }: { links?: boolean }) {
   return (
     <header className="top-nav">
       <a className="top-nav-brand" href="/">
-        {icon ? <img className="top-nav-icon" src="/icon-192.png" alt="" /> : null}
+        <img className="top-nav-icon" src="/icon-192.png" alt="" />
         Haven
       </a>
       {links ? (

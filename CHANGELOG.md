@@ -15,6 +15,9 @@ pull requests, which is where it is easiest to read anyway.
 - The Sky download page no longer feels squeezed into a narrow phone-width column on a computer screen -- it now uses the space a real desktop page has, with a wider reading column and more generous spacing the wider the window gets.
 - Visitors to that page can now also join the iPhone waitlist right from the hero, next to Download for Mac, instead of only being able to download for Mac.
 - That page's top navigation no longer repeats links to itself -- its own two buttons already cover both destinations, so only the Haven wordmark remains as the way back out.
+- The Haven mascot now sits next to the wordmark in the top navigation on every page, not just the landing2 concept page, and it is noticeably bigger than before.
+- The landing2 concept page's top navigation no longer shows its Your Sky / iPhone / Sign in links, so nothing sits on top of the glass artwork.
+- The two hero buttons ("Sky app, coming soon" and "Join the iPhone waitlist") now line up exactly level with each other everywhere they appear together -- they used to sit 4 pixels apart.
 
 ---
 

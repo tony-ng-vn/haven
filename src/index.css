@@ -2666,23 +2666,6 @@ a.card-handle:focus-visible {
   background: color-mix(in srgb, var(--accent-fill) 90%, #000);
 }
 
-/* .sky-download's own align-self/margin-top above exist for its old
-   context: the single child directly in .sky-hero's flex column, where
-   align-self:flex-start meant "hug the left edge" (the column's cross axis)
-   and margin-top:8px added one extra beat of space before the button on top
-   of .sky-hero's own gap. Now it shares .landing-hero-ctas with the iPhone
-   waitlist button, and that row already does both jobs: justify-content
-   below handles horizontal alignment for both buttons together, and the
-   row's own margin-top:8px (added to .sky-hero's gap, same as before)
-   reproduces the original spacing above the row. Left in place,
-   .sky-download's own values would add a second, smaller top-align inside
-   the row -- doubling the gap and pulling it out of vertical line with the
-   secondary button, which centers on the row's default align-items. */
-.sky-hero .landing-hero-ctas .sky-download {
-  align-self: auto;
-  margin-top: 0;
-}
-
 /* The shared CTA row centers its own children by default (see
    .landing-hero-ctas above), for the centered heroes on root/landing/
    landing2. .sky-hero is a left-aligned column, so the row's own content
@@ -2890,6 +2873,23 @@ a.card-handle:focus-visible {
   margin-top: 8px;
 }
 
+/* .sky-download's own align-self/margin-top (above) exist for its solo life
+   as the lone child of .sky-hero's flex column, where align-self:flex-start
+   hugs the column's left edge and margin-top:8px adds one beat of space
+   above it. Inside this shared row, both fight align-items:center instead:
+   flex-start overrides the row's own cross-axis centering, and the extra
+   margin-top shoves the button further down -- together landing it 4px below
+   its centered .landing-cta-secondary sibling (measured tops 640.1 vs 636.1
+   via CDP). Reset here, not on the base rule, since .sky-download still
+   renders solo outside this row -- the Sky page's own bottom repeat button --
+   and still depends on those values there. Unscoped to .landing-hero-ctas
+   itself rather than any one page, so every caller that composes the two
+   buttons in this row (root, /landing, landing2, and Sky's hero) gets it. */
+.landing-hero-ctas .sky-download {
+  align-self: auto;
+  margin-top: 0;
+}
+
 /* The secondary iPhone/waitlist action, everywhere it appears (hero and the
    iPhone section below): an outline, deliberately quieter than .sky-download's
    gold fill -- available-today and join-the-waitlist should not read as the
@@ -2936,7 +2936,14 @@ a.card-handle:focus-visible {
   padding: 20px 24px;
 }
 
+/* Icon and wordmark on one line. Was scoped under .landing2 .top-nav-brand
+   while the icon itself was opt-in on TopNav (a landing2-only experiment);
+   the owner then asked for the icon on every page, bigger, so the layout
+   moved onto this base rule -- every caller needs it now, not just one. */
 .top-nav-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 19px;
   font-weight: 500;
   color: #fff;
@@ -3537,25 +3544,10 @@ a.card-handle:focus-visible {
   justify-content: flex-start;
 }
 
-/* The Haven mascot icon, next to the wordmark -- opt-in on TopNav (see its
-   own `icon` prop comment), so only this page's markup includes the <img> at
-   all. The icon+text row layout is scoped under .landing2 rather than added
-   to the shared .top-nav-brand rule directly, for the same reason as
-   .landing-hero-ctas just above: every other caller of TopNav (root,
-   /landing, Sky, iOS) never renders the icon, but a shared rule change would
-   still apply to their .top-nav-brand regardless -- scoping under the one
-   page that actually shows it keeps their layout, not just their DOM,
-   untouched. */
-.landing2 .top-nav-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .top-nav-icon {
   display: block;
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
 }
 
 .landing2-art {

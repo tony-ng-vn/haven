@@ -66,7 +66,7 @@ export function Landing2Page() {
             constellation's own wander path never carries it behind the
             artwork. */}
         <DriftSky className="landing2-sky" lens interactive={interactive} />
-        <TopNav icon />
+        <TopNav links={false} />
 
         <div className="landing2-copy-col">
           <h1 className="landing2-hero-title">

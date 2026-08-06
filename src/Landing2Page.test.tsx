@@ -90,16 +90,23 @@ describe("Landing2Page", () => {
     expect(screen.getByText("Privacy", { selector: ".site-footer-links a" })).toBeTruthy();
   });
 
-  // TopNav's icon is opt-in (see its own `icon` prop comment); this page is
-  // the one caller that turns it on, so rendering TopNav for real (see the
-  // test just above) is what lets this assert on real markup rather than a
-  // prop passed to a stub.
+  // The mascot icon is unconditional on TopNav now (see its own comment);
+  // this just confirms this page still gets it via the real TopNav render
+  // above rather than a prop passed to a stub.
   test("shows the Haven mascot icon next to the wordmark", () => {
     const { container } = render(<Landing2Page />);
     const icon = container.querySelector(".top-nav-brand .top-nav-icon");
     expect(icon).toBeTruthy();
     expect(icon?.getAttribute("src")).toBe("/icon-192.png");
     expect(icon?.getAttribute("alt")).toBe("");
+  });
+
+  // TopNav's links cluster ("Your Sky" / "iPhone" / "Sign in") sat on top of
+  // the glass artwork -- the owner asked for it gone on this page. TopNav is
+  // rendered for real above (links={false}), so this checks the real markup.
+  test("has no top nav links cluster on top of the artwork", () => {
+    const { container } = render(<Landing2Page />);
+    expect(container.querySelector(".top-nav-links")).toBeNull();
   });
 
   // Reused, not copied: the same host class driftSkyCanvasSizing.test.ts
