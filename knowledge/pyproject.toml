@@ -1,0 +1,28 @@
+[project]
+name = "haven-knowledge"
+version = "0.1.0"
+description = "Haven Memory Knowledge Foundation v0: evidence-preserving knowledge service over Polygres"
+requires-python = ">=3.12"
+dependencies = [
+    "psycopg[binary]>=3.2",
+    "polygres-sdk==0.1.0",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "db: integration tests that need the managed Polygres database (DATABASE_URL with credentials)",
+    "runtime: integration tests that need the Polygres Runtime API (POLYGRES_API_KEY)",
+    "model: tests that call the extraction or embedding provider (OPENAI_API_KEY)",
+]
