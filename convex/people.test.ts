@@ -2771,36 +2771,51 @@ test("saveSharedProfile attaches a second platform to the person the user picked
   expect(dedup).toEqual({ status: "already", personId, noteTruncated: false, handleDropped: false });
 });
 
-test("saveSharedProfile creates a new person when the attach target holds another handle on that platform", async () => {
+test("saveSharedProfile replaces a stale same-platform handle on the person the user picked", async () => {
   const t = convexTest(schema, modules);
-  const { as } = await asNewUser(t);
+  const { userId, as } = await asNewUser(t);
   const personId = await addPersonId(as, {
     ...manualAdd,
     name: "Mai Tr\u1ea7n",
-    contactHandles: [{ platform: "instagram", value: "mai.makes" }],
+    contactHandles: [{ platform: "linkedin", value: "mai-tran-old" }],
   });
+  await t.run((ctx) =>
+    ctx.db.patch("people", personId, {
+      link: "https://linkedin.com/in/mai-tran-old",
+    }),
+  );
 
-  // The drain replays this with nobody present to resolve the conflict, so
-  // refusing would strand the capture; it lands as its own person instead.
+  // LinkedIn does not expose a permanent account id. The user selecting the
+  // existing person is the proof that this new slug replaces the old one.
   const result = await as.mutation(api.people.saveSharedProfile, {
-    ...sharedProfile,
-    handleValue: "mai.ceramics",
-    profileUrl: "https://instagram.com/mai.ceramics",
+    platform: "linkedin",
+    handleValue: "mai-tran-new",
+    profileUrl: "https://linkedin.com/in/mai-tran-new",
+    name: "Mai Tr\u1ea7n",
+    note: "new role at Photon",
     attachToPersonId: personId,
   });
-  expect(result.status).toBe("created");
-  expect(result.personId).not.toBe(personId);
+  expect(result).toEqual({
+    status: "attached",
+    personId,
+    noteTruncated: false,
+    handleDropped: false,
+  });
 
   const target = await as.query(api.people.getPerson, { id: personId });
   expect(displayOnly(target?.contactHandles)).toEqual([
-    { platform: "instagram", value: "mai.makes" },
+    { platform: "linkedin", value: "mai-tran-new" },
   ]);
-  const created = await as.query(api.people.getPerson, {
-    id: result.personId,
-  });
-  expect(displayOnly(created?.contactHandles)).toEqual([
-    { platform: "instagram", value: "mai.ceramics" },
-  ]);
+  expect(target?.link).toBe("https://linkedin.com/in/mai-tran-new");
+  expect(target?.context).toBe("met before this test\nnew role at Photon");
+
+  const people = await t.run((ctx) =>
+    ctx.db
+      .query("people")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect(),
+  );
+  expect(people).toHaveLength(1);
 });
 
 test("saveSharedProfile creates a person when the attach target is gone or not the caller's", async () => {
@@ -2917,16 +2932,23 @@ test("saveSharedProfile attaches onto a handle whose stored platform was never n
   expect(person?.context).toBe("met at the ceramics market");
   expect(person?.contactHandles).toHaveLength(1);
 
-  // A genuinely different account on that platform lands as its own person
-  // rather than failing the queued capture.
+  // The explicit attach choice also authorizes replacing the stale handle.
   const second = await as.mutation(api.people.saveSharedProfile, {
     ...sharedProfile,
     handleValue: "mai.ceramics",
     profileUrl: "https://instagram.com/mai.ceramics",
     attachToPersonId: personId,
   });
-  expect(second.status).toBe("created");
-  expect(second.personId).not.toBe(personId);
+  expect(second).toEqual({
+    status: "attached",
+    personId,
+    noteTruncated: false,
+    handleDropped: false,
+  });
+  const renamed = await as.query(api.people.getPerson, { id: personId });
+  expect(displayOnly(renamed?.contactHandles)).toEqual([
+    { platform: "instagram", value: "mai.ceramics" },
+  ]);
 });
 
 test("saveSharedProfile clamps an over-cap note instead of failing the capture", async () => {
@@ -3748,6 +3770,52 @@ test("backfillPhoneHandleKeys recomputes a stale key from the old trim+lowercase
 
   // Idempotent: a second run has nothing left to patch.
   expect(await drainPhoneHandleKeysBackfill(t)).toBe(0);
+});
+
+test("saveSharedProfile finds a phone owner before the legacy key backfill runs", async () => {
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  const personId = await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "Mai Tr\u1ea7n",
+      normalizedName: "mai tran",
+      contactHandles: [{ platform: "phone", value: "+1 415 555 0123" }],
+      updatedAt: Date.now(),
+    }),
+  );
+  // This is the exact row shape present between deploying the new fold and
+  // running backfillPhoneHandleKeys.
+  await t.run((ctx) =>
+    ctx.db.insert("personHandles", {
+      userId,
+      personId,
+      platform: "phone",
+      valueKey: "+1 415 555 0123",
+    }),
+  );
+
+  const result = await as.mutation(api.people.saveSharedProfile, {
+    platform: "phone",
+    handleValue: "+14155550123",
+    profileUrl: "tel:+14155550123",
+    name: "Mai Tr\u1ea7n",
+    note: "new note",
+  });
+
+  expect(result).toEqual({
+    status: "already",
+    personId,
+    noteTruncated: false,
+    handleDropped: false,
+  });
+  const people = await t.run((ctx) =>
+    ctx.db
+      .query("people")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect(),
+  );
+  expect(people).toHaveLength(1);
 });
 
 test("backfillPhoneHandleKeys leaves non-phone platforms and already-current keys alone", async () => {

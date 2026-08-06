@@ -131,7 +131,8 @@ export default defineSchema({
   // fields only, so "which person has this Instagram handle?" is unanswerable
   // from the array itself. Every write that touches contactHandles maintains
   // these rows in the same transaction, or the two drift -- see people.ts.
-  // valueKey is the handle trimmed, stripped of leading "@", and lowercased.
+  // valueKey is the handle trimmed, stripped of leading "@", and lowercased;
+  // phone and WhatsApp values use the phone-aware fold in handleKeys.ts.
   // platformId, optional and unbackfilled, mirrors contactHandleValidator's
   // field of the same name: a platform's stable id for the account, which
   // findHandleOwner in people.ts prefers over valueKey because it survives a
