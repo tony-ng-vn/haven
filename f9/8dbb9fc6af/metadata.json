@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "f98dbb9fc6af",
+  "strategy": "manual-commit",
+  "branch": "worktree-knowledge-foundation-v0",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".env.local.example",
+    "CHANGELOG.md",
+    "docs/evaluations/memory-knowledge-v0.md",
+    "docs/polygres/development-validation.md",
+    "docs/polygres/retrieval-configuration.md",
+    "docs/specs/haven-memory-knowledge-foundation-v0.md",
+    "knowledge/README.md",
+    "knowledge/eval/run_eval.py",
+    "knowledge/src/haven_knowledge/config.py",
+    "knowledge/src/haven_knowledge/embeddings.py",
+    "knowledge/src/haven_knowledge/entries.py",
+    "knowledge/src/haven_knowledge/pipeline.py",
+    "knowledge/src/haven_knowledge/references.py",
+    "knowledge/src/haven_knowledge/retrieval.py",
+    "knowledge/src/haven_knowledge/worker.py",
+    "knowledge/tests/integration/test_lifecycle.py",
+    "knowledge/tests/integration/test_polygres_runtime.py",
+    "package.json",
+    "scripts/knowledge/eval.sh",
+    "scripts/knowledge/kcli.sh",
+    "scripts/knowledge/psql.sh",
+    "scripts/knowledge/pytest.sh",
+    "scripts/knowledge/run-with-env.sh",
+    "scripts/knowledge/setup-polygres-env.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f9/8dbb9fc6af/0/metadata.json",
+      "transcript": "/f9/8dbb9fc6af/0/full.jsonl",
+      "compact_transcript": "/f9/8dbb9fc6af/0/transcript.jsonl",
+      "content_hash": "/f9/8dbb9fc6af/0/content_hash.txt",
+      "prompt": "/f9/8dbb9fc6af/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 446,
+    "cache_creation_tokens": 1455022,
+    "cache_read_tokens": 63620370,
+    "output_tokens": 248497,
+    "api_call_count": 225
+  }
+}
