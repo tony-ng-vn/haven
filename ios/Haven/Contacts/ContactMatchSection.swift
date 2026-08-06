@@ -100,6 +100,7 @@ struct ContactMatchSection: View {
 
     private func pickerPicked(_ contact: AddressBookContact) async {
         guard await model.importPicked(contact) else { return }
+        pickerPresented = false
         onImported()
     }
 }

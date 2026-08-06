@@ -136,28 +136,34 @@ struct HandleDropStateTests {
 
     @Test("recording posts a change notification scoped to that user")
     func recordPostsNotification() {
-        let state = HandleDropState(userId: "u1", defaults: freshDefaults())
+        let userId = "record-\(UUID().uuidString)"
+        let state = HandleDropState(userId: userId, defaults: freshDefaults())
         var received: String?
         let token = NotificationCenter.default.addObserver(
             forName: HandleDropState.didChangeNotification, object: nil, queue: nil
         ) { note in
-            received = note.object as? String
+            guard note.object as? String == userId else { return }
+            received = userId
         }
         defer { NotificationCenter.default.removeObserver(token) }
 
         state.record(sample)
 
-        #expect(received == "u1")
+        #expect(received == userId)
     }
 
     @Test("dismissing posts a change notification too")
     func dismissPostsNotification() {
-        let state = HandleDropState(userId: "u1", defaults: freshDefaults())
+        let userId = "dismiss-\(UUID().uuidString)"
+        let state = HandleDropState(userId: userId, defaults: freshDefaults())
         state.record(sample)
         var notified = false
         let token = NotificationCenter.default.addObserver(
             forName: HandleDropState.didChangeNotification, object: nil, queue: nil
-        ) { _ in notified = true }
+        ) { note in
+            guard note.object as? String == userId else { return }
+            notified = true
+        }
         defer { NotificationCenter.default.removeObserver(token) }
 
         state.dismiss()

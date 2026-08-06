@@ -83,7 +83,13 @@ struct DirectoryScreen: View {
         _sharePromoDismissed = State(
             initialValue: SharePromoDismissal.isDismissed(userId: userId)
         )
-        _contactSuggestion = StateObject(wrappedValue: ContactSuggestionModel(userId: userId))
+        _contactSuggestion = StateObject(
+            wrappedValue: ContactSuggestionModel(
+                userId: userId,
+                provider: PreviewAddressBook(),
+                mirror: { nil }
+            )
+        )
     }
 
     var body: some View {

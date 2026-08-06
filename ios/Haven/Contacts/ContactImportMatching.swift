@@ -113,8 +113,10 @@ extension DirectoryMirror {
         for person in people {
             for handle in person.handles {
                 switch handle.platform.trimmedLikeJS.lowercased() {
-                case "phone": phones.insert(handle.value)
-                case "email": emails.insert(handle.value)
+                case "phone":
+                    phones.insert(ContactValue.normalizedOrRaw(phone: handle.value))
+                case "email":
+                    emails.insert(handle.value.trimmedLikeJS.lowercased())
                 default: break
                 }
             }

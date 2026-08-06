@@ -116,7 +116,7 @@ struct AddPersonSheet: View {
         // One settled name, not one lookup per keystroke: `.task(id:)`
         // cancels the sleep the moment another character lands, so only the
         // name somebody stopped typing on ever reaches the mirror.
-        .task(id: draft.name) {
+        .task(id: SuggestionRefreshKey(draft: draft)) {
             do {
                 try await Task.sleep(for: SearchModel.debounce)
             } catch {
@@ -291,6 +291,21 @@ struct AddPersonSheet: View {
         saves += 1
         onSaved()
         dismiss()
+    }
+}
+
+/// Every draft field that changes whether a name suggestion should appear.
+/// The note is deliberately absent: typing context must not restart the name
+/// debounce, but changing the handle or platform can remove a direct match.
+private struct SuggestionRefreshKey: Equatable {
+    let name: String
+    let platform: AddPersonPlatform
+    let handleText: String
+
+    init(draft: AddPersonDraft) {
+        name = draft.name
+        platform = draft.platform
+        handleText = draft.handleText
     }
 }
 

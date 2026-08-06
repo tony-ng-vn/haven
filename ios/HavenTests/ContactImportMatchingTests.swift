@@ -163,13 +163,13 @@ struct DirectoryMirrorKnownHandlesTests {
                 MirrorPerson(
                     id: "p1", name: "Ada",
                     handles: [
-                        MirrorHandle(platform: "phone", value: "+14155550132"),
+                        MirrorHandle(platform: "phone", value: "+1 (415) 555-0132"),
                         MirrorHandle(platform: "instagram", value: "ada.codes"),
                     ]
                 ),
                 MirrorPerson(
                     id: "p2", name: "Mai",
-                    handles: [MirrorHandle(platform: "Email", value: "mai@example.com")]
+                    handles: [MirrorHandle(platform: "Email", value: "Mai@Example.COM")]
                 ),
             ]
         )
