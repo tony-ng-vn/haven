@@ -501,6 +501,7 @@ export type View =
   | "signin"
   | "splash"
   | "landing"
+  | "landing-polished"
   | "card"
   | "legal"
   | "support"
@@ -556,6 +557,18 @@ export function legalDocFromPath(pathname: string): LegalDoc | null {
   return name === "privacy" || name === "terms" ? name : null;
 }
 
+/// Whether a path names the polished landing preview at inhavens.com/landing.
+///
+/// Kept standalone rather than folded into SitePage: that type's whole job is
+/// "which page does LegalPage/SupportPage answer for", and widening it here
+/// would blur that. Same trailing-slash and casing tolerance as
+/// sitePageFromPath, via the same topLevelSegment helper -- and "landing" is
+/// held back in handleNames the same way privacy/terms/support are, so no
+/// card can ever shadow it.
+export function isPolishedLandingPath(pathname: string): boolean {
+  return topLevelSegment(pathname) === "landing";
+}
+
 export function resolveView(input: {
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -572,6 +585,10 @@ export function resolveView(input: {
   const sitePage = sitePageFromPath(input.pathname ?? "/");
   if (sitePage === "support") return "support";
   if (sitePage !== null) return "legal";
+  // The polished landing preview, same precedence as the site pages just
+  // above and for the same reason: it has to be reachable by anyone with the
+  // link, signed in or out, before the auth checks below ever run.
+  if (isPolishedLandingPath(input.pathname ?? "/")) return "landing-polished";
   // Then cards, before the auth checks and deliberately so. The person this
   // page exists for is a stranger who just scanned a code, and they arrive
   // signed out: leaving it until after would sit them on a splash while Clerk

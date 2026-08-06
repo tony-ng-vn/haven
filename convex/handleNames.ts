@@ -38,6 +38,7 @@ const RESERVED = new Set<string>([
   "logout",
   "join",
   "waitlist",
+  "landing",
   "home",
   "search",
   "people",

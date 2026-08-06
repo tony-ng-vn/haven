@@ -17,6 +17,7 @@ import {
   isIosHash,
   isJoinHash,
   isLanding2Hash,
+  isPolishedLandingPath,
   isSkyHash,
   isValidEmail,
   legalDocFromPath,
@@ -1034,6 +1035,61 @@ describe("resolveView with a support path", () => {
 
   test("no one can claim it as a handle", () => {
     expect(handleFromPath("/support")).toBeNull();
+  });
+});
+
+describe("isPolishedLandingPath", () => {
+  test("names the polished landing preview", () => {
+    expect(isPolishedLandingPath("/landing")).toBe(true);
+  });
+
+  test("forgives a trailing slash and any casing", () => {
+    expect(isPolishedLandingPath("/landing/")).toBe(true);
+    expect(isPolishedLandingPath("/Landing")).toBe(true);
+  });
+
+  test("only the top level, and nothing else", () => {
+    expect(isPolishedLandingPath("/")).toBe(false);
+    expect(isPolishedLandingPath("/landing/extra")).toBe(false);
+    expect(isPolishedLandingPath("/maya")).toBe(false);
+    expect(isPolishedLandingPath("/landing2")).toBe(false);
+  });
+});
+
+describe("resolveView with the polished landing path", () => {
+  const base = {
+    isAuthenticated: false,
+    isLoading: false,
+    hash: "",
+    hasSessionHint: false,
+  };
+
+  // Same reasoning as the legal/support routes above: whoever gets this link
+  // (the owner comparing it against the default) has to reach it whether or
+  // not they happen to be signed in.
+  test("wins over every auth state", () => {
+    expect(resolveView({ ...base, pathname: "/landing" })).toBe(
+      "landing-polished",
+    );
+    expect(
+      resolveView({ ...base, pathname: "/landing", isAuthenticated: true }),
+    ).toBe("landing-polished");
+    expect(
+      resolveView({
+        ...base,
+        pathname: "/landing",
+        isLoading: true,
+        hasSessionHint: true,
+      }),
+    ).toBe("landing-polished");
+  });
+
+  test("no one can claim it as a handle", () => {
+    expect(handleFromPath("/landing")).toBeNull();
+  });
+
+  test("the bare root still resolves to the default landing", () => {
+    expect(resolveView({ ...base, pathname: "/" })).toBe("landing");
   });
 });
 

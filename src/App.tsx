@@ -8,6 +8,7 @@ import { PersonDetail } from "./PersonDetail";
 import { CaptureTriage } from "./CaptureTriage";
 import { FeedbackWidget } from "./FeedbackWidget";
 import { LandingPage } from "./LandingPage";
+import { PolishedLandingPage } from "./PolishedLandingPage";
 import { DriftSky } from "./DriftSky";
 import {
   isClerkFlowHash,
@@ -287,6 +288,7 @@ export default function App() {
     // Non-null whenever resolveView says legal, by the same check.
     return <LegalPage doc={legalDocFromPath(pathname)!} />;
   }
+  if (view === "landing-polished") return <PolishedLandingPage />;
   if (view === "support") return <SupportPage />;
   if (view === "sky") return <SkyPage />;
   if (view === "ios") return <IosPage />;

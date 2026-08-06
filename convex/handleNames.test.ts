@@ -15,6 +15,14 @@ describe("isReservedHandle", () => {
     }
   });
 
+  // The polished landing preview lives at inhavens.com/landing (see
+  // isPolishedLandingPath in src/lib.ts); if this word were claimable, a
+  // signed-up person's own card would become permanently unreachable, shadowed
+  // by that page -- the same trap privacy/terms/support are held back against.
+  test("the polished landing preview's own path is held back", () => {
+    expect(isReservedHandle("landing")).toBe(true);
+  });
+
   test("the brand is held back", () => {
     expect(isReservedHandle("haven")).toBe(true);
     expect(isReservedHandle("inhavens")).toBe(true);

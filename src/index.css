@@ -5,6 +5,30 @@
    closed -- a surface that seems to need a new hue almost always needs an
    existing one at a different opacity. designTokens.test.ts pins all of it. */
 
+/* Satoshi (Fontshare), licensed and given as-is under public/fonts -- see
+   the polished landing / landing2 concept below for where it is actually
+   used. A variable font covers the whole 300-900 weight range in one file,
+   so one @font-face per style (roman, italic) is enough; no separate weight
+   files to keep in sync. Declared here, at file scope, rather than inside
+   .landing-polished: @font-face is not scopable to a selector, and every
+   page that never opts into the "Satoshi" family never pays for more than
+   the (lazy, font-display: swap) network request. */
+@font-face {
+  font-family: "Satoshi";
+  src: url("/fonts/Satoshi-Variable.woff2") format("woff2-variations");
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/fonts/Satoshi-VariableItalic.woff2") format("woff2-variations");
+  font-weight: 300 900;
+  font-style: italic;
+  font-display: swap;
+}
+
 /* ---------------------------------------------------------------- tokens */
 
 :root {
@@ -2465,7 +2489,8 @@ a.card-handle:focus-visible {
 .sky-title,
 .ios-title,
 .top-nav-brand,
-.landing-hero-title {
+.landing-hero-title,
+.landing2-hero-title {
   font-family: var(--font-serif);
 }
 
@@ -2984,6 +3009,215 @@ a.card-handle:focus-visible {
 }
 
 /* ---------------------------------------------------------------------------
+   Polished landing (inhavens.com/landing) -- PolishedLandingPage.tsx
+
+   Every selector below is scoped under .landing-polished, the class the root
+   element carries alongside the plain .landing it reuses. That is the whole
+   contract that keeps LandingPage.tsx's own page byte-for-byte identical:
+   nothing here can ever match an element on the default landing, because
+   nothing there carries this class. Reused pieces (TopNav, Footer,
+   SkyDemoEmbed, .sky-download, .landing-cta-secondary, .landing-hero-title,
+   .top-nav-links, ...) keep their base rules completely untouched above --
+   this section only adds to them, under this one extra ancestor class.
+   ------------------------------------------------------------------------ */
+
+/* Satoshi for everything except the serif headline: set once, here, and
+   inherited by every descendant that does not declare its own font-family --
+   which is every one of them except .landing-hero-title and .top-nav-brand
+   (THE RULE's public-page editorial exception, unchanged, see the grouped
+   serif selector above). Buttons pick this up too, via the base `button {
+   font: inherit }` reset. */
+.landing-polished {
+  font-family: "Satoshi", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, sans-serif;
+}
+
+/* A real solid ring in the gold token, not the site's usual transparent-
+   outline-plus-box-shadow trick -- this scope's own accessibility bar asks
+   for exactly that shape explicitly, on every interactive element in scope.
+   That includes the footer's links: unlike the press/hover motion below
+   (which the brief keeps footer links out of, on their own default), a
+   clearer focus ring is not a motion choice, and there is no reason for the
+   one page-wide footer to read worse here than everywhere else on this
+   page. Scoped under .landing-polished either way, so the rest of the site
+   (where the box-shadow ring is already pinned by designTokens.test.ts) is
+   untouched. */
+.landing-polished :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* Press feedback, every pressable element in scope except the footer (which
+   keeps the site's plain default -- see Footer.tsx, unscoped and untouched).
+   :active fires on pointer-down, not release, so a press reads as a press
+   even on a tap that never completes. Gated out entirely under reduced
+   motion below, rather than overridden after the fact. */
+@media (prefers-reduced-motion: no-preference) {
+  .landing-polished .sky-download,
+  .landing-polished .landing-cta-secondary,
+  .landing-polished .top-nav-brand,
+  .landing-polished .top-nav-links a,
+  .landing-polished .demo-panel {
+    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .landing-polished .sky-download:active,
+  .landing-polished .landing-cta-secondary:active,
+  .landing-polished .top-nav-brand:active,
+  .landing-polished .top-nav-links a:active,
+  .landing-polished .demo-panel:active {
+    transform: scale(0.97);
+  }
+}
+
+/* Hover, fine pointers only -- a coarse pointer has no hover state to fake,
+   and faking one there just leaves a "stuck" highlight after a tap. */
+@media (hover: hover) and (pointer: fine) {
+  .landing-polished .top-nav-brand,
+  .landing-polished .top-nav-links a {
+    transition: opacity 150ms var(--ease-out), color 150ms var(--ease-out);
+  }
+
+  .landing-polished .landing-cta-secondary:hover {
+    transform: translateY(-1px);
+  }
+
+  /* The glow is a separate, pre-rendered layer (radial-gradient background,
+     sized once) whose OPACITY transitions -- never a box-shadow transitioned
+     directly, which is a layout-adjacent paint cost on every frame instead of
+     a pure compositor one. position: relative here (scoped, not on the base
+     .sky-download rule) is only so the glow has something to anchor to. */
+  .landing-polished .sky-download {
+    position: relative;
+  }
+
+  .landing-polished .sky-download::after {
+    content: "";
+    position: absolute;
+    inset: -10px;
+    border-radius: inherit;
+    background: radial-gradient(
+      closest-side,
+      color-mix(in srgb, var(--accent) 55%, transparent),
+      transparent 70%
+    );
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .landing-polished .sky-download:hover {
+    transform: translateY(-1px);
+  }
+
+  .landing-polished .sky-download:hover::after {
+    opacity: 1;
+  }
+}
+
+/* Cancels the hover lift specifically under reduced motion, rather than
+   folding a third condition into the media query above -- "nothing
+   translates" per the motion spec, but the glow's own opacity fade is not a
+   translation and stays on. */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: reduce) {
+  .landing-polished .sky-download:hover,
+  .landing-polished .landing-cta-secondary:hover {
+    transform: none;
+  }
+}
+
+/* Hero entrance: h1, subline, CTA row, and the quiet note rise and fade in
+   once, staggered 70ms apart in that reading order. Driven by a
+   [data-mounted] attribute PolishedLandingPage.tsx writes on the root one
+   tick after first paint (see its own comment for why a ref, not
+   @starting-style -- nothing else in this codebase uses that yet). The rest
+   state (opacity: 0, translateY(12px)) is unconditional, so a visitor whose
+   JS is slow or absent still sees the content -- just without the entrance,
+   which is exactly the CSS-only fallback semantics [data-mounted] gives for
+   free. */
+.landing-polished .landing-hero-title,
+.landing-polished .landing-hero-sub,
+.landing-polished .landing-hero-ctas,
+.landing-polished .landing-hero-note {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 550ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 550ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.landing-polished[data-mounted] .landing-hero-title {
+  transition-delay: 0ms;
+}
+
+.landing-polished[data-mounted] .landing-hero-sub {
+  transition-delay: 70ms;
+}
+
+.landing-polished[data-mounted] .landing-hero-ctas {
+  transition-delay: 140ms;
+}
+
+.landing-polished[data-mounted] .landing-hero-note {
+  transition-delay: 210ms;
+}
+
+.landing-polished[data-mounted] .landing-hero-title,
+.landing-polished[data-mounted] .landing-hero-sub,
+.landing-polished[data-mounted] .landing-hero-ctas,
+.landing-polished[data-mounted] .landing-hero-note {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Below-fold reveal: each .landing-section gets one gentle rise-and-fade the
+   first time it is observed intersecting (PolishedLandingPage.tsx's
+   useRevealOnScroll, once semantics -- the observer disconnects itself after
+   the first hit). No parallax, no re-triggering on scroll back up. */
+.landing-polished .landing-section {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 400ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 400ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.landing-polished .landing-section.landing-polished-in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* This scope's own contrast bar: 4.5:1 against --night. The base 0.5 alpha
+   the default landing uses measures 4.76:1 there but only 4.20:1 against
+   --dusk -- the bottom of the same fixed body gradient this text can sit in
+   front of depending on scroll position, since .landing-section has no
+   background of its own (see the default landing's own comment on why:
+   .landing-sky and the body gradient show through every section). 0.65
+   clears both (7.30:1 / 6.03:1). Only the polished landing renders
+   SkyDemoEmbed today (landing2's hero has no demo panel), but the fix lives
+   under the shared scope like everything else here rather than a page-
+   specific one, since it would apply the same way if that ever changed. */
+.landing-polished .demo-caption {
+  color: rgba(242, 239, 233, 0.65);
+}
+
+/* Reduced motion: entrances and reveals become opacity-only crossfades;
+   nothing translates. The press-scale rule above is already gated out
+   entirely by its own @media block, and the hover lift is cancelled by its
+   own block just above -- this one covers the two transform-driven entrance
+   groups. */
+@media (prefers-reduced-motion: reduce) {
+  .landing-polished .landing-hero-title,
+  .landing-polished .landing-hero-sub,
+  .landing-polished .landing-hero-ctas,
+  .landing-polished .landing-hero-note,
+  .landing-polished .landing-section {
+    transform: none;
+    transition-property: opacity;
+    transition-duration: 200ms;
+  }
+}
+
+/* ---------------------------------------------------------------------------
    Haven for iPhone (inhavens.com/#/ios)
 
    The iOS product landing: introduces the phone app and carries the waitlist
@@ -3076,420 +3310,254 @@ a.card-handle:focus-visible {
 }
 
 /* ---------------------------------------------------------------------------
-   Landing page 2 (inhavens.com/#/landing2), unlinked
+   Landing page 2 (inhavens.com/#/landing2), unlinked -- Landing2Page.tsx
 
-   An experimental concept the owner is evaluating alongside the default
-   landing: the whole viewport as one pane of broken midnight-blue glass over
-   a hidden memory world, mostly assembled at rest and breathing apart on
-   hover (desktop) or tap (touch) to reveal it through the gaps. Three
-   explicit layers, painted in this order (see Landing2Page.tsx):
-     z 0 .landing2-beneath -- the hidden world: sky, scenery, memory text
-     z 1 .landing2-glass   -- the shards, their seams, faint in-glass text
-     z 2 .landing2-content -- the Sky and iPhone product copy
-   No scrolling ancestor here (unlike .landing-sky's page-long scroll), so
-   every layer is position: absolute within .landing2 itself rather than
-   position: fixed to the viewport.
+   Rebuilt around the owner's own generated art (public/glass-hero.jpg): the
+   previous version approximated broken glass and a hidden world entirely in
+   CSS/SVG, and the owner rejected that CSS approximation once it stood next
+   to the real image. This version does not draw an approximation -- the
+   image IS the page. A single-viewport hero: the real copy on the flat page
+   navy at left, the artwork at right, fused with one blend gradient where
+   they meet. No DriftSky here at all; the art is the sky (contrast
+   .landing-sky above, still the default landing's own full-page canvas).
+
+   .landing-polished is reused wholesale on the root (see that section
+   above): Satoshi, the press/hover/focus treatment on the shared
+   .sky-download / .landing-cta-secondary / TopNav classes, and the
+   [data-mounted] entrance mechanism all apply here for free, which is why
+   this page's own rules below only add the new layout and the two
+   image-specific entrance/reveal pieces.
    ------------------------------------------------------------------------ */
-/* overflow: hidden is deliberate, not a default: revealed shards translate
-   26-48px outward from the composition's centre, and an edge or corner shard
-   moving further outward should look like glass shifting against a window
-   frame -- clipped cleanly at the boundary -- not like a gap of bare page
-   background (or a scrollbar) appearing at the edge of the screen. The
-   tradeoff: on an unusually short viewport, content anchored low (the iPhone
-   copy at top: 66%, the second memory fragment at 90%) can end up clipped
-   rather than reachable by scrolling. Accepted for a single-screen desktop
-   composition; revisit if this concept ever needs to work on a short window. */
 .landing2 {
   position: relative;
+  color: var(--text);
+  /* Sampled by eye in devtools against glass-hero.jpg's own dark navy left
+     edge, not one of the closed dusk palette's tokens (see this file's own
+     header) -- deliberately local rather than promoted to :root, since it
+     exists only to blend under this one image on this one page. */
+  background: #0d0e20;
+}
+
+.landing2-hero {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: stretch;
   min-height: 100vh;
   min-height: 100dvh;
-  background: var(--night);
-  color: var(--text);
-  overflow: hidden;
-  cursor: default;
-}
-
-.landing2-beneath,
-.landing2-glass,
-.landing2-content {
-  position: absolute;
-  inset: 0;
-}
-
-.landing2-beneath {
-  z-index: 0;
+  /* height (not just min-height) is what gives the row's stretched children
+     -- the copy column and the art panel -- a definite cross-axis size to
+     fill exactly one viewport on desktop, no scroll (see the media query
+     below for the narrow-screen exception, where this reverts to auto). */
+  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
-.landing2-glass {
+.landing2-copy-col {
+  position: relative;
   z-index: 1;
-}
-
-/* pointer-events: none so the layer's own empty space never becomes the
-   click/hover target; landing2-copy below opts back in, since its links and
-   buttons must still receive the pointer. */
-.landing2-content {
-  z-index: 2;
-  pointer-events: none;
-}
-
-/* width/height: 100% is load-bearing -- see driftSkyCanvasSizing.test.ts and
-   .landing-sky's own comment: without it a fixed/absolute canvas falls back
-   to its 300x150 intrinsic size instead of filling this layer. */
-.landing2-sky {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.landing2-scene,
-.landing2-particles {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-/* Handwritten memory fragments -- a cursive stack distinct from the site's
-   reserved --font-serif (see designTokens.test.ts's serif-count guard, which
-   this page must not touch). They are the reveal's emotional centerpiece, so
-   they run brighter than the rest of the scenery: rest stays a faint grey-
-   gold (invisible anyway under .landing2-scene-el's 0.06 wrapper opacity),
-   but revealed pushes to the accent gold at 0.9 with a two-layer warm glow
-   (tight core + wide bloom) -- through-glass dimming (the shard opacity and
-   veil above it) still tempers the final read, so this errs bright at the
-   source rather than landing faint. Font size raised ~15% (20px -> 23px)
-   for the same reason. */
-.landing2-memory {
-  position: absolute;
-  font-family: "Snell Roundhand", "Apple Chancery", cursive;
-  font-style: italic;
-  font-size: 23px;
-  line-height: 1.35;
-  color: rgba(255, 217, 160, 0.42);
-  text-align: center;
-  white-space: nowrap;
-  pointer-events: none;
-  transition: color 700ms var(--ease-out), text-shadow 700ms var(--ease-out);
-}
-
-.landing2-revealed .landing2-memory {
-  color: rgba(255, 217, 160, 0.9);
-  text-shadow:
-    0 0 4px rgba(255, 217, 160, 0.55),
-    0 0 16px rgba(255, 217, 160, 0.35);
-}
-
-.landing2-polaroid {
-  position: absolute;
-  width: 64px;
-  height: 48px;
-  padding: 4px;
-  border-radius: 3px;
-  background: rgba(12, 14, 28, 0.55);
-  border: 2px solid rgba(242, 231, 213, 0.35);
-  pointer-events: none;
-}
-
-.landing2-polaroid svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-/* Shared by every "hidden world" element that must read as almost fully
-   hidden at rest and in full presence on reveal: the moon, the mountains,
-   the trees, and (via this same class added alongside their own) the memory
-   fragments and polaroids. One rule, so "how obscured is the world at rest"
-   is a single number to tune, not one per element. */
-.landing2-scene-el {
-  opacity: 0.06;
-  transition: opacity 700ms var(--ease-out);
-}
-
-.landing2-revealed .landing2-scene-el {
-  opacity: 1;
-}
-
-/* The moon at rest is a barely-there pale disc (its exact hue hardly reads
-   at 0.06 opacity anyway); on reveal it warms to pale gold rather than
-   staying a cold grey. */
-.landing2-moon-disc {
-  fill: #d8dced;
-  transition: fill 700ms var(--ease-out);
-}
-
-.landing2-revealed .landing2-moon-disc {
-  fill: #ffd9a0;
-}
-
-/* A moonlit rim along the top ridge only, invisible at rest, and a shimmer
-   overlay on the water band underneath it -- both fade in only on reveal
-   (their own opacity: 0, nested inside .landing2-scene-el's 0.06 -> 1 fade,
-   so the combined rest opacity is exactly 0 rather than a faint 0.06).
-   Widened and brightened from the previous pass, alongside the mountain
-   fills themselves, so the ridge actually registers instead of reading as
-   near-invisible near-black on near-black. */
-.landing2-mountain-rim {
-  stroke: rgba(223, 232, 247, 0.65);
-  stroke-width: 0.2;
-  opacity: 0;
-  transition: opacity 700ms var(--ease-out);
-}
-
-.landing2-revealed .landing2-mountain-rim {
-  opacity: 0.75;
-}
-
-/* Shared by the shimmer rect and the specular highlight ellipse -- both are
-   "extra brightness on the water band that only appears revealed", so one
-   rule covers both rather than a near-duplicate second class. */
-.landing2-water-shimmer {
-  opacity: 0;
-  transition: opacity 700ms var(--ease-out);
-}
-
-.landing2-revealed .landing2-water-shimmer {
-  opacity: 1;
-}
-
-/* The cabin window's bloom halo, same nested-zero trick as the water
-   shimmer: present only once revealed, not a brighter version of the
-   whisper-level rest state. */
-.landing2-window-bloom {
-  opacity: 0;
-  transition: opacity 700ms var(--ease-out);
-}
-
-.landing2-revealed .landing2-window-bloom {
-  opacity: 1;
-}
-
-/* The dimming veil: opaque enough at rest that the beneath layer only shows
-   through as faint suggestion, dropping away on reveal. Raised from an
-   original 0.82/0.28 -- paired with the scene elements above now carrying
-   their own near-invisible rest opacity, the veil no longer has to do all
-   of the hiding by itself, but 0.9 keeps rest reading as calm and dark
-   rather than merely dim. */
-.landing2-veil {
-  position: absolute;
-  inset: 0;
-  background: var(--night);
-  opacity: 0.9;
-  transition: opacity 700ms var(--ease-out);
-}
-
-.landing2-revealed .landing2-veil {
-  opacity: 0.06;
-}
-
-/* Each shard covers the full layer and cuts itself down to one Voronoi cell.
-   clip-path, the per-shard gradient fill, and (when the page allows
-   transforms) transform/opacity/transition are all set inline --
-   Landing2Page.tsx's shardMaterial/shardFillCss -- because both the fill and
-   the opacity multiplier vary per shard (see the comment on
-   landing2Geometry.ts's ShardMaterial for why the fill's own alpha is baked
-   in rather than layered under a separate opacity). No backdrop-filter: 22
-   blurred layers is a compositor cost the veil's own opacity already buys
-   the same frosted-obscurity read without.
-
-   opacity is NOT set here: it used to be (a flat 0.5 rest / 0.34 revealed
-   pair), but once it became per-shard and inline, a class rule here would
-   silently lose that fight every time -- inline always wins over a
-   non-important external rule for the same property, so the symptom would
-   be "the CSS looks right but does nothing," not a visible break. */
-.landing2-shard {
-  /* A plain div, unlike .landing2-sky's canvas: inset: 0 alone stretches a
-     non-replaced element to fill its box, no explicit width/height needed. */
-  position: absolute;
-  inset: 0;
-  will-change: transform, opacity;
-}
-
-/* The frost tint for the 6 hash-selected frosty shards: its own child
-   element (not a gradient layer inside .landing2-shard's own background) so
-   its opacity can scale independently of the shard's own opacity multiplier.
-   Baked-in gradient alpha would ride that multiplier UP on reveal along with
-   everything else, which was the reported bug -- a milky glare brighter than
-   the revealed world, exactly backwards from every other shard darkening
-   toward glossy. This is a plain (non-inline) class-toggled opacity, unlike
-   the shard's own, because the 1 -> ~0.33 ratio is the same fixed multiplier
-   for every frosty shard, not a per-shard value -- nothing here needs to be
-   inline, and it inherits the parent's clip-path automatically. */
-.landing2-shard-frost {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.16), transparent 55%);
-  opacity: 1;
-  transition: opacity 900ms cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-
-.landing2-revealed .landing2-shard-frost {
-  opacity: 0.33;
-}
-
-/* The inner bevel rim: an inset duplicate of each shard's own boundary
-   (landing2Geometry.ts's insetPolygon), stroked with one shared
-   upper-left-bright/lower-right-faint gradient (#landing2-rim, defined once
-   in Landing2Page.tsx and reused per shard via objectBoundingBox units, so
-   "one global light direction" is one gradient, not 22 copies). */
-.landing2-rim {
-  stroke: url(#landing2-rim);
-  stroke-width: 0.14;
-  opacity: 0.18;
-  transition: opacity 700ms var(--ease-out);
-}
-
-.landing2-revealed .landing2-rim {
-  opacity: 0.5;
-}
-
-.landing2-seams {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
-/* opacity is set inline per line (landing2Geometry.ts's edgeOpacity, doubled
-   on reveal and capped) for the same reason shard opacity is inline: it
-   varies per edge, so a shared class rule here could not express it and
-   would only risk fighting the inline value. stroke and stroke-width are
-   uniform across every seam, so they stay here. */
-.landing2-seam-line {
-  stroke: #dfe8f7;
-  stroke-width: 0.12;
-  transition: opacity 700ms var(--ease-out);
-}
-
-/* A blurred duplicate of every seam, painted underneath the crisp lines, so
-   the seams bloom softly rather than reading as thin drawn strokes on a flat
-   sky. One filter over the whole group (not one per line): cheaper, and it
-   is also what keeps a seam near the viewport edge from having its blur
-   clipped by a per-element filter region. */
-.landing2-seam-blur {
-  stroke: #dfe8f7;
-  /* Deliberately close to the crisp line's own 0.12 rather than a wide band
-     -- the blur (stdDeviation 0.35, in Landing2Page.tsx's filter def) is what
-     does the softening; a wide pre-blur stroke on top of that much blur reads
-     as a fat halo rather than a glow. */
-  stroke-width: 0.18;
-  opacity: 0.25;
-  transition: opacity 700ms var(--ease-out);
-}
-
-.landing2-revealed .landing2-seam-blur {
-  opacity: 0.45;
-}
-
-.landing2-mini-figure polyline {
-  stroke: var(--accent);
-  stroke-width: 0.1;
-  opacity: 0.25;
-}
-
-.landing2-mini-figure circle {
-  fill: var(--accent);
-  opacity: 0.25;
-}
-
-/* Faint in-glass fragments: plain positioned text, not part of the seam SVG,
-   since "sans, letter-spaced" is ordinary CSS type rather than SVG text. */
-.landing2-fragment {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  font-size: 13px;
-  letter-spacing: 0.06em;
-  text-transform: lowercase;
-  color: rgba(157, 163, 190, 0.18);
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.landing2-copy {
-  position: absolute;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
-  max-width: min(380px, 34vw);
-  pointer-events: auto;
+  justify-content: center;
+  gap: 18px;
+  /* Narrowed from 6vw: the column runs to ~45% of the viewport now (see
+     .landing2-art's own 55% below), and the extra reclaimed width is what
+     lets "are a constellation." (the longer of the headline's two lines)
+     actually fit without wrapping -- see .landing2-hero-title's own
+     white-space: nowrap and comment for the rest of that fix. */
+  padding: 0 3vw;
+  text-align: left;
 }
 
-/* max-width narrowed from the shared 34vw: at left 6%, 34vw can reach 40% of
-   the viewport (6 + 34) on any viewport at or below the ~1118px width where
-   the shared class's 380px cap has not yet taken over -- overlapping the
-   water band's own 35-75% span, which now (see .landing2-water-mask above)
-   carries real, visible content instead of sitting at a flat low opacity.
-   26vw caps the right edge at 32%, a 3-point margin below 35% at every
-   viewport width, not just the crossover point (vw is a fixed percentage of
-   viewport width by definition, so this holds for the whole regime, not one
-   sampled size). Scoped to .landing2-copy-sky only: .landing2-copy-iphone
-   sits at top: 66%, far below the water band's y 30-40% range, so it has no
-   corresponding overlap risk and stays at the shared 34vw. */
-.landing2-copy-sky {
-  left: 6%;
-  top: 26%;
-  max-width: min(380px, 26vw);
-}
-
-.landing2-copy-iphone {
-  left: 4%;
-  top: 66%;
-}
-
-.landing2-glyph {
-  display: block;
-}
-
-/* Letter-spaced sans caps, like .sky-eyebrow -- this page's headings are
-   deliberately not --font-serif; designTokens.test.ts's serif-count guard
-   pins that token to exactly two uses (person names, the editorial rule) and
-   must stay at two. */
-.landing2-eyebrow {
+.landing2-hero-title {
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent-text);
+  /* The bug this replaces: max-width: 12ch fit "Your people" (the shorter
+     line) but not "are a constellation." (the longer one) -- CSS max-width
+     constrains the whole box, so the longer line wrapped a second time,
+     giving three lines instead of the intended two. white-space: nowrap is
+     what actually guarantees exactly two lines now: it blocks ordinary
+     reflow-driven wrapping on either line while still honoring the
+     component's own explicit <br /> between them (a hard break is never
+     suppressed by nowrap). max-width stays only as a loose outer bound, not
+     the wrap trigger. */
+  max-width: 30ch;
+  white-space: nowrap;
+  /* Vw-coefficient lowered (5.4vw -> 3.6vw) and the cap nudged up (4.2rem ->
+     4.4rem) together: the cap now engages past ~2040px viewport width, so
+     at every width from 1280px up (the brief's own floor) the size still
+     scales with the column's own vw-based width rather than sitting flat at
+     a fixed px value picked for a narrower column that no longer applies. */
+  font-size: clamp(30px, 3.6vw, 4.4rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: #fff;
 }
 
-.landing2-body {
+.landing2-hero-sub {
   margin: 0;
-  font-size: 16px;
+  /* ~40 characters per line, matching the brief's own comfort target. */
+  max-width: 40ch;
+  font-size: clamp(16px, 1.3vw, 18px);
   line-height: 1.55;
   color: rgba(242, 239, 233, 0.85);
-  text-shadow: 0 2px 14px rgba(5, 6, 16, 0.65);
 }
 
-.landing2-caption {
-  margin: 0;
-  font-size: 12px;
-  color: rgba(242, 239, 233, 0.5);
+/* The shared CTA row centers its own children by default (right for the
+   original hero's centered layout, see .landing-hero-ctas above) -- here the
+   column is left-aligned, so the row's own content should be too. Scoped
+   under .landing2 rather than edited on the shared rule, so the default
+   landing and the polished preview keep their centered version untouched. */
+.landing2 .landing-hero-ctas {
+  justify-content: flex-start;
 }
 
-.landing2-pill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 22px;
-  border-radius: 999px;
-  background: rgba(8, 10, 22, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: var(--text);
-  font-size: 15px;
-  font-weight: 500;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background var(--t-fast) var(--ease-out),
-    border-color var(--t-fast) var(--ease-out);
+.landing2-art {
+  position: relative;
+  /* Narrowed from 58% (the copy column below grows to fill the rest, ~45%
+     of the viewport) so the headline's longer second line has room to sit
+     on one line -- see .landing2-copy-col and .landing2-hero-title's own
+     comments for the rest of that fix. The 16vw blend zone below still
+     comfortably fits inside 55% of the viewport at every width this page
+     supports. */
+  flex: 0 0 55%;
+  max-width: 55%;
+  overflow: hidden;
 }
 
-.landing2-pill:hover,
-.landing2-pill:focus-visible {
-  background: rgba(8, 10, 22, 0.78);
-  border-color: rgba(255, 255, 255, 0.28);
+.landing2-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* The source crop is 911x831 (~1.1:1), not literally 16:10 -- object-fit:
+     cover with a right anchor is what actually reconciles "roughly 16:10 at
+     right 58% of the viewport" with an asset that is not that shape: it
+     crops to fill rather than distorting or letterboxing. */
+  object-fit: cover;
+  object-position: right center;
+}
+
+/* The blend: page navy fading to transparent over the image's left ~16% of
+   the viewport, so the two fuse rather than meeting at a hard seam. Sized in
+   vw (viewport width), not % of this panel's own 58%-wide box, so the blend
+   band's width is stable as a fraction of the whole screen regardless of the
+   art panel's own width at different breakpoints. */
+.landing2-art::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 16vw;
+  background: linear-gradient(to right, #0d0e20 0%, transparent 100%);
+  pointer-events: none;
+}
+
+/* A faint darkening at the image's own far right edge, so it settles into
+   the viewport edge rather than terminating hard against it. */
+.landing2-art::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 9%;
+  background: linear-gradient(to left, rgba(0, 0, 0, 0.32), transparent 100%);
+  pointer-events: none;
+}
+
+/* The image fades in as one piece (opacity only, no translate -- see the
+   brief's own "700ms ease-out" for the art, distinct from the text column's
+   rise-and-fade); the text column reuses the polished scope's own hero
+   stagger mechanism below for .landing2-hero-title / .landing2-hero-sub, and
+   picks up .landing-hero-ctas / .landing-hero-note's existing stagger for
+   free since both classes are reused verbatim from the polished scope. */
+.landing-polished .landing2-hero-title,
+.landing-polished .landing2-hero-sub {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 550ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 550ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.landing-polished[data-mounted] .landing2-hero-title {
+  transition-delay: 0ms;
+}
+
+.landing-polished[data-mounted] .landing2-hero-sub {
+  transition-delay: 70ms;
+}
+
+.landing-polished[data-mounted] .landing2-hero-title,
+.landing-polished[data-mounted] .landing2-hero-sub {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.landing-polished .landing2-art {
+  opacity: 0;
+  transition: opacity 700ms var(--ease-out);
+}
+
+.landing-polished[data-mounted] .landing2-art {
+  opacity: 1;
+}
+
+/* Reduced motion: the image and the two new text elements join the polished
+   scope's own crossfade override above (opacity only, 200ms) -- the shared
+   .landing-hero-ctas / .landing-hero-note already covered there too. */
+@media (prefers-reduced-motion: reduce) {
+  .landing-polished .landing2-hero-title,
+  .landing-polished .landing2-hero-sub,
+  .landing-polished .landing2-art {
+    transform: none;
+    transition-property: opacity;
+    transition-duration: 200ms;
+  }
+}
+
+/* Small AND medium screens: the fixed single viewport becomes a natural,
+   scrolling stack -- a 55%-wide side panel has no room to read as art on a
+   phone, and below the row layout's own 1280px floor (see
+   .landing2-hero-title's own comment: that is the narrowest width the
+   headline's nowrap second line is sized to fit without measuring real
+   glyph widths in a browser) staying in the row layout risks the exact
+   wrap bug this breakpoint exists to avoid, just on a still-narrow tablet
+   or small-laptop window instead of a phone. 1279px, not 859px, is the
+   deliberate cutoff -- one pixel short of the row layout's own floor. */
+@media (max-width: 1279px) {
+  .landing2-hero {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  .landing2-art {
+    flex: none;
+    max-width: 100%;
+    width: 100%;
+    height: 46vh;
+    min-height: 260px;
+  }
+
+  .landing2-art::before {
+    /* The blend now runs along the TOP edge (art sits above the stacked copy
+       column), not the left -- a vertical fade reads the same way a
+       horizontal one does in the row layout. */
+    inset: 0;
+    width: 100%;
+    height: 22%;
+    background: linear-gradient(to bottom, #0d0e20 0%, transparent 100%);
+  }
+
+  .landing2-art::after {
+    inset: auto 0 0 0;
+    width: 100%;
+    height: 12%;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.32), transparent 100%);
+  }
+
+  .landing2-copy-col {
+    padding: 96px 7vw 56px;
+  }
 }
