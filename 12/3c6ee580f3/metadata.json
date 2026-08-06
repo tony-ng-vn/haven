@@ -3,7 +3,7 @@
   "checkpoint_id": "123c6ee580f3",
   "strategy": "manual-commit",
   "branch": "feat/identity-foundation",
-  "checkpoints_count": 114,
+  "checkpoints_count": 157,
   "files_touched": [
     "CHANGELOG.md",
     "convex/_generated/api.d.ts",
@@ -139,13 +139,20 @@
       "compact_transcript": "/12/3c6ee580f3/5/transcript.jsonl",
       "content_hash": "/12/3c6ee580f3/5/content_hash.txt",
       "prompt": "/12/3c6ee580f3/5/prompt.txt"
+    },
+    {
+      "metadata": "/12/3c6ee580f3/6/metadata.json",
+      "transcript": "/12/3c6ee580f3/6/full.jsonl",
+      "compact_transcript": "/12/3c6ee580f3/6/transcript.jsonl",
+      "content_hash": "/12/3c6ee580f3/6/content_hash.txt",
+      "prompt": "/12/3c6ee580f3/6/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 1404242,
-    "cache_creation_tokens": 7449088,
-    "cache_read_tokens": 158951887,
-    "output_tokens": 717891,
-    "api_call_count": 713
+    "input_tokens": 1407333,
+    "cache_creation_tokens": 12084137,
+    "cache_read_tokens": 299405206,
+    "output_tokens": 1180394,
+    "api_call_count": 1178
   }
 }
