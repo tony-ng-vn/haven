@@ -91,7 +91,7 @@ export function Landing2Page() {
               className="sky-download"
               href="https://cal.com/tony-nguyen-vn17"
             >
-              Book a call with Tony
+              Book a call
             </a>
             <a className="landing-cta-secondary" href="/waitlist">
               Join the iPhone waitlist

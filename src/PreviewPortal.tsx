@@ -234,7 +234,7 @@ export function PreviewHome({
             className="preview-book"
             href="https://cal.com/tony-nguyen-vn17"
           >
-            Book a call with Tony
+            Book a call
           </a>
         </div>
       </div>

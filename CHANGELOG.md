@@ -6,6 +6,17 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.53.1
+
+2026-08-07
+
+**Web**
+
+- The private Your Sky download now opens reliably from the production site instead of failing when its server function starts.
+- Booking links now use the shorter label "Book a call" everywhere.
+
+---
+
 ## v0.53.0
 
 2026-08-07

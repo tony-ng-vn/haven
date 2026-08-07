@@ -1,7 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { ConvexHttpClient } from "convex/browser";
-import { api } from "../convex/_generated/api";
+import { makeFunctionReference } from "convex/server";
+
+const hasPreviewAccessQuery = makeFunctionReference<
+  "query",
+  { sessionKey?: string },
+  boolean
+>("previewAccess:hasAccess");
 
 type DownloadDependencies = {
   hasPreviewAccess: (token: string) => Promise<boolean>;
@@ -22,7 +28,7 @@ async function queryPreviewAccess(token: string): Promise<boolean> {
   }
   const client = new ConvexHttpClient(convexUrl);
   client.setAuth(token);
-  return await client.query(api.previewAccess.hasAccess, {});
+  return await client.query(hasPreviewAccessQuery, {});
 }
 
 async function readSkyArchive(): Promise<Uint8Array> {

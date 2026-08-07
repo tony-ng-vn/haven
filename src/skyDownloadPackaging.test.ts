@@ -6,6 +6,7 @@ import { createServer } from "vite";
 const vercel = JSON.parse(readFileSync("vercel.json", "utf8")) as {
   functions?: Record<string, { includeFiles?: string }>;
 };
+const endpointSource = readFileSync("api/sky-download.ts", "utf8");
 
 describe("the private Sky archive package", () => {
   test("keeps the archive outside the public site", () => {
@@ -23,6 +24,11 @@ describe("the private Sky archive package", () => {
     expect(readdirSync("api").filter((name) => name.includes(".test."))).toEqual(
       [],
     );
+  });
+
+  test("does not depend on generated files outside the function bundle", () => {
+    expect(endpointSource).toContain("makeFunctionReference");
+    expect(endpointSource).not.toContain("../convex/_generated/api");
   });
 
   test("the development server refuses direct archive requests", async () => {
