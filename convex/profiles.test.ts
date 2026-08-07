@@ -586,6 +586,12 @@ test("deleteMyAccount removes the caller's profile and everything they own", asy
       status: "ready" as const,
     }),
   );
+  await t.run((ctx) =>
+    ctx.db.insert("previewAccess", {
+      userId: me.userId,
+      grantedAt: Date.now(),
+    }),
+  );
 
   await me.as.mutation(api.profiles.deleteMyAccount, {});
 
@@ -610,6 +616,12 @@ test("deleteMyAccount removes the caller's profile and everything they own", asy
       await ctx.db
         .query("rateLimits")
         .withIndex("by_user_action", (q) => q.eq("userId", me.userId))
+        .collect(),
+    ).toEqual([]);
+    expect(
+      await ctx.db
+        .query("previewAccess")
+        .withIndex("by_user", (q) => q.eq("userId", me.userId))
         .collect(),
     ).toEqual([]);
     // The blobs go with the rows. A file nobody can reach is still a file
