@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "647a06c77354",
+  "strategy": "manual-commit",
+  "branch": "worktree-knowledge-foundation-v0",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/adr/knowledge-service-boundary.md",
+    "knowledge/migrations/0001_haven_knowledge_core.sql",
+    "knowledge/migrations/0004_embedding_dims_voyage.sql",
+    "knowledge/pyproject.toml",
+    "knowledge/src/haven_knowledge/concepts.py",
+    "knowledge/src/haven_knowledge/extraction.py",
+    "knowledge/src/haven_knowledge/identity.py",
+    "knowledge/tests/conftest.py",
+    "knowledge/tests/unit/test_extraction_validation.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/64/7a06c77354/0/metadata.json",
+      "transcript": "/64/7a06c77354/0/full.jsonl",
+      "compact_transcript": "/64/7a06c77354/0/transcript.jsonl",
+      "content_hash": "/64/7a06c77354/0/content_hash.txt",
+      "prompt": "/64/7a06c77354/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 446,
+    "cache_creation_tokens": 1455022,
+    "cache_read_tokens": 63620370,
+    "output_tokens": 248497,
+    "api_call_count": 225
+  }
+}
