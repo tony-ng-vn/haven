@@ -80,7 +80,7 @@ describe("Landing2Page", () => {
   // .landing-polished scope this page's root also carries.
   test("the hero leads with booking a call and keeps the waitlist secondary", () => {
     render(<Landing2Page />);
-    const call = screen.getByText("Book a call with Tony").closest("a");
+    const call = screen.getByText("Book a call").closest("a");
     const ios = screen.getByText("Join the iPhone waitlist").closest("a");
     expect(call?.getAttribute("href")).toBe("https://cal.com/tony-nguyen-vn17");
     expect(call?.className).toContain("sky-download");

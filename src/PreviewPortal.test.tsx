@@ -113,5 +113,9 @@ describe("the preview access flow", () => {
       "pathname",
       "/sky",
     );
+    expect(screen.getByRole("link", { name: /^book a call$/i })).toHaveProperty(
+      "href",
+      "https://cal.com/tony-nguyen-vn17",
+    );
   });
 });
