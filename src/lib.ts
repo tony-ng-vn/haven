@@ -498,34 +498,17 @@ export function bootMode(input: {
   return "landing";
 }
 
-// The single source of truth for which top-level screen App renders.
-// Landing2 -- the glass-artwork hero with the constellation sky -- is the
-// front door now: the signed-out default at the bare root, per the owner's
-// directive to make it one. Its own two buttons point at the site's other
-// two product pages, each moved off a hash and onto its own pathname:
-// "/waitlist" (still called "ios"/IosPage.tsx in the source -- see its own
-// header comment for why) and "/sky". Both used to live at "#/ios" (with the
-// older alias "#/join") and "#/sky"; those hashes, plus Landing2's own old
-// "#/landing2" address, still work -- see hashRedirectTarget and the
-// canonicalizing effect in App.tsx that calls it on every load and
-// hashchange -- but now as a real redirect onto the new address rather than
-// a second way to reach the same view. The polished landing preview that
-// used to live at "/landing" is gone along with the component that rendered
-// it; the word stays reserved in handleNames so no card can ever claim it,
-// and the path simply falls through every check below to this same front
-// door. Existing users still reach sign-in: Clerk OAuth/verification
-// callbacks and the explicit "#/sign-in" route mount it, and a returning
-// visitor with a live session resolves straight to Home (via the splash)
-// without ever seeing the front door.
+// The single source of truth for which top-level screen App renders. The bare
+// root is public marketing while signed out and the private preview shell once
+// authenticated. Sky and every sign-in spelling enter the same preview gate,
+// so no unfinished product page can be reached around its authorization.
 export type View =
-  | "home"
-  | "signin"
+  | "preview"
   | "splash"
   | "landing2"
   | "card"
   | "legal"
   | "support"
-  | "sky"
   | "waitlist";
 
 /// The one path segment a url names, lowercased, or null when it names none or
@@ -592,6 +575,11 @@ export function isWaitlistPath(pathname: string): boolean {
   return topLevelSegment(pathname) === "waitlist";
 }
 
+/// The explicit front door for invited members.
+export function isPreviewPath(pathname: string): boolean {
+  return topLevelSegment(pathname) === "preview";
+}
+
 export function resolveView(input: {
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -608,24 +596,23 @@ export function resolveView(input: {
   const sitePage = sitePageFromPath(input.pathname ?? "/");
   if (sitePage === "support") return "support";
   if (sitePage !== null) return "legal";
-  // The two product pages Landing2's own buttons point at, same precedence as
-  // the site pages just above and for the same reason: whoever has the link
-  // (an App Store reviewer, a Mac download waiting to happen) has to reach it
-  // whether or not they happen to be signed in, before the auth checks below
-  // ever run -- checked before the generic card path just below, same as the
-  // site pages and the old /landing preview used to be.
+  // The waitlist stays public. Sky no longer does: it is handled by the gated
+  // preview below, whether the visitor followed a link or typed the old path.
   if (isWaitlistPath(input.pathname ?? "/")) return "waitlist";
-  if (isSkyPath(input.pathname ?? "/")) return "sky";
   // Then cards, before the auth checks and deliberately so. The person this
   // page exists for is a stranger who just scanned a code, and they arrive
   // signed out: leaving it until after would sit them on a splash while Clerk
   // boots, and would send a signed-in visitor to their own home instead of the
   // card they opened.
   if (handleFromPath(input.pathname ?? "/") !== null) return "card";
-  if (input.isAuthenticated) return "home";
-  // Checked after the auth test, so somebody already signed in who lands on
-  // /signin gets their people rather than a form asking them to do it again.
-  if (isAuthPath(input.pathname ?? "/")) return "signin";
+  if (input.isAuthenticated) return "preview";
+  if (
+    isSkyPath(input.pathname ?? "/") ||
+    isPreviewPath(input.pathname ?? "/") ||
+    isAuthPath(input.pathname ?? "/")
+  ) {
+    return "preview";
+  }
   // A legacy hash ("#/sky", "#/ios", "#/join", "#/landing2") is already on its
   // way out via the canonicalizing redirect in App.tsx -- checked here, ahead
   // of the generic Clerk-flow test below, so it reads as the front door for
@@ -633,7 +620,7 @@ export function resolveView(input: {
   // callback, which would otherwise flash Clerk's sign-in card at a visitor
   // who followed an old, perfectly good link.
   if (hashRedirectTarget(input.hash) !== null) return "landing2";
-  if (isClerkFlowHash(input.hash)) return "signin";
+  if (isClerkFlowHash(input.hash)) return "preview";
   if (input.isLoading && bootMode(input) === "splash") return "splash";
   // The bare root, and anything else that fell through every check above --
   // Landing2, the front door.

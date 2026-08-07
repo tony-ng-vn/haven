@@ -19,6 +19,7 @@ import {
   isIosHash,
   isJoinHash,
   isLanding2Hash,
+  isPreviewPath,
   isSkyHash,
   isSkyPath,
   isValidEmail,
@@ -44,8 +45,8 @@ describe("resolveView", () => {
     hasSessionHint: false,
   };
 
-  test("a signed-in visitor at the bare root gets home", () => {
-    expect(resolveView({ ...base, isAuthenticated: true })).toBe("home");
+  test("a signed-in visitor at the bare root gets the private preview", () => {
+    expect(resolveView({ ...base, isAuthenticated: true })).toBe("preview");
   });
 
   test("the signed-out default is Landing2, the front door", () => {
@@ -54,9 +55,9 @@ describe("resolveView", () => {
     expect(resolveView({ ...base, isLoading: true })).toBe("landing2");
   });
 
-  test("Clerk callbacks and the explicit sign-in route mount sign-in", () => {
-    expect(resolveView({ ...base, hash: "#/sso-callback" })).toBe("signin");
-    expect(resolveView({ ...base, hash: "#/sign-in" })).toBe("signin");
+  test("Clerk callbacks and the explicit sign-in route mount the preview portal", () => {
+    expect(resolveView({ ...base, hash: "#/sso-callback" })).toBe("preview");
+    expect(resolveView({ ...base, hash: "#/sign-in" })).toBe("preview");
     // A flow hash outranks a returning-visitor splash.
     expect(
       resolveView({
@@ -65,7 +66,7 @@ describe("resolveView", () => {
         isLoading: true,
         hasSessionHint: true,
       }),
-    ).toBe("signin");
+    ).toBe("preview");
   });
 
   test("a returning visitor waits on the splash while auth resolves", () => {
@@ -87,11 +88,11 @@ describe("resolveView", () => {
     }
   });
 
-  test("a signed-in visitor on an old hash route still gets home", () => {
+  test("a signed-in visitor on an old hash route gets the private preview", () => {
     for (const hash of ["#/sky", "#/ios", "#/join", "#/landing2"]) {
       expect(
         resolveView({ ...base, isAuthenticated: true, hash }),
-      ).toBe("home");
+      ).toBe("preview");
     }
   });
 });
@@ -104,19 +105,22 @@ describe("resolveView with the sky and waitlist paths", () => {
     hasSessionHint: false,
   };
 
-  // Landing2's own two buttons point here now (see Landing2Page.tsx); same
-  // precedence as the site pages and the old /landing preview used to have,
-  // and for the same reason: whoever has the link has to reach it whether or
-  // not they happen to be signed in.
-  test("both product pages win over every auth state", () => {
-    expect(resolveView({ ...base, pathname: "/sky" })).toBe("sky");
+  test("Sky enters the gated preview while the waitlist stays public", () => {
+    expect(resolveView({ ...base, pathname: "/sky" })).toBe("preview");
     expect(
       resolveView({ ...base, pathname: "/sky", isAuthenticated: true }),
-    ).toBe("sky");
+    ).toBe("preview");
     expect(resolveView({ ...base, pathname: "/waitlist" })).toBe("waitlist");
     expect(
       resolveView({ ...base, pathname: "/waitlist", isAuthenticated: true }),
     ).toBe("waitlist");
+  });
+
+  test("the preview path is recognized without swallowing deeper paths", () => {
+    expect(isPreviewPath("/preview")).toBe(true);
+    expect(isPreviewPath("/Preview/")).toBe(true);
+    expect(isPreviewPath("/preview/invite")).toBe(false);
+    expect(resolveView({ ...base, pathname: "/preview" })).toBe("preview");
   });
 
   test("no one can claim either path as a handle", () => {
@@ -131,7 +135,7 @@ describe("resolveView with the sky and waitlist paths", () => {
     expect(resolveView({ ...base, pathname: "/landing" })).toBe("landing2");
     expect(
       resolveView({ ...base, pathname: "/landing", isAuthenticated: true }),
-    ).toBe("home");
+    ).toBe("preview");
   });
 });
 
@@ -949,13 +953,13 @@ describe("resolveView with a card path", () => {
     // Hyphenated, so it is not a claimable handle and not a card. It used to
     // fall through to the waitlist, which is the bug reported from production:
     // somebody typing the most obvious url was told Haven has no sign-in.
-    expect(resolveView({ ...base, pathname: "/sign-in" })).toBe("signin");
+    expect(resolveView({ ...base, pathname: "/sign-in" })).toBe("preview");
     expect(
       resolveView({ ...base, pathname: "/", isAuthenticated: true }),
-    ).toBe("home");
+    ).toBe("preview");
     expect(
       resolveView({ ...base, pathname: "/", hash: "#/sign-in" }),
-    ).toBe("signin");
+    ).toBe("preview");
   });
 });
 
@@ -1029,7 +1033,7 @@ describe("the sign-in paths a person actually types", () => {
   // waitlist. Every one of these words is reserved, so none could ever be
   // somebody's card, and landing on the waitlist told a person who typed the
   // most obvious url that Haven has no sign-in at all.
-  test("every spelling of sign-in reaches the sign-in view", () => {
+  test("every spelling of sign-in reaches the preview access view", () => {
     for (const path of [
       "/signin",
       "/sign-in",
@@ -1039,26 +1043,26 @@ describe("the sign-in paths a person actually types", () => {
       "/SignIn",
       "/sign-up/",
     ]) {
-      expect(resolveView({ ...base, pathname: path })).toBe("signin");
+      expect(resolveView({ ...base, pathname: path })).toBe("preview");
     }
   });
 
   // Clerk owns sub-paths under the component once it is mounted there.
   test("Clerk's own sub-steps stay on the sign-in view", () => {
     expect(resolveView({ ...base, pathname: "/sign-in/factor-one" })).toBe(
-      "signin",
+      "preview",
     );
     expect(
       resolveView({ ...base, pathname: "/sign-up/verify-email-address" }),
-    ).toBe("signin");
+    ).toBe("preview");
   });
 
   // A signed-in visitor who lands on /signin should not be bounced to the
   // waitlist, and should not be shown a sign-in form either.
-  test("a signed-in visitor on a sign-in path goes home", () => {
+  test("a signed-in visitor on a sign-in path goes to the preview", () => {
     expect(
       resolveView({ ...base, pathname: "/signin", isAuthenticated: true }),
-    ).toBe("home");
+    ).toBe("preview");
   });
 
   test("no one can claim these as a handle", () => {

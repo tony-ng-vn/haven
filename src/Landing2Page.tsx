@@ -87,14 +87,19 @@ export function Landing2Page() {
             bring your world together.
           </p>
           <div className="landing-hero-ctas">
-            <a className="sky-download" href="/sky">
-              Sky app, coming soon
+            <a
+              className="sky-download"
+              href="https://cal.com/tony-nguyen-vn17"
+            >
+              Book a call with Tony
             </a>
             <a className="landing-cta-secondary" href="/waitlist">
               Join the iPhone waitlist
             </a>
           </div>
-          <p className="landing-hero-note">Free, runs on your Mac.</p>
+          <p className="landing-hero-note">
+            A conversation about people, memory, and connection.
+          </p>
         </div>
 
         <div className="landing2-art">

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { DriftSky } from "./DriftSky";
 import { TopNav } from "./TopNav";
 import { Footer } from "./Footer";
@@ -11,14 +11,9 @@ import { Footer } from "./Footer";
 // honestly -- download, authorize, map -- and to say exactly what does and
 // does not leave the machine, because the thing this app touches (who you
 // talk to, how often) is more sensitive than anything else Haven asks for.
-// Landing2Page's own "Sky app, coming soon" button points here.
-//
-// Public and unauthenticated, like the waitlist: signed in or out is
-// irrelevant to a Mac download. The old hash address, "#/sky", still works
-// for anyone with that link -- it redirects here now (see hashRedirectTarget
-// in lib.ts and the canonicalizing effect in App.tsx) rather than resolving a
-// second copy of this page in place.
-const DOWNLOAD_HREF = "/downloads/YourSky.zip";
+// This page is rendered only after PreviewPortal confirms the signed-in
+// account has a server-side preview grant. Its download callback uses the
+// current Clerk token against the protected serverless endpoint.
 
 const STEPS = [
   {
@@ -31,7 +26,7 @@ const STEPS = [
   },
   {
     title: "Map relationships",
-    body: "Click “Map relationships” and watch your sky take shape: everyone you have messaged, positioned by how close you actually are.",
+    body: 'Click "Map relationships" and watch your sky take shape: everyone you have messaged, positioned by how close you actually are.',
   },
 ] as const;
 
@@ -46,7 +41,16 @@ const PRIVACY_POINTS = [
   "If you have Ollama installed, an optional local AI model can suggest names for numbers you have not saved. That runs on your Mac too, and it is off unless you turn it on.",
 ] as const;
 
-export function SkyPage() {
+export function SkyPage({
+  onDownload,
+  onSignOut,
+}: {
+  onDownload: () => Promise<void>;
+  onSignOut: () => void;
+}) {
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
   useEffect(() => {
     document.title = "Your Sky - Haven";
   }, []);
@@ -54,7 +58,7 @@ export function SkyPage() {
   return (
     <div className="card-page">
       <DriftSky className="card-sky" />
-      <TopNav />
+      <TopNav actionLabel="Sign out" onAction={onSignOut} />
       <main className="sky-page">
         <div className="sky-hero">
           <span className="sky-eyebrow">Your Sky, for Mac</span>
@@ -64,10 +68,9 @@ export function SkyPage() {
             and draws the people you actually talk to as a 3D map you can
             explore.
           </p>
-          {/* No hero buttons, on the owner's direction: the page's one
-              download action lives at the bottom, after the steps and the
-              privacy list have made their case. The step-1 "Download" text
-              link above it stays as the in-flow shortcut. */}
+          {/* The page has one download action, after the privacy boundary is
+              clear. It calls the authenticated endpoint instead of exposing
+              the archive as a public static asset. */}
           <p className="sky-install-note">
             This build is not notarized yet -- macOS will warn on first open.
             Go to <strong>System Settings &gt; Privacy &amp; Security</strong>{" "}
@@ -86,13 +89,7 @@ export function SkyPage() {
                   {index + 1}
                 </span>
                 <div>
-                  <h3 className="sky-step-title">
-                    {index === 0 ? (
-                      <a href={DOWNLOAD_HREF}>{step.title}</a>
-                    ) : (
-                      step.title
-                    )}
-                  </h3>
+                  <h3 className="sky-step-title">{step.title}</h3>
                   <p className="sky-step-body">{step.body}</p>
                 </div>
               </li>
@@ -109,9 +106,31 @@ export function SkyPage() {
           </ul>
         </section>
 
-        <a className="sky-download sky-download-repeat" href={DOWNLOAD_HREF}>
-          Download for Mac
-        </a>
+        {downloadError !== null && (
+          <p className="preview-error sky-download-error" role="alert">
+            {downloadError}
+          </p>
+        )}
+        <button
+          className="sky-download sky-download-repeat"
+          type="button"
+          disabled={downloading}
+          onClick={() => {
+            setDownloading(true);
+            setDownloadError(null);
+            void onDownload()
+              .catch((error: unknown) => {
+                setDownloadError(
+                  error instanceof Error
+                    ? error.message
+                    : "Your Sky could not be downloaded. Please try again.",
+                );
+              })
+              .finally(() => setDownloading(false));
+          }}
+        >
+          {downloading ? "Preparing download" : "Download for Mac"}
+        </button>
       </main>
       <Footer />
     </div>

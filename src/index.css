@@ -2578,6 +2578,7 @@ a.card-handle:focus-visible {
 .legal-title,
 .sky-title,
 .ios-title,
+.preview-panel h1,
 .top-nav-brand,
 .landing2-hero-title {
   font-family: var(--font-serif);
@@ -2734,18 +2735,22 @@ a.card-handle:focus-visible {
 }
 
 .sky-download {
+  appearance: none;
   align-self: flex-start;
   margin-top: 8px;
   min-height: 48px;
   display: inline-flex;
   align-items: center;
   padding: 0 26px;
+  border: 0;
   border-radius: 999px;
   background: var(--accent-fill);
   color: var(--accent-fill-text);
   font-size: 16px;
   font-weight: 500;
+  font-family: inherit;
   text-decoration: none;
+  cursor: pointer;
   transition: transform var(--t-fast) var(--ease-out),
     background var(--t-fast) var(--ease-out);
 }
@@ -2949,6 +2954,274 @@ a.card-handle:focus-visible {
   font-weight: 500;
   color: #fff;
   text-decoration: none;
+}
+
+.top-nav-action {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out);
+}
+
+.top-nav-action:hover,
+.top-nav-action:focus-visible {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.36);
+}
+
+/* Private preview ---------------------------------------------------------
+
+   The gate, name setup and holding page share one restrained glass panel.
+   The code is an invitation, not a password manager field, so the form stays
+   short and legible instead of adopting the full application chrome. */
+.preview-main {
+  position: relative;
+  z-index: 1;
+  min-height: calc(100vh - 112px);
+  min-height: calc(100dvh - 112px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 104px 24px 56px;
+}
+
+.preview-panel {
+  width: min(100%, 31rem);
+  padding: clamp(28px, 4vw, 44px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 28px;
+  background: rgba(20, 17, 39, 0.72);
+  box-shadow: 0 30px 90px rgba(4, 2, 16, 0.42);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+
+.preview-eyebrow {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.preview-panel h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(32px, 5vw, 44px);
+  font-weight: 500;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+}
+
+.preview-panel > p {
+  margin: 18px 0 0;
+  color: rgba(242, 239, 233, 0.72);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.preview-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.preview-form label {
+  color: rgba(242, 239, 233, 0.72);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.preview-form input {
+  min-height: 50px;
+  width: 100%;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  transition: border-color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+.preview-form input:focus {
+  border-color: rgba(225, 192, 113, 0.72);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.preview-primary {
+  appearance: none;
+  min-height: 50px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 6px;
+  padding: 0 24px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent-fill);
+  color: var(--accent-fill-text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+.preview-primary:hover:not(:disabled),
+.preview-primary:focus-visible:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-fill) 90%, #000);
+}
+
+.preview-primary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.preview-primary:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.preview-error {
+  margin: 2px 0 0;
+  color: #f3b5b0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.preview-secondary-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.preview-secondary-actions button,
+.preview-secondary-actions a,
+.preview-book {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: rgba(242, 239, 233, 0.66);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(242, 239, 233, 0.28);
+  cursor: pointer;
+}
+
+.preview-secondary-actions button:hover,
+.preview-secondary-actions button:focus-visible,
+.preview-secondary-actions a:hover,
+.preview-secondary-actions a:focus-visible,
+.preview-book:hover,
+.preview-book:focus-visible {
+  color: var(--text);
+}
+
+.preview-home {
+  width: min(100%, 38rem);
+  text-align: center;
+}
+
+.preview-home-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  margin-top: 30px;
+}
+
+.preview-home .preview-primary {
+  min-width: 190px;
+}
+
+.preview-auth-panel {
+  display: flex;
+  justify-content: center;
+  width: min(100%, 31rem);
+}
+
+.preview-loading {
+  width: 34px;
+  height: 34px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--accent-text);
+  border-radius: 50%;
+  animation: preview-spin 700ms linear infinite;
+}
+
+@keyframes preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sky-download-error {
+  margin: 36px 0 -24px;
+}
+
+.sky-download:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+@media (max-width: 520px) {
+  .top-nav {
+    padding: 14px 16px;
+  }
+
+  .top-nav-icon {
+    height: 34px;
+  }
+
+  .top-nav-brand {
+    font-size: 17px;
+  }
+
+  .top-nav-action {
+    min-height: 36px;
+    padding: 0 13px;
+    font-size: 13px;
+  }
+
+  .preview-main {
+    align-items: flex-start;
+    padding: 92px 16px 40px;
+  }
+
+  .preview-panel {
+    padding: 28px 22px;
+    border-radius: 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-loading {
+    animation: none;
+  }
 }
 
 /* The compliance footer (Footer.tsx), shared by the landing page, Your Sky,

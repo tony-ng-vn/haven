@@ -4,13 +4,11 @@ import { describe, expect, test } from "vitest";
 
 // What the web is for, encoded so it cannot drift back.
 //
-// iOS is the primary Haven client. The web is the front door and the viewing
-// surface: the Haven landing (Landing2Page, at the bare root) and sign-in,
-// the Sky download page and the iOS waitlist page it links out to, your
-// network as a sky, search, adding somebody by typing their name, the public
-// card a stranger opens, and the legal and support pages. Ways of MEETING
-// people -- exchanging contact in person, proximity radar -- are things you
-// do with a phone in your hand, and they live in the iPhone app.
+// iOS is the primary Haven client. While the web product is still an early
+// concept, the web is the public front door plus a private preview: landing,
+// waitlist, public cards, legal/support, code-gated account creation, and the
+// gated Your Sky download. The older network viewer remains in source history
+// but is deliberately not mounted until the web product itself is ready.
 //
 // This is a scope test, not a style test. It fails when a feature that belongs
 // on the phone grows a web UI again, which is how the two clients quietly
@@ -44,7 +42,7 @@ function apiCall(...path: string[]): RegExp {
   return new RegExp(`\\bapi${path.map(step).join("")}`);
 }
 
-describe("the web stays a front door and a viewer", () => {
+describe("the web stays a front door and a private preview", () => {
   test("no in-person contact exchange", () => {
     // profiles.connect and profiles.setUsername still exist on the backend --
     // the iPhone app calls them (ios/Haven/Connect/ConnectModel.swift). What
@@ -95,12 +93,11 @@ describe("the web stays a front door and a viewer", () => {
     // visiting the site is concerned -- so the component has to be mounted in
     // App.tsx too, not merely present on disk.
     const app = readFileSync(join("src", "App.tsx"), "utf8");
+    const portal = readFileSync(join("src", "PreviewPortal.tsx"), "utf8");
     for (const surface of [
       "Landing2Page", // the front door, at the bare root, signed out
-      "SkyPage", // Your Sky for Mac, the download page at /sky
       "IosPage", // Haven for iPhone, the waitlist at /waitlist
-      "SearchAdd", // your network as a sky, search, add by name
-      "PersonDetail", // one person's page
+      "PreviewPortal", // code, auth, profile setup and private holding page
       "CardPage", // the public card a stranger opens
       "LegalPage",
       "SupportPage",
@@ -110,6 +107,17 @@ describe("the web stays a front door and a viewer", () => {
       expect(sources, `${surface}.tsx is missing`).toContain(`${surface}.tsx`);
       expect(app, `${surface} is never rendered`).toMatch(
         new RegExp(`<${surface}[\\s/>]`),
+      );
+    }
+
+    expect(sources).toContain("SkyPage.tsx");
+    expect(portal).toMatch(/<SkyPage[\s/>]/);
+
+    // The not-ready web product must not become reachable through a leftover
+    // import while the private preview is the signed-in destination.
+    for (const legacySurface of ["SearchAdd", "PersonDetail", "CaptureTriage"]) {
+      expect(app, `${legacySurface} is still mounted`).not.toMatch(
+        new RegExp(`<${legacySurface}[\\s/>]`),
       );
     }
   });

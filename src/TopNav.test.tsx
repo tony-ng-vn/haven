@@ -9,22 +9,23 @@ afterEach(cleanup);
 // Shared by every public page -- pure markup, no session and no backend, the
 // same reasoning as SkyPage.test.tsx.
 describe("the shared top nav", () => {
-  test("the wordmark is the only link, and it goes home", () => {
+  test("the wordmark goes home and preview access sits at the right", () => {
     const { container } = render(<TopNav />);
     const links = Array.from(container.querySelectorAll("a")).map((a) => [
       a.textContent,
       a.getAttribute("href"),
     ]);
-    expect(links).toEqual([["Haven", "/"]]);
+    expect(links).toEqual([
+      ["Haven", "/"],
+      ["Preview access", "/preview"],
+    ]);
   });
 
-  // The links cluster ("Your Sky" / "iPhone" / "Sign in") that used to sit
-  // beside the wordmark is gone site-wide, with no prop left to bring it
-  // back -- this is the one place that guard belongs, rather than repeated
-  // on every page that renders TopNav (see the component's own comment).
-  test("renders no nav element -- brand-only, no links cluster", () => {
+  test("labels the preview link as navigation", () => {
     const { container } = render(<TopNav />);
-    expect(container.querySelector("nav")).toBeNull();
+    expect(container.querySelector("nav")?.getAttribute("aria-label")).toBe(
+      "Preview",
+    );
   });
 
   // The icon is unconditional (see the component's own comment): every
