@@ -9,6 +9,19 @@ struct QueuedCapture: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     let capturedAt: Date
     let payload: Payload
+    let event: EventReference?
+
+    init(
+        id: UUID,
+        capturedAt: Date,
+        payload: Payload,
+        event: EventReference? = nil
+    ) {
+        self.id = id
+        self.capturedAt = capturedAt
+        self.payload = payload
+        self.event = event
+    }
 
     enum Payload: Codable, Equatable, Sendable {
         case profile(Profile)
@@ -116,9 +129,21 @@ struct QueuedCapture: Codable, Equatable, Identifiable, Sendable {
 /// Foundation only: this is compiled into the share extension.
 struct CaptureQueue {
     private let directory: URL
+    private let eventStore: EventStore
+    private let ownerUserId: @Sendable () -> String?
+    private let usesCurrentEventWhenOwnerUnknown: Bool
 
-    init(directory: URL) {
+    init(
+        directory: URL,
+        eventStore: EventStore? = nil,
+        ownerUserId: @escaping @Sendable () -> String? = { nil },
+        usesCurrentEventWhenOwnerUnknown: Bool = false
+    ) {
         self.directory = directory
+        self.eventStore = eventStore
+            ?? EventStore(directory: directory.deletingLastPathComponent().appendingPathComponent("events"))
+        self.ownerUserId = ownerUserId
+        self.usesCurrentEventWhenOwnerUnknown = usesCurrentEventWhenOwnerUnknown
     }
 
     /// The queue both processes share, or nil when the App Group is not
@@ -126,7 +151,10 @@ struct CaptureQueue {
     /// from one of the two App IDs.
     static func inAppGroup() -> CaptureQueue? {
         guard let container = HavenAppGroup.containerURL else { return nil }
-        return CaptureQueue(directory: container.appendingPathComponent("captures"))
+        return CaptureQueue(
+            directory: container.appendingPathComponent("captures"),
+            usesCurrentEventWhenOwnerUnknown: true
+        )
     }
 
     /// Where the app writes a capture it made itself.
@@ -138,8 +166,14 @@ struct CaptureQueue {
     /// operation the offline rule says can never fail, fail. The extension gets
     /// no such fallback, because a container the app cannot read is a capture
     /// nobody drains.
-    static func forApp() -> CaptureQueue {
-        inAppGroup() ?? inAppContainer()
+    static func forApp(ownerUserId: String? = nil) -> CaptureQueue {
+        if let container = HavenAppGroup.containerURL {
+            return CaptureQueue(
+                directory: container.appendingPathComponent("captures"),
+                ownerUserId: { ownerUserId }
+            )
+        }
+        return inAppContainer(ownerUserId: ownerUserId)
     }
 
     /// Every queue the app should drain.
@@ -153,9 +187,10 @@ struct CaptureQueue {
         return [shared, inAppContainer()]
     }
 
-    private static func inAppContainer() -> CaptureQueue {
+    private static func inAppContainer(ownerUserId: String? = nil) -> CaptureQueue {
         CaptureQueue(
-            directory: HavenAppGroup.appContainerURL.appendingPathComponent("captures")
+            directory: HavenAppGroup.appContainerURL.appendingPathComponent("captures"),
+            ownerUserId: { ownerUserId }
         )
     }
 
@@ -186,7 +221,21 @@ struct CaptureQueue {
         try FileManager.default.createDirectory(
             at: directory, withIntermediateDirectories: true
         )
-        try Self.encoder.encode(capture).write(to: fileURL(for: capture.id), options: .atomic)
+        let active: HavenEvent?
+        if let ownerUserId = ownerUserId() {
+            active = eventStore.active(for: ownerUserId)
+        } else if usesCurrentEventWhenOwnerUnknown {
+            active = eventStore.currentActive()
+        } else {
+            active = nil
+        }
+        let queued = QueuedCapture(
+            id: capture.id,
+            capturedAt: capture.capturedAt,
+            payload: capture.payload,
+            event: capture.event ?? active?.reference
+        )
+        try Self.encoder.encode(queued).write(to: fileURL(for: capture.id), options: .atomic)
     }
 
     /// Copies an image into the container and answers the name to record.

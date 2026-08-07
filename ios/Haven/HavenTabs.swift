@@ -21,6 +21,7 @@ struct HavenTabs: View {
     /// Feeds the People screen's title. Its own subscription rather than a
     /// share of My Card's: see `MyNameModel`'s own doc comment for why.
     @StateObject private var name = MyNameModel()
+    @StateObject private var eventSession: EventSessionModel
     @State private var tab: Tab = .people
     @State private var peopleRoute: [Destination] = []
     /// The Search tab's own stack. Its own, not a share of People's: a person
@@ -41,6 +42,17 @@ struct HavenTabs: View {
     /// person rather than on the camera.
     @State private var linkedHandle: String?
 
+    init(
+        userId: String,
+        myHandle: String? = nil,
+        opensCard: Bool = false
+    ) {
+        self.userId = userId
+        self.myHandle = myHandle
+        self.opensCard = opensCard
+        _eventSession = StateObject(wrappedValue: EventSessionModel(userId: userId))
+    }
+
     var body: some View {
         TabView(selection: $tab) {
             NavigationStack(path: $peopleRoute) {
@@ -50,6 +62,7 @@ struct HavenTabs: View {
                 DirectoryScreen(
                     userId: userId,
                     firstName: name.firstName,
+                    eventSession: eventSession,
                     openSearch: { tab = .search },
                     openPerson: { peopleRoute.append(.person(id: $0)) }
                 )
@@ -64,7 +77,11 @@ struct HavenTabs: View {
                 // is not a place the road ends. The push lands in this tab's own
                 // stack, which is what lets Back return to the search that
                 // found them, chips and answer intact.
-                SearchScreen(openPerson: { searchRoute.append(.person(id: $0)) })
+                SearchScreen(
+                    userId: userId,
+                    event: eventSession.active?.reference,
+                    openPerson: { searchRoute.append(.person(id: $0)) }
+                )
                     .navigationDestination(for: Destination.self) { screen(for: $0) }
             }
             .tabItem { Label("Search", systemImage: "magnifyingglass") }
@@ -84,7 +101,8 @@ struct HavenTabs: View {
                     tab = .people
                     peopleRoute.append(.person(id: personId))
                 },
-                initialHandle: linkedHandle
+                initialHandle: linkedHandle,
+                event: eventSession.active?.reference
             )
         }
         .onAppear {

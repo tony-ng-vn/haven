@@ -7,6 +7,7 @@ import SwiftUI
 struct RootView: View {
     @StateObject private var auth = AuthModel()
     @StateObject private var captures = CaptureSync()
+    @StateObject private var events = EventSync()
     @Environment(Clerk.self) private var clerk
     @Environment(\.scenePhase) private var scenePhase
 
@@ -51,10 +52,10 @@ struct RootView: View {
                 // has just shared somebody to Haven. The extension writes
                 // offline and never talks to Convex, so this is the only thing
                 // that ever moves a capture into the directory.
-                .task { await captures.run(userId: userId) }
+                .task { await sync(userId: userId) }
                 .onChange(of: scenePhase) { _, phase in
                     guard phase == .active else { return }
-                    Task { await captures.run(userId: userId) }
+                    Task { await sync(userId: userId) }
                 }
                 // A capture made inside the app has nothing to come back
                 // from, so it asks for the same pass here rather than waiting
@@ -63,9 +64,18 @@ struct RootView: View {
                     \.requestCaptureDrain,
                     CaptureDrainRequest(run: { await captures.run(userId: userId) })
                 )
+                .environment(
+                    \.requestEventSync,
+                    EventSyncRequest(run: { await events.run(userId: userId) })
+                )
         } else {
             loading
         }
+    }
+
+    private func sync(userId: String) async {
+        await captures.run(userId: userId)
+        await events.run(userId: userId)
     }
 
     /// On the night background rather than the system default, so launch does

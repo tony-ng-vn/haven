@@ -18,6 +18,7 @@ struct ConnectScreen: View {
     /// A handle the screen was opened on, from a universal link. Nil when
     /// somebody opened the scanner themselves and the camera is the way in.
     var initialHandle: String?
+    private let event: EventReference?
 
     @StateObject private var model: ConnectModel
     @Environment(\.dismiss) private var dismiss
@@ -26,14 +27,20 @@ struct ConnectScreen: View {
     /// rather than on every state the screen passes through.
     @State private var connected = false
 
-    init(openPerson: @escaping (String) -> Void = { _ in }, initialHandle: String? = nil) {
+    init(
+        openPerson: @escaping (String) -> Void = { _ in },
+        initialHandle: String? = nil,
+        event: EventReference? = nil
+    ) {
         self.openPerson = openPerson
         self.initialHandle = initialHandle
-        _model = StateObject(wrappedValue: ConnectModel())
+        self.event = event
+        _model = StateObject(wrappedValue: ConnectModel(event: event))
     }
 
     /// A screen in a fixed state that never opens a socket, for previews.
     init(preview state: ConnectState, typed: String = "") {
+        event = nil
         _model = StateObject(wrappedValue: ConnectModel(preview: state, typed: typed))
     }
 
@@ -84,6 +91,9 @@ struct ConnectScreen: View {
     @ViewBuilder
     private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if let event {
+                EventModeBanner(event: event)
+            }
             switch model.state {
             case .idle, .looking:
                 viewfinder

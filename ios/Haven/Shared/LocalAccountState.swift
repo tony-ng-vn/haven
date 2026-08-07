@@ -4,7 +4,7 @@ import Foundation
 /// but is not keyed by their user id the way `WidgetPromoDismissal` and
 /// `OnboardingSkips` are.
 ///
-/// `DirectoryMirrorStore` and `CaptureQueue` both exist for the share
+/// `DirectoryMirrorStore`, `CaptureQueue`, and `EventStore` exist for the share
 /// extension, which has no notion of "signed in" at all -- there is one
 /// mirror file and one set of queue files per device, full stop. Left alone
 /// across a sign-out, the next account on this phone would open the add
@@ -13,8 +13,8 @@ import Foundation
 /// out would drain into whichever account signs in next, filed under a name
 /// it was never about.
 enum LocalAccountState {
-    /// Clears the mirror and every capture still waiting to send, image
-    /// files included.
+    /// Clears the mirror, local events, and every capture still waiting to
+    /// send, image files included.
     ///
     /// This is a deliberate loss, not a side effect swallowed for
     /// convenience: an unsent capture belongs to the account that made it,
@@ -28,13 +28,17 @@ enum LocalAccountState {
     /// `CaptureDrain` already gives a capture it cannot find on disk.
     static func clear(
         mirror: DirectoryMirrorStore = .forApp(),
-        queues: [CaptureQueue] = CaptureQueue.drainable()
+        queues: [CaptureQueue] = CaptureQueue.drainable(),
+        events: [EventStore] = EventStore.drainable()
     ) {
         try? mirror.clear()
         for queue in queues {
             for capture in queue.pending() {
                 try? queue.remove(capture)
             }
+        }
+        for eventStore in events {
+            try? eventStore.clear()
         }
     }
 }

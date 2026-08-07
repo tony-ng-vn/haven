@@ -33,6 +33,7 @@ import {
 import { requireImageBlob } from "./imageBlobs";
 import { deleteMemories, syncMemories } from "./memories";
 import { endConnection } from "./connections";
+import { deleteEventLinksForPerson } from "./events";
 import {
   CARD_LINE_MAX,
   CARD_NAME_MAX,
@@ -1700,10 +1701,12 @@ export const deletePerson = mutation({
       await ctx.storage.delete(person.photoStorageId);
     }
     // Ghost index rows would resurrect a deleted person in every handle
-    // lookup, and orphaned memories would keep matching in semantic search
-    // for somebody the user deleted. Both go with the person.
+    // lookup, orphaned memories would keep matching in semantic search, and
+    // an event link would keep pointing at a person who no longer exists.
+    // All three go with the person.
     await deletePersonHandles(ctx, args.personId);
     await deleteMemories(ctx, args.personId);
+    await deleteEventLinksForPerson(ctx, args.personId);
     await endConnection(ctx, userId, args.personId, Date.now());
     await ctx.db.delete("people", args.personId);
     return null;

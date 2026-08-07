@@ -29,6 +29,14 @@ protocol CaptureSink: Sendable {
     func saveManual(_ manual: QueuedCapture.Manual) async throws -> SharedProfileOutcome
 }
 
+/// The extra work the production sink performs when a capture was made while
+/// Event Mode was active. Kept separate so the queue loop's existing test
+/// sinks do not need network behavior they are not testing.
+protocol EventCaptureSink: CaptureSink {
+    func link(_ event: EventReference, to personId: String) async throws
+    func saveScreenshot(_ image: Data, event: EventReference) async throws
+}
+
 /// What one pass of the drain did.
 struct DrainResult: Equatable, Sendable {
     var sent = 0
@@ -116,7 +124,8 @@ struct CaptureDrain {
                     platform: profile.link.platform.rawValue,
                     into: &result,
                     remove: { try? queue.remove(capture) },
-                    send: { try await bounded { try await sink.saveProfile(profile) } }
+                    send: { try await bounded { try await sink.saveProfile(profile) } },
+                    afterSave: { outcome in try await link(capture.event, outcome: outcome) }
                 )
             case .manual(let manual):
                 await process(
@@ -125,7 +134,8 @@ struct CaptureDrain {
                     platform: manual.platform,
                     into: &result,
                     remove: { try? queue.remove(capture) },
-                    send: { try await bounded { try await sink.saveManual(manual) } }
+                    send: { try await bounded { try await sink.saveManual(manual) } },
+                    afterSave: { outcome in try await link(capture.event, outcome: outcome) }
                 )
             case .screenshot(let screenshot):
                 let url = queue.imageURL(named: screenshot.fileName)
@@ -141,7 +151,11 @@ struct CaptureDrain {
                     continue
                 }
                 do {
-                    try await bounded { try await sink.saveScreenshot(image) }
+                    if let event = capture.event, let eventSink = sink as? EventCaptureSink {
+                        try await bounded { try await eventSink.saveScreenshot(image, event: event) }
+                    } else {
+                        try await bounded { try await sink.saveScreenshot(image) }
+                    }
                     try? queue.remove(capture)
                     result.sent += 1
                 } catch {
@@ -166,7 +180,8 @@ struct CaptureDrain {
         platform: String,
         into result: inout DrainResult,
         remove: () -> Void,
-        send: () async throws -> SharedProfileOutcome
+        send: () async throws -> SharedProfileOutcome,
+        afterSave: (SharedProfileOutcome) async throws -> Void = { _ in }
     ) async {
         do {
             let outcome = try await send()
@@ -187,6 +202,11 @@ struct CaptureDrain {
                 }
                 return
             }
+            // The person save and its event link are retried as one queue
+            // item. If the first landed and the second did not, the next pass
+            // gets an idempotent "already" for the person and tries the link
+            // again before removing the only durable copy of this capture.
+            try await afterSave(outcome)
             // Resolved to something other than a conflict -- whatever mark
             // this capture carried from an earlier pass no longer describes
             // it. Before `remove()`: if removal somehow fails (it is
@@ -211,6 +231,13 @@ struct CaptureDrain {
             // queue exists to prevent.
             result.kept += 1
         }
+    }
+
+    private func link(
+        _ event: EventReference?, outcome: SharedProfileOutcome
+    ) async throws {
+        guard let event, let eventSink = sink as? EventCaptureSink else { return }
+        try await eventSink.link(event, to: outcome.personId)
     }
 
     private func bounded<Value>(_ call: @escaping () async throws -> Value) async throws -> Value {

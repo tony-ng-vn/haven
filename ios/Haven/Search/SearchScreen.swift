@@ -11,6 +11,7 @@ struct SearchScreen: View {
     /// Opens one person. Search's whole job is handing back the person, so a
     /// result that went nowhere was the screen stopping one step short.
     var openPerson: (String) -> Void = { _ in }
+    private let event: EventReference?
 
     @StateObject private var model: SearchModel
     @StateObject private var ask: AskModel
@@ -23,12 +24,20 @@ struct SearchScreen: View {
     /// See `CaptureDrainRequest`.
     @Environment(\.requestCaptureDrain) private var requestCaptureDrain
 
-    init(openPerson: @escaping (String) -> Void = { _ in }) {
+    init(
+        userId: String,
+        event: EventReference? = nil,
+        openPerson: @escaping (String) -> Void = { _ in }
+    ) {
         self.openPerson = openPerson
+        self.event = event
         _model = StateObject(wrappedValue: SearchModel())
         _ask = StateObject(wrappedValue: AskModel())
         _contactMatch = StateObject(
-            wrappedValue: ContactMatchModel(mirror: DirectoryMirrorStore.forApp().load())
+            wrappedValue: ContactMatchModel(
+                queue: .forApp(ownerUserId: userId),
+                mirror: DirectoryMirrorStore.forApp().load()
+            )
         )
     }
 
@@ -40,6 +49,7 @@ struct SearchScreen: View {
         filters: SearchFilters = .any,
         ask: AskState = .idle
     ) {
+        event = nil
         _model = StateObject(
             wrappedValue: SearchModel(
                 preview: load, facets: facets, query: query, filters: filters
@@ -139,6 +149,10 @@ struct SearchScreen: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if let event {
+                EventModeBanner(event: event)
+                    .padding(.bottom, 16)
+            }
             if isAsking {
                 AskPanel(model: ask, openPerson: openPerson, onDismiss: { ask.clear() })
             } else {

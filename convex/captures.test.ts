@@ -382,6 +382,27 @@ test("acceptCapture keeps the extracted bio and makes it searchable", async () =
   expect(hits.map((p) => p.name)).toEqual(["Ada Lovelace"]);
 });
 
+test("an event capture links its accepted person to that event", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+    event: {
+      clientKey: "capture-event",
+      title: "Design meetup",
+      startedAt: 6_000,
+    },
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const personId = await acceptCaptureId(as, { captureId });
+
+  expect(await as.query(api.events.listForPerson, { personId })).toMatchObject([
+    { title: "Design meetup", startedAt: 6_000 },
+  ]);
+});
+
 test("a manually named capture is findable by keyword search", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);

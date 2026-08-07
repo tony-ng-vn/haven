@@ -11,6 +11,7 @@ import UIKit
 /// in. Reach is the fourth stroke of the loop, and it did not exist.
 struct PersonScreen: View {
     @StateObject private var model: PersonModel
+    @StateObject private var eventModel: PersonEventModel
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
@@ -22,10 +23,12 @@ struct PersonScreen: View {
 
     init(personId: String) {
         _model = StateObject(wrappedValue: PersonModel(personId: personId))
+        _eventModel = StateObject(wrappedValue: PersonEventModel(personId: personId))
     }
 
-    init(model: PersonModel) {
+    init(model: PersonModel, events: [PersonEvent] = []) {
         _model = StateObject(wrappedValue: model)
+        _eventModel = StateObject(wrappedValue: PersonEventModel(preview: events))
     }
 
     var body: some View {
@@ -146,6 +149,30 @@ struct PersonScreen: View {
             }
 
             reach(person)
+
+            if !eventModel.events.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Events")
+                        .havenGroupLabel()
+                    ForEach(eventModel.events) { event in
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Image(systemName: "calendar")
+                                .foregroundStyle(HavenColor.star)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(event.title)
+                                    .havenBody()
+                                    .foregroundStyle(HavenColor.ink)
+                                Text(event.startDate.formatted(date: .abbreviated, time: .shortened))
+                                    .havenSecondary()
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 8)
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("What you remember")

@@ -84,18 +84,21 @@ final class ConnectModel: ObservableObject {
     @Published private(set) var sky: Sky?
 
     private let isLive: Bool
+    private let event: EventReference?
     private var cancellable: AnyCancellable?
     /// The handle currently being looked up, so a second sighting of the same
     /// code does not start a second read.
     private var looking: String?
 
-    init() {
+    init(event: EventReference? = nil) {
         isLive = true
+        self.event = event
     }
 
     /// A screen in a fixed state that never opens a socket, for previews.
     init(preview state: ConnectState, typed: String = "") {
         isLive = false
+        event = nil
         self.state = state
         self.typed = typed
         if case .found(let card) = state { sky = SkyGenerator.build(seed: card.handle) }
@@ -152,7 +155,11 @@ final class ConnectModel: ObservableObject {
         state = .connecting(card)
         guard isLive else { return }
         let work = Task { () throws -> ConnectOutcome in
-            try await convex.mutation("profiles:connect", with: ["username": card.handle])
+            var args: [String: ConvexEncodable?] = ["username": card.handle]
+            if let event {
+                args["event"] = event.convexArgument
+            }
+            return try await convex.mutation("profiles:connect", with: args)
         }
         guard let outcome = await work.value(within: .seconds(HavenNetwork.deadline)) else {
             // One message for both a dead network and a refusal, because the

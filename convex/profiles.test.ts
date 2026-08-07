@@ -574,10 +574,17 @@ test("deleteMyAccount removes the caller's profile and everything they own", asy
     photoStorageId,
     handles: [{ platform: "x", value: "mayachen", verified: true }],
   });
-  await me.as.mutation(api.people.addPersonWithOutcome, {
+  const savedPerson = await me.as.mutation(api.people.addPersonWithOutcome, {
     name: "Ada Lovelace",
     contactHandles: [{ platform: "x", value: "ada" }],
     context: "Met at a conference.",
+  });
+  if (savedPerson.status !== "created") throw new Error("Expected person");
+  await me.as.mutation(api.events.linkPerson, {
+    clientKey: "account-event",
+    title: "Conference",
+    startedAt: 1_000,
+    personId: savedPerson.personId,
   });
   const captureId = await t.run((ctx) =>
     ctx.db.insert("captures", {
@@ -612,6 +619,18 @@ test("deleteMyAccount removes the caller's profile and everything they own", asy
         .collect(),
     ).toEqual([]);
     expect(await ctx.db.get("captures", captureId)).toBeNull();
+    expect(
+      await ctx.db
+        .query("eventPeople")
+        .withIndex("by_userId", (q) => q.eq("userId", me.userId))
+        .collect(),
+    ).toEqual([]);
+    expect(
+      await ctx.db
+        .query("events")
+        .withIndex("by_userId_and_startedAt", (q) => q.eq("userId", me.userId))
+        .collect(),
+    ).toEqual([]);
     expect(
       await ctx.db
         .query("rateLimits")
@@ -785,6 +804,37 @@ test("connect creates private people rows for both sides", async () => {
       (p) => p.name,
     ),
   ).toEqual(["@alice"]);
+});
+
+test("connect links the caller's new person to the active event atomically", async () => {
+  const t = convexTest(schema, modules);
+  const alice = asNewUser(t);
+  const bob = asNewUser(t);
+  await alice.as.mutation(api.profiles.setUsername, { username: "alice" });
+  await bob.as.mutation(api.profiles.setUsername, { username: "bob" });
+
+  const connected = await alice.as.mutation(api.profiles.connect, {
+    username: "bob",
+    event: {
+      clientKey: "event-connect",
+      title: "Community night",
+      startedAt: 8_000,
+    },
+  });
+
+  expect(
+    await alice.as.query(api.events.listForPerson, {
+      personId: connected.personId,
+    }),
+  ).toMatchObject([{ title: "Community night", startedAt: 8_000 }]);
+  expect(
+    await t.run((ctx) =>
+      ctx.db
+        .query("eventPeople")
+        .withIndex("by_userId", (q) => q.eq("userId", bob.userId))
+        .collect(),
+    ),
+  ).toEqual([]);
 });
 
 test("a connected person is findable by keyword search", async () => {

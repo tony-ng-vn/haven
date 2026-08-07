@@ -6,6 +6,21 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.55.0
+
+2026-08-07
+
+**iOS**
+
+- Event Mode now lets you name and start an event from People, keeps the active event visible until you end it, and automatically remembers every person you save or connect with during that session under the event.
+- Event sessions and captured people survive an offline start or save, and a person's page now shows the events where you met them.
+
+**Backend**
+
+- Events and their people are stored as private, account-owned records with idempotent device keys, so replaying an offline capture never duplicates either the event or the relationship.
+
+---
+
 ## v0.54.0
 
 2026-08-07
