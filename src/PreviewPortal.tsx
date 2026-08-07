@@ -12,7 +12,7 @@ import { Footer } from "./Footer";
 import { TopNav } from "./TopNav";
 import { SkyPage } from "./SkyPage";
 import { CLERK_ROUTING } from "./clerkConfig";
-import { isAuthPath, isClerkFlowHash, isSkyPath } from "./lib";
+import { isClerkFlowHash, isSkyPath } from "./lib";
 import { requestSkyArchive, saveSkyArchive } from "./secureDownload";
 
 const PENDING_CODE_KEY = "haven:previewCode";
@@ -39,6 +39,25 @@ function errorMessage(error: unknown): string {
     return error.message;
   }
   return "Something went wrong. Please try again.";
+}
+
+export type PreviewAuthMode = "sign-in" | "sign-up" | null;
+
+export function initialPreviewAuthMode(
+  pathname: string,
+  hash: string,
+  pendingCode: string | null,
+): PreviewAuthMode {
+  const first = pathname.split("/").filter((segment) => segment !== "")[0];
+  if (
+    first !== undefined &&
+    ["signin", "sign-in", "login"].includes(first.toLowerCase())
+  ) {
+    return "sign-in";
+  }
+  if (pendingCode !== null) return "sign-up";
+  if (isClerkFlowHash(hash)) return "sign-in";
+  return null;
 }
 
 type PreviewCodeFormProps = {
@@ -252,11 +271,9 @@ export function PreviewPortal({
     isAuthenticated && accessReady ? {} : "skip",
   );
   const [pendingCode, setPendingCode] = useState(readPendingCode);
-  const [authMode, setAuthMode] = useState<"sign-in" | "sign-up" | null>(() => {
-    if (readPendingCode() !== null) return "sign-up";
-    if (isAuthPath(pathname) || isClerkFlowHash(hash)) return "sign-in";
-    return null;
-  });
+  const [authMode, setAuthMode] = useState<PreviewAuthMode>(() =>
+    initialPreviewAuthMode(pathname, hash, readPendingCode()),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const redeemAttempt = useRef<string | null>(null);

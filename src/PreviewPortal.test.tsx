@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 import {
+  initialPreviewAuthMode,
   PreviewCodeForm,
   PreviewHome,
   PreviewProfileSetup,
@@ -11,6 +12,19 @@ import {
 afterEach(cleanup);
 
 describe("the preview access flow", () => {
+  test("keeps the invitation while letting an existing member switch to sign-in", () => {
+    expect(initialPreviewAuthMode("/preview", "", "pending-code")).toBe(
+      "sign-up",
+    );
+    expect(initialPreviewAuthMode("/sign-in", "", "pending-code")).toBe(
+      "sign-in",
+    );
+    expect(initialPreviewAuthMode("/sign-up", "", null)).toBeNull();
+    expect(initialPreviewAuthMode("/preview", "#/verify", null)).toBe(
+      "sign-in",
+    );
+  });
+
   test("asks for a preview code before offering account creation", async () => {
     const submit = vi.fn(async () => undefined);
     render(<PreviewCodeForm onSubmit={submit} onSignIn={vi.fn()} />);
