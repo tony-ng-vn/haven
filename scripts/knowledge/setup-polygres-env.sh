@@ -4,9 +4,11 @@
 # The secret is never echoed; only non-secret metadata is printed.
 set -eu
 cd "$(dirname "$0")/../.."
+umask 077
 
-PROJECT=pa6ee1830f10557dcc9bfd0c
+PROJECT="${POLYGRES_PROJECT:-pa6ee1830f10557dcc9bfd0c}"
 OUT=.env.local
+trap 'rm -f "$OUT.tmp"' EXIT
 
 polygres --project "$PROJECT" env > "$OUT.tmp"
 
@@ -38,8 +40,10 @@ if [ -z "$SECRET" ]; then
 fi
 
 mv "$OUT.tmp" "$OUT"
-printf 'export POLYGRES_API_KEY=%s\n' "$SECRET" >> "$OUT"
+ESCAPED=$(printf '%s' "$SECRET" | python3 -c 'import shlex,sys; print(shlex.quote(sys.stdin.read()), end="")')
+printf 'export POLYGRES_API_KEY=%s\n' "$ESCAPED" >> "$OUT"
 chmod 600 "$OUT"
+trap - EXIT
 
 echo "Wrote $OUT. Non-secret key metadata:"
 printf '%s' "$KEY_JSON" | python3 -c '

@@ -1,12 +1,16 @@
 """The validator is the policy boundary: whatever the model emits, only
 well-evidenced claims survive."""
 
+from types import SimpleNamespace
+
 import pytest
 
 from haven_knowledge.extraction import (
     ExtractionInvalid,
+    _chat_call,
     validate_output,
 )
+from haven_knowledge.config import Provider
 
 RAW = "Met Sarah through Alex at YC Demo Day. She runs marathons."
 
@@ -147,3 +151,24 @@ def test_model_output_cannot_reach_protected_fields():
     validated = result.claims[0]
     assert not hasattr(validated, "owner_id")
     assert not hasattr(validated, "lifecycle_status")
+
+
+def test_provider_empty_choices_returns_a_typed_safe_error(monkeypatch):
+    response = SimpleNamespace(status_code=200, json=lambda: {"choices": []})
+    monkeypatch.setattr("haven_knowledge.extraction.httpx.post", lambda *a, **k: response)
+    provider = Provider("extraction", "https://example.invalid", "secret", "model")
+
+    with pytest.raises(ExtractionInvalid, match="^provider_no_choices$"):
+        _chat_call(provider, [])
+
+
+def test_provider_non_json_response_returns_a_typed_safe_error(monkeypatch):
+    response = SimpleNamespace(
+        status_code=200,
+        json=lambda: (_ for _ in ()).throw(ValueError("private response body")),
+    )
+    monkeypatch.setattr("haven_knowledge.extraction.httpx.post", lambda *a, **k: response)
+    provider = Provider("extraction", "https://example.invalid", "secret", "model")
+
+    with pytest.raises(ExtractionInvalid, match="^provider_bad_json$"):
+        _chat_call(provider, [])

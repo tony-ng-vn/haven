@@ -65,9 +65,11 @@ describe("Landing2Page", () => {
     ).toBeTruthy();
   });
 
-  test("the quiet note matches the default landing's own copy", () => {
+  test("the quiet note sets the expectation for a founder conversation", () => {
     render(<Landing2Page />);
-    expect(screen.getByText("Free, runs on your Mac.")).toBeTruthy();
+    expect(
+      screen.getByText("A conversation about people, memory, and connection."),
+    ).toBeTruthy();
   });
 
   // Real pathnames, not the old hash routes: this is the front door now, and
@@ -76,14 +78,15 @@ describe("Landing2Page", () => {
   // hashes still reach the same pages. Same button classes as before: press/
   // hover/focus behavior is meant to match exactly, via the shared
   // .landing-polished scope this page's root also carries.
-  test("the hero carries both CTAs: Sky primary, iOS secondary", () => {
+  test("the hero leads with booking a call and keeps the waitlist secondary", () => {
     render(<Landing2Page />);
-    const sky = screen.getByText("Sky app, coming soon").closest("a");
+    const call = screen.getByText("Book a call").closest("a");
     const ios = screen.getByText("Join the iPhone waitlist").closest("a");
-    expect(sky?.getAttribute("href")).toBe("/sky");
-    expect(sky?.className).toContain("sky-download");
+    expect(call?.getAttribute("href")).toBe("https://cal.com/tony-nguyen-vn17");
+    expect(call?.className).toContain("sky-download");
     expect(ios?.getAttribute("href")).toBe("/waitlist");
     expect(ios?.className).toContain("landing-cta-secondary");
+    expect(screen.queryByText(/sky app/i)).toBeNull();
   });
 
   test("hosts the nav and the footer rather than duplicating their logic", () => {

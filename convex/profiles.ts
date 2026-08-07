@@ -804,6 +804,17 @@ async function purgeOwnedRows(ctx: MutationCtx, userId: string): Promise<void> {
   // rather than describing the person. Deleting it would leave money moved
   // with nothing on our side saying why.
 
+  // Preview admission belongs to the Clerk account, so it leaves with the
+  // account too. Keeping it would silently re-admit a later session carrying
+  // the same identity after the person asked Haven to forget them.
+  const previewGrant = await ctx.db
+    .query("previewAccess")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .unique();
+  if (previewGrant !== null) {
+    await ctx.db.delete("previewAccess", previewGrant._id);
+  }
+
   // Last, because every delete above ran under a limiter that keys off this
   // table: clearing it first would let the purge lift the caller's own caps.
   const limits = await ctx.db

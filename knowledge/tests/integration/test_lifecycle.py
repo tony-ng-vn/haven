@@ -207,21 +207,17 @@ def test_concurrent_create_is_idempotent_on_client_key(setup, db_conn):
     )["n"] == 1
 
 
-def test_create_rejects_foreign_and_provisional_primaries(setup, db_conn, test_auth):
-    service, auth, owner, entity_id = setup
+def test_create_rejects_foreign_and_provisional_primaries(setup, cleanup_owner):
+    service, _auth, _owner, entity_id = setup
     from haven_knowledge.identity import AuthContext
 
     other_auth = AuthContext("clerk", "https://test.havens.invalid", f"other_{uuid.uuid4().hex}")
+    cleanup_owner.append(service.ensure_owner(other_auth))
     with pytest.raises(ValueError, match="not found"):
         service.create_source_entry(
             other_auth, raw_text=RAW, primary_entity_id=str(entity_id),
             source_type="system_test",
         )
-    # The other owner created above gets cleaned too.
-    other_owner = service.ensure_owner(other_auth)
-    with db_conn.cursor() as cur:
-        cur.execute("delete from haven_knowledge.auth_identities where haven_user_id=%s", (other_owner,))
-        cur.execute("delete from haven_knowledge.haven_users where id=%s", (other_owner,))
 
 
 def test_versions_are_immutable(setup, db_conn):
@@ -280,6 +276,58 @@ def test_extraction_creates_provisional_claims_relations_items(setup, db_conn):
         owner,
     )
     assert hit["n"] >= 1
+
+
+def test_unrelated_revision_preserves_an_active_mention_only_provisional(
+    setup, db_conn
+):
+    service, auth, owner, entity_id = setup
+    unrelated = service.create_source_entry(
+        auth,
+        raw_text="Sarah likes tea.",
+        primary_entity_id=str(entity_id),
+        source_type="system_test",
+    )
+    mention_source = service.create_source_entry(
+        auth,
+        raw_text="Spoke with Alex.",
+        primary_entity_id=str(entity_id),
+        source_type="system_test",
+    )
+    run_fake_extraction(
+        db_conn,
+        owner,
+        uuid.UUID(mention_source["source_entry_id"]),
+        uuid.UUID(mention_source["source_entry_version_id"]),
+        entity_id,
+        "Sarah Tran",
+        ValidatedExtraction(
+            mentions=[ValidatedMention("m1", "Alex", 11, 15)],
+            claims=[],
+        ),
+    )
+    provisional = q1(
+        db_conn,
+        """
+        select id from haven_knowledge.knowledge_entities
+        where owner_id=%s and normalized_name='alex' and entity_state='provisional'
+        """,
+        owner,
+    )["id"]
+
+    service.delete_source_entry(auth, unrelated["source_entry_id"])
+    assert q1(
+        db_conn,
+        "select deleted_at from haven_knowledge.knowledge_entities where id=%s",
+        provisional,
+    )["deleted_at"] is None
+
+    service.delete_source_entry(auth, mention_source["source_entry_id"])
+    assert q1(
+        db_conn,
+        "select deleted_at from haven_knowledge.knowledge_entities where id=%s",
+        provisional,
+    )["deleted_at"] is not None
 
 
 def test_person_text_object_survives_without_separate_mention(setup, db_conn):
@@ -980,6 +1028,21 @@ def test_reference_resolution_flow(setup, db_conn):
     assert resolved_person["entity_state"] == "canonical"
     assert resolved_person["source_provisional_entity_id"] == provisional_id
 
+    with db.transaction(db_conn) as cur:
+        cur.execute(
+            "update haven_knowledge.knowledge_entities set deleted_at=now() where id=%s",
+            (chen,),
+        )
+    missing_target = service.search_network(auth, "who introduced me to Sarah?")
+    assert missing_target["results"][0]["person"]["entity_id"] == provisional_id
+    assert missing_target["results"][0]["person"]["resolution_status"] == "unresolved"
+    assert "not yet identified" in missing_target["answer"]
+    with db.transaction(db_conn) as cur:
+        cur.execute(
+            "update haven_knowledge.knowledge_entities set deleted_at=null where id=%s",
+            (chen,),
+        )
+
     with pytest.raises(ValueError, match="already confirmed"):
         service.reject_reference_candidate(auth, provisional_id, str(chen))
     with pytest.raises(ValueError, match="already confirmed"):
@@ -1080,6 +1143,20 @@ def test_resolved_provisional_reads_use_canonical_identity(setup, db_conn):
     assert canonical_match["display_name"] == "Alex Chen"
     assert canonical_match["entity_state"] == "canonical"
     assert canonical_match["convex_person_id"] == convex_id
+
+    with db.transaction(db_conn) as cur:
+        cur.execute(
+            "update haven_knowledge.knowledge_entities set deleted_at=now() where id=%s",
+            (canonical,),
+        )
+
+    fallback = service.get_person_knowledge(auth, str(provisional))
+    assert fallback["entity"]["entity_id"] == str(provisional)
+    hydrated_fallback = hydrate_items(
+        db_conn, owner, [FusedItem(str(item_id), 1.0, ["test"])], 1
+    )[0]
+    assert hydrated_fallback["resolved_to_entity_id"] is None
+    assert hydrated_fallback["display_name"] == "Alex"
 
 
 def test_resolution_target_must_be_canonical(setup, db_conn):
@@ -1228,7 +1305,12 @@ def test_concurrent_job_claiming_is_disjoint(setup, db_conn):
         conn = db.connect()
         try:
             for _ in range(2):
-                job = claim_next_job(conn, f"w_{threading.get_ident()}", ["extract_source"])
+                job = claim_next_job(
+                    conn,
+                    f"w_{threading.get_ident()}",
+                    ["extract_source"],
+                    owner_ids=[owner],
+                )
                 if job is not None:
                     with lock:
                         claimed.append(str(job["id"]))
@@ -1241,6 +1323,54 @@ def test_concurrent_job_claiming_is_disjoint(setup, db_conn):
     for t in threads:
         t.join()
     assert len(claimed) == len(set(claimed)) == 4
+
+
+def test_concurrent_first_login_creates_one_owner_without_orphans(
+    db_conn, cleanup_owner
+):
+    from haven_knowledge.identity import AuthContext, ensure_owner
+
+    auth = AuthContext(
+        "clerk", "https://test.havens.invalid", f"owner_{uuid.uuid4().hex}"
+    )
+    started_at = q1(db_conn, "select clock_timestamp() as at")["at"]
+    barrier = threading.Barrier(4)
+    owners: list[uuid.UUID] = []
+    lock = threading.Lock()
+
+    def resolve_owner():
+        conn = db.connect()
+        try:
+            barrier.wait()
+            owner = ensure_owner(conn, auth)
+            with lock:
+                owners.append(owner)
+        finally:
+            conn.close()
+
+    threads = [threading.Thread(target=resolve_owner) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(owners) == 4
+    assert len(set(owners)) == 1
+    cleanup_owner.append(owners[0])
+    orphan_count = q1(
+        db_conn,
+        """
+        select count(*) as n
+        from haven_knowledge.haven_users u
+        where u.created_at >= %s
+          and not exists (
+              select 1 from haven_knowledge.auth_identities a
+              where a.haven_user_id = u.id
+          )
+        """,
+        started_at,
+    )["n"]
+    assert orphan_count == 0
 
 
 def test_mirror_convex_person_is_concurrency_safe(setup):

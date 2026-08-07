@@ -22,10 +22,6 @@ def _has_runtime() -> bool:
     )
 
 
-def _has_embeddings() -> bool:
-    return bool(os.environ.get("VOYAGE_API_KEY") or os.environ.get("OPENAI_API_KEY"))
-
-
 def _has_extraction() -> bool:
     return bool(os.environ.get("EXTRACTION_API_KEY") or os.environ.get("OPENAI_API_KEY"))
 

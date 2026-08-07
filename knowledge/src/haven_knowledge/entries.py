@@ -141,6 +141,8 @@ def create_source_entry(
                 (owner_id, idempotency_key),
             )
             existing = cur.fetchone()
+            if existing is None or existing["current_version_id"] is None:
+                raise RuntimeError("idempotent source entry is not visible; retry")
             return {
                 "status": "already",
                 "source_entry_id": str(existing["id"]),
@@ -262,6 +264,11 @@ def _sweep_unsupported_provisionals(cur: psycopg.Cursor, owner_id: uuid.UUID) ->
               select 1 from haven_knowledge.knowledge_claims c
               where c.owner_id = e.owner_id and c.lifecycle_status = 'active'
                 and (c.subject_entity_id = e.id or c.object_entity_id = e.id)
+          )
+          and not exists (
+              select 1 from haven_knowledge.entity_mentions m
+              where m.owner_id = e.owner_id and m.entity_id = e.id
+                and m.lifecycle_status = 'active'
           )
         """,
         (owner_id,),

@@ -181,7 +181,11 @@ def main() -> int:
                     mrr_values.append(1.0 if ok else 0.0)
                     if ok:
                         evidence_total += 1
-                        quote = out["results"][0]["evidence"]["quote"]
+                        unresolved = next(
+                            r for r in out.get("results", [])
+                            if r.get("person", {}).get("resolution_status") == "unresolved"
+                        )
+                        quote = unresolved.get("evidence", {}).get("quote") or ""
                         evidence_ok += 1 if quote in scenario["sources"][0] else 0
                 else:
                     if any(
@@ -210,6 +214,7 @@ def main() -> int:
                             ) else 0
                     if "expect_negative_not_positive" in query:
                         person_key = query["expect_negative_not_positive"]
+                        query_negation_ok = True
                         for r in out.get("results", []):
                             if entity_to_key.get(r["entity_id"]) == person_key:
                                 claims = [
@@ -218,10 +223,11 @@ def main() -> int:
                                     and "startup introductions" in (e.get("quote") or "").lower()
                                 ]
                                 if any(c.get("polarity") == "positive" for c in claims):
-                                    negation_ok = False
+                                    query_negation_ok = False
                                 # Appearing WITH visible negative polarity is
                                 # acceptable evidence, not a false positive.
-                        row["hit"] = negation_ok
+                        negation_ok = negation_ok and query_negation_ok
+                        row["hit"] = query_negation_ok
                     if "expect_modality" in query:
                         found = [
                             e for r in out.get("results", [])
@@ -319,18 +325,25 @@ def main() -> int:
 
         # ---- fixture 10: tenant isolation
         leakage = 0
+
+        def evidence_text(result: dict) -> str:
+            return " ".join(
+                (e.get("quote") or e.get("raw_text") or "")
+                for e in result.get("evidence", [])
+            ).lower()
+
         cross = service.search_network(auth, "miniature watercolors")
         leakage += sum(
             1 for r in cross.get("results", [])
             if r.get("entity_id") == str(sarah_b)
-            or F10_SOURCE.lower() in json.dumps(r.get("evidence", [])).lower()
+            or "miniature watercolors" in evidence_text(r)
         )
         cross_b = service.search_network(auth_b, "antique compasses")
         owner_a_entity_ids = {str(entity_id) for entity_id in entities.values()}
         leakage += sum(
             1 for r in cross_b.get("results", [])
             if r.get("entity_id") in owner_a_entity_ids
-            or F9_SOURCE.lower() in json.dumps(r.get("evidence", [])).lower()
+            or "antique compasses" in evidence_text(r)
         )
         fast_b = service.search_network(auth_b, "Sarah Chen")
         leakage += sum(1 for r in fast_b.get("results", []) if r["entity_id"] != str(sarah_b))

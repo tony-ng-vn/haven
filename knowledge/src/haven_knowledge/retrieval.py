@@ -12,8 +12,8 @@ from typing import Any
 
 import psycopg
 
-from . import config
-from .embeddings import embed_text
+from . import config, db
+from .embeddings import active_embedding_models, embed_text
 
 log = logging.getLogger("haven_knowledge.retrieval")
 
@@ -111,7 +111,8 @@ def lexical_search(
                     for term in _meaningful_terms(query)
                 ]
                 ids = [f.item_id for f in reciprocal_rank_fusion(per_term)][:limit]
-            return StrategyResult("lexical", ids)
+            if ids:
+                return StrategyResult("lexical", ids)
         finally:
             client.close()
     except Exception as exc:
@@ -142,8 +143,17 @@ def lexical_search(
 
 def vector_search(owner_id: uuid.UUID, query: str, limit: int = 24) -> StrategyResult:
     try:
+        provider = config.embedding_provider()
+        conn = db.connect()
+        try:
+            models = active_embedding_models(conn, owner_id)
+        finally:
+            conn.close()
+        if models and models != {provider.model}:
+            log.error("active embedding model does not match configured query model")
+            return StrategyResult("vector", [], error="embedding_model_mismatch")
         embedding = embed_text(
-            config.embedding_provider(),
+            provider,
             query,
             wait_on_rate_limit=config.wait_on_embedding_rate_limit(),
         )
@@ -172,7 +182,25 @@ def fuzzy_person_lookup(
 ) -> list[dict[str, Any]]:
     """Entity candidates by approximate name. Runtime API fuzzy config first,
     trigram SQL as fallback; both re-checked against Postgres for ownership."""
-    entity_ids: list[str] = []
+    def sql_fallback_ids() -> list[str]:
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select id from haven_knowledge.knowledge_entities
+                    where owner_id = %s and deleted_at is null
+                      and normalized_name %% %s
+                    order by similarity(normalized_name, %s) desc, id
+                    limit %s
+                    """,
+                    (owner_id, name.lower(), name.lower(), limit),
+                )
+                return [str(r["id"]) for r in cur.fetchall()]
+        except Exception:
+            log.exception("fuzzy SQL fallback failed")
+            return []
+
+    runtime_ids: list[str] = []
     try:
         client, project = _sdk_project()
         try:
@@ -182,76 +210,71 @@ def fuzzy_person_lookup(
                 filters={"owner_id": str(owner_id)},
                 limit=limit,
             )
-            entity_ids = [str(r.id) for r in page.results]
+            runtime_ids = [str(r.id) for r in page.results]
         finally:
             client.close()
     except Exception as exc:
         log.warning("runtime fuzzy failed (%s); using SQL fallback", type(exc).__name__)
+
+    def visible_rows(entity_ids: list[str]) -> list[dict[str, Any]]:
+        if not entity_ids:
+            return []
         with conn.cursor() as cur:
             cur.execute(
                 """
-                select id from haven_knowledge.knowledge_entities
-                where owner_id = %s and deleted_at is null
-                  and normalized_name %% %s
-                order by similarity(normalized_name, %s) desc, id
-                limit %s
+                select e.*,
+                       resolved.id as canonical_id,
+                       resolved.entity_type as canonical_entity_type,
+                       resolved.display_name as canonical_display_name,
+                       resolved.normalized_name as canonical_normalized_name,
+                       resolved.convex_person_id as canonical_convex_person_id,
+                       resolved.created_at as canonical_created_at,
+                       resolved.updated_at as canonical_updated_at
+                from haven_knowledge.knowledge_entities e
+                left join haven_knowledge.knowledge_entities resolved
+                  on resolved.id = e.resolved_to_entity_id
+                 and resolved.owner_id = e.owner_id
+                 and resolved.entity_state = 'canonical'
+                 and resolved.deleted_at is null
+                where e.id = any(%s::uuid[]) and e.owner_id = %s
+                  and e.deleted_at is null
                 """,
-                (owner_id, name.lower(), name.lower(), limit),
+                (entity_ids, owner_id),
             )
-            entity_ids = [str(r["id"]) for r in cur.fetchall()]
-    if not entity_ids:
-        return []
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            select e.*,
-                   resolved.id as canonical_id,
-                   resolved.entity_type as canonical_entity_type,
-                   resolved.display_name as canonical_display_name,
-                   resolved.normalized_name as canonical_normalized_name,
-                   resolved.convex_person_id as canonical_convex_person_id,
-                   resolved.created_at as canonical_created_at,
-                   resolved.updated_at as canonical_updated_at
-            from haven_knowledge.knowledge_entities e
-            left join haven_knowledge.knowledge_entities resolved
-              on resolved.id = e.resolved_to_entity_id
-             and resolved.owner_id = e.owner_id
-             and resolved.entity_state = 'canonical'
-             and resolved.deleted_at is null
-            where e.id = any(%s::uuid[]) and e.owner_id = %s
-              and e.deleted_at is null
-            """,
-            (entity_ids, owner_id),
-        )
-        rows = {str(r["id"]): r for r in cur.fetchall()}
-    # Preserve fuzzy rank order through the ownership re-check. Confirmed
-    # provisionals collapse to their canonical person so fast and relationship
-    # reads cannot expose two identities for the same resolved reference.
-    visible: list[dict[str, Any]] = []
-    seen: set[uuid.UUID] = set()
-    for entity_id in entity_ids:
-        row = rows.get(entity_id)
-        if row is None:
-            continue
-        if row["canonical_id"] is not None:
-            row = {
-                **row,
-                "id": row["canonical_id"],
-                "entity_type": row["canonical_entity_type"],
-                "entity_state": "canonical",
-                "display_name": row["canonical_display_name"],
-                "normalized_name": row["canonical_normalized_name"],
-                "convex_person_id": row["canonical_convex_person_id"],
-                "resolved_to_entity_id": None,
-                "resolution_status": None,
-                "created_at": row["canonical_created_at"],
-                "updated_at": row["canonical_updated_at"],
-            }
-        if row["id"] in seen:
-            continue
-        seen.add(row["id"])
-        visible.append(row)
-    return visible
+            rows = {str(r["id"]): r for r in cur.fetchall()}
+        # Preserve fuzzy rank order through the ownership re-check. Confirmed
+        # provisionals collapse to their canonical person so fast and relationship
+        # reads cannot expose two identities for the same resolved reference.
+        visible: list[dict[str, Any]] = []
+        seen: set[uuid.UUID] = set()
+        for entity_id in entity_ids:
+            row = rows.get(entity_id)
+            if row is None:
+                continue
+            if row["canonical_id"] is not None:
+                row = {
+                    **row,
+                    "id": row["canonical_id"],
+                    "entity_type": row["canonical_entity_type"],
+                    "entity_state": "canonical",
+                    "display_name": row["canonical_display_name"],
+                    "normalized_name": row["canonical_normalized_name"],
+                    "convex_person_id": row["canonical_convex_person_id"],
+                    "resolved_to_entity_id": None,
+                    "resolution_status": None,
+                    "created_at": row["canonical_created_at"],
+                    "updated_at": row["canonical_updated_at"],
+                }
+            if row["id"] in seen:
+                continue
+            seen.add(row["id"])
+            visible.append(row)
+        return visible
+
+    visible = visible_rows(runtime_ids)
+    if visible:
+        return visible
+    return visible_rows(sql_fallback_ids())
 
 
 def hydrate_items(
@@ -276,7 +299,7 @@ def hydrate_items(
                         then resolved.resolution_status
                         else e.resolution_status
                    end as resolution_status,
-                   e.resolved_to_entity_id,
+                   resolved.id as resolved_to_entity_id,
                    c.evidence_quote, c.predicate_key, c.custom_predicate_label,
                    c.polarity, c.modality, c.temporal_status, c.confidence,
                    v.raw_text

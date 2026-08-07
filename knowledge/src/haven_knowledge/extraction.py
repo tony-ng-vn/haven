@@ -290,27 +290,40 @@ def validate_output(raw_text: str, primary_name: str, output: Any) -> ValidatedE
 
 
 def _chat_call(provider: Provider, messages: list[dict[str, Any]]) -> Any:
-    response = httpx.post(
-        f"{provider.base_url}/v1/chat/completions",
-        headers={"Authorization": f"Bearer {provider.api_key}"},
-        json={
-            "model": provider.model,
-            "messages": messages,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "knowledge_extraction",
-                    "strict": True,
-                    "schema": OUTPUT_SCHEMA,
+    try:
+        response = httpx.post(
+            f"{provider.base_url}/v1/chat/completions",
+            headers={"Authorization": f"Bearer {provider.api_key}"},
+            json={
+                "model": provider.model,
+                "messages": messages,
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "knowledge_extraction",
+                        "strict": True,
+                        "schema": OUTPUT_SCHEMA,
+                    },
                 },
             },
-        },
-        timeout=90,
-    )
+            timeout=90,
+        )
+    except httpx.RequestError as exc:
+        raise ExtractionInvalid("provider_unreachable") from exc
     if response.status_code != 200:
         # Never include the body: provider errors can echo the input text.
         raise ExtractionInvalid(f"provider_status_{response.status_code}")
-    content = response.json().get("choices", [{}])[0].get("message", {}).get("content")
+    try:
+        body = response.json()
+    except (ValueError, TypeError) as exc:
+        raise ExtractionInvalid("provider_bad_json") from exc
+    if not isinstance(body, dict):
+        raise ExtractionInvalid("provider_bad_json")
+    choices = body.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise ExtractionInvalid("provider_no_choices")
+    first = choices[0]
+    content = first.get("message", {}).get("content") if isinstance(first, dict) else None
     if not isinstance(content, str):
         raise ExtractionInvalid("provider_no_content")
     try:

@@ -10,7 +10,14 @@ describe("isReservedHandle", () => {
   });
 
   test("the site's own routes are held back", () => {
-    for (const name of ["signin", "join", "waitlist", "home", "settings"]) {
+    for (const name of [
+      "signin",
+      "join",
+      "waitlist",
+      "preview",
+      "home",
+      "settings",
+    ]) {
       expect(isReservedHandle(name)).toBe(true);
     }
   });

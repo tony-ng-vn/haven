@@ -17,7 +17,7 @@ Rejected on three verified grounds.
 
 1. Credential model.
    The Polygres Postgres endpoints require password authentication (verified: `fe_sendauth: no password supplied` without one, `FATAL: password authentication failed` and `FATAL: SASL authentication failed` with the Runtime API key on the direct and pooled endpoints respectively, 2026-08-06).
-   The public CLI (0.1.2) and the current docs (docs.evokoa.com/polygres/cli) provision no database password, and no password exists in any local or deployment environment today.
+   The public documentation example observed at the start of the spike used CLI 0.1.2 and provisioned no database password; no password existed in any local or deployment environment that day.
    A Convex action would have nothing to authenticate with.
 2. Retrieval SDK language.
    The only documented Runtime API contract is the Python `polygres-sdk`; its raw HTTP surface is not documented, and both the CLI and SDK skills forbid inferring undocumented payloads.
@@ -38,7 +38,7 @@ The repository already carries Python for the graph research tool and `scripts/g
 
 What was actually executed and observed (all on 2026-08-06, recorded in docs/polygres/development-validation.md):
 
-- `polygres` CLI 0.1.2 authenticated as the project owner; project `pa6ee1830f10557dcc9bfd0c` status ready.
+- `polygres` CLI 0.2.0 authenticated as the project owner; project `pa6ee1830f10557dcc9bfd0c` status ready.
 - Runtime API reachable and authenticated with the new `haven-knowledge-dev` key; readiness reports graph and vector ready; SDK namespaces graph/vector/text/hybrid enumerated.
 - Postgres endpoints reject passwordless and API-key auth (see above); server-side `migrations apply` and `import csv` are the write paths available without the database password.
 - Local fallback for transactional integration tests: Dockerized `pgvector/pgvector:pg17`, schema-identical to the managed database.
@@ -54,6 +54,8 @@ What was actually executed and observed (all on 2026-08-06, recorded in docs/pol
 
 The service is deliberately deployable in three shapes without code change: a long-lived process (worker + HTTP), a Vercel Python function (Fluid Compute supports Python and holds pooled pg connections per instance), or invocation from a future Convex Node action through an HTTP boundary once one exists.
 Choosing between them is out of scope for v0 and does not affect the domain interface.
+Before a long-lived worker or HTTP deployment, choose workload-specific database connection and statement timeouts and either add reconnect backoff or place the worker under a process supervisor.
+The current developer drain command intentionally exits when its database connection is lost.
 
 ## Rollback path
 

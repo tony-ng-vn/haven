@@ -97,29 +97,20 @@ def extraction_provider() -> Provider:
 
 
 def embedding_provider() -> Provider:
-    # Voyage first (documented contract change: the repo's OpenAI embedding
-    # key was dead at build time, see docs/adr/knowledge-service-boundary.md),
-    # OpenAI as fallback. Both providers are normalized to the vector config's
-    # fixed 1024 dimensions, and every stored row records the provider model.
-    voyage_key = os.environ.get("VOYAGE_API_KEY", "")
-    if voyage_key:
-        return Provider(
-            label="voyage",
-            base_url="https://api.voyageai.com",
-            api_key=voyage_key,
-            model="voyage-3.5",
-        )
+    # Vector similarity is meaningful only when queries and indexed rows use
+    # one model. V0 pins that contract to Voyage rather than silently falling
+    # back to a different 1024-dimension embedding space.
     return Provider(
-        label="openai",
-        base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com"),
-        api_key=_require("OPENAI_API_KEY"),
-        model="text-embedding-3-small",
+        label="voyage",
+        base_url="https://api.voyageai.com",
+        api_key=_require("VOYAGE_API_KEY"),
+        model="voyage-3.5",
     )
 
 
 def embedding_dimensions() -> int:
     # Migration 0004 and the Polygres Runtime vector config are both fixed at
-    # 1024. OpenAI's text-embedding-3 fallback is explicitly shortened to fit.
+    # 1024, matching the pinned Voyage model.
     return 1024
 
 

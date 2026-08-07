@@ -1,14 +1,16 @@
 """Unit coverage for the pure pieces: hashing, routing, fusion, rendering,
 identity, concepts."""
 
+import uuid
+
 import pytest
 
-from haven_knowledge.concepts import concept_key, _singular
+from haven_knowledge.concepts import concept_key, match_concepts, _singular
 from haven_knowledge.entries import content_hash, validate_raw_text
 from haven_knowledge.embeddings import input_hash
 from haven_knowledge.identity import AuthContext, clerk_context, normalize_name
 from haven_knowledge.pipeline import claim_retrieval_text
-from haven_knowledge.retrieval import StrategyResult, reciprocal_rank_fusion
+from haven_knowledge.retrieval import StrategyResult, reciprocal_rank_fusion, vector_search
 from haven_knowledge.router import plan_query
 
 
@@ -102,6 +104,26 @@ def test_rrf_tie_breaks_by_id():
     assert [f.item_id for f in fused] == ["a", "b"]
 
 
+def test_vector_search_rejects_a_mixed_or_changed_embedding_model(monkeypatch):
+    class Connection:
+        def close(self):
+            pass
+
+    monkeypatch.setattr("haven_knowledge.retrieval.db.connect", Connection)
+    monkeypatch.setattr(
+        "haven_knowledge.retrieval.active_embedding_models",
+        lambda _conn, _owner: {"older-model"},
+    )
+    monkeypatch.setattr(
+        "haven_knowledge.retrieval.config.embedding_provider",
+        lambda: type("Provider", (), {"model": "configured-model"})(),
+    )
+    result = vector_search(uuid.uuid4(), "query")
+
+    assert result.ranked_item_ids == []
+    assert result.error == "embedding_model_mismatch"
+
+
 # ------------------------------------------------------- claim text rendering
 
 def test_negative_claim_renders_negation():
@@ -145,3 +167,16 @@ def test_singularization_is_conservative():
     assert _singular("runs") == "run"
     # Three-letter tokens are left alone rather than mangled ("gas", "des").
     assert _singular("gas") == "gas"
+
+
+def test_exact_concept_match_is_not_mislabeled_as_normalized():
+    concept_id = uuid.uuid4()
+
+    class Cursor:
+        def execute(self, _query, _params=None):
+            pass
+
+        def fetchall(self):
+            return [{"id": concept_id, "concept_key": "running"}]
+
+    assert match_concepts(Cursor(), "running") == [(concept_id, "exact")]

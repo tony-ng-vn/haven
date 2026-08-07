@@ -36,7 +36,7 @@ describe("the Clerk urls Haven declares", () => {
   });
 
   // A url Clerk redirects to that the router drops on the waitlist is the same
-  // dead end by a different route.
+  // dead end by a different route. Auth now lives inside the preview portal.
   test("the router actually answers both of them", () => {
     const base = {
       isAuthenticated: false,
@@ -46,7 +46,7 @@ describe("the Clerk urls Haven declares", () => {
     };
     for (const url of [CLERK_SIGN_IN_URL, CLERK_SIGN_UP_URL]) {
       expect(isAuthPath(url)).toBe(true);
-      expect(resolveView({ ...base, pathname: url })).toBe("signin");
+      expect(resolveView({ ...base, pathname: url })).toBe("preview");
     }
   });
 
@@ -65,8 +65,8 @@ describe("the Clerk urls Haven declares", () => {
   });
 
   test("the component is mounted with that routing, not the default", () => {
-    const app = readFileSync("src/App.tsx", "utf8");
-    expect(app).toMatch(/<ClerkSignIn[^>]*routing=\{CLERK_ROUTING\}/);
+    const portal = readFileSync("src/PreviewPortal.tsx", "utf8");
+    expect(portal).toMatch(/<ClerkSignIn[^>]*routing=\{CLERK_ROUTING\}/);
   });
 
   test("the provider is given the urls, not just handed them", () => {

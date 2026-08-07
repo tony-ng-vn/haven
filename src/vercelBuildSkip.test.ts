@@ -52,6 +52,9 @@ describe("the ignored build step", () => {
   // that ships without a preview.
   test("watches every path the web build reads", () => {
     for (const path of [
+      "api/",
+      "convex/",
+      "private/",
       "src/",
       "public/",
       "index.html",

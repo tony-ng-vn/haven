@@ -52,7 +52,9 @@ def match_concepts(
     concepts. Returns (concept_id, mapping_type)."""
     key = concept_key(object_text)
     singular = _singular(key)
-    candidates = {key: "exact", singular: "normalized"}
+    # Insert the normalized form first so an unchanged singular form retains
+    # the exact classification rather than overwriting it.
+    candidates = {singular: "normalized", key: "exact"}
     keys = [k for k in candidates if k]
     if not keys:
         return []

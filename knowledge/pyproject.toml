@@ -24,5 +24,5 @@ testpaths = ["tests"]
 markers = [
     "db: integration tests that need the managed Polygres database (DATABASE_URL with credentials)",
     "runtime: integration tests that need the Polygres Runtime API (POLYGRES_API_KEY)",
-    "model: tests that call the extraction or embedding provider (OPENAI_API_KEY)",
+    "model: tests that call extraction (EXTRACTION_API_KEY or OPENAI_API_KEY) or embeddings (VOYAGE_API_KEY)",
 ]

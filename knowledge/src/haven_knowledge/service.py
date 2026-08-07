@@ -93,14 +93,16 @@ class KnowledgeService:
         effective_entity_id = entity["resolved_to_entity_id"] or requested_entity_id
         public_entity = entity
         if effective_entity_id != requested_entity_id:
-            public_entity = get_entity(self._conn, owner, effective_entity_id)
-            if public_entity is None:
-                raise ValueError("resolved entity not found for this owner")
+            resolved_entity = get_entity(self._conn, owner, effective_entity_id)
+            if resolved_entity is None:
+                effective_entity_id = requested_entity_id
+            else:
+                public_entity = resolved_entity
         with self._conn.cursor() as cur:
             cur.execute(
                 """
                 select c.id, c.predicate_key, c.custom_predicate_label, c.object_text,
-                       coalesce(o.resolved_to_entity_id, c.object_entity_id)
+                       coalesce(resolved_o.id, o.id)
                            as object_entity_id,
                        coalesce(resolved_o.display_name, o.display_name) as object_name,
                        c.polarity, c.modality, c.temporal_status, c.confidence,
@@ -110,9 +112,11 @@ class KnowledgeService:
                   on s.id = c.subject_entity_id and s.owner_id = c.owner_id
                 left join haven_knowledge.knowledge_entities o
                   on o.id = c.object_entity_id and o.owner_id = c.owner_id
+                 and o.deleted_at is null
                 left join haven_knowledge.knowledge_entities resolved_o
-                  on resolved_o.id = o.resolved_to_entity_id
+                 on resolved_o.id = o.resolved_to_entity_id
                  and resolved_o.owner_id = c.owner_id
+                 and resolved_o.entity_state = 'canonical'
                  and resolved_o.deleted_at is null
                 where c.owner_id = %s
                   and (c.subject_entity_id = %s or s.resolved_to_entity_id = %s)
@@ -172,8 +176,14 @@ class KnowledgeService:
         plan = plan_query(query)
 
         if plan.path == "relationship":
-            answer = relationship_answer(self._conn, owner, plan)
-            return {"request_id": request_id, "path": "relationship", **answer}
+            answer = relationship_answer(self._conn, owner, plan, limit=limit)
+            return {
+                "request_id": request_id,
+                "path": "relationship",
+                "warnings": [],
+                "strategies_attempted": [],
+                **answer,
+            }
 
         if plan.path == "fast":
             people = retrieval.fuzzy_person_lookup(self._conn, owner, plan.target_name or query)
@@ -186,6 +196,7 @@ class KnowledgeService:
                         for p in people
                     ],
                     "warnings": [],
+                    "strategies_attempted": [],
                 }
             # A short query that matches nobody's name is a topic, not a
             # person; fall through to the standard path.

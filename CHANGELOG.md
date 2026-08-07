@@ -6,7 +6,7 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
-## v0.53.0
+## v0.55.0
 
 2026-08-07
 
@@ -21,6 +21,35 @@ pull requests, which is where it is easiest to read anyway.
 **Docs**
 
 - The knowledge architecture, Polygres configuration, measured evaluation results, operational scripts, and remaining graph and provider-quota limits are documented for the next integration step.
+
+---
+
+## v0.54.0
+
+2026-08-07
+
+**Web**
+
+- The private Your Sky download now opens reliably from the production site instead of failing when its server function starts.
+- Booking links now use the shorter label "Book a call" everywhere.
+
+---
+
+## v0.53.0
+
+2026-08-07
+
+**Web**
+
+- The public landing now leads with a direct "Book a call with Tony" button, while the top navigation offers one quiet path into the private Haven preview.
+- Preview visitors enter an invitation code before account creation, can sign in to an existing invited account, or continue to the iPhone waitlist when they do not have a code.
+- A newly admitted member creates a Haven profile with just their name, then arrives at a private holding page that says the full web experience is coming soon and offers Your Sky for Mac.
+- Your Sky is no longer linked or downloadable from the public site. Its page and archive now require a signed-in account with preview access.
+
+**Backend**
+
+- Preview invitations are checked only against deployment configuration, redeemed into one durable grant per Clerk account, rate limited, and removed when that account is deleted.
+- The Your Sky download endpoint verifies the member's Clerk token and server-side preview grant before reading or returning the private archive.
 
 ---
 

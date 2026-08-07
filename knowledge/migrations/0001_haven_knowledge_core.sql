@@ -47,8 +47,9 @@ create table haven_knowledge.knowledge_entities (
     updated_at timestamptz not null default now(),
     deleted_at timestamptz,
     -- Canonical rows carry no resolution machinery; provisional rows carry no
-    -- Convex mapping. This is also what prevents resolution chains: a
-    -- resolved_to target must be canonical, and canonical rows cannot point on.
+    -- Convex mapping. The service validates that a resolved_to target is a
+    -- same-owner canonical row; this row-level check prevents canonical rows
+    -- from pointing onward.
     check (entity_state <> 'canonical' or (resolved_to_entity_id is null and resolution_status is null)),
     check (entity_state <> 'provisional' or (convex_person_id is null and resolution_status is not null))
 );

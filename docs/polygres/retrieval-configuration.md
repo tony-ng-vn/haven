@@ -25,9 +25,11 @@ One-transposition typos match at the default threshold; heavier corruption misse
 
 Embedding contract (documented change): `voyage-3.5` at 1024 dimensions via the Voyage API.
 The repository's OpenAI embedding key was dead at build time, and interfaze serves no embeddings endpoint.
-The provider layer falls back to OpenAI `text-embedding-3-small` if `VOYAGE_API_KEY` is absent but a valid `OPENAI_API_KEY` exists; it requests 1024 dimensions explicitly so every provider fits the fixed database and Runtime configuration. The model and dimensions are recorded per row (`embedding_model`, `embedding_dimensions`, `embedding_input_hash`).
+V0 requires `VOYAGE_API_KEY` and does not fall back across embedding models.
+The model and dimensions are recorded per row (`embedding_model`, `embedding_dimensions`, `embedding_input_hash`).
+Before vector search or a new embedding write, Haven checks that every active ready vector for the owner uses the configured model; a mismatch disables the vector path until the rows are re-embedded.
 The knowledge domain's 1024 is independent of the public mirror's 1536 configs; they are separate configs over separate tables.
-Query embeddings always use the same provider and dimensions as indexed rows; `embed_text` validates dimension and finiteness before anything is written or queried.
+Query embeddings always use the same provider, model, and dimensions as indexed rows; `embed_text` validates dimension and finiteness before anything is written or queried.
 
 Interactive search fails fast when the embedding provider returns a rate limit, so lexical and structured retrieval can still answer without a long pause.
 Workers and the evaluation harness wait through the current Voyage development quota because their work is asynchronous.

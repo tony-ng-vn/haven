@@ -19,7 +19,7 @@ RELATIONSHIP_PREDICATES = ("introduced_by", "met_through", "met_at", "knows", "c
 
 
 def _active_relationship_claims(
-    conn: psycopg.Connection, owner_id: uuid.UUID, entity_id: uuid.UUID
+    conn: psycopg.Connection, owner_id: uuid.UUID, entity_id: uuid.UUID, limit: int
 ) -> list[dict[str, Any]]:
     with conn.cursor() as cur:
         cur.execute(
@@ -27,17 +27,20 @@ def _active_relationship_claims(
             select c.*, s.display_name as subject_name, s.entity_state as subject_state,
                    s.resolution_status as subject_resolution,
                    s.resolved_to_entity_id as subject_resolved_to,
+                   resolved_s.id as subject_resolved_id,
                    resolved_s.display_name as subject_resolved_name,
                    resolved_s.convex_person_id as subject_resolved_convex_person_id,
                    o.display_name as object_name, o.entity_state as object_state,
                    o.resolution_status as object_resolution,
                    o.resolved_to_entity_id as object_resolved_to,
+                   resolved_o.id as object_resolved_id,
                    resolved_o.display_name as object_resolved_name,
                    resolved_o.convex_person_id as object_resolved_convex_person_id,
                    s.id as s_id, o.id as o_id
             from haven_knowledge.knowledge_claims c
             join haven_knowledge.knowledge_entities s
               on s.id = c.subject_entity_id and s.owner_id = c.owner_id
+             and s.deleted_at is null
             left join haven_knowledge.knowledge_entities resolved_s
               on resolved_s.id = s.resolved_to_entity_id
              and resolved_s.owner_id = c.owner_id
@@ -45,6 +48,7 @@ def _active_relationship_claims(
              and resolved_s.deleted_at is null
             left join haven_knowledge.knowledge_entities o
               on o.id = c.object_entity_id and o.owner_id = c.owner_id
+             and o.deleted_at is null
             left join haven_knowledge.knowledge_entities resolved_o
               on resolved_o.id = o.resolved_to_entity_id
              and resolved_o.owner_id = c.owner_id
@@ -54,11 +58,13 @@ def _active_relationship_claims(
               and c.predicate_key = any(%s)
               and (c.subject_entity_id = %s or s.resolved_to_entity_id = %s
                    or c.object_entity_id = %s or o.resolved_to_entity_id = %s)
+              and (c.object_entity_id is null or o.id is not null)
             order by c.created_at
+            limit %s
             """,
             (
                 owner_id, list(RELATIONSHIP_PREDICATES), entity_id, entity_id,
-                entity_id, entity_id,
+                entity_id, entity_id, limit,
             ),
         )
         return cur.fetchall()
@@ -71,10 +77,10 @@ def _qualified_person(conn: psycopg.Connection, owner_id: uuid.UUID, claim_row: 
     state = claim_row[f"{side}_state"]
     entity_id = claim_row["s_id" if side == "subject" else "o_id"]
     resolution = claim_row[f"{side}_resolution"]
-    resolved_to = claim_row[f"{side}_resolved_to"]
-    if state == "provisional" and resolution == "confirmed" and resolved_to:
+    resolved_id = claim_row[f"{side}_resolved_id"]
+    if state == "provisional" and resolution == "confirmed" and resolved_id:
         return {
-            "entity_id": str(resolved_to),
+            "entity_id": str(resolved_id),
             "display_name": claim_row[f"{side}_resolved_name"] or name,
             "entity_state": "canonical",
             "convex_person_id": claim_row[f"{side}_resolved_convex_person_id"],
@@ -88,6 +94,11 @@ def _qualified_person(conn: psycopg.Connection, owner_id: uuid.UUID, claim_row: 
     }
     if state == "provisional":
         out["resolution_status"] = "unresolved"
+        if resolution == "confirmed":
+            out["qualification"] = (
+                "The previously confirmed person is no longer available."
+            )
+            return out
         candidates = list_reference_candidates(conn, owner_id, entity_id)
         out["candidates"] = candidates["candidates"]
         out["actions"] = candidates["actions"]
@@ -103,7 +114,7 @@ def _endpoint_matches(
 
 
 def relationship_answer(
-    conn: psycopg.Connection, owner_id: uuid.UUID, plan: QueryPlan
+    conn: psycopg.Connection, owner_id: uuid.UUID, plan: QueryPlan, limit: int = 10
 ) -> dict[str, Any]:
     matches = fuzzy_person_lookup(conn, owner_id, plan.target_name or "")
     if not matches:
@@ -113,7 +124,7 @@ def relationship_answer(
             "results": [],
         }
     target = matches[0]
-    claims = _active_relationship_claims(conn, owner_id, target["id"])
+    claims = _active_relationship_claims(conn, owner_id, target["id"], limit)
 
     results = []
     for c in claims:
@@ -161,14 +172,32 @@ def relationship_answer(
                 "object" if _endpoint_matches(c, "subject", target["id"]) else "subject"
             )
             if c["object_entity_id"] is None and other_side == "object":
-                entry["answer"] = f"{c['subject_name']} {c['predicate_key'].replace('_', ' ')} {c['object_text']}."
+                subject = _qualified_person(conn, owner_id, c, "subject")
+                entry["person"] = subject
+                entry["answer"] = (
+                    f"{subject['display_name']} {c['predicate_key'].replace('_', ' ')} "
+                    f"{c['object_text']}."
+                )
+                if subject.get("resolution_status") == "unresolved":
+                    entry["answer"] += (
+                        f" Haven has not yet identified which "
+                        f"{subject['display_name']} you meant."
+                    )
             else:
-                person = _qualified_person(conn, owner_id, c, other_side)
+                subject = _qualified_person(conn, owner_id, c, "subject")
+                object_person = _qualified_person(conn, owner_id, c, "object")
+                person = object_person if other_side == "object" else subject
                 entry["person"] = person
                 entry["answer"] = (
-                    f"{c['subject_name']} {c['predicate_key'].replace('_', ' ')} "
-                    f"{c['object_name'] or c['object_text']}."
+                    f"{subject['display_name']} {c['predicate_key'].replace('_', ' ')} "
+                    f"{object_person['display_name']}."
                 )
+                for endpoint in (subject, object_person):
+                    if endpoint.get("resolution_status") == "unresolved":
+                        entry["answer"] += (
+                            f" Haven has not yet identified which "
+                            f"{endpoint['display_name']} you meant."
+                        )
             results.append(entry)
 
     if not results:

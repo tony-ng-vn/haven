@@ -45,17 +45,26 @@ def embed_text(
     for delay in delays:
         if delay:
             time.sleep(delay)
-        response = httpx.post(
-            f"{provider.base_url}/v1/embeddings",
-            headers={"Authorization": f"Bearer {provider.api_key}"},
-            json=payload,
-            timeout=60,
-        )
+        try:
+            response = httpx.post(
+                f"{provider.base_url}/v1/embeddings",
+                headers={"Authorization": f"Bearer {provider.api_key}"},
+                json=payload,
+                timeout=60,
+            )
+        except httpx.RequestError as exc:
+            raise EmbeddingFailed("provider_unreachable") from exc
         if response.status_code != 429:
             break
     if response.status_code != 200:
         raise EmbeddingFailed(f"provider_status_{response.status_code}")
-    data = response.json().get("data", [])
+    try:
+        body = response.json()
+    except (ValueError, TypeError) as exc:
+        raise EmbeddingFailed("provider_bad_json") from exc
+    if not isinstance(body, dict):
+        raise EmbeddingFailed("provider_bad_json")
+    data = body.get("data", [])
     embedding = data[0].get("embedding") if data else None
     if not isinstance(embedding, list) or len(embedding) != expected:
         raise EmbeddingFailed("bad_dimensions")
@@ -66,6 +75,24 @@ def embed_text(
 
 def input_hash(model: str, text: str) -> str:
     return hashlib.sha256(f"{model}\x00{text}".encode("utf-8")).hexdigest()
+
+
+def active_embedding_models(
+    conn: psycopg.Connection, owner_id: uuid.UUID
+) -> set[str]:
+    """Models currently represented by active, queryable vectors."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            select distinct embedding_model
+            from haven_knowledge.retrieval_items
+            where owner_id = %s and lifecycle_status = 'active'
+              and embedding_status = 'ready' and embedding is not null
+              and embedding_model is not null
+            """,
+            (owner_id,),
+        )
+        return {row["embedding_model"] for row in cur.fetchall()}
 
 
 def embed_retrieval_item(
@@ -98,6 +125,9 @@ def embed_retrieval_item(
         if row["embedding_status"] == "ready" and row["embedding_input_hash"] == digest:
             outcome = "skipped_unchanged"
         else:
+            models = active_embedding_models(conn, owner_id)
+            if models and models != {provider.model}:
+                raise EmbeddingFailed("embedding_model_mismatch")
             embedding = embed_text(
                 provider, text, wait_on_rate_limit=True
             )  # outside any transaction

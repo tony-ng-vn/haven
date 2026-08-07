@@ -25,6 +25,7 @@ import type * as nameSearch from "../nameSearch.js";
 import type * as openaiClient from "../openaiClient.js";
 import type * as people from "../people.js";
 import type * as peopleFields from "../peopleFields.js";
+import type * as previewAccess from "../previewAccess.js";
 import type * as profileFields from "../profileFields.js";
 import type * as profiles from "../profiles.js";
 import type * as rateLimit from "../rateLimit.js";
@@ -57,6 +58,7 @@ declare const fullApi: ApiFromModules<{
   openaiClient: typeof openaiClient;
   people: typeof people;
   peopleFields: typeof peopleFields;
+  previewAccess: typeof previewAccess;
   profileFields: typeof profileFields;
   profiles: typeof profiles;
   rateLimit: typeof rateLimit;

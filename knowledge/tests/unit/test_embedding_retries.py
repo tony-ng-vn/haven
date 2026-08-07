@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from haven_knowledge import config
@@ -62,7 +63,7 @@ def test_interactive_embedding_fails_fast_on_rate_limit(monkeypatch):
     assert sleeps == []
 
 
-def test_openai_fallback_requests_the_schema_dimension(monkeypatch):
+def test_generic_openai_adapter_requests_the_schema_dimension(monkeypatch):
     requests: list[dict] = []
 
     def post(*args, **kwargs):
@@ -80,7 +81,35 @@ def test_openai_fallback_requests_the_schema_dimension(monkeypatch):
 
 
 def test_embedding_dimension_always_matches_the_polygres_schema(monkeypatch):
+    assert config.embedding_dimensions() == 1024
+
+
+def test_embedding_provider_does_not_fall_back_across_model_spaces(monkeypatch):
     monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
-    assert config.embedding_dimensions() == 1024
-    monkeypatch.setenv("VOYAGE_API_KEY", "voyage-secret")
-    assert config.embedding_dimensions() == 1024
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+
+    with pytest.raises(RuntimeError, match="VOYAGE_API_KEY is not set"):
+        config.embedding_provider()
+
+
+def test_embedding_transport_failure_returns_only_a_safe_code(monkeypatch):
+    def post(*args, **kwargs):
+        raise httpx.ConnectError("private provider failure")
+
+    monkeypatch.setattr("haven_knowledge.embeddings.httpx.post", post)
+    provider = Provider("voyage", "https://example.invalid", "secret", "test-model")
+
+    with pytest.raises(EmbeddingFailed, match="^provider_unreachable$"):
+        embed_text(provider, "private memory text")
+
+
+def test_embedding_non_json_response_returns_only_a_safe_code(monkeypatch):
+    response = SimpleNamespace(
+        status_code=200,
+        json=lambda: (_ for _ in ()).throw(ValueError("private response body")),
+    )
+    monkeypatch.setattr("haven_knowledge.embeddings.httpx.post", lambda *a, **k: response)
+    provider = Provider("voyage", "https://example.invalid", "secret", "test-model")
+
+    with pytest.raises(EmbeddingFailed, match="^provider_bad_json$"):
+        embed_text(provider, "private memory text")

@@ -63,3 +63,9 @@ Graph: `knowledge_entities` (nodes, tenant owner_id) and `entity_relations` (edg
 ## Limits
 
 tier_nano; no explicit storage/row limits surfaced by the CLI for this tier during validation. Resource pressure reported healthy/unknown with no restriction active.
+
+## Review hardening, 2026-08-07
+
+Migration 0006 was applied through `polygres 0.2.0` after the PR review.
+Both `knowledge_claims_custom_predicate_label` and `retrieval_items_ready_embedding_complete` report validated in the managed development database.
+The post-migration knowledge suite completed with 89 passing tests and the single documented graph projection xfail.

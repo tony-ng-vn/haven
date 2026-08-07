@@ -42,9 +42,11 @@ def clerk_context(token_identifier: str) -> AuthContext:
 def ensure_owner(conn: psycopg.Connection, auth: AuthContext) -> uuid.UUID:
     """Resolve (and on first sight create) the Haven user for an identity.
 
-    Insert-then-select under the unique constraint keeps concurrent first
-    logins race-safe without locks."""
+    A transaction-scoped advisory lock serializes first sight of the same
+    external identity, so a losing login cannot leave an orphan Haven user."""
     with db.transaction(conn) as cur:
+        lock_key = "\x1f".join((auth.provider, auth.issuer, auth.subject))
+        cur.execute("select pg_advisory_xact_lock(hashtextextended(%s, 0))", (lock_key,))
         cur.execute(
             """
             select haven_user_id from haven_knowledge.auth_identities
@@ -62,26 +64,14 @@ def ensure_owner(conn: psycopg.Connection, auth: AuthContext) -> uuid.UUID:
             insert into haven_knowledge.auth_identities
                 (haven_user_id, provider, issuer, provider_subject)
             values (%s, %s, %s, %s)
-            on conflict (provider, issuer, provider_subject) do nothing
             returning haven_user_id
             """,
             (user_id, auth.provider, auth.issuer, auth.subject),
         )
         inserted = cur.fetchone()
-        if inserted is not None:
-            return inserted["haven_user_id"]
-    # Lost the race: another transaction created the identity. The orphan
-    # haven_users row from our rolled-forward insert is unreferenced but this
-    # path re-reads the winner so identity stays stable.
-    with db.transaction(conn) as cur:
-        cur.execute(
-            """
-            select haven_user_id from haven_knowledge.auth_identities
-            where provider = %s and issuer = %s and provider_subject = %s
-            """,
-            (auth.provider, auth.issuer, auth.subject),
-        )
-        return cur.fetchone()["haven_user_id"]
+        if inserted is None:
+            raise RuntimeError("identity creation returned no owner")
+        return inserted["haven_user_id"]
 
 
 def normalize_name(name: str) -> str:
