@@ -12,6 +12,7 @@ It is not a directory person: it has no `convex_person_id`, it never appears in 
 ## What a provisional reference retains
 
 The provisional entity row holds owner, display name (the mention as written), normalized name, and resolution state.
+Each extracted mention creates its own provisional entity; matching normalized names across entries remain separate because a name is candidate evidence, not identity evidence.
 The `entity_mentions` row created alongside it holds the source entry version, the exact surface text, validated character offsets, and the mention role.
 The claim that connects it to the primary person (for example `introduced_by`) holds the evidence quote and offsets.
 Together these satisfy decision 5's retention list without duplicating evidence into the entity row.

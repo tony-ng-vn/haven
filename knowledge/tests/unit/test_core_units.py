@@ -48,7 +48,7 @@ def test_auth_context_rejects_empty_fields():
 
 
 def test_normalize_name_folds_accents_and_case():
-    assert normalize_name("  SÁRAH   Trần ") == "sarah tran"
+    assert normalize_name("  S\u00c1RAH   Tr\u1ea7n ") == "sarah tran"
 
 
 # ------------------------------------------------------------------- router

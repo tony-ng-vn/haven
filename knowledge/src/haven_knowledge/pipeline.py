@@ -81,6 +81,31 @@ def claim_retrieval_text(
     return text
 
 
+def _insert_entity_mention(
+    cur: psycopg.Cursor,
+    *,
+    owner_id: uuid.UUID,
+    version_id: uuid.UUID,
+    entity_id: uuid.UUID,
+    surface_text: str,
+    evidence_start: int,
+    evidence_end: int,
+    mention_role: str,
+) -> None:
+    cur.execute(
+        """
+        insert into haven_knowledge.entity_mentions
+            (owner_id, source_entry_version_id, entity_id, surface_text,
+             normalized_surface_text, evidence_start, evidence_end, mention_role)
+        values (%s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            owner_id, version_id, entity_id, surface_text,
+            normalize_name(surface_text), evidence_start, evidence_end, mention_role,
+        ),
+    )
+
+
 def persist_extraction(
     conn: psycopg.Connection,
     *,
@@ -172,22 +197,21 @@ def persist_extraction(
 
         # Primary mention row: the primary person's role in this version.
         mention_entity: dict[str, uuid.UUID] = {}
+        mention_surface: dict[str, str] = {}
         for m in extraction.mentions:
             entity_id = create_provisional_person(cur, owner_id, m.surface_text)
-            if entity_id not in set(mention_entity.values()):
-                created["provisional_entities"] += 1
+            created["provisional_entities"] += 1
             mention_entity[m.local_id] = entity_id
-            cur.execute(
-                """
-                insert into haven_knowledge.entity_mentions
-                    (owner_id, source_entry_version_id, entity_id, surface_text,
-                     normalized_surface_text, evidence_start, evidence_end, mention_role)
-                values (%s, %s, %s, %s, %s, %s, %s, 'contextual')
-                """,
-                (
-                    owner_id, version_id, entity_id, m.surface_text,
-                    normalize_name(m.surface_text), m.start, m.end,
-                ),
+            mention_surface[m.local_id] = m.surface_text
+            _insert_entity_mention(
+                cur,
+                owner_id=owner_id,
+                version_id=version_id,
+                entity_id=entity_id,
+                surface_text=m.surface_text,
+                evidence_start=m.start,
+                evidence_end=m.end,
+                mention_role="contextual",
             )
             created["mentions"] += 1
 
@@ -197,18 +221,38 @@ def persist_extraction(
                 primary_entity_id if c.subject_ref == "primary" else mention_entity[c.subject_ref]
             )
             object_entity_id = None
+            object_entity_surface = None
             object_text = c.object_text
             if c.object_type == "mention":
                 object_entity_id = mention_entity[c.object_mention_ref]
-            elif c.predicate_key in PERSON_OBJECT_PREDICATES and object_text is not None \
-                    and len(object_text.split()) <= 3:
+                object_entity_surface = mention_surface[c.object_mention_ref]
+            elif (
+                c.predicate_key in PERSON_OBJECT_PREDICATES
+                and object_text is not None
+                and len(object_text.split()) <= 3
+                and (object_offset := c.evidence_quote.find(object_text)) >= 0
+            ):
                 # The predicate makes the object a person; a short text object
-                # is a mention the model failed to structure. Normalize it into
-                # a provisional entity so relationship recall does not depend
-                # on the model's output shape. Long objects stay text: they
-                # carry context we must not misread as a bare name.
-                object_entity_id = create_provisional_person(cur, owner_id, object_text)
+                # that is anchored in the validated evidence is a mention the
+                # model failed to structure. Unanchored or long objects stay
+                # text so model output cannot fabricate a person or relation.
+                object_entity_surface = object_text
+                object_entity_id = create_provisional_person(
+                    cur, owner_id, object_entity_surface
+                )
                 created["provisional_entities"] += 1
+                mention_start = c.evidence_start + object_offset
+                _insert_entity_mention(
+                    cur,
+                    owner_id=owner_id,
+                    version_id=version_id,
+                    entity_id=object_entity_id,
+                    surface_text=object_entity_surface,
+                    evidence_start=mention_start,
+                    evidence_end=mention_start + len(object_entity_surface),
+                    mention_role="object",
+                )
+                created["mentions"] += 1
                 object_text = None
             cur.execute(
                 """
@@ -276,15 +320,13 @@ def persist_extraction(
             # The searchable projection of the claim. Anchored to the claim's
             # SUBJECT so searching finds the person the fact is about; claims
             # about a provisional subject anchor to that provisional entity.
-            object_repr = object_text if object_text is not None else (
-                # Object is a person mention; render its surface text.
-                next(
-                    m.surface_text for m in extraction.mentions
-                    if mention_entity[m.local_id] == object_entity_id
-                )
+            object_repr = (
+                object_text if object_text is not None else object_entity_surface or ""
             )
-            subject_display = primary_name if c.subject_ref == "primary" else next(
-                m.surface_text for m in extraction.mentions if m.local_id == c.subject_ref
+            subject_display = (
+                primary_name
+                if c.subject_ref == "primary"
+                else mention_surface[c.subject_ref]
             )
             text = claim_retrieval_text(
                 subject_display, c.predicate_key, c.custom_predicate_label,

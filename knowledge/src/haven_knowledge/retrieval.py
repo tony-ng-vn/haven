@@ -204,14 +204,54 @@ def fuzzy_person_lookup(
     with conn.cursor() as cur:
         cur.execute(
             """
-            select * from haven_knowledge.knowledge_entities
-            where id = any(%s::uuid[]) and owner_id = %s and deleted_at is null
+            select e.*,
+                   resolved.id as canonical_id,
+                   resolved.entity_type as canonical_entity_type,
+                   resolved.display_name as canonical_display_name,
+                   resolved.normalized_name as canonical_normalized_name,
+                   resolved.convex_person_id as canonical_convex_person_id,
+                   resolved.created_at as canonical_created_at,
+                   resolved.updated_at as canonical_updated_at
+            from haven_knowledge.knowledge_entities e
+            left join haven_knowledge.knowledge_entities resolved
+              on resolved.id = e.resolved_to_entity_id
+             and resolved.owner_id = e.owner_id
+             and resolved.entity_state = 'canonical'
+             and resolved.deleted_at is null
+            where e.id = any(%s::uuid[]) and e.owner_id = %s
+              and e.deleted_at is null
             """,
             (entity_ids, owner_id),
         )
         rows = {str(r["id"]): r for r in cur.fetchall()}
-    # Preserve fuzzy rank order through the ownership re-check.
-    return [rows[eid] for eid in entity_ids if eid in rows]
+    # Preserve fuzzy rank order through the ownership re-check. Confirmed
+    # provisionals collapse to their canonical person so fast and relationship
+    # reads cannot expose two identities for the same resolved reference.
+    visible: list[dict[str, Any]] = []
+    seen: set[uuid.UUID] = set()
+    for entity_id in entity_ids:
+        row = rows.get(entity_id)
+        if row is None:
+            continue
+        if row["canonical_id"] is not None:
+            row = {
+                **row,
+                "id": row["canonical_id"],
+                "entity_type": row["canonical_entity_type"],
+                "entity_state": "canonical",
+                "display_name": row["canonical_display_name"],
+                "normalized_name": row["canonical_normalized_name"],
+                "convex_person_id": row["canonical_convex_person_id"],
+                "resolved_to_entity_id": None,
+                "resolution_status": None,
+                "created_at": row["canonical_created_at"],
+                "updated_at": row["canonical_updated_at"],
+            }
+        if row["id"] in seen:
+            continue
+        seen.add(row["id"])
+        visible.append(row)
+    return visible
 
 
 def hydrate_items(
@@ -228,17 +268,31 @@ def hydrate_items(
             """
             select i.id, i.item_kind, i.retrieval_text, i.source_entry_id,
                    i.source_entry_version_id, i.claim_id, i.primary_entity_id,
-                   e.entity_state, e.display_name, e.convex_person_id,
-                   e.resolution_status, e.resolved_to_entity_id,
+                   coalesce(resolved.entity_state, e.entity_state) as entity_state,
+                   coalesce(resolved.display_name, e.display_name) as display_name,
+                   coalesce(resolved.convex_person_id, e.convex_person_id)
+                       as convex_person_id,
+                   case when resolved.id is not null
+                        then resolved.resolution_status
+                        else e.resolution_status
+                   end as resolution_status,
+                   e.resolved_to_entity_id,
                    c.evidence_quote, c.predicate_key, c.custom_predicate_label,
                    c.polarity, c.modality, c.temporal_status, c.confidence,
                    v.raw_text
             from haven_knowledge.retrieval_items i
-            join haven_knowledge.knowledge_entities e on e.id = i.primary_entity_id
+            join haven_knowledge.knowledge_entities e
+              on e.id = i.primary_entity_id and e.owner_id = i.owner_id
+            left join haven_knowledge.knowledge_entities resolved
+              on resolved.id = e.resolved_to_entity_id
+             and resolved.owner_id = i.owner_id
+             and resolved.entity_state = 'canonical'
+             and resolved.deleted_at is null
             left join haven_knowledge.knowledge_claims c
-                   on c.id = i.claim_id and c.lifecycle_status = 'active'
+              on c.id = i.claim_id and c.owner_id = i.owner_id
+             and c.lifecycle_status = 'active'
             left join haven_knowledge.source_entry_versions v
-                   on v.id = i.source_entry_version_id
+              on v.id = i.source_entry_version_id and v.owner_id = i.owner_id
             where i.id = any(%s::uuid[]) and i.owner_id = %s
               and i.lifecycle_status = 'active' and e.deleted_at is null
             """,

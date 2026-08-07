@@ -17,6 +17,7 @@ from haven_knowledge import db
 from haven_knowledge.entities import mirror_convex_person
 from haven_knowledge.extraction import ValidatedClaim, ValidatedExtraction, ValidatedMention
 from haven_knowledge.pipeline import persist_extraction
+from haven_knowledge.retrieval import FusedItem, fuzzy_person_lookup, hydrate_items
 from haven_knowledge.service import KnowledgeService
 from haven_knowledge.worker import (
     MAX_ATTEMPTS,
@@ -279,6 +280,142 @@ def test_extraction_creates_provisional_claims_relations_items(setup, db_conn):
         owner,
     )
     assert hit["n"] >= 1
+
+
+def test_person_text_object_survives_without_separate_mention(setup, db_conn):
+    service, auth, owner, entity_id = setup
+    raw_text = "Met Sarah through Alex."
+    result = service.create_source_entry(
+        auth, raw_text=raw_text, primary_entity_id=str(entity_id),
+        source_type="system_test",
+    )
+    extraction = ValidatedExtraction(
+        mentions=[],
+        claims=[
+            ValidatedClaim(
+                subject_ref="primary", predicate_key="met_through",
+                custom_predicate_label=None, object_type="text",
+                object_text="Alex", object_mention_ref=None,
+                polarity="positive", modality="stated",
+                temporal_status="historical", confidence=0.9,
+                evidence_quote=raw_text, evidence_start=0, evidence_end=len(raw_text),
+            ),
+        ],
+    )
+
+    created = run_fake_extraction(
+        db_conn, owner, uuid.UUID(result["source_entry_id"]),
+        uuid.UUID(result["source_entry_version_id"]), entity_id, "Sarah Tran",
+        extraction,
+    )
+
+    assert created["provisional_entities"] == 1
+    assert created["mentions"] == 1
+    assert created["relations"] == 1
+    mention = q1(
+        db_conn,
+        """
+        select surface_text, evidence_start, evidence_end
+        from haven_knowledge.entity_mentions
+        where owner_id=%s and source_entry_version_id=%s
+        """,
+        owner,
+        uuid.UUID(result["source_entry_version_id"]),
+    )
+    assert mention == {
+        "surface_text": "Alex",
+        "evidence_start": 18,
+        "evidence_end": 22,
+    }
+    item = q1(
+        db_conn,
+        """
+        select retrieval_text from haven_knowledge.retrieval_items
+        where owner_id=%s and item_kind='direct_claim'
+        """,
+        owner,
+    )
+    assert "Alex" in item["retrieval_text"]
+
+
+def test_unanchored_person_text_stays_text(setup, db_conn):
+    service, auth, owner, entity_id = setup
+    raw_text = "Met Sarah through someone from work."
+    result = service.create_source_entry(
+        auth, raw_text=raw_text, primary_entity_id=str(entity_id),
+        source_type="system_test",
+    )
+    extraction = ValidatedExtraction(
+        claims=[
+            ValidatedClaim(
+                subject_ref="primary", predicate_key="met_through",
+                custom_predicate_label=None, object_type="text",
+                object_text="Alex", object_mention_ref=None,
+                polarity="positive", modality="stated",
+                temporal_status="historical", confidence=0.9,
+                evidence_quote=raw_text, evidence_start=0, evidence_end=len(raw_text),
+            ),
+        ],
+    )
+
+    created = run_fake_extraction(
+        db_conn, owner, uuid.UUID(result["source_entry_id"]),
+        uuid.UUID(result["source_entry_version_id"]), entity_id, "Sarah Tran",
+        extraction,
+    )
+
+    assert created["provisional_entities"] == 0
+    assert created["mentions"] == 0
+    assert created["relations"] == 0
+    claim = q1(
+        db_conn,
+        """
+        select object_text, object_entity_id
+        from haven_knowledge.knowledge_claims where owner_id=%s
+        """,
+        owner,
+    )
+    assert claim == {"object_text": "Alex", "object_entity_id": None}
+
+
+def test_same_name_mentions_remain_distinct_across_entries(setup, db_conn):
+    service, auth, owner, entity_id = setup
+    for suffix in ("at Demo Day", "after the meetup"):
+        raw_text = f"Met Sarah through Alex {suffix}."
+        result = service.create_source_entry(
+            auth, raw_text=raw_text, primary_entity_id=str(entity_id),
+            source_type="system_test",
+        )
+        extraction = ValidatedExtraction(
+            mentions=[ValidatedMention("m1", "Alex", 18, 22)],
+            claims=[
+                ValidatedClaim(
+                    subject_ref="primary", predicate_key="met_through",
+                    custom_predicate_label=None, object_type="mention",
+                    object_text=None, object_mention_ref="m1",
+                    polarity="positive", modality="stated",
+                    temporal_status="historical", confidence=0.9,
+                    evidence_quote=raw_text, evidence_start=0,
+                    evidence_end=len(raw_text),
+                ),
+            ],
+        )
+        run_fake_extraction(
+            db_conn, owner, uuid.UUID(result["source_entry_id"]),
+            uuid.UUID(result["source_entry_version_id"]), entity_id, "Sarah Tran",
+            extraction,
+        )
+
+    provisionals = qall(
+        db_conn,
+        """
+        select id from haven_knowledge.knowledge_entities
+        where owner_id=%s and entity_state='provisional'
+          and normalized_name='alex' and deleted_at is null
+        """,
+        owner,
+    )
+    assert len(provisionals) == 2
 
 
 def test_extraction_job_rerun_does_not_duplicate(setup, db_conn):
@@ -749,7 +886,7 @@ def test_reference_resolution_flow(setup, db_conn):
     listing2 = service.list_reference_candidates(auth, provisional_id)
     assert str(kim) not in {c["entity_id"] for c in listing2["candidates"]}
 
-    # New evidence changes the context hash; Kim may be suggested again.
+    # A same-name mention in another entry is a separate unresolved person.
     r2 = service.create_source_entry(
         auth, raw_text="Alex also joined the climb.", primary_entity_id=str(entity_id),
         source_type="system_test",
@@ -768,6 +905,51 @@ def test_reference_resolution_flow(setup, db_conn):
         db_conn, owner, uuid.UUID(r2["source_entry_id"]),
         uuid.UUID(r2["source_entry_version_id"]), entity_id, "Sarah Tran", climb,
     )
+    second_alex = q1(
+        db_conn,
+        """
+        select entity_id from haven_knowledge.entity_mentions
+        where owner_id=%s and source_entry_version_id=%s
+        """,
+        owner,
+        uuid.UUID(r2["source_entry_version_id"]),
+    )["entity_id"]
+    assert second_alex != alex["id"]
+    assert str(kim) not in {
+        c["entity_id"]
+        for c in service.list_reference_candidates(auth, provisional_id)["candidates"]
+    }
+
+    # If later deterministic evidence explicitly associates a new claim with
+    # the original provisional, its evidence fingerprint changes and the old
+    # rejection no longer suppresses the candidate.
+    run_id = q1(
+        db_conn,
+        """
+        select id from haven_knowledge.extraction_runs
+        where owner_id=%s and source_entry_version_id=%s and status='succeeded'
+        """,
+        owner,
+        uuid.UUID(r2["source_entry_version_id"]),
+    )["id"]
+    with db.transaction(db_conn) as cur:
+        cur.execute(
+            """
+            insert into haven_knowledge.knowledge_claims
+                (owner_id, source_entry_id, source_entry_version_id,
+                 extraction_run_id, subject_entity_id, predicate_key,
+                 object_entity_id, polarity, modality, temporal_status,
+                 confidence, evidence_quote, evidence_start, evidence_end,
+                 derivation_kind)
+            values (%s, %s, %s, %s, %s, 'knows', %s, 'positive', 'stated',
+                    'current', 1, %s, 0, 27, 'deterministic_import')
+            """,
+            (
+                owner, uuid.UUID(r2["source_entry_id"]),
+                uuid.UUID(r2["source_entry_version_id"]), run_id, entity_id,
+                alex["id"], "Alex also joined the climb.",
+            ),
+        )
     listing3 = service.list_reference_candidates(auth, provisional_id)
     assert str(kim) in {c["entity_id"] for c in listing3["candidates"]}
 
@@ -790,6 +972,13 @@ def test_reference_resolution_flow(setup, db_conn):
         chen,
     )
     assert decision["decision"] == "confirmed"
+
+    relationship = service.search_network(auth, "who introduced me to Sarah?")
+    resolved_person = relationship["results"][0]["person"]
+    assert resolved_person["entity_id"] == str(chen)
+    assert resolved_person["display_name"] == "Alex Chen"
+    assert resolved_person["entity_state"] == "canonical"
+    assert resolved_person["source_provisional_entity_id"] == provisional_id
 
     with pytest.raises(ValueError, match="already confirmed"):
         service.reject_reference_candidate(auth, provisional_id, str(chen))
@@ -823,6 +1012,74 @@ def test_reference_resolution_flow(setup, db_conn):
     assert preserved["resolution_status"] == "confirmed"
     assert preserved["resolved_to_entity_id"] == chen
     assert preserved["deleted_at"] is None
+
+
+def test_resolved_provisional_reads_use_canonical_identity(setup, db_conn):
+    service, auth, owner, entity_id = setup
+    raw_text = "Alex works at Acme."
+    result = service.create_source_entry(
+        auth, raw_text=raw_text, primary_entity_id=str(entity_id),
+        source_type="system_test",
+    )
+    extraction = ValidatedExtraction(
+        mentions=[ValidatedMention("m1", "Alex", 0, 4)],
+        claims=[
+            ValidatedClaim(
+                subject_ref="m1", predicate_key="works_at",
+                custom_predicate_label=None, object_type="text",
+                object_text="Acme", object_mention_ref=None,
+                polarity="positive", modality="stated", temporal_status="current",
+                confidence=0.9, evidence_quote=raw_text,
+                evidence_start=0, evidence_end=len(raw_text),
+            ),
+        ],
+    )
+    run_fake_extraction(
+        db_conn, owner, uuid.UUID(result["source_entry_id"]),
+        uuid.UUID(result["source_entry_version_id"]), entity_id, "Sarah Tran",
+        extraction,
+    )
+    provisional = q1(
+        db_conn,
+        """
+        select id from haven_knowledge.knowledge_entities
+        where owner_id=%s and entity_state='provisional' and normalized_name='alex'
+        """,
+        owner,
+    )["id"]
+    convex_id = f"cx_{uuid.uuid4().hex[:8]}"
+    canonical = mirror_convex_person(db_conn, owner, convex_id, "Alex Chen")
+    service.resolve_reference(auth, str(provisional), str(canonical))
+
+    knowledge = service.get_person_knowledge(auth, str(canonical))
+    assert knowledge["entity"]["entity_id"] == str(canonical)
+    assert knowledge["entity"]["convex_person_id"] == convex_id
+    assert [claim["predicate"] for claim in knowledge["claims"]] == ["works_at"]
+
+    item_id = q1(
+        db_conn,
+        """
+        select id from haven_knowledge.retrieval_items
+        where owner_id=%s and item_kind='direct_claim'
+        """,
+        owner,
+    )["id"]
+    hydrated = hydrate_items(
+        db_conn, owner, [FusedItem(str(item_id), 1.0, ["test"])], 1
+    )[0]
+    assert hydrated["resolved_to_entity_id"] == canonical
+    assert hydrated["display_name"] == "Alex Chen"
+    assert hydrated["entity_state"] == "canonical"
+    assert hydrated["convex_person_id"] == convex_id
+
+    matches = fuzzy_person_lookup(db_conn, owner, "Alex")
+    matching_ids = [match["id"] for match in matches]
+    assert provisional not in matching_ids
+    assert matching_ids.count(canonical) == 1
+    canonical_match = next(match for match in matches if match["id"] == canonical)
+    assert canonical_match["display_name"] == "Alex Chen"
+    assert canonical_match["entity_state"] == "canonical"
+    assert canonical_match["convex_person_id"] == convex_id
 
 
 def test_resolution_target_must_be_canonical(setup, db_conn):
@@ -984,6 +1241,38 @@ def test_concurrent_job_claiming_is_disjoint(setup, db_conn):
     for t in threads:
         t.join()
     assert len(claimed) == len(set(claimed)) == 4
+
+
+def test_mirror_convex_person_is_concurrency_safe(setup):
+    _, _, owner, _ = setup
+    convex_id = f"cx_concurrent_{uuid.uuid4().hex}"
+    barrier = threading.Barrier(4)
+    entity_ids: list[uuid.UUID] = []
+    errors: list[Exception] = []
+    lock = threading.Lock()
+
+    def mirror_once():
+        conn = db.connect()
+        try:
+            barrier.wait()
+            entity_id = mirror_convex_person(conn, owner, convex_id, "Concurrent Person")
+            with lock:
+                entity_ids.append(entity_id)
+        except Exception as exc:
+            with lock:
+                errors.append(exc)
+        finally:
+            conn.close()
+
+    threads = [threading.Thread(target=mirror_once) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert len(entity_ids) == 4
+    assert len(set(entity_ids)) == 1
 
 
 def test_job_claiming_can_be_scoped_to_eval_owners(

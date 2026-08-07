@@ -24,30 +24,23 @@ def mirror_convex_person(
     with db.transaction(conn) as cur:
         cur.execute(
             """
-            select id from haven_knowledge.knowledge_entities
-            where owner_id = %s and convex_person_id = %s and deleted_at is null
-            """,
-            (owner_id, convex_person_id),
-        )
-        row = cur.fetchone()
-        if row is not None:
-            # Keep the mirror's display name current; the entity is a node,
-            # not a second profile, so name is the only thing refreshed.
-            cur.execute(
-                """
-                update haven_knowledge.knowledge_entities
-                set display_name = %s, normalized_name = %s, updated_at = now()
-                where id = %s and display_name is distinct from %s
-                """,
-                (display_name, normalize_name(display_name), row["id"], display_name),
-            )
-            return row["id"]
-        cur.execute(
-            """
             insert into haven_knowledge.knowledge_entities
                 (owner_id, entity_type, entity_state, display_name, normalized_name,
                  convex_person_id)
             values (%s, 'person', 'canonical', %s, %s, %s)
+            on conflict (owner_id, convex_person_id)
+                where convex_person_id is not null and deleted_at is null
+            do update set
+                display_name = excluded.display_name,
+                normalized_name = excluded.normalized_name,
+                updated_at = case
+                    when haven_knowledge.knowledge_entities.display_name
+                             is distinct from excluded.display_name
+                      or haven_knowledge.knowledge_entities.normalized_name
+                             is distinct from excluded.normalized_name
+                    then now()
+                    else haven_knowledge.knowledge_entities.updated_at
+                end
             returning id
             """,
             (owner_id, display_name, normalize_name(display_name), convex_person_id),
@@ -60,25 +53,13 @@ def create_provisional_person(
     owner_id: uuid.UUID,
     surface_text: str,
 ) -> uuid.UUID:
-    """Create an unresolved provisional person for a mention. Never merges by
-    name: two mentions of "Alex" in different entries create one provisional
-    per normalized surface within this owner, found by exact normalized match
-    among unresolved provisionals (same-name reuse keeps recall coherent
-    without asserting identity with any canonical Alex)."""
+    """Create one unresolved provisional person for one extracted mention.
+
+    A matching name is candidate evidence, not identity evidence. Reusing an
+    unresolved row by name would let resolving one "Alex" silently resolve
+    every other "Alex" the owner has mentioned.
+    """
     normalized = normalize_name(surface_text)
-    cur.execute(
-        """
-        select id from haven_knowledge.knowledge_entities
-        where owner_id = %s and entity_state = 'provisional'
-          and resolution_status = 'unresolved' and normalized_name = %s
-          and deleted_at is null
-        limit 1
-        """,
-        (owner_id, normalized),
-    )
-    row = cur.fetchone()
-    if row is not None:
-        return row["id"]
     cur.execute(
         """
         insert into haven_knowledge.knowledge_entities

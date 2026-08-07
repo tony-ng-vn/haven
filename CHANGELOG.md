@@ -8,7 +8,7 @@ pull requests, which is where it is easiest to read anyway.
 
 ## v0.53.0
 
-2026-08-06
+2026-08-07
 
 **Backend**
 

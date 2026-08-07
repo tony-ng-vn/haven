@@ -86,23 +86,40 @@ class KnowledgeService:
 
     def get_person_knowledge(self, auth: AuthContext, entity_id: str) -> dict[str, Any]:
         owner = self.ensure_owner(auth)
-        entity = get_entity(self._conn, owner, uuid.UUID(entity_id))
+        requested_entity_id = uuid.UUID(entity_id)
+        entity = get_entity(self._conn, owner, requested_entity_id)
         if entity is None:
             raise ValueError("entity not found for this owner")
+        effective_entity_id = entity["resolved_to_entity_id"] or requested_entity_id
+        public_entity = entity
+        if effective_entity_id != requested_entity_id:
+            public_entity = get_entity(self._conn, owner, effective_entity_id)
+            if public_entity is None:
+                raise ValueError("resolved entity not found for this owner")
         with self._conn.cursor() as cur:
             cur.execute(
                 """
                 select c.id, c.predicate_key, c.custom_predicate_label, c.object_text,
-                       c.object_entity_id, o.display_name as object_name,
+                       coalesce(o.resolved_to_entity_id, c.object_entity_id)
+                           as object_entity_id,
+                       coalesce(resolved_o.display_name, o.display_name) as object_name,
                        c.polarity, c.modality, c.temporal_status, c.confidence,
                        c.evidence_quote, c.source_entry_id, c.source_entry_version_id
                 from haven_knowledge.knowledge_claims c
-                left join haven_knowledge.knowledge_entities o on o.id = c.object_entity_id
-                where c.owner_id = %s and c.subject_entity_id = %s
+                join haven_knowledge.knowledge_entities s
+                  on s.id = c.subject_entity_id and s.owner_id = c.owner_id
+                left join haven_knowledge.knowledge_entities o
+                  on o.id = c.object_entity_id and o.owner_id = c.owner_id
+                left join haven_knowledge.knowledge_entities resolved_o
+                  on resolved_o.id = o.resolved_to_entity_id
+                 and resolved_o.owner_id = c.owner_id
+                 and resolved_o.deleted_at is null
+                where c.owner_id = %s
+                  and (c.subject_entity_id = %s or s.resolved_to_entity_id = %s)
                   and c.lifecycle_status = 'active'
                 order by c.created_at
                 """,
-                (owner, uuid.UUID(entity_id)),
+                (owner, effective_entity_id, effective_entity_id),
             )
             claims = [
                 {
@@ -129,7 +146,7 @@ class KnowledgeService:
                   and e.lifecycle_status = 'active'
                 order by e.created_at
                 """,
-                (owner, uuid.UUID(entity_id)),
+                (owner, effective_entity_id),
             )
             sources = [
                 {
@@ -140,7 +157,11 @@ class KnowledgeService:
                 }
                 for r in cur.fetchall()
             ]
-        return {"entity": entity_public_view(entity), "claims": claims, "sources": sources}
+        return {
+            "entity": entity_public_view(public_entity),
+            "claims": claims,
+            "sources": sources,
+        }
 
     # ---------------------------------------------------------------- search
 
