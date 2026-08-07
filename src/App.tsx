@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { flushSync } from "react-dom";
 import { useConvexAuth } from "convex/react";
 import {
   handleFromPath,
@@ -13,29 +12,6 @@ import { SupportPage } from "./SupportPage";
 import { IosPage } from "./IosPage";
 import { Landing2Page } from "./Landing2Page";
 import { PreviewPortal } from "./PreviewPortal";
-
-// Wrap a state change in a view transition when the platform offers one and
-// the user has not asked for reduced motion; otherwise apply it directly.
-export function withScreenTransition(update: () => void, done?: () => void) {
-  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (
-    typeof document.startViewTransition !== "function" ||
-    reduceMotion ||
-    document.visibilityState === "hidden" // nothing to animate off-screen
-  ) {
-    update();
-    done?.();
-    return;
-  }
-  const transition = document.startViewTransition(() => {
-    flushSync(update);
-  });
-  // A skipped or aborted transition (hidden tab, rapid re-entry) rejects
-  // `finished`; that is normal, so swallow it and always run the cleanup.
-  void transition.finished
-    .catch(() => {})
-    .then(() => done?.());
-}
 
 function Splash() {
   return (
