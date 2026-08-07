@@ -63,7 +63,7 @@ describe("the content security policy", () => {
       "/terms",
       "/support",
       "/mayachen",
-      "/downloads/YourSky.zip",
+      "/api/sky-download",
       "/assets/index-abc.js",
     ]) {
       expect(matchesGeneralSource(path), `${path} should carry the general policy`).toBe(

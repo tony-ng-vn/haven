@@ -309,6 +309,14 @@ export default defineSchema({
     source: v.union(v.literal("desktop"), v.literal("phone")),
   }).index("by_email", ["email"]),
 
+  // One durable early-preview grant per Clerk account. The shared code is
+  // only the invitation mechanism; the row is the authorization decision, so
+  // returning members never need to type the code again.
+  previewAccess: defineTable({
+    userId: v.string(),
+    grantedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
   // A user's paid plan, mirrored from the billing system that owns it. Only
   // the webhook handler writes here -- never client code -- so the billing
   // system stays the source of truth and a compromised client cannot grant
