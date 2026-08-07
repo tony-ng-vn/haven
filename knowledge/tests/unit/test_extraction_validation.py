@@ -172,3 +172,16 @@ def test_provider_non_json_response_returns_a_typed_safe_error(monkeypatch):
 
     with pytest.raises(ExtractionInvalid, match="^provider_bad_json$"):
         _chat_call(provider, [])
+
+
+@pytest.mark.parametrize("message", [None, "not-an-object", []])
+def test_provider_malformed_message_returns_a_typed_safe_error(monkeypatch, message):
+    response = SimpleNamespace(
+        status_code=200,
+        json=lambda: {"choices": [{"message": message}]},
+    )
+    monkeypatch.setattr("haven_knowledge.extraction.httpx.post", lambda *a, **k: response)
+    provider = Provider("extraction", "https://example.invalid", "secret", "model")
+
+    with pytest.raises(ExtractionInvalid, match="^provider_no_content$"):
+        _chat_call(provider, [])

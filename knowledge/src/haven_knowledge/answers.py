@@ -9,6 +9,7 @@ import uuid
 from typing import Any
 
 import psycopg
+from psycopg import sql
 
 from .entities import entity_public_view
 from .references import list_reference_candidates
@@ -19,11 +20,37 @@ RELATIONSHIP_PREDICATES = ("introduced_by", "met_through", "met_at", "knows", "c
 
 
 def _active_relationship_claims(
-    conn: psycopg.Connection, owner_id: uuid.UUID, entity_id: uuid.UUID, limit: int
+    conn: psycopg.Connection,
+    owner_id: uuid.UUID,
+    entity_id: uuid.UUID,
+    relationship_kind: str | None,
+    limit: int,
 ) -> list[dict[str, Any]]:
+    if relationship_kind == "who_introduced":
+        predicates = ("introduced_by", "met_through")
+        endpoint_scope = sql.SQL(
+            "and (c.subject_entity_id = %s or s.resolved_to_entity_id = %s)"
+        )
+        endpoint_params = (entity_id, entity_id)
+    elif relationship_kind == "met_through":
+        predicates = ("met_through", "introduced_by")
+        endpoint_scope = sql.SQL(
+            "and (c.object_entity_id = %s or o.resolved_to_entity_id = %s)"
+        )
+        endpoint_params = (entity_id, entity_id)
+    elif relationship_kind == "how_do_i_know":
+        predicates = RELATIONSHIP_PREDICATES
+        endpoint_scope = sql.SQL(
+            "and (c.subject_entity_id = %s or s.resolved_to_entity_id = %s "
+            "or c.object_entity_id = %s or o.resolved_to_entity_id = %s)"
+        )
+        endpoint_params = (entity_id, entity_id, entity_id, entity_id)
+    else:
+        raise ValueError(f"unsupported relationship kind {relationship_kind!r}")
+
     with conn.cursor() as cur:
         cur.execute(
-            """
+            sql.SQL("""
             select c.*, s.display_name as subject_name, s.entity_state as subject_state,
                    s.resolution_status as subject_resolution,
                    s.resolved_to_entity_id as subject_resolved_to,
@@ -56,16 +83,12 @@ def _active_relationship_claims(
              and resolved_o.deleted_at is null
             where c.owner_id = %s and c.lifecycle_status = 'active'
               and c.predicate_key = any(%s)
-              and (c.subject_entity_id = %s or s.resolved_to_entity_id = %s
-                   or c.object_entity_id = %s or o.resolved_to_entity_id = %s)
+              {endpoint_scope}
               and (c.object_entity_id is null or o.id is not null)
             order by c.created_at
             limit %s
-            """,
-            (
-                owner_id, list(RELATIONSHIP_PREDICATES), entity_id, entity_id,
-                entity_id, entity_id, limit,
-            ),
+            """).format(endpoint_scope=endpoint_scope),
+            (owner_id, list(predicates), *endpoint_params, limit),
         )
         return cur.fetchall()
 
@@ -124,7 +147,9 @@ def relationship_answer(
             "results": [],
         }
     target = matches[0]
-    claims = _active_relationship_claims(conn, owner_id, target["id"], limit)
+    claims = _active_relationship_claims(
+        conn, owner_id, target["id"], plan.relationship_kind, limit
+    )
 
     results = []
     for c in claims:

@@ -6,24 +6,6 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
-## v0.55.0
-
-2026-08-07
-
-**Backend**
-
-- Haven now has an experimental knowledge foundation that preserves each raw note word for word, makes it searchable immediately, and extracts evidence-backed facts such as work history, interests, and how two people met.
-- When a note mentions someone Haven cannot identify, Haven keeps that person as an open question with deliberate resolve, reject, and not-sure choices instead of merging people by name.
-- Editing or deleting a note retires every derived fact and search item from its old wording, while confirmed identity decisions remain durable and interrupted workers recover without reviving stale information.
-- Hybrid retrieval now combines lexical and 1024-dimension semantic search, keeps every result tied to exact source evidence, and falls back quickly when the embedding provider is unavailable or rate-limited.
-- The foundation remains behind development-only flags and does not yet change the existing web or iOS note experience.
-
-**Docs**
-
-- The knowledge architecture, Polygres configuration, measured evaluation results, operational scripts, and remaining graph and provider-quota limits are documented for the next integration step.
-
----
-
 ## v0.54.0
 
 2026-08-07

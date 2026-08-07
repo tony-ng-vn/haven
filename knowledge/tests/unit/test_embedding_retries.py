@@ -113,3 +113,27 @@ def test_embedding_non_json_response_returns_only_a_safe_code(monkeypatch):
 
     with pytest.raises(EmbeddingFailed, match="^provider_bad_json$"):
         embed_text(provider, "private memory text")
+
+
+@pytest.mark.parametrize("data", [[None], ["not-an-object"], [{}]])
+def test_embedding_malformed_data_item_returns_only_a_safe_code(monkeypatch, data):
+    response = SimpleNamespace(status_code=200, json=lambda: {"data": data})
+    monkeypatch.setattr("haven_knowledge.embeddings.httpx.post", lambda *a, **k: response)
+    provider = Provider("voyage", "https://example.invalid", "secret", "test-model")
+
+    with pytest.raises(EmbeddingFailed, match="^provider_bad_json$"):
+        embed_text(provider, "private memory text")
+
+
+@pytest.mark.parametrize("value", ["0.1", None, float("inf"), float("nan")])
+def test_embedding_invalid_elements_return_bad_dimensions(monkeypatch, value):
+    monkeypatch.setattr("haven_knowledge.embeddings.config.embedding_dimensions", lambda: 1)
+    response = SimpleNamespace(
+        status_code=200,
+        json=lambda: {"data": [{"embedding": [value]}]},
+    )
+    monkeypatch.setattr("haven_knowledge.embeddings.httpx.post", lambda *a, **k: response)
+    provider = Provider("voyage", "https://example.invalid", "secret", "test-model")
+
+    with pytest.raises(EmbeddingFailed, match="^bad_dimensions$"):
+        embed_text(provider, "private memory text")

@@ -64,12 +64,21 @@ def embed_text(
         raise EmbeddingFailed("provider_bad_json") from exc
     if not isinstance(body, dict):
         raise EmbeddingFailed("provider_bad_json")
-    data = body.get("data", [])
-    embedding = data[0].get("embedding") if data else None
+    data = body.get("data")
+    if not isinstance(data, list) or not data or not isinstance(data[0], dict):
+        raise EmbeddingFailed("provider_bad_json")
+    if "embedding" not in data[0]:
+        raise EmbeddingFailed("provider_bad_json")
+    embedding = data[0].get("embedding")
     if not isinstance(embedding, list) or len(embedding) != expected:
         raise EmbeddingFailed("bad_dimensions")
-    if any(not math.isfinite(v) for v in embedding):
-        raise EmbeddingFailed("non_finite_values")
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        for value in embedding
+    ):
+        raise EmbeddingFailed("bad_dimensions")
     return embedding
 
 

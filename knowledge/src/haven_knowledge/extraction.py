@@ -323,7 +323,8 @@ def _chat_call(provider: Provider, messages: list[dict[str, Any]]) -> Any:
     if not isinstance(choices, list) or not choices:
         raise ExtractionInvalid("provider_no_choices")
     first = choices[0]
-    content = first.get("message", {}).get("content") if isinstance(first, dict) else None
+    message = first.get("message") if isinstance(first, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, str):
         raise ExtractionInvalid("provider_no_content")
     try:

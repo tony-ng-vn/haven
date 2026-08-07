@@ -186,7 +186,7 @@ def main() -> int:
                             if r.get("person", {}).get("resolution_status") == "unresolved"
                         )
                         quote = unresolved.get("evidence", {}).get("quote") or ""
-                        evidence_ok += 1 if quote in scenario["sources"][0] else 0
+                        evidence_ok += 1 if quote and quote in scenario["sources"][0] else 0
                 else:
                     if any(
                         "vector" in r.get("strategies", [])
