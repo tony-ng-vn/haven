@@ -1,12 +1,39 @@
 import Foundation
 
+enum EventSourceProvider: String, Codable, Equatable, Sendable {
+    case appleCalendar
+}
+
+/// The minimum durable snapshot needed to distinguish a selected calendar
+/// occurrence from another event with the same title. Haven keeps no attendee,
+/// note, location, or calendar-account data.
+struct EventSourceReference: Codable, Equatable, Sendable {
+    let provider: EventSourceProvider
+    let externalId: String
+    let scheduledStartAt: Date
+    let scheduledEndAt: Date
+}
+
 /// The event identity stamped onto a capture before the capture leaves the
-/// device. It contains only what the backend needs to idempotently recreate a
-/// manually entered event when the phone was offline at Start.
+/// device. It contains only what the backend needs to idempotently recreate the
+/// event when the phone was offline at Start.
 struct EventReference: Codable, Equatable, Sendable {
     let clientKey: String
     let title: String
     let startedAt: Date
+    let source: EventSourceReference?
+
+    init(
+        clientKey: String,
+        title: String,
+        startedAt: Date,
+        source: EventSourceReference? = nil
+    ) {
+        self.clientKey = clientKey
+        self.title = title
+        self.startedAt = startedAt
+        self.source = source
+    }
 }
 
 /// One local event session. The owner stays on device for account isolation;
@@ -16,11 +43,17 @@ struct HavenEvent: Codable, Equatable, Identifiable, Sendable {
     let ownerUserId: String
     let title: String
     let startedAt: Date
+    let source: EventSourceReference?
     var endedAt: Date?
     var needsSync: Bool
 
     var reference: EventReference {
-        EventReference(clientKey: id.uuidString, title: title, startedAt: startedAt)
+        EventReference(
+            clientKey: id.uuidString,
+            title: title,
+            startedAt: startedAt,
+            source: source
+        )
     }
 }
 
@@ -29,6 +62,7 @@ enum EventStoreError: Error, Equatable {
     case titleTooLong
     case alreadyActive
     case endsBeforeStart
+    case invalidSource
 }
 
 /// Durable event state shared with HavenShare.
@@ -88,7 +122,8 @@ struct EventStore: Sendable {
         title rawTitle: String,
         ownerUserId: String,
         startedAt: Date = Date(),
-        id: UUID = UUID()
+        id: UUID = UUID(),
+        source: EventSourceReference? = nil
     ) throws -> HavenEvent {
         let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { throw EventStoreError.blankTitle }
@@ -96,6 +131,13 @@ struct EventStore: Sendable {
         // accepted offline cannot become an event that Convex rejects forever.
         guard title.utf16.count <= Self.titleLimit else {
             throw EventStoreError.titleTooLong
+        }
+        if let source {
+            guard !source.externalId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  source.externalId.utf16.count <= 1_024,
+                  source.scheduledEndAt >= source.scheduledStartAt else {
+                throw EventStoreError.invalidSource
+            }
         }
         var snapshot = load()
         guard !snapshot.events.contains(where: {
@@ -108,6 +150,7 @@ struct EventStore: Sendable {
             ownerUserId: ownerUserId,
             title: title,
             startedAt: startedAt,
+            source: source,
             endedAt: nil,
             needsSync: true
         )

@@ -89,6 +89,9 @@ targets:
       # and CNContactPickerViewController. App-only -- Haven/Contacts is not in
       # HavenShare's source list, so this framework is not linked there.
       - sdk: ContactsUI.framework
+      # Event Mode reads nearby event names and times only after someone taps
+      # the Apple Calendar option. It never writes to or imports the calendar.
+      - sdk: EventKit.framework
       # Embeds the widget in the app. Without this the extension builds but
       # never ships inside the bundle, so it never appears in the widget
       # gallery and the whole feature is invisible.

@@ -57,6 +57,45 @@ test("upsert keeps one event per user and client key", async () => {
   ).toEqual({ status: "already", eventId: first.eventId });
 });
 
+test("a selected Apple Calendar event keeps its durable source snapshot", async () => {
+  const t = convexTest(schema, modules);
+  const { userId, as } = asNewUser(t);
+  const created = await as.mutation(api.events.upsert, {
+    clientKey: "apple-event-1",
+    title: "Founders dinner",
+    startedAt: 1_200,
+    sourceProvider: "appleCalendar",
+    sourceEventId: "calendar-item-42",
+    sourceStartedAt: 1_000,
+    sourceEndedAt: 2_000,
+  });
+
+  const saved = await t.run((ctx) => ctx.db.get("events", created.eventId));
+
+  expect(saved).toMatchObject({
+    userId,
+    sourceProvider: "appleCalendar",
+    sourceEventId: "calendar-item-42",
+    sourceStartedAt: 1_000,
+    sourceEndedAt: 2_000,
+  });
+});
+
+test("a partial Apple Calendar source snapshot is rejected", async () => {
+  const t = convexTest(schema, modules);
+  const { as } = asNewUser(t);
+
+  await expect(
+    as.mutation(api.events.upsert, {
+      clientKey: "apple-event-partial",
+      title: "Founders dinner",
+      startedAt: 1_200,
+      sourceProvider: "appleCalendar",
+      sourceEventId: "calendar-item-42",
+    }),
+  ).rejects.toThrow("Calendar event source is incomplete");
+});
+
 test("a delayed start cannot reopen or shorten an ended event", async () => {
   const t = convexTest(schema, modules);
   const { userId, as } = asNewUser(t);

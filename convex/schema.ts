@@ -167,6 +167,10 @@ export default defineSchema({
     clientKey: v.string(),
     title: v.string(),
     startedAt: v.number(),
+    sourceProvider: v.optional(v.literal("appleCalendar")),
+    sourceEventId: v.optional(v.string()),
+    sourceStartedAt: v.optional(v.number()),
+    sourceEndedAt: v.optional(v.number()),
     endedAt: v.optional(v.number()),
     updatedAt: v.number(),
   })
@@ -218,6 +222,10 @@ export default defineSchema({
         clientKey: v.string(),
         title: v.string(),
         startedAt: v.number(),
+        sourceProvider: v.optional(v.literal("appleCalendar")),
+        sourceEventId: v.optional(v.string()),
+        sourceStartedAt: v.optional(v.number()),
+        sourceEndedAt: v.optional(v.number()),
       }),
     ),
     status: v.union(

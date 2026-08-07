@@ -425,8 +425,8 @@ struct DirectoryScreen: View {
         }
     }
 
-    private func startEvent(title: String) -> Bool {
-        guard eventSession.start(title: title) else { return false }
+    private func startEvent(title: String, source: EventSourceReference?) -> Bool {
+        guard eventSession.start(title: title, source: source) else { return false }
         Task { await requestEventSync.run() }
         return true
     }

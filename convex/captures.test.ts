@@ -403,6 +403,37 @@ test("an event capture links its accepted person to that event", async () => {
   ]);
 });
 
+test("an Apple Calendar event survives the screenshot capture path", async () => {
+  stubOpenAI({ extraction: EXTRACTION });
+  const t = convexTest(schema, modules);
+  const { as } = await asNewUser(t);
+  const captureId = await as.mutation(api.captures.createCapture, {
+    screenshotId: await seedScreenshot(t),
+    event: {
+      clientKey: "apple-capture-event",
+      title: "Founders dinner",
+      startedAt: 6_500,
+      sourceProvider: "appleCalendar",
+      sourceEventId: "calendar-item-42",
+      sourceStartedAt: 6_000,
+      sourceEndedAt: 9_000,
+    },
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  const personId = await acceptCaptureId(as, { captureId });
+
+  expect(await as.query(api.events.listForPerson, { personId })).toMatchObject([
+    {
+      title: "Founders dinner",
+      sourceProvider: "appleCalendar",
+      sourceEventId: "calendar-item-42",
+      sourceStartedAt: 6_000,
+      sourceEndedAt: 9_000,
+    },
+  ]);
+});
+
 test("a manually named capture is findable by keyword search", async () => {
   const t = convexTest(schema, modules);
   const { as } = await asNewUser(t);

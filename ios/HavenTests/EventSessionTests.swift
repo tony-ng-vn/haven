@@ -153,6 +153,30 @@ struct EventSessionTests {
         }
     }
 
+    @Test("an Apple Calendar selection survives relaunch as source metadata")
+    func appleCalendarSourcePersists() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EventStore(directory: directory)
+        let source = EventSourceReference(
+            provider: .appleCalendar,
+            externalId: "calendar-event-42",
+            scheduledStartAt: Date(timeIntervalSince1970: 10_000),
+            scheduledEndAt: Date(timeIntervalSince1970: 13_600)
+        )
+
+        _ = try store.start(
+            title: "Founders dinner",
+            ownerUserId: "user-one",
+            startedAt: Date(timeIntervalSince1970: 10_300),
+            source: source
+        )
+
+        let relaunched = try #require(EventStore(directory: directory).active(for: "user-one"))
+        #expect(relaunched.source == source)
+        #expect(relaunched.reference.source == source)
+    }
+
     private func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("haven-event-tests-\(UUID().uuidString)")

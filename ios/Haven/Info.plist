@@ -43,6 +43,13 @@
 	-->
 	<key>NSContactsUsageDescription</key>
 	<string>Haven matches your contacts on this device and imports only people you choose. The address book itself is never uploaded.</string>
+	<!--
+	  Event Mode asks only after somebody taps the Apple Calendar option. Haven
+	  shows nearby event names and times, then saves the source id and scheduled
+	  time for only the event they choose. It never changes a calendar.
+	-->
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Haven shows nearby event names and times so you can choose one for Event Mode. Haven saves only the event you choose and never changes your calendar.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

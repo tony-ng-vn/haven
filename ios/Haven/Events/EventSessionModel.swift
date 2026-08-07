@@ -18,13 +18,18 @@ final class EventSessionModel: ObservableObject {
     var isActive: Bool { active != nil }
 
     @discardableResult
-    func start(title: String, startedAt: Date = Date()) -> Bool {
+    func start(
+        title: String,
+        startedAt: Date = Date(),
+        source: EventSourceReference? = nil
+    ) -> Bool {
         failure = nil
         do {
             active = try store.start(
                 title: title,
                 ownerUserId: userId,
-                startedAt: startedAt
+                startedAt: startedAt,
+                source: source
             )
             return true
         } catch EventStoreError.blankTitle {

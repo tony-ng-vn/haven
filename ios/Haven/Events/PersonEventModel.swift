@@ -6,9 +6,15 @@ struct PersonEvent: Decodable, Equatable, Identifiable {
     let title: String
     let startedAt: Double
     let endedAt: Double?
+    let sourceProvider: String?
+    let sourceEventId: String?
+    let sourceStartedAt: Double?
+    let sourceEndedAt: Double?
 
     var id: String { _id }
-    var startDate: Date { Date(timeIntervalSince1970: startedAt / 1_000) }
+    var startDate: Date {
+        Date(timeIntervalSince1970: (sourceStartedAt ?? startedAt) / 1_000)
+    }
 }
 
 @MainActor
