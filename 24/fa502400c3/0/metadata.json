@@ -1,0 +1,56 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "24fa502400c3",
+  "session_id": "973254da-1671-4015-8afc-982df3191181",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-07T19:07:43.155078Z",
+  "branch": "worktree-knowledge-foundation-v0",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "b2b3f1a6022a",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 446,
+    "cache_creation_tokens": 1455022,
+    "cache_read_tokens": 63620370,
+    "output_tokens": 248497,
+    "api_call_count": 225
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_014ys7anZotEpFFgzg3rcvKs",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "polygres-cli"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b2b3f1a6022a",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 69,
+        "end": 70,
+        "entry_ids": [
+          "f016bb41-8097-41a3-a9f8-a71f619cdcf7"
+        ],
+        "tool_use_id": "toolu_014ys7anZotEpFFgzg3rcvKs"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_014ys7anZotEpFFgzg3rcvKs"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: polygres-cli",
+        "default_collapsed": true
+      }
+    }
+  ]
+}
