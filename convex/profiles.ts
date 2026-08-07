@@ -14,6 +14,7 @@ import { normalizeName, personSearchText } from "./nameSearch";
 import { requireImageBlob } from "./imageBlobs";
 import { deleteMemories } from "./memories";
 import { endConnection } from "./connections";
+import { ensureEvent, eventInputValidator, linkEventPerson } from "./events";
 import {
   cityInputValidator,
   cityValidator,
@@ -739,6 +740,24 @@ async function purgeOwnedRows(ctx: MutationCtx, userId: string): Promise<void> {
   }
   more ||= captures.length === PURGE_PAGE;
 
+  const eventLinks = await ctx.db
+    .query("eventPeople")
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .take(PURGE_PAGE);
+  for (const link of eventLinks) {
+    await ctx.db.delete("eventPeople", link._id);
+  }
+  more ||= eventLinks.length === PURGE_PAGE;
+
+  const events = await ctx.db
+    .query("events")
+    .withIndex("by_userId_and_startedAt", (q) => q.eq("userId", userId))
+    .take(PURGE_PAGE);
+  for (const event of events) {
+    await ctx.db.delete("events", event._id);
+  }
+  more ||= events.length === PURGE_PAGE;
+
   // Contacts in other people's directories that referenced this account
   // collapse to a frozen snapshot they own, like a phone contact: the memory
   // of a person is the directory owner's, but the live canonical card belongs
@@ -1107,7 +1126,10 @@ function connectionPair(x: string, y: string) {
 }
 
 export const connect = mutation({
-  args: { username: v.string() },
+  args: {
+    username: v.string(),
+    event: v.optional(eventInputValidator),
+  },
   returns: v.object({
     // "already" when the pair was connected before, whichever side did it.
     status: v.union(v.literal("connected"), v.literal("already")),
@@ -1147,6 +1169,10 @@ export const connect = mutation({
       contact: myProfile,
       now,
     });
+    if (args.event !== undefined) {
+      const { event } = await ensureEvent(ctx, userId, args.event);
+      await linkEventPerson(ctx, userId, event._id, personId);
+    }
 
     const pair = connectionPair(userId, peerProfile.userId);
     const [personAId, personBId] = pair.callerIsA

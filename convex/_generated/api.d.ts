@@ -14,6 +14,7 @@ import type * as composio from "../composio.js";
 import type * as connections from "../connections.js";
 import type * as crons from "../crons.js";
 import type * as emailClient from "../emailClient.js";
+import type * as events from "../events.js";
 import type * as fieldCaps from "../fieldCaps.js";
 import type * as handleKeys from "../handleKeys.js";
 import type * as handleNames from "../handleNames.js";
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   connections: typeof connections;
   crons: typeof crons;
   emailClient: typeof emailClient;
+  events: typeof events;
   fieldCaps: typeof fieldCaps;
   handleKeys: typeof handleKeys;
   handleNames: typeof handleNames;

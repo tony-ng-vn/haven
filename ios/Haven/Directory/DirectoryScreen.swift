@@ -14,6 +14,7 @@ struct DirectoryScreen: View {
     /// that type's doc comment for why the People screen does not open a
     /// second read of the same card.
     var firstName: String?
+    @ObservedObject var eventSession: EventSessionModel
     /// Focusing a search field belongs to the Search tab, so the field here
     /// hands the whole interaction over rather than imitating it.
     let openSearch: () -> Void
@@ -39,6 +40,7 @@ struct DirectoryScreen: View {
     /// Sending what was just written is the app's job, not this screen's; it
     /// only asks. See `CaptureDrainRequest`.
     @Environment(\.requestCaptureDrain) private var requestCaptureDrain
+    @Environment(\.requestEventSync) private var requestEventSync
     /// Coming back from another app is exactly the moment somebody might
     /// have just saved a new contact there -- the same reason `RootView`
     /// re-runs `CaptureSync` on this transition.
@@ -47,11 +49,13 @@ struct DirectoryScreen: View {
     init(
         userId: String,
         firstName: String? = nil,
+        eventSession: EventSessionModel,
         openSearch: @escaping () -> Void,
         openPerson: @escaping (String) -> Void
     ) {
         self.userId = userId
         self.firstName = firstName
+        self.eventSession = eventSession
         self.openSearch = openSearch
         self.openPerson = openPerson
         _model = StateObject(wrappedValue: DirectoryModel())
@@ -68,12 +72,14 @@ struct DirectoryScreen: View {
     init(
         userId: String,
         firstName: String? = nil,
+        eventSession: EventSessionModel? = nil,
         openSearch: @escaping () -> Void,
         openPerson: @escaping (String) -> Void = { _ in },
         preview: DirectoryLoad
     ) {
         self.userId = userId
         self.firstName = firstName
+        self.eventSession = eventSession ?? EventSessionModel(userId: userId)
         self.openSearch = openSearch
         self.openPerson = openPerson
         _model = StateObject(wrappedValue: DirectoryModel(preview: preview))
@@ -117,9 +123,11 @@ struct DirectoryScreen: View {
                 // should not offer yesterday's directory.
                 AddPersonSheet(
                     mirror: DirectoryMirrorStore.forApp().load(),
-                    queue: .forApp(),
+                    queue: .forApp(ownerUserId: userId),
                     onSaved: onPersonAdded
                 )
+            case .startEvent:
+                StartEventSheet(start: startEvent)
             }
         }
         .task {
@@ -267,6 +275,9 @@ struct DirectoryScreen: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if let active = eventSession.active {
+                ActiveEventCard(event: active)
+            }
             // Ahead of even the contact suggestion: this is an actual save
             // that only partly (or not at all) landed, not a standing
             // feature or a "you might want this" guess.
@@ -404,7 +415,25 @@ struct DirectoryScreen: View {
     }
 
     private var actions: some View {
-        PrimaryButton(title: "Add someone") { sheet = .add }
+        VStack(spacing: 8) {
+            PrimaryButton(title: "Add someone") { sheet = .add }
+            if eventSession.isActive {
+                GhostButton(title: "End event") { endEvent() }
+            } else {
+                GhostButton(title: "Start an event") { sheet = .startEvent }
+            }
+        }
+    }
+
+    private func startEvent(title: String) -> Bool {
+        guard eventSession.start(title: title) else { return false }
+        Task { await requestEventSync.run() }
+        return true
+    }
+
+    private func endEvent() {
+        guard eventSession.end() else { return }
+        Task { await requestEventSync.run() }
     }
 }
 
@@ -417,6 +446,7 @@ private enum DirectorySheet: String, Identifiable {
     case explainer
     case pinWalkthrough
     case add
+    case startEvent
 
     var id: String { rawValue }
 }

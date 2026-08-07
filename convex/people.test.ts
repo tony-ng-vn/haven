@@ -927,11 +927,67 @@ test("deletePerson removes the person and its screenshot", async () => {
       screenshotId,
     }),
   );
+  await as.mutation(api.events.linkPerson, {
+    clientKey: "delete-person-event",
+    title: "Meetup",
+    startedAt: 1_000,
+    personId,
+  });
 
   await as.mutation(api.people.deletePerson, { personId });
 
   expect(await t.run((ctx) => ctx.db.get("people", personId))).toBeNull();
   expect(await t.run((ctx) => ctx.storage.getUrl(screenshotId))).toBeNull();
+  expect(
+    await t.run((ctx) =>
+      ctx.db
+        .query("eventPeople")
+        .withIndex("by_personId", (q) => q.eq("personId", personId))
+        .collect(),
+    ),
+  ).toEqual([]);
+});
+
+test("deletePerson removes event links past one transaction page", async () => {
+  const t = convexTest(schema, modules);
+  const { userId, as } = await asNewUser(t);
+  const personId = await t.run((ctx) =>
+    ctx.db.insert("people", {
+      userId,
+      name: "Maya",
+      updatedAt: Date.now(),
+    }),
+  );
+  await t.run(async (ctx) => {
+    for (let index = 0; index < 201; index += 1) {
+      const eventId = await ctx.db.insert("events", {
+        userId,
+        clientKey: `delete-event-${index}`,
+        title: `Event ${index}`,
+        startedAt: index,
+        updatedAt: index,
+      });
+      await ctx.db.insert("eventPeople", {
+        userId,
+        eventId,
+        personId,
+        eventStartedAt: index,
+        linkedAt: index,
+      });
+    }
+  });
+
+  await as.mutation(api.people.deletePerson, { personId });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  expect(
+    await t.run((ctx) =>
+      ctx.db
+        .query("eventPeople")
+        .withIndex("by_personId", (q) => q.eq("personId", personId))
+        .collect(),
+    ),
+  ).toEqual([]);
 });
 
 test("deletePerson rejects deleting another user's person", async () => {

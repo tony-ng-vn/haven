@@ -159,6 +159,34 @@ export default defineSchema({
       "platformId",
     ])
     .index("by_person", ["personId"]),
+  // A named span in which the owner met people. The client key is minted on
+  // device before any network call, so starting offline and replaying later
+  // still resolves to one event.
+  events: defineTable({
+    userId: v.string(),
+    clientKey: v.string(),
+    title: v.string(),
+    startedAt: v.number(),
+    endedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_userId_and_clientKey", ["userId", "clientKey"])
+    .index("by_userId_and_startedAt", ["userId", "startedAt"]),
+  // One row per event-person pair. A person can belong to many events, and an
+  // event can contain many people, so neither side is stored as an array on
+  // the other document.
+  eventPeople: defineTable({
+    userId: v.string(),
+    eventId: v.id("events"),
+    personId: v.id("people"),
+    eventStartedAt: v.number(),
+    linkedAt: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_eventId_and_personId", ["eventId", "personId"])
+    .index("by_personId", ["personId"])
+    .index("by_personId_and_eventStartedAt", ["personId", "eventStartedAt"])
+    .index("by_eventId", ["eventId"]),
   // A future mutual-link flow should create one row only after both Haven users
   // have explicitly connected. Each side binds the relationship to their own
   // private person row; the shared-note API uses this as its access gate.
@@ -185,6 +213,13 @@ export default defineSchema({
   captures: defineTable({
     userId: v.string(),
     screenshotId: v.id("_storage"),
+    event: v.optional(
+      v.object({
+        clientKey: v.string(),
+        title: v.string(),
+        startedAt: v.number(),
+      }),
+    ),
     status: v.union(
       v.literal("pending"),
       v.literal("ready"),

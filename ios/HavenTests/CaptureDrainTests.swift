@@ -69,6 +69,39 @@ private final class FakeSink: CaptureSink, @unchecked Sendable {
     enum SinkError: Error { case refused }
 }
 
+private final class EventFakeSink: EventCaptureSink, @unchecked Sendable {
+    var links: [(EventReference, String)] = []
+    var screenshots: [(Data, EventReference?)] = []
+    var linkFails = false
+
+    func saveProfile(_ profile: QueuedCapture.Profile) async throws -> SharedProfileOutcome {
+        SharedProfileOutcome(
+            status: "created", personId: "person-\(profile.link.handle)", noteTruncated: false
+        )
+    }
+
+    func saveManual(_ manual: QueuedCapture.Manual) async throws -> SharedProfileOutcome {
+        SharedProfileOutcome(
+            status: "created", personId: "person-\(manual.handleValue)", noteTruncated: false
+        )
+    }
+
+    func saveScreenshot(_ image: Data) async throws {
+        screenshots.append((image, nil))
+    }
+
+    func saveScreenshot(_ image: Data, event: EventReference) async throws {
+        screenshots.append((image, event))
+    }
+
+    func link(_ event: EventReference, to personId: String) async throws {
+        if linkFails { throw SinkError.refused }
+        links.append((event, personId))
+    }
+
+    enum SinkError: Error { case refused }
+}
+
 // withTestTimeout lives in TestTimeout.swift, shared with TaskDeadlineTests.
 
 private func makeQueue() -> (queue: CaptureQueue, root: URL) {
@@ -123,6 +156,62 @@ private func manual(
 
 @Suite("Draining the capture queue")
 struct CaptureDrainTests {
+    @Test("an event link must land before its person capture leaves the queue")
+    func linksEventBeforeRemoval() async throws {
+        let (queue, root) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let event = EventReference(
+            clientKey: "event-1",
+            title: "Community night",
+            startedAt: Date(timeIntervalSince1970: 90)
+        )
+        let capture = profile("maya", at: 100)
+        try queue.enqueue(
+            QueuedCapture(
+                id: capture.id,
+                capturedAt: capture.capturedAt,
+                payload: capture.payload,
+                event: event
+            )
+        )
+        let sink = EventFakeSink()
+
+        let result = await CaptureDrain(queue: queue, sink: sink).run()
+
+        #expect(sink.links.count == 1)
+        #expect(sink.links.first?.0 == event)
+        #expect(sink.links.first?.1 == "person-maya")
+        #expect(result.sent == 1)
+        #expect(queue.pending().isEmpty)
+    }
+
+    @Test("a failed event link keeps the person capture for an idempotent retry")
+    func failedEventLinkKeepsCapture() async throws {
+        let (queue, root) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let capture = profile("maya", at: 100)
+        try queue.enqueue(
+            QueuedCapture(
+                id: capture.id,
+                capturedAt: capture.capturedAt,
+                payload: capture.payload,
+                event: EventReference(
+                    clientKey: "event-2",
+                    title: "Demo day",
+                    startedAt: Date(timeIntervalSince1970: 90)
+                )
+            )
+        )
+        let sink = EventFakeSink()
+        sink.linkFails = true
+
+        let result = await CaptureDrain(queue: queue, sink: sink).run()
+
+        #expect(result.kept == 1)
+        #expect(result.sent == 0)
+        #expect(queue.pending().count == 1)
+    }
+
     // The offline rule for the in-app add: it writes to the queue and closes,
     // and whether there was a network at that moment is the drain's problem.
     @Test("a person added by hand is sent like any other capture")

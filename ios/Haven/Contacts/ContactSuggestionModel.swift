@@ -19,7 +19,7 @@ final class ContactSuggestionModel: ObservableObject {
     init(
         userId: String,
         provider: AddressBookProviding = LiveAddressBook(),
-        queue: CaptureQueue = .forApp(),
+        queue: CaptureQueue? = nil,
         // Injectable, the same reason `queue` and `provider` are: a test
         // proving `checkForSuggestion` skips its baseline update under
         // `.limited` needs its own isolated defaults suite, not the real
@@ -28,7 +28,7 @@ final class ContactSuggestionModel: ObservableObject {
         mirror: @escaping () -> DirectoryMirror? = { DirectoryMirrorStore.forApp().load() }
     ) {
         self.provider = provider
-        self.queue = queue
+        self.queue = queue ?? .forApp(ownerUserId: userId)
         self.changeState = changeState ?? ContactChangeState(userId: userId)
         self.mirror = mirror
     }

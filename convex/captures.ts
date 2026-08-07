@@ -31,6 +31,12 @@ import {
   mergeHandleIntoOwner,
   withAddedAt,
 } from "./people";
+import {
+  ensureEvent,
+  eventInputValidator,
+  EventInput,
+  linkEventPerson,
+} from "./events";
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -127,6 +133,7 @@ async function tryAttachToOwner(
   contactHandle: ContactHandleInput | undefined,
   context: string | undefined,
   fillIfEmpty: FillIfEmpty,
+  event: EventInput | undefined,
 ): Promise<
   | {
       status: "attached" | "already";
@@ -199,6 +206,10 @@ async function tryAttachToOwner(
       personId: owner._id,
     });
   }
+  if (event !== undefined) {
+    const ensured = await ensureEvent(ctx, userId, event);
+    await linkEventPerson(ctx, userId, ensured.event._id, owner._id);
+  }
   await ctx.db.delete("captures", captureId);
   return {
     status: Object.keys(fields).length > 0 ? "attached" : "already",
@@ -250,7 +261,10 @@ export const generateUploadUrl = mutation({
 });
 
 export const createCapture = mutation({
-  args: { screenshotId: v.id("_storage") },
+  args: {
+    screenshotId: v.id("_storage"),
+    event: v.optional(eventInputValidator),
+  },
   returns: v.id("captures"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
@@ -268,6 +282,7 @@ export const createCapture = mutation({
     const captureId = await ctx.db.insert("captures", {
       userId,
       screenshotId: args.screenshotId,
+      event: args.event,
       status: "pending",
     });
     await ctx.scheduler.runAfter(0, internal.captures.extract, { captureId });
@@ -444,6 +459,7 @@ export const acceptCapture = mutation({
         link: args.link,
         screenshotId: capture.screenshotId,
       },
+      capture.event,
     );
     if (attached !== null) {
       return attached;
@@ -494,6 +510,10 @@ export const acceptCapture = mutation({
       context: args.context,
       createdAt: now,
     });
+    if (capture.event !== undefined) {
+      const ensured = await ensureEvent(ctx, userId, capture.event);
+      await linkEventPerson(ctx, userId, ensured.event._id, personId);
+    }
     await ctx.db.delete("captures", args.captureId);
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
     return { status: "created" as const, personId, handleDropped };
@@ -578,6 +598,7 @@ export const acceptManualCapture = mutation({
       args.context,
       // No bio field on this form -- a human at triage is not asked for one.
       { headline: args.headline, link: args.link, screenshotId: capture.screenshotId },
+      capture.event,
     );
     if (attached !== null) {
       return attached;
@@ -614,6 +635,10 @@ export const acceptManualCapture = mutation({
       context: args.context,
       createdAt: now,
     });
+    if (capture.event !== undefined) {
+      const ensured = await ensureEvent(ctx, userId, capture.event);
+      await linkEventPerson(ctx, userId, ensured.event._id, personId);
+    }
     await ctx.db.delete("captures", args.captureId);
     await ctx.scheduler.runAfter(0, internal.people.embed, { personId });
     // Never true here: a digitless phone/whatsapp value throws above rather

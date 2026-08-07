@@ -52,16 +52,26 @@ struct LocalAccountStateTests {
         defer { try? FileManager.default.removeItem(at: queueOneRoot) }
         let (queueTwo, queueTwoRoot) = makeQueue()
         defer { try? FileManager.default.removeItem(at: queueTwoRoot) }
+        let eventRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("haven-local-state-events-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: eventRoot) }
+        let events = EventStore(directory: eventRoot)
 
         try store.save(mirror)
         try queueOne.enqueue(manualCapture("left_behind_one"))
         try queueTwo.enqueue(manualCapture("left_behind_two"))
+        _ = try events.start(title: "Private dinner", ownerUserId: "user-one")
 
-        LocalAccountState.clear(mirror: store, queues: [queueOne, queueTwo])
+        LocalAccountState.clear(
+            mirror: store,
+            queues: [queueOne, queueTwo],
+            events: [events]
+        )
 
         #expect(store.load() == nil)
         #expect(queueOne.pending().isEmpty)
         #expect(queueTwo.pending().isEmpty)
+        #expect(events.currentActive() == nil)
     }
 
     // Most sessions on this phone never queue anything and never sync, so
@@ -74,7 +84,7 @@ struct LocalAccountStateTests {
         let (queue, queueRoot) = makeQueue()
         defer { try? FileManager.default.removeItem(at: queueRoot) }
 
-        LocalAccountState.clear(mirror: store, queues: [queue])
+        LocalAccountState.clear(mirror: store, queues: [queue], events: [])
 
         #expect(store.load() == nil)
         #expect(queue.pending().isEmpty)
@@ -90,7 +100,11 @@ struct LocalAccountStateTests {
         try queue.enqueue(manualCapture("account_a_capture"))
         #expect(queue.pending().count == 1)
 
-        LocalAccountState.clear(mirror: makeMirrorStore().store, queues: [queue])
+        LocalAccountState.clear(
+            mirror: makeMirrorStore().store,
+            queues: [queue],
+            events: []
+        )
 
         #expect(queue.pending().isEmpty, "a capture queued before sign-out must not survive it")
     }

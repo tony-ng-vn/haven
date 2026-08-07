@@ -3,7 +3,7 @@ import Foundation
 
 /// The real drain target: the only part of the capture pipeline that touches
 /// the network, and it lives in the app rather than the extension on purpose.
-struct ConvexCaptureSink: CaptureSink {
+struct ConvexCaptureSink: EventCaptureSink {
     /// Where Instagram and X's own numeric ids come from. `var` with a
     /// default rather than `let`: a `let` with a default value is dropped
     /// from Swift's memberwise init entirely, which would make this
@@ -63,13 +63,31 @@ struct ConvexCaptureSink: CaptureSink {
     /// Uploads the image and hands it to the existing capture pipeline, so a
     /// shared screenshot inherits extraction and its retries unchanged.
     func saveScreenshot(_ image: Data) async throws {
+        try await saveScreenshot(image, event: nil)
+    }
+
+    func saveScreenshot(_ image: Data, event: EventReference) async throws {
+        try await saveScreenshot(image, event: event as EventReference?)
+    }
+
+    private func saveScreenshot(_ image: Data, event: EventReference?) async throws {
         guard let contentType = ImageFormat.contentType(of: image) else {
             throw SinkError.notAnImage
         }
         let url: String = try await bounded { try await convex.mutation("captures:generateUploadUrl") }
         let storageId = try await PhotoUpload.send(image, to: url, contentType: contentType)
+        var args: [String: ConvexEncodable?] = ["screenshotId": storageId]
+        if let event { args["event"] = event.convexArgument }
         let _: String = try await bounded {
-            try await convex.mutation("captures:createCapture", with: ["screenshotId": storageId])
+            try await convex.mutation("captures:createCapture", with: args)
+        }
+    }
+
+    func link(_ event: EventReference, to personId: String) async throws {
+        var args = event.convexArguments
+        args["personId"] = personId
+        let _: EventLinkOutcome = try await bounded {
+            try await convex.mutation("events:linkPerson", with: args)
         }
     }
 
@@ -147,4 +165,9 @@ struct ConvexCaptureSink: CaptureSink {
         case notAnImage
         case timedOut
     }
+}
+
+private struct EventLinkOutcome: Decodable {
+    let status: String
+    let eventId: String
 }
