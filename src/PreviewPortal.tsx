@@ -75,6 +75,25 @@ export function previewAccessQueryArgs(
   return isAuthenticated && userId ? { sessionKey: userId } : "skip";
 }
 
+type PreviewRedemption = {
+  status: "granted" | "already" | "invalid";
+};
+
+export async function redeemPendingCode(
+  code: string,
+  attempt: { current: string | null },
+  redeem: (args: { code: string }) => Promise<PreviewRedemption>,
+): Promise<PreviewRedemption> {
+  attempt.current = code;
+  try {
+    return await redeem({ code });
+  } catch (caught) {
+    // A transient failure must not permanently consume this browser attempt.
+    attempt.current = null;
+    throw caught;
+  }
+}
+
 type PreviewCodeFormProps = {
   onSubmit: (code: string) => Promise<void> | void;
   onSignIn: () => void;
@@ -301,9 +320,8 @@ export function PreviewPortal({
     ) {
       return;
     }
-    redeemAttempt.current = pendingCode;
     setBusy(true);
-    void redeemCode({ code: pendingCode })
+    void redeemPendingCode(pendingCode, redeemAttempt, redeemCode)
       .then((result) => {
         writePendingCode(null);
         setPendingCode(null);

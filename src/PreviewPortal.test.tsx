@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import {
   initialPreviewAuthMode,
   previewAccessQueryArgs,
+  redeemPendingCode,
   PreviewCodeForm,
   PreviewHome,
   PreviewLoading,
@@ -41,6 +42,19 @@ describe("the preview access flow", () => {
     expect(previewAccessQueryArgs(true, "user-b")).toEqual({
       sessionKey: "user-b",
     });
+  });
+
+  test("allows a pending code to retry after a transient redemption failure", async () => {
+    const attempt = { current: null as string | null };
+    const redeem = vi.fn(async () => {
+      throw new Error("network unavailable");
+    });
+
+    await expect(
+      redeemPendingCode("pending-code", attempt, redeem),
+    ).rejects.toThrow("network unavailable");
+    expect(attempt.current).toBeNull();
+    expect(redeem).toHaveBeenCalledWith({ code: "pending-code" });
   });
 
   test("asks for a preview code before offering account creation", async () => {

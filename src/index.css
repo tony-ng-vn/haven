@@ -3064,6 +3064,11 @@ a.card-handle:focus-visible {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.preview-form input:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+
 .preview-primary {
   appearance: none;
   min-height: 50px;
@@ -3178,7 +3183,7 @@ a.card-handle:focus-visible {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }
