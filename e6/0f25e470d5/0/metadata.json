@@ -1,0 +1,74 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "e60f25e470d5",
+  "session_id": "973254da-1671-4015-8afc-982df3191181",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-07T07:43:25.265791Z",
+  "branch": "worktree-knowledge-foundation-v0",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/adr/provisional-identity-resolution.md",
+    "knowledge/src/haven_knowledge/entities.py",
+    "knowledge/src/haven_knowledge/answers.py",
+    "knowledge/src/haven_knowledge/service.py",
+    "knowledge/tests/unit/test_core_units.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "b2b3f1a6022a",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 446,
+    "cache_creation_tokens": 1455022,
+    "cache_read_tokens": 63620370,
+    "output_tokens": 248497,
+    "api_call_count": 225
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_014ys7anZotEpFFgzg3rcvKs",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "polygres-cli"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b2b3f1a6022a",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 69,
+        "end": 70,
+        "entry_ids": [
+          "f016bb41-8097-41a3-a9f8-a71f619cdcf7"
+        ],
+        "tool_use_id": "toolu_014ys7anZotEpFFgzg3rcvKs"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_014ys7anZotEpFFgzg3rcvKs"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: polygres-cli",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "initial_attribution": {
+    "calculated_at": "2026-08-07T07:43:24.819853Z",
+    "agent_lines": 115,
+    "agent_removed": 67,
+    "human_added": 424,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 539,
+    "total_lines_changed": 645,
+    "agent_percentage": 28.217054263565895,
+    "metric_version": 2
+  }
+}

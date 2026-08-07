@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "e60f25e470d5",
+  "strategy": "manual-commit",
+  "branch": "worktree-knowledge-foundation-v0",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/adr/provisional-identity-resolution.md",
+    "knowledge/src/haven_knowledge/answers.py",
+    "knowledge/src/haven_knowledge/entities.py",
+    "knowledge/src/haven_knowledge/service.py",
+    "knowledge/tests/unit/test_core_units.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e6/0f25e470d5/0/metadata.json",
+      "transcript": "/e6/0f25e470d5/0/full.jsonl",
+      "compact_transcript": "/e6/0f25e470d5/0/transcript.jsonl",
+      "content_hash": "/e6/0f25e470d5/0/content_hash.txt",
+      "prompt": "/e6/0f25e470d5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 446,
+    "cache_creation_tokens": 1455022,
+    "cache_read_tokens": 63620370,
+    "output_tokens": 248497,
+    "api_call_count": 225
+  }
+}
