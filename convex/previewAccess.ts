@@ -109,7 +109,9 @@ export const redeemCode = mutation({
 });
 
 export const hasAccess = query({
-  args: {},
+  // The optional key partitions the browser's reactive cache by Clerk user.
+  // Authorization still comes only from the verified server identity.
+  args: { sessionKey: v.optional(v.string()) },
   returns: v.boolean(),
   handler: async (ctx) => {
     const userId = await requireUser(ctx);

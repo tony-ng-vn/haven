@@ -475,12 +475,19 @@ export function isClerkFlowHash(hash: string): boolean {
 ///
 /// Sub-paths count too, because Clerk owns them once its component is mounted
 /// at one of these: `/sign-in/factor-one` is Clerk's second step, not a 404.
-export function isAuthPath(pathname: string): boolean {
+export type AuthMode = "sign-in" | "sign-up";
+
+export function authModeFromPath(pathname: string): AuthMode | null {
   const first = pathname.split("/").filter((segment) => segment !== "")[0];
-  if (first === undefined) return false;
-  return ["signin", "sign-in", "signup", "sign-up", "login"].includes(
-    first.toLowerCase(),
-  );
+  if (first === undefined) return null;
+  const normalized = first.toLowerCase();
+  if (["signin", "sign-in", "login"].includes(normalized)) return "sign-in";
+  if (["signup", "sign-up"].includes(normalized)) return "sign-up";
+  return null;
+}
+
+export function isAuthPath(pathname: string): boolean {
+  return authModeFromPath(pathname) !== null;
 }
 
 // What to paint on the very first frame, before Clerk has loaded. The signed-out

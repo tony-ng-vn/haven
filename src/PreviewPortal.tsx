@@ -12,7 +12,12 @@ import { Footer } from "./Footer";
 import { TopNav } from "./TopNav";
 import { SkyPage } from "./SkyPage";
 import { CLERK_ROUTING } from "./clerkConfig";
-import { isClerkFlowHash, isSkyPath } from "./lib";
+import {
+  authModeFromPath,
+  isClerkFlowHash,
+  isSkyPath,
+  type AuthMode,
+} from "./lib";
 import { requestSkyArchive, saveSkyArchive } from "./secureDownload";
 
 const PENDING_CODE_KEY = "haven:previewCode";
@@ -41,23 +46,33 @@ function errorMessage(error: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
-export type PreviewAuthMode = "sign-in" | "sign-up" | null;
+export type PreviewAuthMode = AuthMode | null;
 
 export function initialPreviewAuthMode(
   pathname: string,
   hash: string,
   pendingCode: string | null,
 ): PreviewAuthMode {
-  const first = pathname.split("/").filter((segment) => segment !== "")[0];
-  if (
-    first !== undefined &&
-    ["signin", "sign-in", "login"].includes(first.toLowerCase())
-  ) {
-    return "sign-in";
-  }
+  const pathMode = authModeFromPath(pathname);
+  if (pathMode === "sign-in") return pathMode;
   if (pendingCode !== null) return "sign-up";
   if (isClerkFlowHash(hash)) return "sign-in";
   return null;
+}
+
+export function PreviewLoading({ label }: { label: string }) {
+  return (
+    <div className="preview-loading" role="status" aria-live="polite">
+      <span className="preview-loading-label">{label}</span>
+    </div>
+  );
+}
+
+export function previewAccessQueryArgs(
+  isAuthenticated: boolean,
+  userId: string | null | undefined,
+): { sessionKey: string } | "skip" {
+  return isAuthenticated && userId ? { sessionKey: userId } : "skip";
 }
 
 type PreviewCodeFormProps = {
@@ -256,16 +271,15 @@ export function PreviewPortal({
   isLoading: boolean;
 }) {
   const { signOut } = useClerk();
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
   const checkCode = useMutation(api.previewAccess.checkCode);
   const redeemCode = useMutation(api.previewAccess.redeemCode);
   const updateMyProfile = useMutation(api.profiles.updateMyProfile);
   const hasAccess = useQuery(
     api.previewAccess.hasAccess,
-    isAuthenticated ? {} : "skip",
+    previewAccessQueryArgs(isAuthenticated, userId),
   );
-  const [locallyGranted, setLocallyGranted] = useState(false);
-  const accessReady = hasAccess === true || locallyGranted;
+  const accessReady = hasAccess === true;
   const profile = useQuery(
     api.profiles.getMyCard,
     isAuthenticated && accessReady ? {} : "skip",
@@ -297,7 +311,6 @@ export function PreviewPortal({
           setError("That preview code is not valid.");
           return;
         }
-        setLocallyGranted(true);
       })
       .catch((caught: unknown) => setError(errorMessage(caught)))
       .finally(() => setBusy(false));
@@ -313,7 +326,6 @@ export function PreviewPortal({
           setError("That preview code is not valid.");
           return;
         }
-        setLocallyGranted(true);
         return;
       }
 
@@ -352,7 +364,7 @@ export function PreviewPortal({
   if (isLoading || (isAuthenticated && hasAccess === undefined)) {
     return (
       <PreviewShell>
-        <div className="preview-loading" aria-label="Loading preview" />
+        <PreviewLoading label="Loading preview" />
       </PreviewShell>
     );
   }
@@ -381,7 +393,7 @@ export function PreviewPortal({
   if (profile === undefined) {
     return (
       <PreviewShell privateNav onSignOut={() => void signOut()}>
-        <div className="preview-loading" aria-label="Loading profile" />
+        <PreviewLoading label="Loading profile" />
       </PreviewShell>
     );
   }

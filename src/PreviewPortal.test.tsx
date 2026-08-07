@@ -4,8 +4,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 import {
   initialPreviewAuthMode,
+  previewAccessQueryArgs,
   PreviewCodeForm,
   PreviewHome,
+  PreviewLoading,
   PreviewProfileSetup,
 } from "./PreviewPortal";
 
@@ -23,6 +25,22 @@ describe("the preview access flow", () => {
     expect(initialPreviewAuthMode("/preview", "#/verify", null)).toBe(
       "sign-in",
     );
+  });
+
+  test("announces preview loading states to assistive technology", () => {
+    render(<PreviewLoading label="Loading preview" />);
+
+    expect(screen.getByRole("status").textContent).toBe("Loading preview");
+  });
+
+  test("partitions the access query when the signed-in account changes", () => {
+    expect(previewAccessQueryArgs(false, null)).toBe("skip");
+    expect(previewAccessQueryArgs(true, "user-a")).toEqual({
+      sessionKey: "user-a",
+    });
+    expect(previewAccessQueryArgs(true, "user-b")).toEqual({
+      sessionKey: "user-b",
+    });
   });
 
   test("asks for a preview code before offering account creation", async () => {

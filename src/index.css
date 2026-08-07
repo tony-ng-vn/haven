@@ -2925,11 +2925,9 @@ a.card-handle:focus-visible {
   color: rgba(255, 255, 255, 0.6);
 }
 
-/* Shared by every public page: the wordmark, brand-only, nothing to its
-   right -- the owner had the links cluster that used to sit there removed
-   site-wide. Absolutely positioned so it drops onto either a position:
-   relative hero or a position: fixed .card-page without needing to know
-   which. */
+/* Shared by every public page: the wordmark and one contextual action.
+   Absolutely positioned so it drops onto either a position: relative hero
+   or a position: fixed .card-page without needing to know which. */
 .top-nav {
   position: absolute;
   top: 0;
@@ -3171,6 +3169,18 @@ a.card-handle:focus-visible {
   border-top-color: var(--accent-text);
   border-radius: 50%;
   animation: preview-spin 700ms linear infinite;
+}
+
+.preview-loading-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 @keyframes preview-spin {

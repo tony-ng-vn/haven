@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  authModeFromPath,
   bootMode,
   buildDossier,
   buildEmbedText,
@@ -36,6 +37,27 @@ import {
   resolveView,
   triageCountLabel,
 } from "./lib";
+
+describe("authModeFromPath", () => {
+  test("classifies every supported auth alias and Clerk sub-path", () => {
+    for (const path of [
+      "/signin",
+      "/sign-in",
+      "/login",
+      "/sign-in/factor-one",
+    ]) {
+      expect(authModeFromPath(path)).toBe("sign-in");
+    }
+    for (const path of [
+      "/signup",
+      "/sign-up",
+      "/sign-up/verify-email-address",
+    ]) {
+      expect(authModeFromPath(path)).toBe("sign-up");
+    }
+    expect(authModeFromPath("/preview")).toBeNull();
+  });
+});
 
 describe("resolveView", () => {
   const base = {
