@@ -6,7 +6,7 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
-## v0.53.1
+## v0.54.0
 
 2026-08-07
 
