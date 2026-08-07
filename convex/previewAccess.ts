@@ -6,11 +6,38 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
+import { components } from "./_generated/api";
 import { requireUser } from "./authz";
-import { checkRateLimit } from "./rateLimit";
+import { RateLimiter } from "@convex-dev/rate-limiter";
 
 const MINUTE_MS = 60_000;
 const MAX_CODE_LENGTH = 128;
+
+const previewLimiter = new RateLimiter(components.rateLimiter, {
+  checkPreviewCode: {
+    kind: "fixed window",
+    rate: 120,
+    period: MINUTE_MS,
+    start: 0,
+  },
+  redeemPreviewCode: {
+    kind: "fixed window",
+    rate: 10,
+    period: MINUTE_MS,
+    start: 0,
+  },
+});
+
+async function enforcePreviewLimit(
+  ctx: MutationCtx,
+  name: "checkPreviewCode" | "redeemPreviewCode",
+  key: string,
+): Promise<void> {
+  const result = await previewLimiter.limit(ctx, name, { key });
+  if (!result.ok) {
+    throw new Error("Too many requests -- please wait a moment");
+  }
+}
 
 function matchesConfiguredCode(raw: string): boolean {
   const submitted = raw.trim();
@@ -42,13 +69,7 @@ export const checkCode = mutation({
     status: v.union(v.literal("valid"), v.literal("invalid")),
   }),
   handler: async (ctx, args) => {
-    await checkRateLimit(
-      ctx,
-      "public:preview",
-      "checkPreviewCode",
-      120,
-      MINUTE_MS,
-    );
+    await enforcePreviewLimit(ctx, "checkPreviewCode", "public:preview");
     return {
       status: matchesConfiguredCode(args.code)
         ? ("valid" as const)
@@ -70,7 +91,7 @@ export const redeemCode = mutation({
   }),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    await checkRateLimit(ctx, userId, "redeemPreviewCode", 10, MINUTE_MS);
+    await enforcePreviewLimit(ctx, "redeemPreviewCode", userId);
 
     if ((await grantForUser(ctx, userId)) !== null) {
       return { status: "already" as const };
