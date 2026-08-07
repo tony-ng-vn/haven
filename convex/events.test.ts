@@ -237,5 +237,5 @@ test("listForPerson keeps the newest one hundred links", async () => {
   const listed = await as.query(api.events.listForPerson, { personId });
   expect(listed).toHaveLength(100);
   expect(listed[0].title).toBe("Event 100");
-  expect(listed.at(-1)?.title).toBe("Event 1");
+  expect(listed[listed.length - 1]?.title).toBe("Event 1");
 });
