@@ -11,6 +11,7 @@ import { requireUser } from "./authz";
 
 const CLIENT_KEY_MAX = 128;
 const TITLE_MAX = 200;
+const SOURCE_EVENT_ID_MAX = 1_024;
 const PERSON_EVENT_LIMIT = 100;
 const EVENT_LINK_DELETE_PAGE = 200;
 
@@ -18,6 +19,10 @@ export const eventInputValidator = v.object({
   clientKey: v.string(),
   title: v.string(),
   startedAt: v.number(),
+  sourceProvider: v.optional(v.literal("appleCalendar")),
+  sourceEventId: v.optional(v.string()),
+  sourceStartedAt: v.optional(v.number()),
+  sourceEndedAt: v.optional(v.number()),
 });
 
 export type EventInput = Infer<typeof eventInputValidator>;
@@ -27,6 +32,10 @@ const eventSummaryValidator = v.object({
   title: v.string(),
   startedAt: v.number(),
   endedAt: v.optional(v.number()),
+  sourceProvider: v.optional(v.literal("appleCalendar")),
+  sourceEventId: v.optional(v.string()),
+  sourceStartedAt: v.optional(v.number()),
+  sourceEndedAt: v.optional(v.number()),
 });
 
 function normalizeEvent(input: EventInput): EventInput {
@@ -44,7 +53,41 @@ function normalizeEvent(input: EventInput): EventInput {
   if (title.length > TITLE_MAX) {
     throw new Error("Event name is too long");
   }
-  return { clientKey, title, startedAt: input.startedAt };
+  const hasSource =
+    input.sourceProvider !== undefined ||
+    input.sourceEventId !== undefined ||
+    input.sourceStartedAt !== undefined ||
+    input.sourceEndedAt !== undefined;
+  if (!hasSource) {
+    return { clientKey, title, startedAt: input.startedAt };
+  }
+  if (
+    input.sourceProvider !== "appleCalendar" ||
+    input.sourceEventId === undefined ||
+    input.sourceStartedAt === undefined ||
+    input.sourceEndedAt === undefined
+  ) {
+    throw new Error("Calendar event source is incomplete");
+  }
+  const sourceEventId = input.sourceEventId.trim();
+  if (sourceEventId === "") {
+    throw new Error("Calendar event source id is required");
+  }
+  if (sourceEventId.length > SOURCE_EVENT_ID_MAX) {
+    throw new Error("Calendar event source id is too long");
+  }
+  if (input.sourceEndedAt < input.sourceStartedAt) {
+    throw new Error("Calendar event cannot end before it starts");
+  }
+  return {
+    clientKey,
+    title,
+    startedAt: input.startedAt,
+    sourceProvider: input.sourceProvider,
+    sourceEventId,
+    sourceStartedAt: input.sourceStartedAt,
+    sourceEndedAt: input.sourceEndedAt,
+  };
 }
 
 export async function ensureEvent(
@@ -230,6 +273,10 @@ export const listForPerson = query({
         title: event.title,
         startedAt: event.startedAt,
         endedAt: event.endedAt,
+        sourceProvider: event.sourceProvider,
+        sourceEventId: event.sourceEventId,
+        sourceStartedAt: event.sourceStartedAt,
+        sourceEndedAt: event.sourceEndedAt,
       }));
   },
 });
