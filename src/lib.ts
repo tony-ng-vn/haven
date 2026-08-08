@@ -513,6 +513,7 @@ export type View =
   | "preview"
   | "splash"
   | "landing2"
+  | "festival"
   | "card"
   | "legal"
   | "support"
@@ -582,6 +583,11 @@ export function isWaitlistPath(pathname: string): boolean {
   return topLevelSegment(pathname) === "waitlist";
 }
 
+/// Whether a path names the public festival version of the landing page.
+export function isFestivalPath(pathname: string): boolean {
+  return topLevelSegment(pathname) === "festival";
+}
+
 /// The explicit front door for invited members.
 export function isPreviewPath(pathname: string): boolean {
   return topLevelSegment(pathname) === "preview";
@@ -603,6 +609,7 @@ export function resolveView(input: {
   const sitePage = sitePageFromPath(input.pathname ?? "/");
   if (sitePage === "support") return "support";
   if (sitePage !== null) return "legal";
+  if (isFestivalPath(input.pathname ?? "/")) return "festival";
   // The waitlist stays public. Sky no longer does: it is handled by the gated
   // preview below, whether the visitor followed a link or typed the old path.
   if (isWaitlistPath(input.pathname ?? "/")) return "waitlist";

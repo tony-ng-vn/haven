@@ -15,6 +15,7 @@ describe("isReservedHandle", () => {
       "join",
       "waitlist",
       "preview",
+      "festival",
       "home",
       "settings",
     ]) {
