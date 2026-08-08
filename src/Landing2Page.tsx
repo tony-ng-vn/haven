@@ -37,7 +37,7 @@ function prefersFinePointer(): boolean {
   );
 }
 
-export function Landing2Page() {
+export function Landing2Page({ festival = false }: { festival?: boolean }) {
   // Same ref-written mount flag the earlier landing hero used (see this
   // file's own header comment): a shared hook module would be one export
   // used by a single call site now that page is gone, so it stays local
@@ -100,6 +100,12 @@ export function Landing2Page() {
           <p className="landing-hero-note">
             A conversation about people, memory, and connection.
           </p>
+          {festival && (
+            <figure className="festival-qr">
+              <img src="/festival-qr.png" alt="Festival QR code" />
+              <figcaption>Scan at the festival</figcaption>
+            </figure>
+          )}
         </div>
 
         <div className="landing2-art">

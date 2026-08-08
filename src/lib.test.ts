@@ -20,6 +20,7 @@ import {
   isIosHash,
   isJoinHash,
   isLanding2Hash,
+  isFestivalPath,
   isPreviewPath,
   isSkyHash,
   isSkyPath,
@@ -75,6 +76,16 @@ describe("resolveView", () => {
     expect(resolveView(base)).toBe("landing2");
     // A first-time visitor paints the front door immediately, before Clerk loads.
     expect(resolveView({ ...base, isLoading: true })).toBe("landing2");
+  });
+
+  test("the festival path stays public and selects the festival landing", () => {
+    expect(isFestivalPath("/festival")).toBe(true);
+    expect(isFestivalPath("/Festival/")).toBe(true);
+    expect(isFestivalPath("/festival/details")).toBe(false);
+    expect(resolveView({ ...base, pathname: "/festival" })).toBe("festival");
+    expect(
+      resolveView({ ...base, pathname: "/festival", isAuthenticated: true }),
+    ).toBe("festival");
   });
 
   test("Clerk callbacks and the explicit sign-in route mount the preview portal", () => {

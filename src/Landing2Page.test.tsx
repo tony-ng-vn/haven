@@ -32,6 +32,14 @@ describe("Landing2Page", () => {
   test("renders with no session, no props, and no backend", () => {
     render(<Landing2Page />);
     expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "Festival QR code" })).toBeNull();
+  });
+
+  test("adds the festival QR card only for the festival variant", () => {
+    render(<Landing2Page festival />);
+    const qr = screen.getByRole("img", { name: "Festival QR code" });
+    expect(qr.getAttribute("src")).toBe("/festival-qr.png");
+    expect(screen.getByText("Scan at the festival")).toBeTruthy();
   });
 
   test("titles the tab", () => {

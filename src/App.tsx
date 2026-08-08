@@ -103,6 +103,7 @@ export default function App() {
   }
   if (view === "support") return <SupportPage />;
   if (view === "waitlist") return <IosPage />;
+  if (view === "festival") return <Landing2Page festival />;
   if (view === "preview") {
     return (
       <PreviewPortal

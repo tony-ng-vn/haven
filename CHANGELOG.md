@@ -6,6 +6,16 @@ rather than reading the diff.
 Entries begin at v0.2.0. Everything before that lives in the git log and the
 pull requests, which is where it is easiest to read anyway.
 
+## v0.57.0
+
+2026-08-07
+
+**Web**
+
+- inhavens.com/festival now carries the public Haven landing page with a prominent festival QR code that stays clear and scannable on desktop and mobile screens.
+
+---
+
 ## v0.56.0
 
 2026-08-07
